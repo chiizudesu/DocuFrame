@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { FileItem, AppSettings } from '../src/types';
+import type { FileItem, AppSettings, TransferOptions } from '../src/types';
 
 // Define the API interface
 interface ElectronAPI {
@@ -13,6 +13,8 @@ interface ElectronAPI {
   selectDirectory: () => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
   confirmDelete: (fileNames: string[]) => Promise<void>;
+  executeCommand: (command: string) => Promise<any>;
+  transfer: (options: TransferOptions) => Promise<any>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -20,12 +22,18 @@ interface ElectronAPI {
 contextBridge.exposeInMainWorld('electronAPI', {
   // Command handling
   executeCommand: async (command: string) => {
-    return await ipcRenderer.invoke('execute-command', command);
+    console.log('[Preload] Executing command:', command);
+    const result = await ipcRenderer.invoke('execute-command', command);
+    console.log('[Preload] Command result:', result);
+    return result;
   },
   
   // Transfer command
-  transfer: async (options: { numFiles?: number; newName?: string; command?: string }) => {
-    return await ipcRenderer.invoke('transfer-files', options);
+  transfer: async (options: TransferOptions) => {
+    console.log('[Preload] Transfer request:', options);
+    const result = await ipcRenderer.invoke('transfer-files', options);
+    console.log('[Preload] Transfer result:', result);
+    return result;
   },
   
   // Config management

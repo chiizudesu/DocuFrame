@@ -1,26 +1,25 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Box, Input, Text, Flex, Icon, useColorModeValue, List, ListItem, Divider, IconButton } from '@chakra-ui/react';
 import { File, FolderOpen, Search, DollarSign } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import type { FileItem, TransferOptions } from '../types';
 import { joinPath, isAbsolutePath } from '../utils/path'
 
-interface FileItem {
-  name: string;
-  type: 'folder' | 'pdf' | 'image' | 'document';
-  path: string;
-  size?: string;
-  modified?: string;
-}
 export const QuickNavigateOverlay: React.FC = () => {
   // All useContext hooks first
   const {
-    isQuickNavigating,
-    setIsQuickNavigating,
-    setCurrentDirectory,
+    rootDirectory: rootPath,
+    setRootDirectory: setRootPath,
+    setCurrentDirectory: setCurrentPath,
+    setPreviewFiles,
+    previewFiles,
     addLog,
     addCommand,
     allFiles,
-    initialCommandMode
+    initialCommandMode,
+    isQuickNavigating,
+    setIsQuickNavigating,
+    commandHistory
   } = useAppContext();
 
   // All useState hooks next
@@ -39,6 +38,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       }[];
     };
   } | null>(null);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
   // All useRef hooks next
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,8 +60,10 @@ export const QuickNavigateOverlay: React.FC = () => {
   }, [isQuickNavigating, initialCommandMode]);
   // Process input changes
   useEffect(() => {
-    if (!inputValue.trim()) {
+    if (!inputValue) {
       setFilteredResults([]);
+      setCommandInfo(null);
+      setPreviewFiles([]); // Clear preview when input is empty
       if (isCommandMode) {
         setCommandInfo({
           title: 'Command Info',
@@ -77,11 +79,25 @@ export const QuickNavigateOverlay: React.FC = () => {
       const commandText = inputValue.trim().toLowerCase();
       handleCommandInfoUpdate(commandText);
       setFilteredResults([]);
+      
+      // Auto-preview for transfer commands
+      if (commandText.startsWith('transfer ')) {
+        const parts = commandText.split(' ');
+        if (parts.length > 1 && !isNaN(Number(parts[1]))) {
+          const numFiles = Number(parts[1]);
+          handleTransferPreview(numFiles);
+        } else {
+          setPreviewFiles([]); // Clear preview if invalid number
+        }
+      } else {
+        setPreviewFiles([]); // Clear preview for non-transfer commands
+      }
     } else {
       // Regular search mode
       const filtered = allFiles.filter(file => file.name.toLowerCase().includes(inputValue.toLowerCase()));
       setFilteredResults(filtered.slice(0, 3)); // Limit to 3 results
       setCommandInfo(null);
+      setPreviewFiles([]); // Clear preview in search mode
     }
   }, [inputValue, isCommandMode, allFiles]);
   const handleCommandInfoUpdate = (commandText: string) => {
@@ -116,14 +132,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       setCommandInfo({
         title: 'Transfer Files',
         description: 'Transfer file(s) from Downloads folder',
-        usage: '$ transfer [number_of_files | new_filename]',
-        preview: {
-          title: 'Preview of 1 file to transfer:',
-          items: [{
-            name: 'Moses_Electrical_Limited_-_Financial_Statements',
-            size: '273 KB'
-          }]
-        }
+        usage: '$ transfer [number_of_files | new_filename]'
       });
     } else if (command === 'rename') {
       setCommandInfo({
@@ -197,48 +206,138 @@ export const QuickNavigateOverlay: React.FC = () => {
     }
     inputRef.current?.focus();
   };
+  const navigateHistory = (direction: number) => {
+    const newIndex = historyIndex + direction;
+    if (newIndex >= -1 && newIndex < commandHistory.length) {
+      setHistoryIndex(newIndex);
+      setInputValue(newIndex === -1 ? '' : commandHistory[newIndex]);
+    }
+  };
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsQuickNavigating(false);
       setInputValue('');
-    } else if (e.key === 'Enter') {
-      if (isCommandMode) {
-        executeCommand();
-      } else if (filteredResults.length > 0) {
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      executeCommand();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      navigateHistory(-1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      navigateHistory(1);
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      if (filteredResults.length > 0) {
         const firstResult = filteredResults[0];
         if (firstResult.type === 'folder') {
-          setCurrentDirectory(isAbsolutePath(firstResult.path) ? firstResult.path : joinPath(firstResult.path));
+          setCurrentPath(isAbsolutePath(firstResult.path) ? firstResult.path : joinPath(firstResult.path));
           addLog(`Changed directory to: ${firstResult.path}`);
         } else {
-          addLog(`Opening file: ${firstResult.path}`);
+          setInputValue(firstResult.path);
         }
-        setIsQuickNavigating(false);
-        setInputValue('');
       }
     }
   };
-  const executeCommand = () => {
+  const executeCommand = async () => {
     const command = inputValue.trim();
     if (!command) return;
+    
+    console.log('[QuickNavigate] Executing command:', command);
     addLog(`$ ${command}`, 'command');
     addCommand(command);
-    // Process command
-    const lcCommand = command.toLowerCase();
-    if (lcCommand.includes('help')) {
-      addLog('Available commands: help, merge, transfer, rename, extract', 'response');
-    } else if (lcCommand.includes('merge')) {
-      addLog('Merging PDF files...', 'response');
-    } else if (lcCommand.includes('transfer')) {
-      addLog('Transferring files from Downloads folder...', 'response');
-    } else if (lcCommand.includes('rename')) {
-      addLog('Renaming files with pattern...', 'response');
-    } else if (lcCommand.includes('extract')) {
-      addLog('Extracting archives...', 'response');
-    } else {
-      addLog(`Unknown command: ${command}`, 'error');
+
+    try {
+      // For transfer commands, get preview first
+      if (command.toLowerCase().startsWith('transfer')) {
+        console.log('[QuickNavigate] Detected transfer command');
+        const parts = command.split(' ');
+        const numFiles = parts.length > 1 && !isNaN(Number(parts[1])) ? Number(parts[1]) : 1;
+        console.log('[QuickNavigate] Number of files to transfer:', numFiles);
+        
+        try {
+          // Get preview first
+          console.log('[QuickNavigate] Requesting transfer preview...');
+          const previewOptions: TransferOptions = { 
+            numFiles,
+            command: 'preview',
+            currentDirectory: rootPath
+          };
+          const previewResult = await window.electronAPI.transfer(previewOptions);
+          console.log('[QuickNavigate] Preview result:', previewResult);
+          
+          if (previewResult.success && previewResult.files) {
+            console.log('[QuickNavigate] Preview successful, updating preview pane');
+            // Update preview pane
+            setPreviewFiles(previewResult.files);
+            
+            // Now execute the actual transfer
+            console.log('[QuickNavigate] Executing transfer...');
+            const transferOptions: TransferOptions = { 
+              numFiles,
+              command: 'transfer',
+              currentDirectory: rootPath
+            };
+            const transferResult = await window.electronAPI.transfer(transferOptions);
+            console.log('[QuickNavigate] Transfer result:', transferResult);
+            
+            if (transferResult.success) {
+              console.log('[QuickNavigate] Transfer successful');
+              addLog(transferResult.message, 'response');
+            } else {
+              console.log('[QuickNavigate] Transfer failed:', transferResult.message);
+              addLog(transferResult.message, 'error');
+            }
+          } else {
+            console.log('[QuickNavigate] Preview failed:', previewResult.message);
+            addLog(previewResult.message, 'error');
+          }
+        } catch (error) {
+          console.error('[QuickNavigate] Error during transfer:', error);
+          addLog(`Error during transfer: ${error}`, 'error');
+        }
+      } else {
+        // Handle other commands
+        console.log('[QuickNavigate] Executing non-transfer command');
+        const result = await window.electronAPI.executeCommand(command);
+        console.log('[QuickNavigate] Command execution result:', result);
+        
+        if (result.success) {
+          addLog(result.message, 'response');
+        } else {
+          addLog(result.message, 'error');
+        }
+      }
+    } catch (error) {
+      console.error('[QuickNavigate] Error executing command:', error);
+      addLog(`Error executing command: ${error}`, 'error');
     }
+
     setIsQuickNavigating(false);
     setInputValue('');
+  };
+  const handleTransferPreview = async (numFiles: number) => {
+    try {
+      console.log('[QuickNavigate] Auto-requesting transfer preview for', numFiles, 'files');
+      const previewOptions: TransferOptions = { 
+        numFiles,
+        command: 'preview',
+        currentDirectory: rootPath
+      };
+      const previewResult = await window.electronAPI.transfer(previewOptions);
+      console.log('[QuickNavigate] Auto-preview result:', previewResult);
+      
+      if (previewResult.success && previewResult.files) {
+        console.log('[QuickNavigate] Auto-preview successful, updating preview pane');
+        setPreviewFiles(previewResult.files);
+      } else {
+        console.log('[QuickNavigate] Auto-preview failed:', previewResult.message);
+        setPreviewFiles([]);
+      }
+    } catch (error) {
+      console.error('[QuickNavigate] Error during auto-preview:', error);
+      setPreviewFiles([]);
+    }
   };
   if (!isQuickNavigating) return null;
   return <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="rgba(0,0,0,0.3)" zIndex="modal" display="flex" alignItems="flex-start" justifyContent="center" paddingTop="30vh" onClick={() => setIsQuickNavigating(false)}>
@@ -251,7 +350,8 @@ export const QuickNavigateOverlay: React.FC = () => {
           </Flex>
         </Box>
         {/* Command info panel - separate from input container */}
-        {isCommandMode && commandInfo && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1}>
+        {isCommandMode && commandInfo && (
+          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1}>
             <Box p={4} bg={commandBgColor}>
               <Text fontSize="sm" fontWeight="medium" mb={2}>
                 {commandInfo.title}
@@ -268,21 +368,48 @@ export const QuickNavigateOverlay: React.FC = () => {
                 </Flex>
               </Flex>
             </Box>
-            {commandInfo.preview && <Box p={4} pt={0}>
+            {commandInfo.preview && (
+              <Box p={4} pt={0}>
                 <Divider my={3} />
                 <Text fontSize="sm" fontWeight="medium" mb={2}>
                   {commandInfo.preview.title}
                 </Text>
                 <Box>
-                  {commandInfo.preview.items.map((item, index) => <Flex key={index} align="center" py={1}>
+                  {commandInfo.preview.items.map((item, index) => (
+                    <Flex key={index} align="center" py={1}>
                       <DollarSign size={10} color={useColorModeValue('#4A5568', '#718096')} strokeWidth={2} />
                       <Text fontSize="xs" ml={2}>
                         {item.name} {item.size && `(${item.size})`}
                       </Text>
-                    </Flex>)}
+                    </Flex>
+                  ))}
                 </Box>
-              </Box>}
-          </Box>}
+              </Box>
+            )}
+          </Box>
+        )}
+        
+        {/* Preview files panel - shows actual files to be transferred */}
+        {previewFiles.length > 0 && (
+          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1}>
+            <Box p={4} bg={commandBgColor}>
+              <Text fontSize="sm" fontWeight="medium" mb={2}>
+                Preview of {previewFiles.length} file{previewFiles.length > 1 ? 's' : ''} to transfer:
+              </Text>
+              <Box>
+                {previewFiles.map((file, index) => (
+                  <Flex key={index} align="center" py={1}>
+                    <Icon as={File} size={10} color={useColorModeValue('#4A5568', '#718096')} />
+                    <Text fontSize="xs" ml={2}>
+                      {file.name} {file.size && `(${Math.round(parseFloat(file.size) / 1024)} KB)`}
+                    </Text>
+                  </Flex>
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        )}
+        
         {/* Search results - separate from input container */}
         {!isCommandMode && filteredResults.length > 0 && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={1}>
             <List spacing={0}>
@@ -290,7 +417,7 @@ export const QuickNavigateOverlay: React.FC = () => {
             bg: useColorModeValue('gray.100', 'gray.700')
           }} onClick={() => {
             if (result.type === 'folder') {
-              setCurrentDirectory(isAbsolutePath(result.path) ? result.path : joinPath(result.path));
+              setCurrentPath(isAbsolutePath(result.path) ? result.path : joinPath(result.path));
               addLog(`Changed directory to: ${result.path}`);
             } else {
               addLog(`Opening file: ${result.path}`);

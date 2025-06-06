@@ -8,11 +8,11 @@ interface CommandResult {
 }
 
 export async function handleCommand(command: string, args: string[]): Promise<CommandResult> {
-  console.log('Handling command:', command, 'with args:', args);
+  console.log('[CommandHandler] Handling command:', command, 'with args:', args);
   
   // Get command name and arguments
   const [cmd, ...cmdArgs] = command.split(' ');
-  console.log('Parsed command:', cmd, 'with args:', cmdArgs);
+  console.log('[CommandHandler] Parsed command:', cmd, 'with args:', cmdArgs);
   
   // Handle transfer commands
   if (cmd.toLowerCase() === 'transfer' || cmd.toLowerCase() === 'far' || cmd.toLowerCase() === 'depn' || cmd.toLowerCase() === 'disposal' || 
@@ -36,11 +36,11 @@ export async function handleCommand(command: string, args: string[]): Promise<Co
     // Add command for template lookup
     options.command = cmd.toLowerCase();
     
-    console.log('Transfer options:', options);
+    console.log('[CommandHandler] Transfer options:', options);
     
     // Execute transfer
     const result = await transferFiles(options);
-    console.log('Transfer result:', result);
+    console.log('[CommandHandler] Transfer result:', result);
     return result;
   }
   

@@ -5,7 +5,7 @@ import path from 'path';
 export interface FileSystemItem {
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  type: 'file' | 'folder';
   extension?: string;
   size?: number;
   lastModified?: Date;
@@ -54,7 +54,7 @@ class FileSystemService {
           const fileSystemItem: FileSystemItem = {
             name: item,
             path: itemPath,
-            type: stats.isDirectory() ? 'directory' : 'file',
+            type: stats.isDirectory() ? 'folder' : 'file',
             size: stats.size,
             lastModified: stats.mtime
           };
@@ -87,7 +87,7 @@ class FileSystemService {
       return {
         name: path.basename(normalizedPath),
         path: normalizedPath,
-        type: 'directory',
+        type: 'folder',
         size: stats.size,
         lastModified: stats.mtime
       };

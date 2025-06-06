@@ -93,24 +93,24 @@ app.on('activate', () => {
 // IPC Handlers
 ipcMain.handle('execute-command', async (_, command: string) => {
   try {
-    console.log('Received command:', command);
+    console.log('[Main] Received command:', command);
     const result = await handleCommand(command, []);
-    console.log('Command result:', result);
+    console.log('[Main] Command result:', result);
     return result;
   } catch (error) {
-    console.error('Error executing command:', error);
+    console.error('[Main] Error executing command:', error);
     throw error;
   }
 });
 
 ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName?: string; command?: string }) => {
   try {
-    console.log('Received transfer request:', options);
+    console.log('[Main] Received transfer request:', options);
     const result = await transferFiles(options);
-    console.log('Transfer result:', result);
+    console.log('[Main] Transfer result:', result);
     return result;
   } catch (error) {
-    console.error('Error transferring files:', error);
+    console.error('[Main] Error transferring files:', error);
     throw error;
   }
 });
@@ -145,7 +145,7 @@ ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
         results.push({
           name: entry.name,
           path: fullPath,
-          type: entry.isDirectory() ? 'directory' : 'file',
+          type: entry.isDirectory() ? 'folder' : 'file',
           size: stats.size,
           lastModified: stats.mtime,
           extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined
@@ -170,7 +170,7 @@ ipcMain.handle('create-directory', async (_, dirPath: string) => {
     return {
       name: path.basename(dirPath),
       path: dirPath,
-      type: 'directory',
+      type: 'folder',
       size: stats.size,
       lastModified: stats.mtime
     };

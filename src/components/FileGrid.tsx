@@ -57,10 +57,14 @@ function formatPathForLog(path: string) {
   return isWindows ? path.replace(/\//g, '\\') : path;
 }
 
-const getFileIcon = (type: string, extension?: string) => {
-  if (type === 'directory') return FolderOpen
+const getFileIcon = (type: string, name: string) => {
+  if (type === 'folder') {
+    console.log('getFileIcon: FOLDER', name);
+    return FolderOpen;
+  }
   
-  switch (extension?.toLowerCase()) {
+  const extension = name.split('.').pop()?.toLowerCase();
+  switch (extension) {
     case 'pdf':
       return FileText
     case 'doc':
@@ -97,10 +101,11 @@ const getFileIcon = (type: string, extension?: string) => {
   }
 }
 
-const getIconColor = (type: string, extension?: string) => {
-  if (type === 'directory') return 'blue.400'
+const getIconColor = (type: string, name: string) => {
+  if (type === 'folder') return 'blue.400'
   
-  switch (extension?.toLowerCase()) {
+  const extension = name.split('.').pop()?.toLowerCase();
+  switch (extension) {
     case 'pdf':
       return 'red.400'
     case 'doc':
@@ -136,6 +141,14 @@ const getIconColor = (type: string, extension?: string) => {
       return 'gray.400'
   }
 }
+
+// Format file size
+const formatFileSize = (size: string | undefined) => {
+  if (!size) return '';
+  const sizeNum = parseFloat(size);
+  if (isNaN(sizeNum)) return size;
+  return `${(sizeNum / 1024).toFixed(1)} KB`;
+};
 
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
@@ -207,45 +220,31 @@ export const FileGrid: React.FC = () => {
     loadDirectory()
   }, [currentDirectory, addLog, rootDirectory])
 
-  // Sort files when sort parameters change
+  // Sort files
   useEffect(() => {
     const sorted = [...folderItems].sort((a, b) => {
       // Always sort folders first
-      if (a.type === 'directory' && b.type !== 'directory') return -1
-      if (a.type !== 'directory' && b.type === 'directory') return 1
+      if (a.type === 'folder' && b.type !== 'folder') return -1;
+      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      
       // Then sort by the selected column
       switch (sortColumn) {
         case 'name':
-          return sortDirection === 'asc'
-            ? a.name.localeCompare(b.name)
-            : b.name.localeCompare(a.name)
+          return sortDirection === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
         case 'size':
-          // Handle undefined sizes
-          if (!a.size && !b.size) return 0
-          if (!a.size) return sortDirection === 'asc' ? -1 : 1
-          if (!b.size) return sortDirection === 'asc' ? 1 : -1
-          // Extract numeric value and unit for proper comparison
-          const extractSize = (size: number) => {
-            return size
-          }
-          const sizeA = extractSize(a.size || 0)
-          const sizeB = extractSize(b.size || 0)
-          return sortDirection === 'asc' ? sizeA - sizeB : sizeB - sizeA
+          const sizeA = typeof a.size === 'string' ? parseFloat(a.size) : 0;
+          const sizeB = typeof b.size === 'string' ? parseFloat(b.size) : 0;
+          return sortDirection === 'asc' ? sizeA - sizeB : sizeB - sizeA;
         case 'modified':
-          // Handle undefined modified dates
-          if (!a.modified && !b.modified) return 0
-          if (!a.modified) return sortDirection === 'asc' ? -1 : 1
-          if (!b.modified) return sortDirection === 'asc' ? 1 : -1
-          // Compare dates
-          const dateA = new Date(a.modified).getTime()
-          const dateB = new Date(b.modified).getTime()
-          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA
+          const dateA = a.modified ? new Date(a.modified).getTime() : 0;
+          const dateB = b.modified ? new Date(b.modified).getTime() : 0;
+          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
         default:
-          return 0
+          return 0;
       }
-    })
-    setSortedFiles(sorted)
-  }, [sortColumn, sortDirection, folderItems])
+    });
+    setSortedFiles(sorted);
+  }, [folderItems, sortColumn, sortDirection]);
 
   // Handle column header click for sorting
   const handleSort = (column: SortColumn) => {
@@ -262,18 +261,28 @@ export const FileGrid: React.FC = () => {
     )
   }
 
-  // Handle file/folder click
-  const handleItemClick = (file: FileItem) => {
-    if (file.type === 'directory') {
-      // Navigate to the folder
-      const newPath = isAbsolutePath(file.name) ? file.name : joinPath(currentDirectory === '/' ? '' : currentDirectory, file.name)
-      setCurrentDirectory(newPath)
-      addLog(`Changed directory to: ${formatPathForLog(newPath)}`)
+  // Open file or navigate folder
+  const handleOpenOrNavigate = (file: FileItem) => {
+    if (file.type === 'folder') {
+      setCurrentDirectory(file.path);
+      addLog(`Changed directory to: ${file.path}`);
     } else {
-      // Handle file click
-      addLog(`Opening file: ${file.name}`)
+      // Open file externally
+      try {
+        if (!window.electronAPI || typeof (window.electronAPI as any).openFile !== 'function') {
+          const msg = 'Electron API not available: openFile';
+          addLog(msg, 'error');
+          console.error(msg);
+          return;
+        }
+        (window.electronAPI as any).openFile(file.path);
+        addLog(`Opened file: ${file.name}`);
+      } catch (error: any) {
+        addLog(`Failed to open file: ${file.name} (${file.path})\n${error?.message || error}`,'error');
+        console.error('Failed to open file:', file.path, error);
+      }
     }
-  }
+  };
 
   const handleContextMenu = (
     e: React.MouseEvent,
@@ -299,28 +308,6 @@ export const FileGrid: React.FC = () => {
       },
       fileItem: null,
     })
-  }
-
-  // Open file with system default app
-  const handleOpenFile = async (file: FileItem) => {
-    if (file.type !== 'directory') {
-      try {
-        console.log('Opening file:', file.path)
-        if (!window.electronAPI || typeof (window.electronAPI as any).openFile !== 'function') {
-          const msg = 'Electron API not available: openFile';
-          addLog(msg, 'error');
-          console.error(msg);
-          return;
-        }
-        await (window.electronAPI as any).openFile(file.path)
-        addLog(`Opened file: ${file.name}`)
-      } catch (error: any) {
-        addLog(`Failed to open file: ${file.name} (${file.path})\n${error?.message || error}`, 'error')
-        console.error('Failed to open file:', file.path, error)
-      }
-    } else {
-      handleItemClick(file)
-    }
   }
 
   // Delete file(s) with confirmation
@@ -359,7 +346,7 @@ export const FileGrid: React.FC = () => {
     try {
       switch (action) {
         case 'open':
-          await handleOpenFile(contextMenu.fileItem)
+          await handleOpenOrNavigate(contextMenu.fileItem)
           break
         case 'rename':
           setIsRenaming(contextMenu.fileItem.name)
@@ -460,10 +447,10 @@ export const FileGrid: React.FC = () => {
         setLastClickTime(0)
         setClickTimer(null)
         const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
-        if (selectedFileObjs.every(f => f.type !== 'directory')) {
-          for (const f of selectedFileObjs) await handleOpenFile(f)
-        } else if (selectedFileObjs.length === 1 && selectedFileObjs[0].type === 'directory') {
-          handleOpenFile(selectedFileObjs[0])
+        if (selectedFileObjs.every(f => f.type !== 'folder')) {
+          for (const f of selectedFileObjs) await handleOpenOrNavigate(f)
+        } else if (selectedFileObjs.length === 1 && selectedFileObjs[0].type === 'folder') {
+          handleOpenOrNavigate(selectedFileObjs[0])
         }
       })();
     }
@@ -488,11 +475,11 @@ export const FileGrid: React.FC = () => {
       if (e.key === 'Enter' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
         if (selectedFileObjs.length === 1) {
-          handleOpenFile(selectedFileObjs[0])
-        } else if (selectedFileObjs.length > 1 && selectedFileObjs.every(f => f.type !== 'directory')) {
-          for (const f of selectedFileObjs) handleOpenFile(f)
+          handleOpenOrNavigate(selectedFileObjs[0])
+        } else if (selectedFileObjs.length > 1 && selectedFileObjs.every(f => f.type !== 'folder')) {
+          for (const f of selectedFileObjs) handleOpenOrNavigate(f)
         }
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFiles.length > 0) {
+      } else if (e.key === 'Delete' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
         handleDeleteFile(selectedFileObjs)
       }
@@ -543,17 +530,17 @@ export const FileGrid: React.FC = () => {
             style={{ userSelect: 'none' }}
           >
             <Icon
-              as={getFileIcon(file.type, file.extension)}
+              as={getFileIcon(file.type, file.name)}
               boxSize={7}
               mr={4}
-              color={getIconColor(file.type, file.extension)}
+              color={getIconColor(file.type, file.name)}
             />
             <Box flex="1">
               <Text fontSize="md" color={fileTextColor} fontWeight="medium" noOfLines={2} style={{ userSelect: 'none' }}>
                 {file.name}
               </Text>
               <Text fontSize="xs" color={fileSubTextColor} mt={1} style={{ userSelect: 'none' }}>
-                {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ''} {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
+                {file.size ? formatFileSize(file.size) : ''} {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
               </Text>
             </Box>
           </Flex>
@@ -633,8 +620,9 @@ export const FileGrid: React.FC = () => {
           </Tr>
         </Thead>
         <Tbody>
-          {sortedFiles.map((file, index) => (
-            isRenaming === file.name ? (
+          {sortedFiles.map((file, index) => {
+            console.log('Rendering row:', file.name, 'type:', file.type);
+            return isRenaming === file.name ? (
               <Tr key={index}>
                 <Td colSpan={3} borderColor={tableBorderColor}>
                   <form onSubmit={handleRenameSubmit}>
@@ -668,10 +656,10 @@ export const FileGrid: React.FC = () => {
                 <Td borderColor={tableBorderColor}>
                   <Flex align="center">
                     <Icon
-                      as={getFileIcon(file.type, file.extension)}
+                      as={getFileIcon(file.type, file.name)}
                       boxSize={4}
                       mr={2}
-                      color={getIconColor(file.type, file.extension)}
+                      color={getIconColor(file.type, file.name)}
                     />
                     <Text fontSize="sm" color={fileTextColor} style={{ userSelect: 'none' }}>
                       {file.name}
@@ -679,14 +667,14 @@ export const FileGrid: React.FC = () => {
                   </Flex>
                 </Td>
                 <Td borderColor={tableBorderColor} color={fileSubTextColor}>
-                  {file.size ? `${(file.size / 1024).toFixed(1)} KB` : '-'}
+                  {file.size ? formatFileSize(file.size) : '-'}
                 </Td>
                 <Td borderColor={tableBorderColor} color={fileSubTextColor}>
                   {file.modified ? new Date(file.modified).toLocaleString() : '-'}
                 </Td>
               </Tr>
-            )
-          ))}
+            );
+          })}
         </Tbody>
       </Table>
     </Box>
@@ -779,9 +767,9 @@ export const FileGrid: React.FC = () => {
         borderRadius="md"
         _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
         onContextMenu={(e) => handleContextMenu(e, file)}
-        onClick={() => handleItemClick(file)}
+        onClick={() => handleOpenOrNavigate(file)}
       >
-        <Icon as={getFileIcon(file.type)} boxSize={8} mb={2} />
+        <Icon as={getFileIcon(file.type, file.name)} boxSize={8} mb={2} />
         <Text fontSize="sm" textAlign="center" noOfLines={2}>
           {file.name}
         </Text>

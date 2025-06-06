@@ -19,52 +19,60 @@ export const CommandLine: React.FC = () => {
   const handleSubmit = async () => {
     if (!command.trim()) return;
     
-    console.log('Executing command:', command);
+    console.log('[CommandLine] Starting command execution:', command);
     addLog(`> ${command}`, 'command');
     addCommand(command);
 
     try {
       // For transfer commands, get preview first
       if (command.toLowerCase().startsWith('transfer')) {
-        console.log('Getting transfer preview');
+        console.log('[CommandLine] Detected transfer command');
         const parts = command.split(' ');
         const numFiles = parts.length > 1 && !isNaN(Number(parts[1])) ? Number(parts[1]) : 1;
+        console.log('[CommandLine] Number of files to transfer:', numFiles);
         
         try {
           // Get preview first
+          console.log('[CommandLine] Requesting transfer preview...');
           const previewResult = await window.electronAPI.transfer({ 
             numFiles,
             command: 'preview'
           });
-          console.log('Preview result:', previewResult);
+          console.log('[CommandLine] Preview result:', previewResult);
           
           if (previewResult.success && previewResult.files) {
+            console.log('[CommandLine] Preview successful, updating preview pane');
             // Update preview pane
             setPreviewFiles(previewResult.files);
             
             // Now execute the actual transfer
+            console.log('[CommandLine] Executing transfer...');
             const transferResult = await window.electronAPI.transfer({ 
               numFiles,
               command: 'transfer'
             });
-            console.log('Transfer result:', transferResult);
+            console.log('[CommandLine] Transfer result:', transferResult);
             
             if (transferResult.success) {
+              console.log('[CommandLine] Transfer successful');
               addLog(transferResult.message, 'response');
             } else {
+              console.log('[CommandLine] Transfer failed:', transferResult.message);
               addLog(transferResult.message, 'error');
             }
           } else {
+            console.log('[CommandLine] Preview failed:', previewResult.message);
             addLog(previewResult.message, 'error');
           }
         } catch (error) {
-          console.error('Error during transfer:', error);
+          console.error('[CommandLine] Error during transfer:', error);
           addLog(`Error during transfer: ${error}`, 'error');
         }
       } else {
         // Handle other commands
+        console.log('[CommandLine] Executing non-transfer command');
         const result = await window.electronAPI.executeCommand(command);
-        console.log('Command execution result:', result);
+        console.log('[CommandLine] Command execution result:', result);
         
         if (result.success) {
           addLog(result.message, 'response');
@@ -73,7 +81,7 @@ export const CommandLine: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error executing command:', error);
+      console.error('[CommandLine] Error executing command:', error);
       addLog(`Error executing command: ${error}`, 'error');
     }
 

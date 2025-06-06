@@ -1,15 +1,28 @@
 export interface FileItem {
   name: string;
+  type: 'folder' | 'pdf' | 'image' | 'document';
   path: string;
-  type: 'file' | 'directory';
-  extension?: string;
-  size?: number;
-  modified?: Date;
+  size?: string;
+  modified?: string;
+}
+
+export interface LogEntry {
+  message: string;
+  timestamp: string;
+  type: 'error' | 'response' | 'command' | 'info';
 }
 
 export interface AppSettings {
-  rootPath: string;
+  rootPath?: string;
   apiKey?: string;
+  transferCommandMappings?: Record<string, string>;
+}
+
+export interface TransferOptions {
+  numFiles?: number;
+  newName?: string;
+  command?: string;
+  currentDirectory?: string;
 }
 
 // Extend the Window interface to include our electron API
