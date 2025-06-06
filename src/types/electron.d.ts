@@ -11,6 +11,19 @@ interface PathInfo {
   error?: string;
 }
 
+interface ElectronAPI {
+  getConfig: () => Promise<AppSettings>;
+  setConfig: (config: AppSettings) => Promise<void>;
+  validatePath: (path: string) => Promise<boolean>;
+  getDirectoryContents: (path: string) => Promise<FileItem[]>;
+  createDirectory: (path: string) => Promise<void>;
+  deleteItem: (path: string) => Promise<void>;
+  renameItem: (oldPath: string, newPath: string) => Promise<void>;
+  selectDirectory: () => Promise<string>;
+  openFile: (filePath: string) => Promise<void>;
+  confirmDelete: (fileNames: string[]) => Promise<boolean>;
+}
+
 declare global {
   interface Window {
     // Existing electron API
@@ -33,12 +46,7 @@ declare global {
     };
     
     // New electronAPI for file explorer
-    electronAPI: {
-      readDirectory: (dirPath: string) => Promise<FileItem[]>;
-      checkPath: (dirPath: string) => Promise<PathInfo>;
-      getHomeDirectory: () => Promise<string>;
-      getRootDirectories: () => Promise<FileItem[]>;
-    };
+    electronAPI: ElectronAPI;
   }
 }
 

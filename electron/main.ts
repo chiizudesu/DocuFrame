@@ -1,5 +1,5 @@
 // main.ts - Updated with IPC handlers
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import path from 'path';
 import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
@@ -202,4 +202,37 @@ ipcMain.handle('move-item', async (_, sourcePath: string, destinationPath: strin
     console.error('Error moving item:', error);
     throw error;
   }
+});
+
+ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
+  try {
+    await fs.rename(oldPath, newPath);
+    return true;
+  } catch (error) {
+    console.error('Error renaming item:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('open-file', async (_, filePath: string) => {
+  try {
+    await shell.openPath(filePath);
+    return true;
+  } catch (error) {
+    console.error('Error opening file:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('confirm-delete', async (_, fileNames: string[]) => {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Delete', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Delete File(s)',
+    message: `Are you sure you want to delete the following file(s)?`,
+    detail: fileNames.join('\n'),
+  });
+  return response === 0;
 });

@@ -2,6 +2,7 @@
 import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { joinPath } from '../utils/path'
 
 // IPC handler to read directory contents
 ipcMain.handle('read-directory', async (event, dirPath: string) => {
@@ -124,6 +125,12 @@ interface FileItem {
   extension?: string | null;
 }
 
+// Utility to format paths for logging (Windows vs others)
+function formatPathForLog(path: string) {
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
+  return isWindows ? path.replace(/\//g, '\\') : path;
+}
+
 export const FolderNavigation: React.FC = () => {
   const { setCurrentDirectory, addLog } = useAppContext();
   const borderColor = useColorModeValue('gray.600', 'gray.700');
@@ -190,7 +197,7 @@ export const FolderNavigation: React.FC = () => {
       setItems(filteredItems);
       setCurrentPath(dirPath);
       setCurrentDirectory(dirPath);
-      addLog(`Loaded directory: ${dirPath} (${filteredItems.length} items)`);
+      addLog(`Loaded directory: ${formatPathForLog(dirPath)} (${filteredItems.length} items)`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       setError(`Failed to load directory: ${errorMessage}`);
@@ -214,9 +221,8 @@ export const FolderNavigation: React.FC = () => {
     if (!currentPath) {
       return;
     }
-    
-    const parentPath = require('path').dirname(currentPath);
-    if (parentPath === currentPath) {
+    const parentPath = joinPath(...currentPath.split(/[\\/]/).filter(Boolean).slice(0, -1))
+    if (!parentPath) {
       // We're at root, show root directories
       await loadRootDirectories();
     } else {

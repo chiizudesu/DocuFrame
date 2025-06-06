@@ -34,6 +34,7 @@ import {
   FolderPlus,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
+import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
 
 export const FolderInfoBar: React.FC = () => {
   const { currentDirectory, setCurrentDirectory, addLog, rootDirectory } = useAppContext()
@@ -45,6 +46,8 @@ export const FolderInfoBar: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
     (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
   )
+  const [history, setHistory] = useState<string[]>([])
+  const [historyIndex, setHistoryIndex] = useState<number>(-1)
 
   // Precompute all color values
   const bgColor = useColorModeValue('#eef1f8', 'gray.800')
@@ -59,6 +62,17 @@ export const FolderInfoBar: React.FC = () => {
 
   useEffect(() => {
     setEditValue(currentDirectory)
+  }, [currentDirectory])
+
+  // Update history on directory change
+  useEffect(() => {
+    if (history[historyIndex] !== currentDirectory) {
+      const newHistory = history.slice(0, historyIndex + 1)
+      newHistory.push(currentDirectory)
+      setHistory(newHistory)
+      setHistoryIndex(newHistory.length - 1)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDirectory])
 
   const handleClick = () => {
@@ -111,52 +125,63 @@ export const FolderInfoBar: React.FC = () => {
   }
 
   const handleBackClick = () => {
-    const parts = currentDirectory.split('/').filter(Boolean)
-    if (parts.length > 0) {
-      parts.pop()
-      const newPath = '/' + parts.join('/')
-      setCurrentDirectory(newPath)
-      addLog(`Navigated back to: ${newPath}`)
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1)
+      setCurrentDirectory(history[historyIndex - 1])
+      addLog(`Navigated back to: ${history[historyIndex - 1]}`)
+    } else {
+      const parent = getParentPath(currentDirectory)
+      if (parent && parent !== currentDirectory) {
+        setCurrentDirectory(parent)
+        addLog(`Navigated back to: ${parent}`)
+      }
     }
   }
 
   const handleForwardClick = () => {
-    // TODO: Implement forward navigation using history
-    addLog('Forward navigation not implemented yet')
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1)
+      setCurrentDirectory(history[historyIndex + 1])
+      addLog(`Navigated forward to: ${history[historyIndex + 1]}`)
+    } else {
+      addLog('No forward history')
+    }
   }
 
   // Breadcrumbs logic
   // Show Home icon as root, then each folder as a clickable segment
   const getBreadcrumbs = () => {
-    // If at root, show no breadcrumbs
-    if (
-      currentDirectory.replace(/\\/g, '/').replace(/\/+$/, '') ===
-      (rootDirectory || '').replace(/\\/g, '/').replace(/\/+$/, '')
-    ) {
-      return []
+    // If at root, show only the root
+    const normRoot = rootDirectory.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '')
+    const normCurrent = currentDirectory.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '')
+    if (normCurrent === normRoot) {
+      return [{ label: rootDirectory.split(/[\\/]/).filter(Boolean).pop() || 'Root', path: rootDirectory }]
     }
     // Compute relative path from root
-    let rel = currentDirectory.replace(rootDirectory, '')
+    let rel = normCurrent.replace(normRoot, '')
     rel = rel.replace(/^[/\\]+/, '') // Remove leading slashes
     const segments = rel.split(/[\\/]/).filter(Boolean)
-    let path = rootDirectory.replace(/\\/g, '/')
-    return segments.map((seg, i) => {
-      path += '/' + seg
-      return { label: seg, path }
-    })
+    const breadcrumbs = []
+    let path = rootDirectory
+    breadcrumbs.push({ label: rootDirectory.split(/[\\/]/).filter(Boolean).pop() || 'Root', path })
+    for (const seg of segments) {
+      path = joinPath(path, seg)
+      breadcrumbs.push({ label: seg, path })
+    }
+    return breadcrumbs
   }
 
   const breadcrumbs = getBreadcrumbs()
 
   const handleCreateFolder = async () => {
     try {
-      const fullPath = `${currentDirectory === '/' ? '' : currentDirectory}/${newFolderName}`
+      const fullPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, newFolderName)
       await window.electron.createDirectory(fullPath)
       addLog(`Created folder: ${newFolderName}`)
       setIsCreateFolderOpen(false)
       setNewFolderName('')
       // Refresh the current directory
-      const contents = await window.electron.getDirectoryContents(currentDirectory)
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
       // You'll need to implement a way to refresh the file list in your app
     } catch (error) {
       console.error('Error creating folder:', error)

@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Box, Input, Text, Flex, Icon, useColorModeValue, List, ListItem, Divider, IconButton } from '@chakra-ui/react';
 import { File, FolderOpen, Search, DollarSign } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { joinPath, isAbsolutePath } from '../utils/path'
+
 interface FileItem {
   name: string;
   type: 'folder' | 'pdf' | 'image' | 'document';
@@ -197,7 +199,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       } else if (filteredResults.length > 0) {
         const firstResult = filteredResults[0];
         if (firstResult.type === 'folder') {
-          setCurrentDirectory(firstResult.path);
+          setCurrentDirectory(isAbsolutePath(firstResult.path) ? firstResult.path : joinPath(firstResult.path));
           addLog(`Changed directory to: ${firstResult.path}`);
         } else {
           addLog(`Opening file: ${firstResult.path}`);
@@ -280,7 +282,7 @@ export const QuickNavigateOverlay: React.FC = () => {
             bg: useColorModeValue('gray.100', 'gray.700')
           }} onClick={() => {
             if (result.type === 'folder') {
-              setCurrentDirectory(result.path);
+              setCurrentDirectory(isAbsolutePath(result.path) ? result.path : joinPath(result.path));
               addLog(`Changed directory to: ${result.path}`);
             } else {
               addLog(`Opening file: ${result.path}`);

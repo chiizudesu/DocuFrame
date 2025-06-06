@@ -15,7 +15,7 @@ class ConfigService {
 
   private async loadConfig(): Promise<void> {
     try {
-      const config = await window.electron.getConfig();
+      const config = await (window.electronAPI as any).getConfig();
       this.config = config;
       console.log('Config loaded:', config);
     } catch (error) {
@@ -29,7 +29,7 @@ class ConfigService {
 
   async setConfig(config: Config): Promise<void> {
     try {
-      await window.electron.setConfig(config);
+      await (window.electronAPI as any).setConfig(config);
       this.config = config;
     } catch (error) {
       console.error('Error saving config:', error);
@@ -43,7 +43,7 @@ class ConfigService {
 
   async setRootPath(rootPath: string): Promise<void> {
     try {
-      await window.electron.setConfig({ ...this.config, rootPath });
+      await (window.electronAPI as any).setConfig({ ...this.config, rootPath });
       this.config.rootPath = rootPath;
     } catch (error) {
       console.error('Error setting root path:', error);

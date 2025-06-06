@@ -1,19 +1,26 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
+import { TransferMappingDialog } from './TransferMappingDialog';
+
 export const FunctionPanels: React.FC = () => {
   const {
     addLog
   } = useAppContext();
+  const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const bgColor = useColorModeValue('#eef1f8', 'gray.900');
   const headerBgColor = useColorModeValue('#4F46E5', 'gray.900');
   const headerTextColor = useColorModeValue('white', 'white');
   const buttonHoverBg = useColorModeValue('#e8ecf5', 'gray.700');
   const borderColor = useColorModeValue('#4F46E5', 'gray.700');
   const handleAction = (action: string) => {
+    if (action === 'transfer_mapping') {
+      setTransferMappingOpen(true);
+      return;
+    }
     addLog(`Executing action: ${action}`);
   };
   const FunctionButton: React.FC<{
@@ -40,7 +47,8 @@ export const FunctionPanels: React.FC = () => {
         </Text>
       </Button>
     </Tooltip>;
-  return <Flex direction="column">
+  return <>
+    <Flex direction="column">
       <Tabs variant="line" colorScheme="indigo" size="sm">
         <Flex align="center" justify="space-between" px={2} bg={headerBgColor} borderBottom="2px" borderColor={borderColor} boxShadow="0 1px 3px rgba(0,0,0,0.1)">
           <TabList borderBottom="none">
@@ -65,6 +73,7 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={FileEdit} label="Rename PDFs" action="rename_pdfs" description="Batch rename PDF files with pattern matching" color="purple.400" />
                   <FunctionButton icon={Archive} label="Extract Zips" action="extract_zips" description="Extract all ZIP files in current directory" color="orange.400" />
                   <FunctionButton icon={Move} label="Move Screenshot" action="move_screenshot" description="Automatically organize screenshots" color="cyan.400" />
+                  <FunctionButton icon={Settings} label="Transfer Mapping" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center">
                   File Management
@@ -85,5 +94,7 @@ export const FunctionPanels: React.FC = () => {
           </TabPanel>
         </TabPanels>
       </Tabs>
-    </Flex>;
+    </Flex>
+    <TransferMappingDialog isOpen={isTransferMappingOpen} onClose={() => setTransferMappingOpen(false)} />
+  </>;
 };

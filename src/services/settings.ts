@@ -22,7 +22,7 @@ class SettingsService {
   async getSettings(): Promise<AppSettings> {
     try {
       if (!this.settings) {
-        this.settings = await window.electron.getConfig();
+        this.settings = await (window.electronAPI as any).getConfig();
       }
       return this.settings;
     } catch (error) {
@@ -33,7 +33,7 @@ class SettingsService {
 
   async setSettings(settings: AppSettings): Promise<void> {
     try {
-      await window.electron.setConfig(settings);
+      await (window.electronAPI as any).setConfig(settings);
       this.settings = settings;
     } catch (error) {
       console.error('Error setting settings:', error);

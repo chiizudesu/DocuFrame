@@ -40,6 +40,7 @@ import {
 import { useAppContext } from '../context/AppContext'
 import { settingsService } from '../services/settings'
 import type { FileItem } from '../types'
+import { joinPath, isAbsolutePath } from '../utils/path'
 
 interface ContextMenuPosition {
   x: number
@@ -49,6 +50,12 @@ interface ContextMenuPosition {
 // Sort types for list view
 type SortColumn = 'name' | 'size' | 'modified'
 type SortDirection = 'asc' | 'desc'
+
+// Utility to format paths for logging (Windows vs others)
+function formatPathForLog(path: string) {
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
+  return isWindows ? path.replace(/\//g, '\\') : path;
+}
 
 const getFileIcon = (type: string, extension?: string) => {
   if (type === 'directory') return FolderOpen
@@ -171,6 +178,13 @@ export const FileGrid: React.FC = () => {
   const [isRenaming, setIsRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
+
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [lastClickTime, setLastClickTime] = useState<number>(0)
+  const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
+
   useEffect(() => {
     const loadDirectory = async () => {
       if (!currentDirectory) return
@@ -178,14 +192,14 @@ export const FileGrid: React.FC = () => {
       try {
         // Use currentDirectory as the full path
         const fullPath = currentDirectory
-        const isValid = await window.electron.validatePath(fullPath)
+        const isValid = await (window.electronAPI as any).validatePath(fullPath)
         if (!isValid) {
           addLog(`Invalid path: ${fullPath}`, 'error')
           return
         }
-        const contents = await window.electron.getDirectoryContents(fullPath)
+        const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
         setFolderItems(contents)
-        addLog(`Loaded directory: ${currentDirectory}`)
+        addLog(`Loaded directory: ${formatPathForLog(currentDirectory)}`)
       } catch (error) {
         console.error('Failed to load directory:', error)
         addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
@@ -255,9 +269,9 @@ export const FileGrid: React.FC = () => {
   const handleItemClick = (file: FileItem) => {
     if (file.type === 'directory') {
       // Navigate to the folder
-      const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${file.name}`
+      const newPath = isAbsolutePath(file.name) ? file.name : joinPath(currentDirectory === '/' ? '' : currentDirectory, file.name)
       setCurrentDirectory(newPath)
-      addLog(`Changed directory to: ${newPath}`)
+      addLog(`Changed directory to: ${formatPathForLog(newPath)}`)
     } else {
       // Handle file click
       addLog(`Opening file: ${file.name}`)
@@ -290,35 +304,77 @@ export const FileGrid: React.FC = () => {
     })
   }
 
+  // Open file with system default app
+  const handleOpenFile = async (file: FileItem) => {
+    if (file.type !== 'directory') {
+      try {
+        console.log('Opening file:', file.path)
+        if (!window.electronAPI || typeof (window.electronAPI as any).openFile !== 'function') {
+          const msg = 'Electron API not available: openFile';
+          addLog(msg, 'error');
+          console.error(msg);
+          return;
+        }
+        await (window.electronAPI as any).openFile(file.path)
+        addLog(`Opened file: ${file.name}`)
+      } catch (error: any) {
+        addLog(`Failed to open file: ${file.name} (${file.path})\n${error?.message || error}`, 'error')
+        console.error('Failed to open file:', file.path, error)
+      }
+    } else {
+      handleItemClick(file)
+    }
+  }
+
+  // Delete file(s) with confirmation
+  const handleDeleteFile = async (fileOrFiles: FileItem | FileItem[]) => {
+    const filesToDelete = Array.isArray(fileOrFiles)
+      ? fileOrFiles.map(f => f.name)
+      : (selectedFiles.length > 1 ? selectedFiles : [fileOrFiles.name])
+    try {
+      if (!window.electronAPI || typeof (window.electronAPI as any).confirmDelete !== 'function') {
+        const msg = 'Electron API not available: confirmDelete';
+        addLog(msg, 'error');
+        console.error(msg);
+        return;
+      }
+      const confirmed = await (window.electronAPI as any).confirmDelete(filesToDelete)
+      if (!confirmed) return
+      const files = Array.isArray(fileOrFiles) ? fileOrFiles : filesToDelete.map(name => sortedFiles.find(f => f.name === name)).filter(Boolean) as FileItem[]
+      for (const f of files) {
+        await (window.electronAPI as any).deleteItem(f.path)
+      }
+      addLog(`Deleted: ${files.map(f => f.name).join(', ')}`)
+      // Refresh the current directory
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
+      setFolderItems(contents)
+      setSelectedFiles([])
+    } catch (error: any) {
+      addLog(`Failed to delete: ${filesToDelete.join(', ')}\n${error?.message || error}`, 'error')
+      console.error('Failed to delete:', filesToDelete, error)
+    }
+  }
+
+  // In context menu, pass array for multi-select delete
   const handleMenuAction = async (action: string) => {
     if (!contextMenu.fileItem) return
 
     try {
       switch (action) {
         case 'open':
-          if (contextMenu.fileItem.type === 'directory') {
-            const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${contextMenu.fileItem.name}`
-            setCurrentDirectory(newPath)
-            addLog(`Changed directory to: ${newPath}`)
-          } else {
-            addLog(`Opening ${contextMenu.fileItem.name}`)
-          }
+          await handleOpenFile(contextMenu.fileItem)
           break
-
         case 'rename':
           setIsRenaming(contextMenu.fileItem.name)
           setRenameValue(contextMenu.fileItem.name)
           break
-
         case 'delete':
-          const fullPath = `${currentDirectory === '/' ? '' : currentDirectory}/${contextMenu.fileItem.name}`
-          await window.electron.deleteItem(fullPath)
-          addLog(`Deleted: ${contextMenu.fileItem.name}`)
-          // Refresh the current directory
-          const contents = await window.electron.getDirectoryContents(currentDirectory)
-          // You'll need to implement a way to refresh the file list in your app
+          if (selectedFiles.length > 1 && selectedFiles.includes(contextMenu.fileItem.name)) {
+            await handleDeleteFile(sortedFiles.filter(f => selectedFiles.includes(f.name)))
+          } else {
+            await handleDeleteFile(contextMenu.fileItem)
+          }
           break
-
         default:
           addLog(`Function: ${action} on ${contextMenu.fileItem.name}`)
       }
@@ -333,16 +389,19 @@ export const FileGrid: React.FC = () => {
   const handleRenameSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isRenaming) return
-
+    if (!renameValue || renameValue === isRenaming) {
+      setIsRenaming(null)
+      return
+    }
     try {
-      const oldPath = `${currentDirectory === '/' ? '' : currentDirectory}/${isRenaming}`
-      const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${renameValue}`
-      await window.electron.renameItem(oldPath, newPath)
+      const oldPath = isAbsolutePath(isRenaming) ? isRenaming : joinPath(currentDirectory === '/' ? '' : currentDirectory, isRenaming)
+      const newPath = isAbsolutePath(renameValue) ? renameValue : joinPath(currentDirectory === '/' ? '' : currentDirectory, renameValue)
+      await (window.electronAPI as any).renameItem(oldPath, newPath)
       addLog(`Renamed ${isRenaming} to ${renameValue}`)
       setIsRenaming(null)
       // Refresh the current directory
-      const contents = await window.electron.getDirectoryContents(currentDirectory)
-      // You'll need to implement a way to refresh the file list in your app
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
+      setFolderItems(contents)
     } catch (error) {
       console.error('Error renaming:', error)
       addLog(`Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
@@ -372,43 +431,136 @@ export const FileGrid: React.FC = () => {
     }
   }, [contextMenu.isOpen])
 
+  // Multi-select click logic
+  const handleFileItemClick = (file: FileItem, index: number, event?: React.MouseEvent) => {
+    const now = Date.now()
+    const isCtrl = event?.ctrlKey || event?.metaKey
+    const isShift = event?.shiftKey
+    if (isShift && lastSelectedIndex !== null) {
+      // Range select
+      const start = Math.min(lastSelectedIndex, index)
+      const end = Math.max(lastSelectedIndex, index)
+      const range = sortedFiles.slice(start, end + 1).map(f => f.name)
+      setSelectedFiles(Array.from(new Set([...selectedFiles, ...range])))
+    } else if (isCtrl) {
+      // Toggle selection
+      setSelectedFiles(selectedFiles.includes(file.name)
+        ? selectedFiles.filter(f => f !== file.name)
+        : [...selectedFiles, file.name])
+      setLastSelectedIndex(index)
+    } else {
+      // Single select
+      setSelectedFiles([file.name])
+      setLastSelectedIndex(index)
+      setSelectedFile(file.name)
+      setLastClickTime(now)
+      if (clickTimer) clearTimeout(clickTimer)
+    }
+    // Double click: open all selected files if all are files
+    if (selectedFiles.includes(file.name) && now - lastClickTime < 500) {
+      (async () => {
+        clearTimeout(clickTimer as NodeJS.Timeout)
+        setLastClickTime(0)
+        setClickTimer(null)
+        const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
+        if (selectedFileObjs.every(f => f.type !== 'directory')) {
+          for (const f of selectedFileObjs) await handleOpenFile(f)
+        } else if (selectedFileObjs.length === 1 && selectedFileObjs[0].type === 'directory') {
+          handleOpenFile(selectedFileObjs[0])
+        }
+      })();
+    }
+  }
+
+  // Add F2 key support for rename
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2' && selectedFile && !isRenaming) {
+        setIsRenaming(selectedFile)
+        setRenameValue(selectedFile)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedFile, isRenaming])
+
+  // Keyboard shortcuts: Enter to open, Delete to delete
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isRenaming) return;
+      if (e.key === 'Enter' && selectedFiles.length > 0) {
+        const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
+        if (selectedFileObjs.length === 1) {
+          handleOpenFile(selectedFileObjs[0])
+        } else if (selectedFileObjs.length > 1 && selectedFileObjs.every(f => f.type !== 'directory')) {
+          for (const f of selectedFileObjs) handleOpenFile(f)
+        }
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedFiles.length > 0) {
+        const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
+        handleDeleteFile(selectedFileObjs)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedFiles, sortedFiles, isRenaming])
+
   // Grid view
   const renderGridView = () => (
     <Grid templateColumns="repeat(auto-fit, minmax(220px, 1fr))" maxW="100%" gap={4} p={4}>
       {sortedFiles.map((file, index) => (
-        <Flex
-          key={index}
-          p={4}
-          alignItems="center"
-          cursor="pointer"
-          borderRadius="lg"
-          borderWidth="1px"
-          borderColor={useColorModeValue('gray.200', 'gray.700')}
-          bg={useColorModeValue('#f8f9fc', 'gray.800')}
-          _hover={{
-            bg: itemBgHover,
-            boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
-            borderColor: useColorModeValue('blue.200', 'blue.700'),
-          }}
-          transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
-          onContextMenu={(e) => handleContextMenu(e, file)}
-          onClick={() => handleItemClick(file)}
-        >
-          <Icon
-            as={getFileIcon(file.type, file.extension)}
-            boxSize={7}
-            mr={4}
-            color={getIconColor(file.type, file.extension)}
-          />
-          <Box flex="1">
-            <Text fontSize="md" color={fileTextColor} fontWeight="medium" noOfLines={2}>
-              {file.name}
-            </Text>
-            <Text fontSize="xs" color={fileSubTextColor} mt={1}>
-              {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ''} {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
-            </Text>
+        isRenaming === file.name ? (
+          <Box key={index} p={4}>
+            <form onSubmit={handleRenameSubmit}>
+              <Input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={handleRenameSubmit}
+                autoFocus
+                size="sm"
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsRenaming(null)
+                  }
+                }}
+              />
+            </form>
           </Box>
-        </Flex>
+        ) : (
+          <Flex
+            key={index}
+            p={4}
+            alignItems="center"
+            cursor="pointer"
+            borderRadius="lg"
+            borderWidth="1px"
+            borderColor={selectedFiles.includes(file.name) ? 'blue.400' : useColorModeValue('gray.200', 'gray.700')}
+            bg={selectedFiles.includes(file.name) ? useColorModeValue('blue.50', 'blue.900') : useColorModeValue('#f8f9fc', 'gray.800')}
+            _hover={{
+              bg: itemBgHover,
+              boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+              borderColor: useColorModeValue('blue.200', 'blue.700'),
+            }}
+            transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
+            onContextMenu={(e) => handleContextMenu(e, file)}
+            onClick={(e) => handleFileItemClick(file, index, e)}
+            style={{ userSelect: 'none' }}
+          >
+            <Icon
+              as={getFileIcon(file.type, file.extension)}
+              boxSize={7}
+              mr={4}
+              color={getIconColor(file.type, file.extension)}
+            />
+            <Box flex="1">
+              <Text fontSize="md" color={fileTextColor} fontWeight="medium" noOfLines={2} style={{ userSelect: 'none' }}>
+                {file.name}
+              </Text>
+              <Text fontSize="xs" color={fileSubTextColor} mt={1} style={{ userSelect: 'none' }}>
+                {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ''} {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
+              </Text>
+            </Box>
+          </Flex>
+        )
       ))}
     </Grid>
   )
@@ -423,6 +575,7 @@ export const FileGrid: React.FC = () => {
         borderRadius={0}
         overflow="unset"
         mt={0}
+        style={{ userSelect: 'none' }}
       >
         <Thead bg={tableHeadBgColor}>
           <Tr>
@@ -484,35 +637,58 @@ export const FileGrid: React.FC = () => {
         </Thead>
         <Tbody>
           {sortedFiles.map((file, index) => (
-            <Tr
-              key={index}
-              cursor="pointer"
-              _hover={{
-                bg: itemBgHover,
-              }}
-              onContextMenu={(e) => handleContextMenu(e, file)}
-              onClick={() => handleItemClick(file)}
-            >
-              <Td borderColor={tableBorderColor}>
-                <Flex align="center">
-                  <Icon
-                    as={getFileIcon(file.type, file.extension)}
-                    boxSize={4}
-                    mr={2}
-                    color={getIconColor(file.type, file.extension)}
-                  />
-                  <Text fontSize="sm" color={fileTextColor}>
-                    {file.name}
-                  </Text>
-                </Flex>
-              </Td>
-              <Td borderColor={tableBorderColor} color={fileSubTextColor}>
-                {file.size ? `${(file.size / 1024).toFixed(1)} KB` : '-'}
-              </Td>
-              <Td borderColor={tableBorderColor} color={fileSubTextColor}>
-                {file.modified ? new Date(file.modified).toLocaleString() : '-'}
-              </Td>
-            </Tr>
+            isRenaming === file.name ? (
+              <Tr key={index}>
+                <Td colSpan={3} borderColor={tableBorderColor}>
+                  <form onSubmit={handleRenameSubmit}>
+                    <Input
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={handleRenameSubmit}
+                      autoFocus
+                      size="sm"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setIsRenaming(null)
+                        }
+                      }}
+                    />
+                  </form>
+                </Td>
+              </Tr>
+            ) : (
+              <Tr
+                key={index}
+                cursor="pointer"
+                _hover={{
+                  bg: itemBgHover,
+                }}
+                onContextMenu={(e) => handleContextMenu(e, file)}
+                onClick={(e) => handleFileItemClick(file, index, e)}
+                bg={selectedFiles.includes(file.name) ? useColorModeValue('blue.50', 'blue.900') : undefined}
+                style={{ userSelect: 'none' }}
+              >
+                <Td borderColor={tableBorderColor}>
+                  <Flex align="center">
+                    <Icon
+                      as={getFileIcon(file.type, file.extension)}
+                      boxSize={4}
+                      mr={2}
+                      color={getIconColor(file.type, file.extension)}
+                    />
+                    <Text fontSize="sm" color={fileTextColor} style={{ userSelect: 'none' }}>
+                      {file.name}
+                    </Text>
+                  </Flex>
+                </Td>
+                <Td borderColor={tableBorderColor} color={fileSubTextColor}>
+                  {file.size ? `${(file.size / 1024).toFixed(1)} KB` : '-'}
+                </Td>
+                <Td borderColor={tableBorderColor} color={fileSubTextColor}>
+                  {file.modified ? new Date(file.modified).toLocaleString() : '-'}
+                </Td>
+              </Tr>
+            )
           ))}
         </Tbody>
       </Table>
