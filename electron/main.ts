@@ -5,6 +5,8 @@ import { promises as fs } from 'fs';
 import { fileURLToPath } from 'url';
 import { fileSystemService } from '../src/services/fileSystem';
 import type { Config } from '../src/services/config';
+import { handleCommand } from '../src/main/commandHandler';
+import { transferFiles } from '../src/main/commands/transfer';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -89,6 +91,30 @@ app.on('activate', () => {
 });
 
 // IPC Handlers
+ipcMain.handle('execute-command', async (_, command: string) => {
+  try {
+    console.log('Received command:', command);
+    const result = await handleCommand(command, []);
+    console.log('Command result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error executing command:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName?: string; command?: string }) => {
+  try {
+    console.log('Received transfer request:', options);
+    const result = await transferFiles(options);
+    console.log('Transfer result:', result);
+    return result;
+  } catch (error) {
+    console.error('Error transferring files:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('get-config', async () => {
   try {
     return await loadConfig();

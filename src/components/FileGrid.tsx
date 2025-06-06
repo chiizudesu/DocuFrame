@@ -138,27 +138,18 @@ const getIconColor = (type: string, extension?: string) => {
 }
 
 export const FileGrid: React.FC = () => {
+  // All useContext hooks first
   const { addLog, currentDirectory, setCurrentDirectory, rootDirectory } = useAppContext()
+  
+  // All useState hooks next
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
     (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
   )
   const [folderItems, setFolderItems] = useState<FileItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
-
-  // Add missing color definitions
-  const itemBgHover = useColorModeValue('#e8ecf5', 'gray.700')
-  const fileTextColor = useColorModeValue('gray.700', 'white')
-  const fileSubTextColor = useColorModeValue('gray.600', 'gray.400')
-  const tableBgColor = useColorModeValue('#f2f5fa', 'transparent')
-  const tableHeadBgColor = useColorModeValue('#e8ecf5', 'gray.800')
-  const tableHeadTextColor = useColorModeValue('gray.700', 'gray.300')
-  const tableBorderColor = useColorModeValue('#e2e8f0', 'gray.700')
-
-  // Sorting state
   const [sortColumn, setSortColumn] = useState<SortColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [sortedFiles, setSortedFiles] = useState<FileItem[]>([])
-
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean
     position: {
@@ -174,16 +165,22 @@ export const FileGrid: React.FC = () => {
     },
     fileItem: null,
   })
-
-  const [isRenaming, setIsRenaming] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-
+  const [isRenaming, setIsRenaming] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
-
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
+
+  // All useColorModeValue hooks next
+  const itemBgHover = useColorModeValue('#e8ecf5', 'gray.700')
+  const fileTextColor = useColorModeValue('gray.700', 'white')
+  const fileSubTextColor = useColorModeValue('gray.600', 'gray.400')
+  const tableBgColor = useColorModeValue('#f2f5fa', 'transparent')
+  const tableHeadBgColor = useColorModeValue('#e8ecf5', 'gray.800')
+  const tableHeadTextColor = useColorModeValue('gray.700', 'gray.300')
+  const tableBorderColor = useColorModeValue('#e2e8f0', 'gray.700')
 
   useEffect(() => {
     const loadDirectory = async () => {

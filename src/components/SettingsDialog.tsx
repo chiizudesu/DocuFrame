@@ -14,7 +14,6 @@ import {
   useToast,
   InputGroup,
   InputRightElement,
-  Flex,
 } from '@chakra-ui/react';
 import { FolderOpen } from 'lucide-react';
 import { settingsService } from '../services/settings';
@@ -28,17 +27,11 @@ interface SettingsDialogProps {
 interface Settings {
   rootPath: string;
   apiKey?: string;
-  transferCommandMappings: {
-    [key: string]: string;  // command -> filename template
-  };
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
   const [rootPath, setRootPath] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [transferMappings, setTransferMappings] = useState<{ command: string; filename: string }[]>([]);
-  const [newCommand, setNewCommand] = useState('');
-  const [newFilename, setNewFilename] = useState('');
   const toast = useToast();
   const { setRootDirectory, setCurrentDirectory } = useAppContext();
 
@@ -48,12 +41,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         const loadedSettings = await settingsService.getSettings() as Settings;
         setRootPath(loadedSettings.rootPath);
         setApiKey(loadedSettings.apiKey || '');
-        // Convert transfer mappings object to array for easier editing
-        const mappings = Object.entries(loadedSettings.transferCommandMappings || {}).map(([command, filename]) => ({
-          command,
-          filename: filename as string
-        }));
-        setTransferMappings(mappings);
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -73,19 +60,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
   const handleSave = async () => {
     try {
-      // Convert transfer mappings array back to object
-      const transferCommandMappings = transferMappings.reduce((acc, { command, filename }) => {
-        acc[command] = filename;
-        return acc;
-      }, {} as { [key: string]: string });
-
       const newSettings: Settings = {
         rootPath,
         apiKey: apiKey || undefined,
-        transferCommandMappings
       };
       
-      await settingsService.setSettings(newSettings as any); // Type assertion needed due to AppSettings interface
+      await settingsService.setSettings(newSettings as any);
       setRootDirectory(rootPath);
       setCurrentDirectory(rootPath);
       toast({
@@ -124,18 +104,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleAddMapping = () => {
-    if (newCommand && newFilename) {
-      setTransferMappings([...transferMappings, { command: newCommand, filename: newFilename }]);
-      setNewCommand('');
-      setNewFilename('');
-    }
-  };
-
-  const handleRemoveMapping = (index: number) => {
-    setTransferMappings(transferMappings.filter((_, i) => i !== index));
-  };
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
@@ -165,55 +133,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               onChange={(e) => setApiKey(e.target.value)}
               type="password"
             />
-          </FormControl>
-          <FormControl>
-            <FormLabel>Transfer Command Mappings</FormLabel>
-            <div className="mt-2 space-y-2">
-              {transferMappings.map((mapping, index) => (
-                <div key={index} className="flex items-center space-x-2">
-                  <Input
-                    value={mapping.command}
-                    onChange={(e) => {
-                      const newMappings = [...transferMappings];
-                      newMappings[index].command = e.target.value;
-                      setTransferMappings(newMappings);
-                    }}
-                    placeholder="Command"
-                  />
-                  <Input
-                    value={mapping.filename}
-                    onChange={(e) => {
-                      const newMappings = [...transferMappings];
-                      newMappings[index].filename = e.target.value;
-                      setTransferMappings(newMappings);
-                    }}
-                    placeholder="Filename Template"
-                  />
-                  <Button
-                    onClick={() => handleRemoveMapping(index)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-              <div className="flex items-center space-x-2">
-                <Input
-                  value={newCommand}
-                  onChange={(e) => setNewCommand(e.target.value)}
-                  placeholder="New Command"
-                />
-                <Input
-                  value={newFilename}
-                  onChange={(e) => setNewFilename(e.target.value)}
-                  placeholder="New Filename Template"
-                />
-                <Button
-                  onClick={handleAddMapping}
-                >
-                  Add
-                </Button>
-              </div>
-            </div>
           </FormControl>
         </ModalBody>
         <ModalFooter>

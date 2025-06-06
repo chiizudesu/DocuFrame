@@ -18,14 +18,43 @@ interface ElectronAPI {
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-  getConfig: () => ipcRenderer.invoke('get-config'),
-  setConfig: (config: AppSettings) => ipcRenderer.invoke('set-config', config),
+  // Command handling
+  executeCommand: async (command: string) => {
+    return await ipcRenderer.invoke('execute-command', command);
+  },
+  
+  // Transfer command
+  transfer: async (options: { numFiles?: number; newName?: string; command?: string }) => {
+    return await ipcRenderer.invoke('transfer-files', options);
+  },
+  
+  // Config management
+  getConfig: async (key: string) => {
+    return await ipcRenderer.invoke('get-config');
+  },
+  setConfig: async (key: string, value: any) => {
+    return await ipcRenderer.invoke('set-config', value);
+  },
+  
+  // Directory operations
+  selectDirectory: async () => {
+    return await ipcRenderer.invoke('select-directory');
+  },
+  getDirectoryContents: async (dirPath: string) => {
+    return await ipcRenderer.invoke('get-directory-contents', dirPath);
+  },
+  
+  // File operations
+  renameItem: async (oldPath: string, newPath: string) => {
+    return await ipcRenderer.invoke('rename-item', oldPath, newPath);
+  },
+  deleteItem: async (path: string) => {
+    return await ipcRenderer.invoke('delete-item', path);
+  },
+  createDirectory: async (path: string) => {
+    return await ipcRenderer.invoke('create-directory', path);
+  },
   validatePath: (path: string) => ipcRenderer.invoke('validate-path', path),
-  getDirectoryContents: (path: string) => ipcRenderer.invoke('get-directory-contents', path),
-  createDirectory: (path: string) => ipcRenderer.invoke('create-directory', path),
-  deleteItem: (path: string) => ipcRenderer.invoke('delete-item', path),
-  renameItem: (oldPath: string, newPath: string) => ipcRenderer.invoke('rename-item', oldPath, newPath),
-  selectDirectory: () => ipcRenderer.invoke('select-directory'),
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   confirmDelete: (fileNames: string[]) => ipcRenderer.invoke('confirm-delete', fileNames),
 }); 

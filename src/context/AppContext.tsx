@@ -35,6 +35,9 @@ interface AppContextType {
   setApiKey: (key: string) => void;
   isSettingsOpen: boolean;
   setIsSettingsOpen: (isOpen: boolean) => void;
+  // Preview
+  previewFiles: FileItem[];
+  setPreviewFiles: (files: FileItem[]) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -53,6 +56,8 @@ export const AppProvider: React.FC<{
   const [rootDirectory, setRootDirectoryState] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // Preview state
+  const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
 
   // Load settings on mount
   useEffect(() => {
@@ -201,7 +206,10 @@ export const AppProvider: React.FC<{
     apiKey,
     setApiKey,
     isSettingsOpen,
-    setIsSettingsOpen
+    setIsSettingsOpen,
+    // Preview
+    previewFiles,
+    setPreviewFiles
   };
 
   return <AppContext.Provider value={value}>

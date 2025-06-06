@@ -12,6 +12,7 @@ interface FileItem {
   modified?: string;
 }
 export const QuickNavigateOverlay: React.FC = () => {
+  // All useContext hooks first
   const {
     isQuickNavigating,
     setIsQuickNavigating,
@@ -21,6 +22,8 @@ export const QuickNavigateOverlay: React.FC = () => {
     allFiles,
     initialCommandMode
   } = useAppContext();
+
+  // All useState hooks next
   const [inputValue, setInputValue] = useState('');
   const [filteredResults, setFilteredResults] = useState<FileItem[]>([]);
   const [isCommandMode, setIsCommandMode] = useState(false);
@@ -36,11 +39,16 @@ export const QuickNavigateOverlay: React.FC = () => {
       }[];
     };
   } | null>(null);
+
+  // All useRef hooks next
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // All useColorModeValue hooks next
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   const shadowColor = useColorModeValue('rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)');
   const commandBgColor = useColorModeValue('gray.50', 'gray.700');
+
   // Focus input when overlay opens and set initial mode
   useEffect(() => {
     if (isQuickNavigating && inputRef.current) {

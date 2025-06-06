@@ -4,18 +4,22 @@ import { getConfig } from './config';
 interface CommandResult {
   success: boolean;
   message: string;
+  files?: any[];
 }
 
 export async function handleCommand(command: string, args: string[]): Promise<CommandResult> {
+  console.log('Handling command:', command, 'with args:', args);
+  
   // Get command name and arguments
   const [cmd, ...cmdArgs] = command.split(' ');
+  console.log('Parsed command:', cmd, 'with args:', cmdArgs);
   
   // Handle transfer commands
-  if (cmd === 'transfer' || cmd === 'far' || cmd === 'depn' || cmd === 'disposal' || 
-      cmd === 'gstr' || cmd === 'gstt' || cmd === 'payer' || cmd === 'payet' || 
-      cmd === 'ap' || cmd === 'ar' || cmd === 'fees' || cmd === 'curr' || 
-      cmd === 'ent' || cmd === 'acct' || cmd === 'gstrec' || cmd === 'fa' || 
-      cmd === 'xc' || cmd === 'lc' || cmd === 'gl') {
+  if (cmd.toLowerCase() === 'transfer' || cmd.toLowerCase() === 'far' || cmd.toLowerCase() === 'depn' || cmd.toLowerCase() === 'disposal' || 
+      cmd.toLowerCase() === 'gstr' || cmd.toLowerCase() === 'gstt' || cmd.toLowerCase() === 'payer' || cmd.toLowerCase() === 'payet' || 
+      cmd.toLowerCase() === 'ap' || cmd.toLowerCase() === 'ar' || cmd.toLowerCase() === 'fees' || cmd.toLowerCase() === 'curr' || 
+      cmd.toLowerCase() === 'ent' || cmd.toLowerCase() === 'acct' || cmd.toLowerCase() === 'gstrec' || cmd.toLowerCase() === 'fa' || 
+      cmd.toLowerCase() === 'xc' || cmd.toLowerCase() === 'lc' || cmd.toLowerCase() === 'gl') {
     
     // Parse arguments
     const options: { numFiles?: number; newName?: string; command?: string } = {};
@@ -30,10 +34,14 @@ export async function handleCommand(command: string, args: string[]): Promise<Co
     }
     
     // Add command for template lookup
-    options.command = cmd;
+    options.command = cmd.toLowerCase();
+    
+    console.log('Transfer options:', options);
     
     // Execute transfer
-    return await transferFiles(options);
+    const result = await transferFiles(options);
+    console.log('Transfer result:', result);
+    return result;
   }
   
   // Handle other commands here...
