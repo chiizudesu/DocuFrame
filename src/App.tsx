@@ -1,8 +1,11 @@
 import React, { useEffect } from 'react';
-import { Box, useColorMode } from '@chakra-ui/react';
+import { Box, useColorMode, ChakraProvider } from '@chakra-ui/react';
 import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
+import { SettingsDialog } from './components/SettingsDialog';
+import { AppProvider } from './context/AppContext';
+
 // Separate component to use context
 const AppContent: React.FC = () => {
   const {
@@ -11,7 +14,9 @@ const AppContent: React.FC = () => {
   const {
     isQuickNavigating,
     setIsQuickNavigating,
-    setInitialCommandMode
+    setInitialCommandMode,
+    isSettingsOpen,
+    setIsSettingsOpen
   } = useAppContext();
   // Handle keyboard events for quick navigation
   useEffect(() => {
@@ -40,9 +45,11 @@ const AppContent: React.FC = () => {
   return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : 'gray.50'} color={colorMode === 'dark' ? 'white' : 'gray.800'} overflow="hidden" position="relative">
       <Layout />
       <QuickNavigateOverlay />
+      <SettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </Box>;
 };
-export function App() {
+
+export const App: React.FC = () => {
   const {
     colorMode,
     toggleColorMode
@@ -54,5 +61,11 @@ export function App() {
       toggleColorMode();
     }
   }, []);
-  return <AppContent />;
-}
+  return (
+    <ChakraProvider>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ChakraProvider>
+  );
+};

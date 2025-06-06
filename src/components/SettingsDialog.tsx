@@ -1,90 +1,145 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, ModalOverlay, ModalContent, ModalHeader, ModalFooter, ModalBody, ModalCloseButton, Button, FormControl, FormLabel, Input, InputGroup, InputRightElement, IconButton, VStack, Text, useColorModeValue, Divider } from '@chakra-ui/react';
-import { Eye, EyeOff, FolderOpen } from 'lucide-react';
+import {
+  Button,
+  FormControl,
+  FormLabel,
+  Input,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
+  useToast,
+  InputGroup,
+  InputRightElement,
+  Flex,
+} from '@chakra-ui/react';
+import { FolderOpen } from 'lucide-react';
+import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
-export const SettingsDialog: React.FC = () => {
-  const {
-    isSettingsOpen,
-    setIsSettingsOpen,
-    rootDirectory,
-    setRootDirectory,
-    apiKey,
-    setApiKey,
-    addLog
-  } = useAppContext();
-  // Local state for form values
-  const [localRootDir, setLocalRootDir] = useState(rootDirectory);
-  const [localApiKey, setLocalApiKey] = useState(apiKey);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  // Reset form when dialog opens
+
+interface SettingsDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
+  const [rootPath, setRootPath] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const toast = useToast();
+  const { setRootDirectory, setCurrentDirectory } = useAppContext();
+
   useEffect(() => {
-    if (isSettingsOpen) {
-      setLocalRootDir(rootDirectory);
-      setLocalApiKey(apiKey);
-      setShowApiKey(false);
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsService.getSettings();
+        setRootPath(settings.rootPath);
+        setApiKey(settings.apiKey || '');
+      } catch (error) {
+        console.error('Error loading settings:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to load settings',
+          status: 'error',
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    };
+
+    if (isOpen) {
+      loadSettings();
     }
-  }, [isSettingsOpen, rootDirectory, apiKey]);
-  const handleSave = () => {
-    setRootDirectory(localRootDir);
-    setApiKey(localApiKey);
-    addLog('Settings saved');
-    setIsSettingsOpen(false);
+  }, [isOpen, toast]);
+
+  const handleSave = async () => {
+    try {
+      await settingsService.setSettings({
+        rootPath,
+        apiKey: apiKey || undefined,
+      });
+      setRootDirectory(rootPath);
+      setCurrentDirectory(rootPath);
+      toast({
+        title: 'Success',
+        description: 'Settings saved successfully',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      onClose();
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
   };
-  const handleBrowse = () => {
-    // In a real app, this would open a directory picker
-    // For now, we'll just simulate it
-    addLog('Directory browser would open here');
-    // Simulate selecting a directory
-    setLocalRootDir('C:\\Users\\Username\\Documents');
+
+  const handleBrowseFolder = async () => {
+    try {
+      const result = await window.electron.selectDirectory();
+      if (result) {
+        setRootPath(result);
+      }
+    } catch (error) {
+      console.error('Error selecting directory:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select directory',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
   };
-  const toggleShowApiKey = () => setShowApiKey(!showApiKey);
-  return <Modal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} isCentered>
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>Settings</ModalHeader>
         <ModalCloseButton />
         <ModalBody>
-          <VStack spacing={4} align="stretch">
-            <Text fontSize="sm" fontWeight="medium">
-              Configure application settings
-            </Text>
-            <Divider />
-            <FormControl>
-              <FormLabel fontSize="sm">Root Directory</FormLabel>
-              <InputGroup>
-                <Input placeholder="Enter directory path" value={localRootDir} onChange={e => setLocalRootDir(e.target.value)} />
-                <InputRightElement>
-                  <IconButton aria-label="Browse folders" icon={<FolderOpen size={16} />} size="sm" variant="ghost" onClick={handleBrowse} />
-                </InputRightElement>
-              </InputGroup>
-              <Text fontSize="xs" color="gray.500" mt={1}>
-                Path to the root folder for file operations
-              </Text>
-            </FormControl>
-            <FormControl>
-              <FormLabel fontSize="sm">OpenAI API Key</FormLabel>
-              <InputGroup>
-                <Input placeholder="Enter your API key" type={showApiKey ? 'text' : 'password'} value={localApiKey} onChange={e => setLocalApiKey(e.target.value)} />
-                <InputRightElement>
-                  <IconButton aria-label={showApiKey ? 'Hide API key' : 'Show API key'} icon={showApiKey ? <EyeOff size={16} /> : <Eye size={16} />} size="sm" variant="ghost" onClick={toggleShowApiKey} />
-                </InputRightElement>
-              </InputGroup>
-              <Text fontSize="xs" color="gray.500" mt={1}>
-                Required for AI-powered features
-              </Text>
-            </FormControl>
-          </VStack>
+          <FormControl mb={4}>
+            <FormLabel>Root Path</FormLabel>
+            <InputGroup>
+              <Input
+                value={rootPath}
+                onChange={(e) => setRootPath(e.target.value)}
+                placeholder="Enter root path"
+              />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" size="sm" onClick={handleBrowseFolder}>
+                  <FolderOpen size={16} />
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
+          <FormControl>
+            <FormLabel>API Key</FormLabel>
+            <Input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              type="password"
+            />
+          </FormControl>
         </ModalBody>
         <ModalFooter>
-          <Button variant="ghost" mr={3} onClick={() => setIsSettingsOpen(false)}>
-            Cancel
-          </Button>
-          <Button colorScheme="blue" onClick={handleSave}>
+          <Button colorScheme="blue" mr={3} onClick={handleSave}>
             Save
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
           </Button>
         </ModalFooter>
       </ModalContent>
-    </Modal>;
+    </Modal>
+  );
 };

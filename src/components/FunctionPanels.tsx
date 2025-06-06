@@ -8,8 +8,11 @@ export const FunctionPanels: React.FC = () => {
   const {
     addLog
   } = useAppContext();
-  const bgColor = useColorModeValue('white', 'gray.900');
-  const buttonHoverBg = useColorModeValue('gray.100', 'gray.700');
+  const bgColor = useColorModeValue('#eef1f8', 'gray.900');
+  const headerBgColor = useColorModeValue('#4F46E5', 'gray.900');
+  const headerTextColor = useColorModeValue('white', 'white');
+  const buttonHoverBg = useColorModeValue('#e8ecf5', 'gray.700');
+  const borderColor = useColorModeValue('#4F46E5', 'gray.700');
   const handleAction = (action: string) => {
     addLog(`Executing action: ${action}`);
   };
@@ -38,17 +41,20 @@ export const FunctionPanels: React.FC = () => {
       </Button>
     </Tooltip>;
   return <Flex direction="column">
-      <Tabs variant="line" colorScheme="blue" size="sm">
-        <Flex align="center" justify="space-between" px={2} bg={bgColor} borderBottom="2px" borderColor={useColorModeValue('gray.200', 'gray.700')}>
+      <Tabs variant="line" colorScheme="indigo" size="sm">
+        <Flex align="center" justify="space-between" px={2} bg={headerBgColor} borderBottom="2px" borderColor={borderColor} boxShadow="0 1px 3px rgba(0,0,0,0.1)">
           <TabList borderBottom="none">
-            <Tab py={1} px={3} fontSize="sm">
+            <Tab py={1} px={3} fontSize="sm" color={headerTextColor} _selected={{
+            color: 'white',
+            borderColor: 'white'
+          }}>
               Functions
             </Tab>
           </TabList>
           <ThemeToggle />
         </Flex>
         <TabPanels>
-          <TabPanel p={2}>
+          <TabPanel p={2} bg={bgColor}>
             <Flex gap={6}>
               <Box>
                 <Flex gap={1}>
@@ -64,14 +70,14 @@ export const FunctionPanels: React.FC = () => {
                   File Management
                 </Text>
               </Box>
-              <Divider orientation="vertical" h="70px" borderColor={useColorModeValue('gray.200', 'gray.600')} />
+              <Divider orientation="vertical" h="70px" borderColor={useColorModeValue('gray.300', 'gray.600')} />
               <Box>
                 <Flex gap={1}>
                   <FunctionButton icon={FileSymlink} label="Batch Rename" action="batch_rename" description="Rename multiple files using patterns" color="yellow.400" />
                   <FunctionButton icon={FileText} label="Asset Notes" action="asset_notes" description="Generate asset notes from templates" color="pink.400" />
                   <FunctionButton icon={AlertCircle} label="GST Validation" action="gst_validation" description="Validate GST numbers in documents" color="red.400" />
                 </Flex>
-                <Text fontSize="xs" color="gray.400" mt={1} textAlign="center">
+                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center">
                   Utilities
                 </Text>
               </Box>

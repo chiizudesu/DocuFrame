@@ -23,8 +23,8 @@ export const ThemeToggle: React.FC = () => {
     addLog('Opening settings panel');
   };
   return <Flex gap={1}>
-      <IconButton icon={colorMode === 'light' ? <Moon size={16} /> : <Sun size={16} />} aria-label="Toggle theme" variant="ghost" size="sm" onClick={handleToggle} color={colorMode === 'light' ? 'gray.600' : 'gray.400'} />
-      <IconButton icon={<Settings size={16} />} aria-label="Settings" variant="ghost" size="sm" onClick={handleSettings} color={colorMode === 'light' ? 'gray.600' : 'gray.400'} />
+      <IconButton icon={colorMode === 'light' ? <Moon size={16} /> : <Sun size={16} />} aria-label="Toggle theme" variant="ghost" size="sm" onClick={handleToggle} color="white" />
+      <IconButton icon={<Settings size={16} />} aria-label="Settings" variant="ghost" size="sm" onClick={handleSettings} color="white" />
       <SettingsDialog />
     </Flex>;
 };

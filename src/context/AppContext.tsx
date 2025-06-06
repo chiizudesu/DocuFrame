@@ -1,4 +1,6 @@
-import React, { useEffect, useState, createContext, useContext } from 'react';
+import React, { useEffect, useState, createContext, useContext, useCallback, ReactNode } from 'react';
+import { settingsService } from '../services/settings';
+
 interface FileItem {
   name: string;
   type: 'folder' | 'pdf' | 'image' | 'document';
@@ -6,11 +8,18 @@ interface FileItem {
   size?: string;
   modified?: string;
 }
+
+interface LogEntry {
+  message: string;
+  timestamp: string;
+  type: 'error' | 'response' | 'command' | 'info';
+}
+
 interface AppContextType {
   currentDirectory: string;
   setCurrentDirectory: (path: string) => void;
   outputLogs: LogEntry[];
-  addLog: (message: string, type?: string) => void;
+  addLog: (message: string, type?: LogEntry['type']) => void;
   clearLogs: () => void;
   commandHistory: string[];
   addCommand: (command: string) => void;
@@ -27,50 +36,62 @@ interface AppContextType {
   isSettingsOpen: boolean;
   setIsSettingsOpen: (isOpen: boolean) => void;
 }
-interface LogEntry {
-  timestamp: string;
-  message: string;
-  type: string;
-}
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
 export const AppProvider: React.FC<{
   children: ReactNode;
 }> = ({
   children
 }) => {
-  const [currentDirectory, setCurrentDirectory] = useState<string>('/Clients');
-  const [outputLogs, setOutputLogs] = useState<LogEntry[]>([{
-    timestamp: getCurrentTime(),
-    message: 'Application started',
-    type: 'info'
-  }, {
-    timestamp: getCurrentTime(),
-    message: 'Ready for commands',
-    type: 'info'
-  }]);
+  const [currentDirectory, setCurrentDirectory] = useState<string>('');
+  const [outputLogs, setOutputLogs] = useState<LogEntry[]>([]);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [isQuickNavigating, setIsQuickNavigating] = useState(false);
   const [initialCommandMode, setInitialCommandMode] = useState(false);
   // Settings state
   const [rootDirectory, setRootDirectoryState] = useState<string>('');
-  const [apiKey, setApiKeyState] = useState<string>('');
+  const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  // Load settings from localStorage on initial render
+
+  // Load settings on mount
   useEffect(() => {
-    const savedRootDir = localStorage.getItem('rootDirectory') || '';
-    const savedApiKey = localStorage.getItem('apiKey') || '';
-    setRootDirectoryState(savedRootDir);
-    setApiKeyState(savedApiKey);
+    const loadSettings = async () => {
+      try {
+        const settings = await settingsService.getSettings();
+        if (settings.apiKey) {
+          setApiKey(settings.apiKey);
+        }
+        if (settings.rootPath) {
+          setRootDirectoryState(settings.rootPath);
+          setCurrentDirectory(settings.rootPath);
+        }
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    };
+    loadSettings();
   }, []);
+
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
     setRootDirectoryState(path);
-    localStorage.setItem('rootDirectory', path);
+    setCurrentDirectory(path);
   };
-  const setApiKey = (key: string) => {
-    setApiKeyState(key);
-    localStorage.setItem('apiKey', key);
+
+  const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
+    const timestamp = new Date().toLocaleTimeString();
+    setOutputLogs(prev => [...prev, { message, timestamp, type }]);
+  }, []);
+
+  const clearLogs = useCallback(() => {
+    setOutputLogs([]);
+  }, []);
+
+  const addCommand = (command: string) => {
+    setCommandHistory(prev => [...prev, command]);
   };
+
   // Mock files for quick navigation
   const [allFiles, setAllFiles] = useState<FileItem[]>([{
     name: 'Documents',
@@ -160,27 +181,8 @@ export const AppProvider: React.FC<{
     path: '/Clients/XYZ Ltd/statement.pdf',
     size: '1.8 MB'
   }]);
-  function getCurrentTime(): string {
-    return new Date().toLocaleTimeString();
-  }
-  const addLog = (message: string, type: string = 'info') => {
-    setOutputLogs(prev => [...prev, {
-      timestamp: getCurrentTime(),
-      message,
-      type
-    }]);
-  };
-  const clearLogs = () => {
-    setOutputLogs([{
-      timestamp: getCurrentTime(),
-      message: 'Logs cleared',
-      type: 'info'
-    }]);
-  };
-  const addCommand = (command: string) => {
-    setCommandHistory(prev => [...prev, command]);
-  };
-  return <AppContext.Provider value={{
+
+  const value = {
     currentDirectory,
     setCurrentDirectory,
     outputLogs,
@@ -200,10 +202,13 @@ export const AppProvider: React.FC<{
     setApiKey,
     isSettingsOpen,
     setIsSettingsOpen
-  }}>
-      {children}
-    </AppContext.Provider>;
+  };
+
+  return <AppContext.Provider value={value}>
+    {children}
+  </AppContext.Provider>;
 };
+
 export const useAppContext = (): AppContextType => {
   const context = useContext(AppContext);
   if (context === undefined) {

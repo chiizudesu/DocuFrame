@@ -1,141 +1,392 @@
-import React, { useState } from 'react';
-import { Box, Text, Icon, Flex, useColorModeValue } from '@chakra-ui/react';
-import { FolderOpen, File, ChevronRight, ChevronDown } from 'lucide-react';
+// 1. Main Process (main.js or main.ts) - Add IPC handlers
+import { ipcMain } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+
+// IPC handler to read directory contents
+ipcMain.handle('read-directory', async (event, dirPath: string) => {
+  try {
+    const items = fs.readdirSync(dirPath, { withFileTypes: true });
+    
+    const folderItems = items.map(item => {
+      const fullPath = path.join(dirPath, item.name);
+      let stats;
+      
+      try {
+        stats = fs.statSync(fullPath);
+      } catch (error) {
+        // Handle permission errors or other issues
+        return null;
+      }
+      
+      return {
+        id: fullPath, // Use full path as unique ID
+        name: item.name,
+        type: item.isDirectory() ? 'folder' : 'file',
+        path: fullPath,
+        size: stats?.size || 0,
+        modified: stats?.mtime || new Date(),
+        isHidden: item.name.startsWith('.'), // Unix/Linux hidden files
+        extension: item.isFile() ? path.extname(item.name) : null
+      };
+    }).filter(item => item !== null);
+    
+    // Sort: folders first, then files, both alphabetically
+    folderItems.sort((a, b) => {
+      if (a.type !== b.type) {
+        return a.type === 'folder' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name, undefined, { numeric: true });
+    });
+    
+    return folderItems;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to read directory: ${errorMessage}`);
+  }
+});
+
+// IPC handler to check if path exists and is accessible
+ipcMain.handle('check-path', async (event, dirPath: string) => {
+  try {
+    const stats = fs.statSync(dirPath);
+    return {
+      exists: true,
+      isDirectory: stats.isDirectory(),
+      isFile: stats.isFile(),
+      readable: true
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      exists: false,
+      isDirectory: false,
+      isFile: false,
+      readable: false,
+      error: errorMessage
+    };
+  }
+});
+
+// Get user's home directory
+ipcMain.handle('get-home-directory', async () => {
+  return require('os').homedir();
+});
+
+// Get system root directories (drives on Windows)
+ipcMain.handle('get-root-directories', async () => {
+  const os = require('os');
+  const platform = os.platform();
+  
+  if (platform === 'win32') {
+    // Windows: Get all drives
+    const drives = [];
+    for (let i = 65; i <= 90; i++) { // A-Z
+      const drive = String.fromCharCode(i) + ':\\';
+      try {
+        fs.accessSync(drive);
+        drives.push({
+          id: drive,
+          name: `${String.fromCharCode(i)}: Drive`,
+          type: 'folder',
+          path: drive
+        });
+      } catch (error) {
+        // Drive doesn't exist or isn't accessible
+      }
+    }
+    return drives;
+  } else {
+    // Unix/Linux/Mac: Start from root
+    return [{
+      id: '/',
+      name: 'Root',
+      type: 'folder',
+      path: '/'
+    }];
+  }
+});
+
+// 2. Renderer Process (Your React Component) - Updated FolderNavigation
+import React, { useState, useEffect } from 'react';
+import { Box, Text, Icon, Flex, useColorModeValue, Spinner, Alert, AlertIcon } from '@chakra-ui/react';
+import { FolderOpen, File, ChevronRight, ChevronDown, Home, HardDrive } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-interface FolderItem {
+
+interface FileItem {
   id: string;
   name: string;
   type: 'folder' | 'file';
-  children?: FolderItem[];
-  isOpen?: boolean;
+  path: string;
+  size?: number;
+  modified?: Date;
+  isHidden?: boolean;
+  extension?: string | null;
 }
+
 export const FolderNavigation: React.FC = () => {
-  const {
-    setCurrentDirectory,
-    addLog
-  } = useAppContext();
+  const { setCurrentDirectory, addLog } = useAppContext();
   const borderColor = useColorModeValue('gray.600', 'gray.700');
-  // Mock folder structure
-  const [folders, setFolders] = useState<FolderItem[]>([{
-    id: '1',
-    name: 'Clients',
-    type: 'folder',
-    isOpen: true,
-    children: [{
-      id: '2',
-      name: 'ABC Corp',
-      type: 'folder',
-      children: [{
-        id: '3',
-        name: 'Financial Reports',
-        type: 'folder',
-        children: []
-      }, {
-        id: '4',
-        name: 'Tax Documents',
-        type: 'folder',
-        children: []
-      }, {
-        id: '5',
-        name: 'invoice.pdf',
-        type: 'file'
-      }]
-    }, {
-      id: '6',
-      name: 'XYZ Ltd',
-      type: 'folder',
-      children: [{
-        id: '7',
-        name: 'Contracts',
-        type: 'folder',
-        children: []
-      }, {
-        id: '8',
-        name: 'statement.pdf',
-        type: 'file'
-      }]
-    }, {
-      id: '9',
-      name: 'Smith & Co',
-      type: 'folder',
-      children: []
-    }]
-  }, {
-    id: '10',
-    name: 'Templates',
-    type: 'folder',
-    children: [{
-      id: '11',
-      name: 'Invoice Templates',
-      type: 'folder',
-      children: []
-    }, {
-      id: '12',
-      name: 'Report Templates',
-      type: 'folder',
-      children: []
-    }]
-  }, {
-    id: '13',
-    name: 'Scripts',
-    type: 'folder',
-    children: [{
-      id: '14',
-      name: 'pdf_merge.js',
-      type: 'file'
-    }, {
-      id: '15',
-      name: 'gst_rename.js',
-      type: 'file'
-    }]
-  }]);
-  const toggleFolder = (id: string) => {
-    const updateFolders = (items: FolderItem[]): FolderItem[] => {
-      return items.map(item => {
-        if (item.id === id) {
-          return {
-            ...item,
-            isOpen: !item.isOpen
-          };
-        }
-        if (item.children) {
-          return {
-            ...item,
-            children: updateFolders(item.children)
-          };
-        }
-        return item;
-      });
+  
+  const [currentPath, setCurrentPath] = useState<string>('');
+  const [items, setItems] = useState<FileItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState<boolean>(false);
+
+  // Initialize with home directory
+  useEffect(() => {
+    const initializeHome = async () => {
+      try {
+        const homeDir = await window.electronAPI.getHomeDirectory();
+        await loadDirectory(homeDir);
+      } catch (error) {
+        console.error('Failed to load home directory:', error);
+        // Fallback to root directories
+        await loadRootDirectories();
+      }
     };
-    setFolders(updateFolders(folders));
-  };
-  const handleFolderClick = (item: FolderItem, path: string) => {
-    if (item.type === 'folder') {
-      toggleFolder(item.id);
-      setCurrentDirectory(path);
-      addLog(`Changed directory to: ${path}`);
-    } else {
-      addLog(`Selected file: ${path}`);
+    
+    initializeHome();
+  }, []);
+
+  const loadRootDirectories = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const roots = await window.electronAPI.getRootDirectories();
+      setItems(roots);
+      setCurrentPath('');
+      setCurrentDirectory('Computer');
+      addLog('Showing root directories');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(`Failed to load root directories: ${errorMessage}`);
+      addLog(`Error: ${errorMessage}`);
+    } finally {
+      setLoading(false);
     }
   };
-  const renderTreeItem = (item: FolderItem, path: string, level: number = 0) => {
-    const fullPath = `${path}/${item.name}`;
-    return <Box key={item.id} ml={level * 4}>
-        <Flex align="center" py={1} px={2} cursor="pointer" _hover={{
-        bg: useColorModeValue('gray.100', 'gray.700')
-      }} borderRadius="md" onClick={() => handleFolderClick(item, fullPath)}>
-          {item.type === 'folder' && <Icon as={item.isOpen ? ChevronDown : ChevronRight} boxSize={4} mr={1} color={useColorModeValue('gray.500', 'gray.400')} />}
-          <Icon as={item.type === 'folder' ? FolderOpen : File} color={item.type === 'folder' ? 'blue.500' : useColorModeValue('gray.600', 'gray.400')} boxSize={4} mr={2} />
-          <Text fontSize="sm" flex="1" noOfLines={1} color={useColorModeValue('gray.800', 'white')}>
+
+  const loadDirectory = async (dirPath: string) => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Check if path is accessible
+      const pathInfo = await window.electronAPI.checkPath(dirPath);
+      if (!pathInfo.exists || !pathInfo.isDirectory) {
+        throw new Error(`Path is not a valid directory: ${dirPath}`);
+      }
+
+      const directoryItems = await window.electronAPI.readDirectory(dirPath);
+      
+      // Filter hidden files if needed
+      const filteredItems = showHidden 
+        ? directoryItems 
+        : directoryItems.filter(item => !item.isHidden);
+      
+      setItems(filteredItems);
+      setCurrentPath(dirPath);
+      setCurrentDirectory(dirPath);
+      addLog(`Loaded directory: ${dirPath} (${filteredItems.length} items)`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(`Failed to load directory: ${errorMessage}`);
+      addLog(`Error loading ${dirPath}: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleItemClick = async (item: FileItem) => {
+    if (item.type === 'folder') {
+      await loadDirectory(item.path);
+    } else {
+      addLog(`Selected file: ${item.path}`);
+      // You can add file opening logic here
+      // await window.electronAPI.openFile(item.path);
+    }
+  };
+
+  const goToParentDirectory = async () => {
+    if (!currentPath) {
+      return;
+    }
+    
+    const parentPath = require('path').dirname(currentPath);
+    if (parentPath === currentPath) {
+      // We're at root, show root directories
+      await loadRootDirectories();
+    } else {
+      await loadDirectory(parentPath);
+    }
+  };
+
+  const goHome = async () => {
+    try {
+      const homeDir = await window.electronAPI.getHomeDirectory();
+      await loadDirectory(homeDir);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setError(`Failed to go home: ${errorMessage}`);
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getFileIcon = (item: FileItem) => {
+    if (item.type === 'folder') {
+      return FolderOpen;
+    }
+    
+    // You can add more specific file type icons based on extension
+    return File;
+  };
+
+  const renderItem = (item: FileItem) => {
+    const IconComponent = getFileIcon(item);
+    
+    return (
+      <Flex
+        key={item.id}
+        align="center"
+        py={2}
+        px={3}
+        cursor="pointer"
+        _hover={{
+          bg: useColorModeValue('gray.100', 'gray.700')
+        }}
+        borderRadius="md"
+        onClick={() => handleItemClick(item)}
+      >
+        <Icon
+          as={IconComponent}
+          color={item.type === 'folder' ? 'blue.500' : useColorModeValue('gray.600', 'gray.400')}
+          boxSize={4}
+          mr={3}
+        />
+        <Box flex="1" minW="0">
+          <Text
+            fontSize="sm"
+            noOfLines={1}
+            color={useColorModeValue('gray.800', 'white')}
+          >
             {item.name}
           </Text>
-        </Flex>
-        {item.type === 'folder' && item.isOpen && item.children && <Box>
-            {item.children.map(child => renderTreeItem(child, fullPath, level + 1))}
-          </Box>}
-      </Box>;
+          {item.type === 'file' && item.size !== undefined && (
+            <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')}>
+              {formatFileSize(item.size)}
+            </Text>
+          )}
+        </Box>
+      </Flex>
+    );
   };
-  return <Box p={3} overflowY="auto" h="100%">
-      {folders.map(item => renderTreeItem(item, ''))}
-    </Box>;
+
+  return (
+    <Box h="100%" display="flex" flexDirection="column">
+      {/* Navigation Bar */}
+      <Flex
+        p={2}
+        borderBottom="1px solid"
+        borderColor={borderColor}
+        align="center"
+        gap={2}
+      >
+        <Icon
+          as={Home}
+          boxSize={4}
+          cursor="pointer"
+          onClick={goHome}
+          color="blue.500"
+          _hover={{ color: 'blue.600' }}
+        />
+        <Icon
+          as={HardDrive}
+          boxSize={4}
+          cursor="pointer"
+          onClick={loadRootDirectories}
+          color="blue.500"
+          _hover={{ color: 'blue.600' }}
+        />
+        {currentPath && (
+          <Text
+            fontSize="xs"
+            cursor="pointer"
+            onClick={goToParentDirectory}
+            color="blue.500"
+            _hover={{ textDecoration: 'underline' }}
+          >
+            ← Parent
+          </Text>
+        )}
+        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} flex="1" noOfLines={1}>
+          {currentPath || 'Computer'}
+        </Text>
+      </Flex>
+
+      {/* Content Area */}
+      <Box flex="1" overflowY="auto" p={2}>
+        {loading && (
+          <Flex justify="center" align="center" h="100px">
+            <Spinner size="md" />
+          </Flex>
+        )}
+        
+        {error && (
+          <Alert status="error" mb={3}>
+            <AlertIcon />
+            {error}
+          </Alert>
+        )}
+        
+        {!loading && !error && items.length === 0 && (
+          <Text color={useColorModeValue('gray.500', 'gray.400')} textAlign="center" mt={8}>
+            This folder is empty
+          </Text>
+        )}
+        
+        {!loading && items.map(renderItem)}
+      </Box>
+    </Box>
+  );
 };
+
+// 3. Preload Script (preload.js) - Expose APIs to renderer
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),
+  checkPath: (dirPath: string) => ipcRenderer.invoke('check-path', dirPath),
+  getHomeDirectory: () => ipcRenderer.invoke('get-home-directory'),
+  getRootDirectories: () => ipcRenderer.invoke('get-root-directories'),
+  // Add more file operations as needed
+  // openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
+});
+
+// 4. TypeScript declarations (if using TypeScript)
+// Create a file: src/types/electron.d.ts
+declare global {
+  interface Window {
+    electronAPI: {
+      readDirectory: (dirPath: string) => Promise<FileItem[]>;
+      checkPath: (dirPath: string) => Promise<{
+        exists: boolean;
+        isDirectory: boolean;
+        isFile: boolean;
+        readable: boolean;
+        error?: string;
+      }>;
+      getHomeDirectory: () => Promise<string>;
+      getRootDirectories: () => Promise<FileItem[]>;
+    };
+  }
+}

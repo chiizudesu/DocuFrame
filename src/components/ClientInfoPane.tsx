@@ -7,9 +7,11 @@ export const ClientInfoPane: React.FC = () => {
     currentDirectory,
     addLog
   } = useAppContext();
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const bgColor = useColorModeValue('#f8f9fc', 'gray.800');
+  const borderColor = useColorModeValue('#e2e8f0', 'gray.700');
+  const accentColor = useColorModeValue('#4F46E5', 'blue.400');
   const labelColor = useColorModeValue('gray.600', 'gray.400');
+  const panelBgColor = useColorModeValue('#f2f5fa', 'gray.750');
   // Extract client name from path if available
   const pathSegments = currentDirectory.split('/').filter(segment => segment);
   const clientName = pathSegments.length > 0 ? pathSegments[0] : 'No Client Selected';
@@ -22,18 +24,22 @@ export const ClientInfoPane: React.FC = () => {
   const handleExternalLink = (destination: string) => {
     addLog(`Opening external link: ${destination}`);
   };
-  return <Box p={3} h="100%" overflowY="auto">
+  return <Box p={3} h="100%" overflowY="auto" bg={bgColor}>
       <Flex gap={2} mb={4}>
-        <Button leftIcon={<ExternalLink size={14} />} variant="outline" size="sm" flex="1" onClick={() => handleExternalLink('Xero')} borderColor="blue.400">
+        <Button leftIcon={<ExternalLink size={14} />} variant="outline" size="sm" flex="1" onClick={() => handleExternalLink('Xero')} borderColor={accentColor} color={accentColor} _hover={{
+        bg: useColorModeValue('#f0f2f8', 'gray.700')
+      }}>
           Xero
         </Button>
-        <Button leftIcon={<ExternalLink size={14} />} variant="outline" size="sm" flex="1" onClick={() => handleExternalLink('XPM Job Page')} borderColor="green.400">
+        <Button leftIcon={<ExternalLink size={14} />} variant="outline" size="sm" flex="1" onClick={() => handleExternalLink('XPM Job Page')} borderColor="green.500" color="green.600" _hover={{
+        bg: useColorModeValue('#f0f9f0', 'gray.700')
+      }}>
           XPM
         </Button>
       </Flex>
-      <Divider mb={4} />
-      <Box p={3} borderRadius="md" border="1px solid" borderColor={borderColor} mb={4}>
-        <Heading as="h3" size="sm" mb={3}>
+      <Divider mb={4} borderColor={useColorModeValue('gray.300', 'gray.700')} />
+      <Box p={3} borderRadius="md" border="1px solid" borderColor={borderColor} mb={4} bg={panelBgColor} boxShadow="0 1px 3px rgba(0,0,0,0.05)">
+        <Heading as="h3" size="sm" mb={3} color={accentColor}>
           Client Information
         </Heading>
         <VStack align="stretch" spacing={3}>
@@ -41,7 +47,7 @@ export const ClientInfoPane: React.FC = () => {
             <Text fontSize="xs" fontWeight="medium" color={labelColor}>
               CLIENT NAME
             </Text>
-            <Text fontSize="sm" fontWeight="medium">
+            <Text fontSize="sm" fontWeight="medium" color={useColorModeValue('gray.700', 'white')}>
               {clientData.name}
             </Text>
           </Box>
@@ -49,19 +55,23 @@ export const ClientInfoPane: React.FC = () => {
             <Text fontSize="xs" fontWeight="medium" color={labelColor}>
               COMPANY NUMBER
             </Text>
-            <Text fontSize="sm">{clientData.companyNumber}</Text>
+            <Text fontSize="sm" color={useColorModeValue('gray.700', 'white')}>
+              {clientData.companyNumber}
+            </Text>
           </Box>
           <Box>
             <Text fontSize="xs" fontWeight="medium" color={labelColor}>
               IRD NUMBER
             </Text>
-            <Text fontSize="sm">{clientData.irdNumber}</Text>
+            <Text fontSize="sm" color={useColorModeValue('gray.700', 'white')}>
+              {clientData.irdNumber}
+            </Text>
           </Box>
         </VStack>
       </Box>
-      <Divider mb={4} />
-      <Box p={3} borderRadius="md" border="1px solid" borderColor={borderColor}>
-        <Text fontSize="xs" fontWeight="medium" mb={2}>
+      <Divider mb={4} borderColor={useColorModeValue('gray.300', 'gray.700')} />
+      <Box p={3} borderRadius="md" border="1px solid" borderColor={borderColor} bg={panelBgColor} boxShadow="0 1px 3px rgba(0,0,0,0.05)">
+        <Text fontSize="xs" fontWeight="medium" mb={2} color={accentColor}>
           Recent Activity
         </Text>
         <VStack align="stretch" spacing={2} pl={1}>

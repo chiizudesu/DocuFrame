@@ -1,362 +1,630 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { Grid, Box, Text, Icon, Flex, Table, Thead, Tbody, Tr, Th, Td, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Portal, IconButton } from '@chakra-ui/react';
-import { File, FileText, FolderOpen, Image as ImageIcon, Trash2, Edit2, ExternalLink, MoreHorizontal, Copy, Scissors, FileSymlink, Download, ChevronUp, ChevronDown } from 'lucide-react';
-import { useColorModeValue } from '@chakra-ui/react';
-import { useAppContext } from '../context/AppContext';
-interface FileItem {
-  name: string;
-  type: 'folder' | 'pdf' | 'image' | 'document';
-  size?: string;
-  modified?: string;
-}
+import React, { useEffect, useState, useRef } from 'react'
+import {
+  Grid,
+  Box,
+  Text,
+  Icon,
+  Flex,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  MenuDivider,
+  Portal,
+  IconButton,
+  useColorModeValue,
+  Input,
+} from '@chakra-ui/react'
+import {
+  File,
+  FileText,
+  FolderOpen,
+  Image as ImageIcon,
+  Trash2,
+  Edit2,
+  ExternalLink,
+  MoreHorizontal,
+  Copy,
+  Scissors,
+  FileSymlink,
+  Download,
+  ChevronUp,
+  ChevronDown,
+} from 'lucide-react'
+import { useAppContext } from '../context/AppContext'
+import { settingsService } from '../services/settings'
+import type { FileItem } from '../types'
+
 interface ContextMenuPosition {
-  x: number;
-  y: number;
+  x: number
+  y: number
 }
+
 // Sort types for list view
-type SortColumn = 'name' | 'size' | 'modified';
-type SortDirection = 'asc' | 'desc';
-const mockFiles: FileItem[] = [{
-  name: 'Documents',
-  type: 'folder',
-  modified: '2024-01-15 14:30'
-}, {
-  name: 'Images',
-  type: 'folder',
-  modified: '2024-01-14 09:15'
-}, {
-  name: 'report.pdf',
-  type: 'pdf',
-  size: '2.4 MB',
-  modified: '2024-01-13 16:45'
-}, {
-  name: 'screenshot.png',
-  type: 'image',
-  size: '856 KB',
-  modified: '2024-01-13 11:20'
-}, {
-  name: 'notes.docx',
-  type: 'document',
-  size: '45 KB',
-  modified: '2024-01-12 13:10'
-}];
-const getFileIcon = (type: string) => {
-  switch (type) {
-    case 'folder':
-      return FolderOpen;
+type SortColumn = 'name' | 'size' | 'modified'
+type SortDirection = 'asc' | 'desc'
+
+const getFileIcon = (type: string, extension?: string) => {
+  if (type === 'directory') return FolderOpen
+  
+  switch (extension?.toLowerCase()) {
     case 'pdf':
-      return FileText;
-    case 'image':
-      return ImageIcon;
+      return FileText
+    case 'doc':
+    case 'docx':
+      return FileText
+    case 'xls':
+    case 'xlsx':
+    case 'csv':
+      return FileText
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'bmp':
+    case 'svg':
+      return ImageIcon
+    case 'zip':
+    case 'rar':
+    case '7z':
+    case 'tar':
+    case 'gz':
+      return FileText
+    case 'txt':
+    case 'md':
+    case 'json':
+    case 'xml':
+    case 'html':
+    case 'css':
+    case 'js':
+    case 'ts':
+      return FileText
     default:
-      return File;
+      return File
   }
-};
-const getIconColor = (type: string) => {
-  switch (type) {
-    case 'folder':
-      return 'blue.400';
+}
+
+const getIconColor = (type: string, extension?: string) => {
+  if (type === 'directory') return 'blue.400'
+  
+  switch (extension?.toLowerCase()) {
     case 'pdf':
-      return 'red.400';
-    case 'image':
-      return 'green.400';
+      return 'red.400'
+    case 'doc':
+    case 'docx':
+      return 'blue.400'
+    case 'xls':
+    case 'xlsx':
+    case 'csv':
+      return 'green.400'
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'gif':
+    case 'bmp':
+    case 'svg':
+      return 'purple.400'
+    case 'zip':
+    case 'rar':
+    case '7z':
+    case 'tar':
+    case 'gz':
+      return 'orange.400'
+    case 'txt':
+    case 'md':
+    case 'json':
+    case 'xml':
+    case 'html':
+    case 'css':
+    case 'js':
+    case 'ts':
+      return 'yellow.400'
     default:
-      return 'gray.400';
+      return 'gray.400'
   }
-};
+}
+
 export const FileGrid: React.FC = () => {
-  const {
-    addLog,
-    currentDirectory,
-    setCurrentDirectory
-  } = useAppContext();
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>(localStorage.getItem('fileViewMode') as 'grid' | 'list' || 'grid');
+  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory } = useAppContext()
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(
+    (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
+  )
+  const [folderItems, setFolderItems] = useState<FileItem[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Add missing color definitions
+  const itemBgHover = useColorModeValue('#e8ecf5', 'gray.700')
+  const fileTextColor = useColorModeValue('gray.700', 'white')
+  const fileSubTextColor = useColorModeValue('gray.600', 'gray.400')
+  const tableBgColor = useColorModeValue('#f2f5fa', 'transparent')
+  const tableHeadBgColor = useColorModeValue('#e8ecf5', 'gray.800')
+  const tableHeadTextColor = useColorModeValue('gray.700', 'gray.300')
+  const tableBorderColor = useColorModeValue('#e2e8f0', 'gray.700')
+
   // Sorting state
-  const [sortColumn, setSortColumn] = useState<SortColumn>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [sortedFiles, setSortedFiles] = useState<FileItem[]>(mockFiles);
+  const [sortColumn, setSortColumn] = useState<SortColumn>('name')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  const [sortedFiles, setSortedFiles] = useState<FileItem[]>([])
+
   const [contextMenu, setContextMenu] = useState<{
-    isOpen: boolean;
-    position: ContextMenuPosition;
-    fileItem: FileItem | null;
+    isOpen: boolean
+    position: {
+      x: number
+      y: number
+    }
+    fileItem: FileItem | null
   }>({
     isOpen: false,
     position: {
       x: 0,
-      y: 0
+      y: 0,
     },
-    fileItem: null
-  });
+    fileItem: null,
+  })
+
+  const [isRenaming, setIsRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  useEffect(() => {
+    const loadDirectory = async () => {
+      if (!currentDirectory) return
+      setIsLoading(true)
+      try {
+        // Use currentDirectory as the full path
+        const fullPath = currentDirectory
+        const isValid = await window.electron.validatePath(fullPath)
+        if (!isValid) {
+          addLog(`Invalid path: ${fullPath}`, 'error')
+          return
+        }
+        const contents = await window.electron.getDirectoryContents(fullPath)
+        setFolderItems(contents)
+        addLog(`Loaded directory: ${currentDirectory}`)
+      } catch (error) {
+        console.error('Failed to load directory:', error)
+        addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadDirectory()
+  }, [currentDirectory, addLog, rootDirectory])
+
   // Sort files when sort parameters change
   useEffect(() => {
-    const sorted = [...mockFiles].sort((a, b) => {
+    const sorted = [...folderItems].sort((a, b) => {
       // Always sort folders first
-      if (a.type === 'folder' && b.type !== 'folder') return -1;
-      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      if (a.type === 'directory' && b.type !== 'directory') return -1
+      if (a.type !== 'directory' && b.type === 'directory') return 1
       // Then sort by the selected column
       switch (sortColumn) {
         case 'name':
-          return sortDirection === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+          return sortDirection === 'asc'
+            ? a.name.localeCompare(b.name)
+            : b.name.localeCompare(a.name)
         case 'size':
           // Handle undefined sizes
-          if (!a.size && !b.size) return 0;
-          if (!a.size) return sortDirection === 'asc' ? -1 : 1;
-          if (!b.size) return sortDirection === 'asc' ? 1 : -1;
+          if (!a.size && !b.size) return 0
+          if (!a.size) return sortDirection === 'asc' ? -1 : 1
+          if (!b.size) return sortDirection === 'asc' ? 1 : -1
           // Extract numeric value and unit for proper comparison
-          const extractSize = (sizeStr: string) => {
-            const match = sizeStr.match(/^([\d.]+)\s*(\w+)$/);
-            if (!match) return 0;
-            const value = parseFloat(match[1]);
-            const unit = match[2].toLowerCase();
-            // Convert to bytes for comparison
-            switch (unit) {
-              case 'kb':
-                return value * 1024;
-              case 'mb':
-                return value * 1024 * 1024;
-              case 'gb':
-                return value * 1024 * 1024 * 1024;
-              default:
-                return value;
-            }
-          };
-          const sizeA = extractSize(a.size);
-          const sizeB = extractSize(b.size);
-          return sortDirection === 'asc' ? sizeA - sizeB : sizeB - sizeA;
+          const extractSize = (size: number) => {
+            return size
+          }
+          const sizeA = extractSize(a.size || 0)
+          const sizeB = extractSize(b.size || 0)
+          return sortDirection === 'asc' ? sizeA - sizeB : sizeB - sizeA
         case 'modified':
           // Handle undefined modified dates
-          if (!a.modified && !b.modified) return 0;
-          if (!a.modified) return sortDirection === 'asc' ? -1 : 1;
-          if (!b.modified) return sortDirection === 'asc' ? 1 : -1;
+          if (!a.modified && !b.modified) return 0
+          if (!a.modified) return sortDirection === 'asc' ? -1 : 1
+          if (!b.modified) return sortDirection === 'asc' ? 1 : -1
           // Compare dates
-          const dateA = new Date(a.modified).getTime();
-          const dateB = new Date(b.modified).getTime();
-          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+          const dateA = new Date(a.modified).getTime()
+          const dateB = new Date(b.modified).getTime()
+          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA
         default:
-          return 0;
+          return 0
       }
-    });
-    setSortedFiles(sorted);
-  }, [sortColumn, sortDirection]);
+    })
+    setSortedFiles(sorted)
+  }, [sortColumn, sortDirection, folderItems])
+
   // Handle column header click for sorting
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
       // Toggle direction if same column is clicked
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
     } else {
       // Set new column and default to ascending
-      setSortColumn(column);
-      setSortDirection('asc');
+      setSortColumn(column)
+      setSortDirection('asc')
     }
-    addLog(`Sorting by ${column} (${sortDirection === 'asc' ? 'descending' : 'ascending'})`);
-  };
+    addLog(
+      `Sorting by ${column} (${sortDirection === 'asc' ? 'descending' : 'ascending'})`,
+    )
+  }
+
   // Handle file/folder click
   const handleItemClick = (file: FileItem) => {
-    if (file.type === 'folder') {
+    if (file.type === 'directory') {
       // Navigate to the folder
-      const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${file.name}`;
-      setCurrentDirectory(newPath);
-      addLog(`Changed directory to: ${newPath}`);
+      const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${file.name}`
+      setCurrentDirectory(newPath)
+      addLog(`Changed directory to: ${newPath}`)
     } else {
       // Handle file click
-      addLog(`Opening file: ${file.name}`);
+      addLog(`Opening file: ${file.name}`)
     }
-  };
-  const handleContextMenu = (e: React.MouseEvent, file: FileItem) => {
-    e.preventDefault();
+  }
+
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    file: FileItem,
+  ) => {
+    e.preventDefault()
     setContextMenu({
       isOpen: true,
       position: {
         x: e.clientX,
-        y: e.clientY
+        y: e.clientY,
       },
-      fileItem: file
-    });
-  };
+      fileItem: file,
+    })
+  }
+
   const handleCloseContextMenu = () => {
     setContextMenu({
       isOpen: false,
       position: {
         x: 0,
-        y: 0
+        y: 0,
       },
-      fileItem: null
-    });
-  };
-  const handleMenuAction = (action: string) => {
-    if (!contextMenu.fileItem) return;
-    switch (action) {
-      case 'open':
-        if (contextMenu.fileItem.type === 'folder') {
-          const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${contextMenu.fileItem.name}`;
-          setCurrentDirectory(newPath);
-          addLog(`Changed directory to: ${newPath}`);
-        } else {
-          addLog(`Opening ${contextMenu.fileItem.name}`);
-        }
-        break;
-      case 'rename':
-        addLog(`Renaming ${contextMenu.fileItem.name}`);
-        break;
-      case 'delete':
-        addLog(`Deleting ${contextMenu.fileItem.name}`);
-        break;
-      case 'copy':
-        addLog(`Copying ${contextMenu.fileItem.name}`);
-        break;
-      case 'cut':
-        addLog(`Cutting ${contextMenu.fileItem.name}`);
-        break;
-      case 'createLink':
-        addLog(`Creating link for ${contextMenu.fileItem.name}`);
-        break;
-      case 'download':
-        addLog(`Downloading ${contextMenu.fileItem.name}`);
-        break;
-      default:
-        addLog(`Function: ${action} on ${contextMenu.fileItem.name}`);
+      fileItem: null,
+    })
+  }
+
+  const handleMenuAction = async (action: string) => {
+    if (!contextMenu.fileItem) return
+
+    try {
+      switch (action) {
+        case 'open':
+          if (contextMenu.fileItem.type === 'directory') {
+            const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${contextMenu.fileItem.name}`
+            setCurrentDirectory(newPath)
+            addLog(`Changed directory to: ${newPath}`)
+          } else {
+            addLog(`Opening ${contextMenu.fileItem.name}`)
+          }
+          break
+
+        case 'rename':
+          setIsRenaming(contextMenu.fileItem.name)
+          setRenameValue(contextMenu.fileItem.name)
+          break
+
+        case 'delete':
+          const fullPath = `${currentDirectory === '/' ? '' : currentDirectory}/${contextMenu.fileItem.name}`
+          await window.electron.deleteItem(fullPath)
+          addLog(`Deleted: ${contextMenu.fileItem.name}`)
+          // Refresh the current directory
+          const contents = await window.electron.getDirectoryContents(currentDirectory)
+          // You'll need to implement a way to refresh the file list in your app
+          break
+
+        default:
+          addLog(`Function: ${action} on ${contextMenu.fileItem.name}`)
+      }
+    } catch (error) {
+      console.error(`Error performing ${action}:`, error)
+      addLog(`Failed to ${action}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
     }
-    handleCloseContextMenu();
-  };
+
+    handleCloseContextMenu()
+  }
+
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!isRenaming) return
+
+    try {
+      const oldPath = `${currentDirectory === '/' ? '' : currentDirectory}/${isRenaming}`
+      const newPath = `${currentDirectory === '/' ? '' : currentDirectory}/${renameValue}`
+      await window.electron.renameItem(oldPath, newPath)
+      addLog(`Renamed ${isRenaming} to ${renameValue}`)
+      setIsRenaming(null)
+      // Refresh the current directory
+      const contents = await window.electron.getDirectoryContents(currentDirectory)
+      // You'll need to implement a way to refresh the file list in your app
+    } catch (error) {
+      console.error('Error renaming:', error)
+      addLog(`Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+    }
+  }
+
   useEffect(() => {
     const handleViewModeChange = (e: CustomEvent) => {
-      setViewMode(e.detail as 'grid' | 'list');
-    };
+      setViewMode(e.detail as 'grid' | 'list')
+    }
     const handleClickOutside = () => {
       if (contextMenu.isOpen) {
-        handleCloseContextMenu();
+        handleCloseContextMenu()
       }
-    };
-    window.addEventListener('viewModeChanged', handleViewModeChange as EventListener);
-    document.addEventListener('click', handleClickOutside);
+    }
+    window.addEventListener(
+      'viewModeChanged',
+      handleViewModeChange as EventListener,
+    )
+    document.addEventListener('click', handleClickOutside)
     return () => {
-      window.removeEventListener('viewModeChanged', handleViewModeChange as EventListener);
-      document.removeEventListener('click', handleClickOutside);
-    };
-  }, [contextMenu.isOpen]);
+      window.removeEventListener(
+        'viewModeChanged',
+        handleViewModeChange as EventListener,
+      )
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [contextMenu.isOpen])
+
   // Grid view
-  const renderGridView = () => <Grid templateColumns="repeat(auto-fill, minmax(200px, 1fr))" gap={4}>
-      {sortedFiles.map((file, index) => <Flex key={index} p={2} alignItems="center" cursor="pointer" borderRadius="md" _hover={{
-      bg: useColorModeValue('gray.100', 'gray.700')
-    }} onContextMenu={e => handleContextMenu(e, file)} onClick={() => handleItemClick(file)}>
-          <Icon as={getFileIcon(file.type)} boxSize={5} mr={3} color={getIconColor(file.type)} />
-          <Box>
-            <Text fontSize="sm" color={useColorModeValue('gray.800', 'white')}>
+  const renderGridView = () => (
+    <Grid templateColumns="repeat(auto-fit, minmax(220px, 1fr))" maxW="100%" gap={4} p={4}>
+      {sortedFiles.map((file, index) => (
+        <Flex
+          key={index}
+          p={4}
+          alignItems="center"
+          cursor="pointer"
+          borderRadius="lg"
+          borderWidth="1px"
+          borderColor={useColorModeValue('gray.200', 'gray.700')}
+          bg={useColorModeValue('#f8f9fc', 'gray.800')}
+          _hover={{
+            bg: itemBgHover,
+            boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+            borderColor: useColorModeValue('blue.200', 'blue.700'),
+          }}
+          transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
+          onContextMenu={(e) => handleContextMenu(e, file)}
+          onClick={() => handleItemClick(file)}
+        >
+          <Icon
+            as={getFileIcon(file.type, file.extension)}
+            boxSize={7}
+            mr={4}
+            color={getIconColor(file.type, file.extension)}
+          />
+          <Box flex="1">
+            <Text fontSize="md" color={fileTextColor} fontWeight="medium" noOfLines={2}>
               {file.name}
             </Text>
-            <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')}>
-              {file.size || ''} {file.modified}
+            <Text fontSize="xs" color={fileSubTextColor} mt={1}>
+              {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ''} {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
             </Text>
           </Box>
-        </Flex>)}
-    </Grid>;
+        </Flex>
+      ))}
+    </Grid>
+  )
+
   // List view
-  const renderListView = () => <Box overflowX="auto">
-      <Table size="sm" variant="simple">
-        <Thead>
+  const renderListView = () => (
+    <Box overflowX="auto" p={0} m={0}>
+      <Table
+        size="sm"
+        variant="simple"
+        bg={tableBgColor}
+        borderRadius={0}
+        overflow="unset"
+        mt={0}
+      >
+        <Thead bg={tableHeadBgColor}>
           <Tr>
-            <Th color={useColorModeValue('gray.600', 'gray.400')} cursor="pointer" onClick={() => handleSort('name')}>
+            <Th
+              color={tableHeadTextColor}
+              cursor="pointer"
+              onClick={() => handleSort('name')}
+              borderColor={tableBorderColor}
+            >
               <Flex align="center">
                 Name
-                {sortColumn === 'name' && <Icon as={sortDirection === 'asc' ? ChevronUp : ChevronDown} ml={1} boxSize={3} color="blue.400" />}
+                {sortColumn === 'name' && (
+                  <Icon
+                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+                    ml={1}
+                    boxSize={3}
+                    color="#4F46E5"
+                  />
+                )}
               </Flex>
             </Th>
-            <Th color={useColorModeValue('gray.600', 'gray.400')} cursor="pointer" onClick={() => handleSort('size')}>
+            <Th
+              color={tableHeadTextColor}
+              cursor="pointer"
+              onClick={() => handleSort('size')}
+              borderColor={tableBorderColor}
+            >
               <Flex align="center">
                 Size
-                {sortColumn === 'size' && <Icon as={sortDirection === 'asc' ? ChevronUp : ChevronDown} ml={1} boxSize={3} color="blue.400" />}
+                {sortColumn === 'size' && (
+                  <Icon
+                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+                    ml={1}
+                    boxSize={3}
+                    color="#4F46E5"
+                  />
+                )}
               </Flex>
             </Th>
-            <Th color={useColorModeValue('gray.600', 'gray.400')} cursor="pointer" onClick={() => handleSort('modified')}>
+            <Th
+              color={tableHeadTextColor}
+              cursor="pointer"
+              onClick={() => handleSort('modified')}
+              borderColor={tableBorderColor}
+            >
               <Flex align="center">
                 Modified
-                {sortColumn === 'modified' && <Icon as={sortDirection === 'asc' ? ChevronUp : ChevronDown} ml={1} boxSize={3} color="blue.400" />}
+                {sortColumn === 'modified' && (
+                  <Icon
+                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+                    ml={1}
+                    boxSize={3}
+                    color="#4F46E5"
+                  />
+                )}
               </Flex>
             </Th>
           </Tr>
         </Thead>
         <Tbody>
-          {sortedFiles.map((file, index) => <Tr key={index} cursor="pointer" _hover={{
-          bg: useColorModeValue('gray.100', 'gray.700')
-        }} onContextMenu={e => handleContextMenu(e, file)} onClick={() => handleItemClick(file)}>
-              <Td>
+          {sortedFiles.map((file, index) => (
+            <Tr
+              key={index}
+              cursor="pointer"
+              _hover={{
+                bg: itemBgHover,
+              }}
+              onContextMenu={(e) => handleContextMenu(e, file)}
+              onClick={() => handleItemClick(file)}
+            >
+              <Td borderColor={tableBorderColor}>
                 <Flex align="center">
-                  <Icon as={getFileIcon(file.type)} boxSize={4} mr={2} color={getIconColor(file.type)} />
-                  <Text fontSize="sm" color={useColorModeValue('gray.800', 'white')}>
+                  <Icon
+                    as={getFileIcon(file.type, file.extension)}
+                    boxSize={4}
+                    mr={2}
+                    color={getIconColor(file.type, file.extension)}
+                  />
+                  <Text fontSize="sm" color={fileTextColor}>
                     {file.name}
                   </Text>
                 </Flex>
               </Td>
-              <Td color={useColorModeValue('gray.600', 'gray.400')}>
-                {file.size || '-'}
+              <Td borderColor={tableBorderColor} color={fileSubTextColor}>
+                {file.size ? `${(file.size / 1024).toFixed(1)} KB` : '-'}
               </Td>
-              <Td color={useColorModeValue('gray.600', 'gray.400')}>
-                {file.modified}
+              <Td borderColor={tableBorderColor} color={fileSubTextColor}>
+                {file.modified ? new Date(file.modified).toLocaleString() : '-'}
               </Td>
-            </Tr>)}
+            </Tr>
+          ))}
         </Tbody>
       </Table>
-    </Box>;
+    </Box>
+  )
+
   // Context Menu
   const renderContextMenu = () => {
-    if (!contextMenu.isOpen || !contextMenu.fileItem) return null;
-    return <Box position="fixed" top={contextMenu.position.y} left={contextMenu.position.x} zIndex={1000} onClick={e => e.stopPropagation()} bg={useColorModeValue('white', 'gray.800')} boxShadow="md" borderRadius="md" border="1px solid" borderColor={useColorModeValue('gray.200', 'gray.700')} width="200px">
+    if (!contextMenu.isOpen || !contextMenu.fileItem) return null
+
+    return (
+      <Box
+        position="fixed"
+        top={contextMenu.position.y}
+        left={contextMenu.position.x}
+        bg={useColorModeValue('white', 'gray.800')}
+        borderRadius="md"
+        boxShadow="lg"
+        zIndex="modal"
+        minW="200px"
+        border="1px solid"
+        borderColor={useColorModeValue('gray.200', 'gray.700')}
+      >
         <Box py={1}>
-          <MenuItem icon={<ExternalLink size={16} />} onClick={() => handleMenuAction('open')} fontSize="sm">
-            Open
-          </MenuItem>
-          <MenuItem icon={<Edit2 size={16} />} onClick={() => handleMenuAction('rename')} fontSize="sm">
-            Rename
-          </MenuItem>
-          <MenuItem icon={<Trash2 size={16} />} onClick={() => handleMenuAction('delete')} fontSize="sm" color={useColorModeValue('red.600', 'red.300')}>
-            Delete
-          </MenuItem>
-          <MenuDivider />
-          <MenuItem icon={<Copy size={16} />} onClick={() => handleMenuAction('copy')} fontSize="sm">
-            Copy
-          </MenuItem>
-          <MenuItem icon={<Scissors size={16} />} onClick={() => handleMenuAction('cut')} fontSize="sm">
-            Cut
-          </MenuItem>
-          <MenuDivider />
-          <MenuItem icon={<FileSymlink size={16} />} onClick={() => handleMenuAction('createLink')} fontSize="sm">
-            Create link
-          </MenuItem>
-          <MenuItem icon={<Download size={16} />} onClick={() => handleMenuAction('download')} fontSize="sm">
-            Download
-          </MenuItem>
-          <MenuDivider />
-          <Box px={3} py={1}>
-            <Menu>
-              <MenuButton as={Flex} alignItems="center" width="100%" px={2} py={1} borderRadius="md" cursor="pointer" fontSize="sm" _hover={{
-              bg: useColorModeValue('gray.100', 'gray.700')
-            }}>
-                <Text flex="1">Functions</Text>
-                <Icon as={MoreHorizontal} boxSize={4} />
-              </MenuButton>
-              <Portal>
-                <MenuList fontSize="sm">
-                  <MenuItem onClick={() => handleMenuAction('archive')}>
-                    Archive
-                  </MenuItem>
-                  <MenuItem onClick={() => handleMenuAction('extract')}>
-                    Extract
-                  </MenuItem>
-                  <MenuItem onClick={() => handleMenuAction('analyze')}>
-                    Analyze
-                  </MenuItem>
-                  <MenuItem onClick={() => handleMenuAction('convert')}>
-                    Convert
-                  </MenuItem>
-                </MenuList>
-              </Portal>
-            </Menu>
-          </Box>
+          <Flex
+            align="center"
+            px={3}
+            py={2}
+            cursor="pointer"
+            _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+            onClick={() => handleMenuAction('open')}
+          >
+            <ExternalLink size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Open</Text>
+          </Flex>
+          <Flex
+            align="center"
+            px={3}
+            py={2}
+            cursor="pointer"
+            _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+            onClick={() => handleMenuAction('rename')}
+          >
+            <Edit2 size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Rename</Text>
+          </Flex>
+          <Flex
+            align="center"
+            px={3}
+            py={2}
+            cursor="pointer"
+            _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+            onClick={() => handleMenuAction('delete')}
+            color="red.500"
+          >
+            <Trash2 size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Delete</Text>
+          </Flex>
         </Box>
-      </Box>;
-  };
-  return <Box p={4}>
+      </Box>
+    )
+  }
+
+  const renderFileItem = (file: FileItem) => {
+    if (isRenaming === file.name) {
+      return (
+        <form onSubmit={handleRenameSubmit}>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={handleRenameSubmit}
+            autoFocus
+            size="sm"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setIsRenaming(null)
+              }
+            }}
+          />
+        </form>
+      )
+    }
+
+    return (
+      <Flex
+        direction="column"
+        align="center"
+        justify="center"
+        p={2}
+        cursor="pointer"
+        borderRadius="md"
+        _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+        onContextMenu={(e) => handleContextMenu(e, file)}
+        onClick={() => handleItemClick(file)}
+      >
+        <Icon as={getFileIcon(file.type)} boxSize={8} mb={2} />
+        <Text fontSize="sm" textAlign="center" noOfLines={2}>
+          {file.name}
+        </Text>
+        {file.modified && (
+          <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')}>
+            {new Date(file.modified).toLocaleDateString()}
+          </Text>
+        )}
+      </Flex>
+    )
+  }
+
+  return (
+    <Box p={viewMode === 'grid' ? 0 : 0} m={0}>
       {viewMode === 'grid' ? renderGridView() : renderListView()}
       {renderContextMenu()}
-    </Box>;
-};
+    </Box>
+  )
+}
