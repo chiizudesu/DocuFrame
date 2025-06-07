@@ -8,7 +8,9 @@ export const CommandLine: React.FC = () => {
     addLog,
     commandHistory,
     addCommand,
-    setPreviewFiles
+    setPreviewFiles,
+    currentDirectory,
+    setStatus
   } = useAppContext();
   const [command, setCommand] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -22,6 +24,7 @@ export const CommandLine: React.FC = () => {
     console.log('[CommandLine] Starting command execution:', command);
     addLog(`> ${command}`, 'command');
     addCommand(command);
+    setStatus(`Executing: ${command}`, 'info');
 
     try {
       // For transfer commands, get preview first
@@ -56,9 +59,11 @@ export const CommandLine: React.FC = () => {
             if (transferResult.success) {
               console.log('[CommandLine] Transfer successful');
               addLog(transferResult.message, 'response');
+              setStatus('Transfer completed', 'success');
             } else {
               console.log('[CommandLine] Transfer failed:', transferResult.message);
               addLog(transferResult.message, 'error');
+              setStatus('Transfer failed', 'error');
             }
           } else {
             console.log('[CommandLine] Preview failed:', previewResult.message);
@@ -71,13 +76,17 @@ export const CommandLine: React.FC = () => {
       } else {
         // Handle other commands
         console.log('[CommandLine] Executing non-transfer command');
-        const result = await window.electronAPI.executeCommand(command);
+        const result = await window.electronAPI.executeCommand(command, currentDirectory);
         console.log('[CommandLine] Command execution result:', result);
         
         if (result.success) {
+          console.log('[CommandLine] Command successful');
           addLog(result.message, 'response');
+          setStatus('Command completed', 'success');
         } else {
+          console.log('[CommandLine] Command failed:', result.message);
           addLog(result.message, 'error');
+          setStatus('Command failed', 'error');
         }
       }
     } catch (error) {

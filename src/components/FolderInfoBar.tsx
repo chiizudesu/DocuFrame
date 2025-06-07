@@ -32,16 +32,36 @@ import {
   ExternalLink,
   Monitor,
   FolderPlus,
+  Minimize2,
+  Maximize2,
+  X,
+  Square,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
 
+declare global {
+  interface Window {
+    electronAPI: {
+      minimize?: () => void;
+      maximize?: () => void;
+      unmaximize?: () => void;
+      close?: () => void;
+      isMaximized?: () => Promise<boolean>;
+      onWindowMaximize?: (cb: () => void) => void;
+      onWindowUnmaximize?: (cb: () => void) => void;
+      [key: string]: any;
+    };
+  }
+}
+
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
     (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
@@ -49,16 +69,51 @@ export const FolderInfoBar: React.FC = () => {
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
 
-  // Precompute all color values
-  const bgColor = useColorModeValue('#eef1f8', 'gray.800')
-  const hoverBgColor = useColorModeValue('#e6e9ff', 'blue.700')
-  const activeButtonBg = useColorModeValue('blue.50', 'blue.900')
-  const activeButtonColor = useColorModeValue('blue.600', 'blue.200')
-  const textColor = useColorModeValue('gray.700', 'gray.100')
-  const iconColor = useColorModeValue('gray.600', 'gray.400')
-  const inputBgColor = useColorModeValue('#f8f9fc', 'gray.700')
-  const inputFocusBgColor = useColorModeValue('#f0f2f8', 'gray.600')
-  const separatorColor = useColorModeValue('gray.500', 'gray.400')
+  // Optimized color values for consistent light mode appearance
+  const bgColor = useColorModeValue('#f1f5f9', 'gray.800')
+  const hoverBgColor = useColorModeValue('#e2e8f0', 'blue.700')
+  const activeButtonBg = useColorModeValue('#3b82f6', 'gray.900')
+  const activeButtonColor = useColorModeValue('white', 'blue.200')
+  const textColor = useColorModeValue('#475569', 'gray.100')
+  const iconColor = useColorModeValue('#64748b', 'gray.400')
+  const inputBgColor = useColorModeValue('#ffffff', 'gray.700')
+  const inputFocusBgColor = useColorModeValue('#f8fafc', 'gray.600')
+  const separatorColor = useColorModeValue('#94a3b8', 'gray.400')
+
+  // Window controls
+  const handleMinimize = () => {
+    if (window.electronAPI && window.electronAPI.minimize) {
+      window.electronAPI.minimize();
+    }
+  };
+  const handleMaximize = () => {
+    if (window.electronAPI && window.electronAPI.maximize) {
+      window.electronAPI.maximize();
+    }
+  };
+  const handleUnmaximize = () => {
+    if (window.electronAPI && window.electronAPI.unmaximize) {
+      window.electronAPI.unmaximize();
+    }
+  };
+  const handleClose = () => {
+    if (window.electronAPI && window.electronAPI.close) {
+      window.electronAPI.close();
+    }
+  };
+  const [isMaximized, setIsMaximized] = useState(false);
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    if (window.electronAPI.isMaximized) {
+      window.electronAPI.isMaximized().then(setIsMaximized);
+    }
+    if (window.electronAPI.onWindowMaximize) {
+      window.electronAPI.onWindowMaximize(() => setIsMaximized(true));
+    }
+    if (window.electronAPI.onWindowUnmaximize) {
+      window.electronAPI.onWindowUnmaximize(() => setIsMaximized(false));
+    }
+  }, []);
 
   useEffect(() => {
     setEditValue(currentDirectory)
@@ -107,14 +162,41 @@ export const FolderInfoBar: React.FC = () => {
   const handleHomeClick = () => {
     setCurrentDirectory(rootDirectory)
     addLog('Navigated to root directory')
+    setStatus('Navigated to home', 'info')
   }
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     addLog(`Refreshing directory: ${currentDirectory}`)
+    setIsRefreshing(true)
+    
+    try {
+      // Start both the refresh operation and a minimum delay
+      const [contents] = await Promise.all([
+        (window.electronAPI as any).getDirectoryContents(currentDirectory),
+        new Promise(resolve => setTimeout(resolve, 600)) // Match animation duration
+      ])
+      
+      setFolderItems(contents)
+      setStatus('Folder refreshed', 'info')
+    } catch (error) {
+      // Even on error, wait for the animation to complete
+      await new Promise(resolve => setTimeout(resolve, 600))
+      addLog(`Failed to refresh: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      setStatus('Failed to refresh folder', 'error')
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
-  const handleOpenExplorer = () => {
-    addLog(`Opening in file explorer: ${currentDirectory}`)
+  const handleOpenExplorer = async () => {
+    try {
+      await (window.electronAPI as any).openDirectory(currentDirectory)
+      addLog(`Opened in file explorer: ${currentDirectory}`)
+      setStatus('Opened in file explorer', 'success')
+    } catch (error) {
+      addLog(`Failed to open in file explorer: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      setStatus('Failed to open in file explorer', 'error')
+    }
   }
 
   const handleViewModeChange = (mode: 'grid' | 'list') => {
@@ -122,6 +204,7 @@ export const FolderInfoBar: React.FC = () => {
     localStorage.setItem('fileViewMode', mode)
     window.dispatchEvent(new CustomEvent('viewModeChanged', { detail: mode }))
     addLog(`Changed view mode to: ${mode}`)
+    setStatus(`Switched to ${mode} view`, 'info')
   }
 
   const handleBackClick = () => {
@@ -176,116 +259,139 @@ export const FolderInfoBar: React.FC = () => {
   const handleCreateFolder = async () => {
     try {
       const fullPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, newFolderName)
-      await window.electron.createDirectory(fullPath)
+      await (window.electronAPI as any).createDirectory(fullPath)
       addLog(`Created folder: ${newFolderName}`)
+      setStatus(`Created folder: ${newFolderName}`, 'success')
       setIsCreateFolderOpen(false)
       setNewFolderName('')
       // Refresh the current directory
       const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
-      // You'll need to implement a way to refresh the file list in your app
+      setFolderItems(contents)
     } catch (error) {
       console.error('Error creating folder:', error)
       addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      setStatus(`Failed to create folder: ${newFolderName}`, 'error')
     }
   }
 
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+      // Ctrl+Shift+N: Open create folder dialog
+      if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+        e.preventDefault();
+        setIsCreateFolderOpen(true);
+      }
+      // F5: Refresh folder view
+      if (e.key === 'F5') {
+        e.preventDefault();
+        handleRefresh();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [handleRefresh]);
+
   return (
     <>
-      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="32px">
+      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="32px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
         {/* Back/Forward to the left of Home */}
-        <IconButton
-          icon={<ChevronLeft size={16} />}
-          aria-label="Back"
-          variant="ghost"
-          size="sm"
-          mr={1}
-          color={iconColor}
-          onClick={handleBackClick}
-        />
-        <IconButton
-          icon={<ChevronRight size={16} />}
-          aria-label="Forward"
-          variant="ghost"
-          size="sm"
-          mr={1}
-          color={iconColor}
-          onClick={handleForwardClick}
-        />
-        <IconButton
-          icon={<Home size={16} />}
-          aria-label="Home folder"
-          variant="ghost"
-          size="sm"
-          mr={1}
-          color={activeButtonColor}
-          onClick={handleHomeClick}
-        />
-        {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Box flex="1" borderRadius="sm" overflow="hidden" px={2}>
-          {isEditing ? (
-            <InputGroup>
-              <InputLeftElement pointerEvents="none" color="gray.500">
-                \
-              </InputLeftElement>
-              <Input
-                ref={inputRef}
-                value={editValue.replace(/\//g, '\\')}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={handleBlur}
-                onKeyDown={handleKeyDown}
-                autoFocus
-                pl={6}
-                bg={inputBgColor}
-                border="none"
-                _focus={{
-                  boxShadow: 'none',
-                  bg: inputFocusBgColor,
-                }}
-                h="32px"
-              />
-            </InputGroup>
-          ) : (
-            <Flex align="center" h="32px" gap={1} onClick={handleClick} cursor="text">
-              {breadcrumbs.map((crumb, idx) => (
-                <Flex key={crumb.path} align="center">
-                  <Flex
-                    align="center"
-                    px={2}
-                    py="2px"
-                    cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
-                    bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
-                    borderRadius="md"
-                    onClick={(e) => {
-                      e.stopPropagation(); // Prevent triggering the parent's onClick
-                      if (idx !== breadcrumbs.length - 1) {
-                        setCurrentDirectory(crumb.path)
-                        addLog(`Changed directory to: ${crumb.path}`)
-                      }
-                    }}
-                  >
-                    <Text
-                      fontSize="sm"
-                      fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
-                      color={textColor}
-                      userSelect="none"
-                    >
-                      {crumb.label}
-                    </Text>
-                  </Flex>
-                  {idx < breadcrumbs.length - 1 && (
-                    <Text
-                      color={textColor}
-                      style={{ margin: '0 2px', opacity: 0.8 }}
-                    >
-                      \
-                    </Text>
-                  )}
-                </Flex>
-              ))}
-            </Flex>
-          )}
+        <Box style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <IconButton
+            icon={<ChevronLeft size={16} />}
+            aria-label="Back"
+            variant="ghost"
+            size="sm"
+            mr={1}
+            color={iconColor}
+            onClick={handleBackClick}
+          />
+          <IconButton
+            icon={<ChevronRight size={16} />}
+            aria-label="Forward"
+            variant="ghost"
+            size="sm"
+            mr={1}
+            color={iconColor}
+            onClick={handleForwardClick}
+          />
+          <IconButton
+            icon={<Home size={16} />}
+            aria-label="Home folder"
+            variant="ghost"
+            size="sm"
+            mr={1}
+            color={useColorModeValue('#3b82f6', 'blue.200')}
+            onClick={handleHomeClick}
+          />
         </Box>
-        <HStack spacing={1} px={1}>
+        {/* Address bar as breadcrumbs, starting after Home icon */}
+        <Flex flex={1} mx={2} align="center" h="32px" gap={1} onClick={handleClick} cursor="text" border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')} borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {isRefreshing && (
+            <Box
+              position="absolute"
+              top={0}
+              left={0}
+              width="100%"
+              height="100%"
+              borderRadius="md"
+              pointerEvents="none"
+              zIndex={1}
+              bg="rgba(59, 130, 246, 0.15)"
+              sx={{
+                transform: 'translateX(-100%)',
+                animation: 'slideRight 0.6s ease-out forwards',
+                '@keyframes slideRight': {
+                  '0%': {
+                    transform: 'translateX(-100%)',
+                  },
+                  '100%': {
+                    transform: 'translateX(100%)',
+                  },
+                },
+              }}
+            />
+          )}
+          <Box position="relative" zIndex={2} width="100%" display="flex" alignItems="center" gap={1}>
+            {breadcrumbs.map((crumb, idx) => (
+              <Flex key={crumb.path} align="center">
+                <Flex
+                  align="center"
+                  px={2}
+                  py="2px"
+                  cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
+                  bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
+                  borderRadius="md"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent triggering the parent's onClick
+                    if (idx !== breadcrumbs.length - 1) {
+                      setCurrentDirectory(crumb.path)
+                      addLog(`Changed directory to: ${crumb.path}`)
+                      setStatus(`Navigated to ${crumb.label}`, 'info')
+                    }
+                  }}
+                >
+                  <Text
+                    fontSize="sm"
+                    fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
+                    color={idx === breadcrumbs.length - 1 ? 'white' : textColor}
+                    userSelect="none"
+                  >
+                    {crumb.label}
+                  </Text>
+                </Flex>
+                {idx < breadcrumbs.length - 1 && (
+                  <Text
+                    color={textColor}
+                    style={{ margin: '0 2px', opacity: 0.8 }}
+                  >
+                    \
+                  </Text>
+                )}
+              </Flex>
+            ))}
+          </Box>
+        </Flex>
+        <HStack spacing={1} px={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
             icon={<RefreshCw size={16} />}
             aria-label="Refresh folder"
@@ -347,6 +453,12 @@ export const FolderInfoBar: React.FC = () => {
               <Input
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newFolderName.trim()) {
+                    e.preventDefault();
+                    handleCreateFolder();
+                  }
+                }}
                 placeholder="Enter folder name"
                 autoFocus
               />

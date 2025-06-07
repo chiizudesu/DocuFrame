@@ -7,8 +7,8 @@ interface CommandResult {
   files?: any[];
 }
 
-export async function handleCommand(command: string, args: string[]): Promise<CommandResult> {
-  console.log('[CommandHandler] Handling command:', command, 'with args:', args);
+export async function handleCommand(command: string, args: string[], currentDirectory?: string): Promise<CommandResult> {
+  console.log('[CommandHandler] Handling command:', command, 'with args:', args, 'currentDirectory:', currentDirectory);
   
   // Get command name and arguments
   const [cmd, ...cmdArgs] = command.split(' ');
@@ -22,7 +22,7 @@ export async function handleCommand(command: string, args: string[]): Promise<Co
       cmd.toLowerCase() === 'xc' || cmd.toLowerCase() === 'lc' || cmd.toLowerCase() === 'gl') {
     
     // Parse arguments
-    const options: { numFiles?: number; newName?: string; command?: string } = {};
+    const options: { numFiles?: number; newName?: string; command?: string; currentDirectory?: string } = {};
     
     if (cmdArgs.length > 0) {
       const arg = cmdArgs[0];
@@ -35,6 +35,11 @@ export async function handleCommand(command: string, args: string[]): Promise<Co
     
     // Add command for template lookup
     options.command = cmd.toLowerCase();
+    
+    // Add current directory if provided
+    if (currentDirectory) {
+      options.currentDirectory = currentDirectory;
+    }
     
     console.log('[CommandHandler] Transfer options:', options);
     

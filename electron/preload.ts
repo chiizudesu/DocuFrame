@@ -13,17 +13,25 @@ interface ElectronAPI {
   selectDirectory: () => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
   confirmDelete: (fileNames: string[]) => Promise<void>;
-  executeCommand: (command: string) => Promise<any>;
+  executeCommand: (command: string, currentDirectory?: string) => Promise<any>;
   transfer: (options: TransferOptions) => Promise<any>;
+  openDirectory: (dirPath: string) => Promise<void>;
+  minimize: () => Promise<void>;
+  maximize: () => Promise<void>;
+  unmaximize: () => Promise<void>;
+  close: () => Promise<void>;
+  isMaximized: () => Promise<boolean>;
+  onWindowMaximize: (cb: (event: Electron.IpcRendererEvent) => void) => void;
+  onWindowUnmaximize: (cb: (event: Electron.IpcRendererEvent) => void) => void;
 }
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Command handling
-  executeCommand: async (command: string) => {
-    console.log('[Preload] Executing command:', command);
-    const result = await ipcRenderer.invoke('execute-command', command);
+  executeCommand: async (command: string, currentDirectory?: string) => {
+    console.log('[Preload] Executing command:', command, 'currentDirectory:', currentDirectory);
+    const result = await ipcRenderer.invoke('execute-command', command, currentDirectory);
     console.log('[Preload] Command result:', result);
     return result;
   },
@@ -65,4 +73,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   validatePath: (path: string) => ipcRenderer.invoke('validate-path', path),
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   confirmDelete: (fileNames: string[]) => ipcRenderer.invoke('confirm-delete', fileNames),
+  openDirectory: (dirPath: string) => ipcRenderer.invoke('open-directory', dirPath),
+  minimize: () => ipcRenderer.invoke('window-minimize'),
+  maximize: () => ipcRenderer.invoke('window-maximize'),
+  unmaximize: () => ipcRenderer.invoke('window-unmaximize'),
+  close: () => ipcRenderer.invoke('window-close'),
+  isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  onWindowMaximize: (cb) => ipcRenderer.on('window-maximized', cb),
+  onWindowUnmaximize: (cb) => ipcRenderer.on('window-unmaximized', cb),
 }); 

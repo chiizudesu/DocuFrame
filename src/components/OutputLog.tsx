@@ -1,26 +1,31 @@
 import React, { useEffect, useRef } from 'react';
 import { Box, Flex, Text, IconButton, useColorModeValue } from '@chakra-ui/react';
-import { Trash2, Copy } from 'lucide-react';
+import { Trash2, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { configService } from '../services/config';
 
 type LogType = 'error' | 'response' | 'command' | 'info';
 
-export const OutputLog: React.FC = () => {
-  const { outputLogs, addLog, clearLogs } = useAppContext();
+interface OutputLogProps {
+  minimized: boolean;
+  setMinimized: (minimized: boolean) => void;
+}
+
+export const OutputLog: React.FC<OutputLogProps> = ({ minimized, setMinimized }) => {
+  const { outputLogs, addLog, clearLogs, setStatus } = useAppContext();
   const logContainerRef = useRef<HTMLDivElement>(null);
   const hasLoggedRootPath = useRef(false);
 
-  // Precompute color values
+  // Optimized color values for consistent appearance
   const logColorMap: Record<LogType, string> = {
-    error: useColorModeValue('red.600', 'red.300'),
-    response: useColorModeValue('green.600', 'green.300'),
-    command: useColorModeValue('indigo.600', 'indigo.300'),
-    info: useColorModeValue('gray.700', 'white')
+    error: useColorModeValue('#dc2626', 'red.300'),
+    response: useColorModeValue('#059669', 'green.300'),
+    command: useColorModeValue('#3730a3', 'indigo.300'),
+    info: useColorModeValue('#334155', 'white')
   };
 
-  const logHoverBg = useColorModeValue('gray.100', 'gray.700');
-  const timestampColor = useColorModeValue('gray.500', 'gray.400');
+  const logHoverBg = useColorModeValue('#f8fafc', 'gray.700');
+  const timestampColor = useColorModeValue('#64748b', 'gray.400');
 
   // Auto-scroll to bottom when new logs are added
   useEffect(() => {
@@ -41,6 +46,7 @@ export const OutputLog: React.FC = () => {
   const handleCopy = () => {
     const logText = outputLogs.map(log => `${log.timestamp} ${log.message}`).join('\n');
     navigator.clipboard.writeText(logText);
+    setStatus('Copied logs to clipboard', 'success');
   };
 
   const getLogColor = (type: LogType): string => {
@@ -49,21 +55,31 @@ export const OutputLog: React.FC = () => {
 
   return (
     <Box
-      overflow="hidden"
-      h="200px"
+      h="100%"
       bg={useColorModeValue('white', 'gray.800')}
+      display="flex"
+      flexDirection="column"
     >
       <Flex
         p={2}
         borderBottomWidth="1px"
-        borderColor={useColorModeValue('gray.200', 'gray.700')}
+        borderColor={useColorModeValue('#e2e8f0', 'gray.700')}
         justify="space-between"
         align="center"
+        flexShrink={0}
+        h="40px"
       >
         <Text fontSize="sm" fontWeight="medium">
           Output Log
         </Text>
-        <Flex gap={2}>
+        <Flex gap={2} align="center">
+          <IconButton
+            aria-label={minimized ? 'Expand log' : 'Minimize log'}
+            icon={minimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            size="sm"
+            variant="ghost"
+            onClick={() => setMinimized(!minimized)}
+          />
           <IconButton
             aria-label="Copy logs"
             icon={<Copy size={16} />}
@@ -80,34 +96,36 @@ export const OutputLog: React.FC = () => {
           />
         </Flex>
       </Flex>
-      <Box
-        ref={logContainerRef}
-        p={2}
-        overflowY="auto"
-        h="calc(100% - 36px)"
-        fontFamily="monospace"
-        fontSize="xs"
-      >
-        {outputLogs.map((log, index) => (
-          <Flex
-            key={index}
-            mb={1.5}
-            align="flex-start"
-            p={1}
-            borderRadius="sm"
-            _hover={{ bg: logHoverBg }}
-          >
-            <Box flex="1">
-              <Text as="span" color={timestampColor} userSelect="none" mr={2}>
-                {log.timestamp}
-              </Text>
-              <Text as="span" color={getLogColor(log.type as LogType)}>
-                {log.message}
-              </Text>
-            </Box>
-          </Flex>
-        ))}
-      </Box>
+      {!minimized && (
+        <Box
+          ref={logContainerRef}
+          p={2}
+          overflowY="auto"
+          flex="1"
+          fontFamily="monospace"
+          fontSize="xs"
+        >
+          {outputLogs.map((log, index) => (
+            <Flex
+              key={index}
+              mb={1.5}
+              align="flex-start"
+              p={1}
+              borderRadius="sm"
+              _hover={{ bg: logHoverBg }}
+            >
+              <Box flex="1">
+                <Text as="span" color={timestampColor} userSelect="none" mr={2}>
+                  {log.timestamp}
+                </Text>
+                <Text as="span" color={getLogColor(log.type as LogType)}>
+                  {log.message}
+                </Text>
+              </Box>
+            </Flex>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };

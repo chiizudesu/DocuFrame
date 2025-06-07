@@ -1,5 +1,3 @@
-import { configService } from './config';
-
 // Define the settings interface
 export interface AppSettings {
   rootPath: string;
@@ -22,12 +20,14 @@ class SettingsService {
   async getSettings(): Promise<AppSettings> {
     try {
       if (!this.settings) {
-        this.settings = await (window.electronAPI as any).getConfig();
+        const config = await (window.electronAPI as any).getConfig();
+        this.settings = config || { rootPath: '' };
       }
-      return this.settings;
+      return this.settings || { rootPath: '' };
     } catch (error) {
       console.error('Error getting settings:', error);
-      throw error;
+      // Return default settings if there's an error
+      return { rootPath: '' };
     }
   }
 

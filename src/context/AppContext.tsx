@@ -7,6 +7,7 @@ interface FileItem {
   path: string;
   size?: string;
   modified?: string;
+  originalName?: string;
 }
 
 interface LogEntry {
@@ -21,13 +22,19 @@ interface AppContextType {
   outputLogs: LogEntry[];
   addLog: (message: string, type?: LogEntry['type']) => void;
   clearLogs: () => void;
+  // Footer status system - independent of logs
+  statusMessage: string;
+  statusType: 'info' | 'success' | 'error' | 'default';
+  setStatus: (message: string, type?: 'info' | 'success' | 'error' | 'default') => void;
   commandHistory: string[];
   addCommand: (command: string) => void;
   isQuickNavigating: boolean;
   setIsQuickNavigating: (value: boolean) => void;
   initialCommandMode: boolean;
   setInitialCommandMode: (value: boolean) => void;
-  allFiles: FileItem[];
+  // File search system - replaced allFiles mock data
+  searchResults: FileItem[];
+  setSearchResults: (files: FileItem[]) => void;
   // Settings
   rootDirectory: string;
   setRootDirectory: (path: string) => void;
@@ -38,6 +45,11 @@ interface AppContextType {
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
+  selectAllFiles: () => void;
+  setSelectAllFiles: (callback: () => void) => void;
+  // Folder items
+  folderItems: FileItem[];
+  setFolderItems: (files: FileItem[]) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -52,12 +64,19 @@ export const AppProvider: React.FC<{
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [isQuickNavigating, setIsQuickNavigating] = useState(false);
   const [initialCommandMode, setInitialCommandMode] = useState(false);
+  // Footer status system
+  const [statusMessage, setStatusMessage] = useState<string>('Ready');
+  const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | 'default'>('default');
+  // File search system - replaced mock allFiles
+  const [searchResults, setSearchResults] = useState<FileItem[]>([]);
   // Settings state
   const [rootDirectory, setRootDirectoryState] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
+  const [selectAllFiles, setSelectAllFiles] = useState<() => void>(() => () => {});
+  const [folderItems, setFolderItems] = useState<FileItem[]>([]);
 
   // Load settings on mount
   useEffect(() => {
@@ -84,6 +103,14 @@ export const AppProvider: React.FC<{
     setCurrentDirectory(path);
   };
 
+  // Wrapper for settings open/close with status updates
+  const setIsSettingsOpenWithStatus = (isOpen: boolean) => {
+    setIsSettingsOpen(isOpen);
+    if (!isOpen) {
+      setStatus('Settings closed', 'info');
+    }
+  };
+
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     setOutputLogs(prev => [...prev, { message, timestamp, type }]);
@@ -91,101 +118,17 @@ export const AppProvider: React.FC<{
 
   const clearLogs = useCallback(() => {
     setOutputLogs([]);
+    setStatus('Cleared logs', 'success');
+  }, []);
+
+  const setStatus = useCallback((message: string, type: 'info' | 'success' | 'error' | 'default' = 'default') => {
+    setStatusMessage(message);
+    setStatusType(type);
   }, []);
 
   const addCommand = (command: string) => {
     setCommandHistory(prev => [...prev, command]);
   };
-
-  // Mock files for quick navigation
-  const [allFiles, setAllFiles] = useState<FileItem[]>([{
-    name: 'Documents',
-    type: 'folder',
-    path: '/Documents'
-  }, {
-    name: 'Images',
-    type: 'folder',
-    path: '/Images'
-  }, {
-    name: 'Templates',
-    type: 'folder',
-    path: '/Templates'
-  }, {
-    name: 'Invoice Templates',
-    type: 'folder',
-    path: '/Templates/Invoice Templates'
-  }, {
-    name: 'Report Templates',
-    type: 'folder',
-    path: '/Templates/Report Templates'
-  }, {
-    name: 'Clients',
-    type: 'folder',
-    path: '/Clients'
-  }, {
-    name: 'ABC Corp',
-    type: 'folder',
-    path: '/Clients/ABC Corp'
-  }, {
-    name: 'Financial Reports',
-    type: 'folder',
-    path: '/Clients/ABC Corp/Financial Reports'
-  }, {
-    name: 'Tax Documents',
-    type: 'folder',
-    path: '/Clients/ABC Corp/Tax Documents'
-  }, {
-    name: 'XYZ Ltd',
-    type: 'folder',
-    path: '/Clients/XYZ Ltd'
-  }, {
-    name: 'Contracts',
-    type: 'folder',
-    path: '/Clients/XYZ Ltd/Contracts'
-  }, {
-    name: 'Smith & Co',
-    type: 'folder',
-    path: '/Clients/Smith & Co'
-  }, {
-    name: 'Scripts',
-    type: 'folder',
-    path: '/Scripts'
-  }, {
-    name: 'report.pdf',
-    type: 'pdf',
-    path: '/Clients/ABC Corp/report.pdf',
-    size: '2.4 MB'
-  }, {
-    name: 'invoice.pdf',
-    type: 'pdf',
-    path: '/Clients/ABC Corp/invoice.pdf',
-    size: '1.2 MB'
-  }, {
-    name: 'screenshot.png',
-    type: 'image',
-    path: '/Images/screenshot.png',
-    size: '856 KB'
-  }, {
-    name: 'notes.docx',
-    type: 'document',
-    path: '/Documents/notes.docx',
-    size: '45 KB'
-  }, {
-    name: 'pdf_merge.js',
-    type: 'document',
-    path: '/Scripts/pdf_merge.js',
-    size: '12 KB'
-  }, {
-    name: 'gst_rename.js',
-    type: 'document',
-    path: '/Scripts/gst_rename.js',
-    size: '8 KB'
-  }, {
-    name: 'statement.pdf',
-    type: 'pdf',
-    path: '/Clients/XYZ Ltd/statement.pdf',
-    size: '1.8 MB'
-  }]);
 
   const value = {
     currentDirectory,
@@ -193,23 +136,34 @@ export const AppProvider: React.FC<{
     outputLogs,
     addLog,
     clearLogs,
+    // Footer status system
+    statusMessage,
+    statusType,
+    setStatus,
     commandHistory,
     addCommand,
     isQuickNavigating,
     setIsQuickNavigating,
     initialCommandMode,
     setInitialCommandMode,
-    allFiles,
+    // File search system - replaced allFiles mock data
+    searchResults,
+    setSearchResults,
     // Settings
     rootDirectory,
     setRootDirectory,
     apiKey,
     setApiKey,
     isSettingsOpen,
-    setIsSettingsOpen,
+    setIsSettingsOpen: setIsSettingsOpenWithStatus,
     // Preview
     previewFiles,
-    setPreviewFiles
+    setPreviewFiles,
+    selectAllFiles,
+    setSelectAllFiles,
+    // Folder items
+    folderItems,
+    setFolderItems,
   };
 
   return <AppContext.Provider value={value}>

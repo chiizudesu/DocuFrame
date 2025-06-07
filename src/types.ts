@@ -4,6 +4,7 @@ export interface FileItem {
   path: string;
   size?: string;
   modified?: string;
+  originalName?: string;
 }
 
 export interface LogEntry {

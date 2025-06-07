@@ -45,6 +45,8 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    frame: false,
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -69,7 +71,8 @@ const createWindow = () => {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   // Load config before creating window
-  await loadConfig();
+  const config = await loadConfig();
+  console.log('[Main] Loaded config on window start:', config);
   createWindow();
 });
 
@@ -91,10 +94,10 @@ app.on('activate', () => {
 });
 
 // IPC Handlers
-ipcMain.handle('execute-command', async (_, command: string) => {
+ipcMain.handle('execute-command', async (_, command: string, currentDirectory?: string) => {
   try {
-    console.log('[Main] Received command:', command);
-    const result = await handleCommand(command, []);
+    console.log('[Main] Received command:', command, 'currentDirectory:', currentDirectory);
+    const result = await handleCommand(command, [], currentDirectory);
     console.log('[Main] Command result:', result);
     return result;
   } catch (error) {
@@ -103,7 +106,7 @@ ipcMain.handle('execute-command', async (_, command: string) => {
   }
 });
 
-ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName?: string; command?: string }) => {
+ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName?: string; command?: string; currentDirectory?: string }) => {
   try {
     console.log('[Main] Received transfer request:', options);
     const result = await transferFiles(options);
@@ -250,6 +253,16 @@ ipcMain.handle('open-file', async (_, filePath: string) => {
   }
 });
 
+ipcMain.handle('open-directory', async (_, dirPath: string) => {
+  try {
+    await shell.openPath(dirPath);
+    return true;
+  } catch (error) {
+    console.error('Error opening directory:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('confirm-delete', async (_, fileNames: string[]) => {
   const { response } = await dialog.showMessageBox({
     type: 'warning',
@@ -261,4 +274,39 @@ ipcMain.handle('confirm-delete', async (_, fileNames: string[]) => {
     detail: fileNames.join('\n'),
   });
   return response === 0;
+});
+
+ipcMain.handle('window-minimize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.minimize();
+});
+
+ipcMain.handle('window-maximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.maximize();
+});
+
+ipcMain.handle('window-unmaximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.unmaximize();
+});
+
+ipcMain.handle('window-close', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.close();
+});
+
+ipcMain.handle('window-is-maximized', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? win.isMaximized() : false;
+});
+
+// Emit events for maximize/unmaximize
+app.on('browser-window-created', (event, win) => {
+  win.on('maximize', () => {
+    win.webContents.send('window-maximized');
+  });
+  win.on('unmaximize', () => {
+    win.webContents.send('window-unmaximized');
+  });
 });

@@ -152,13 +152,12 @@ const formatFileSize = (size: string | undefined) => {
 
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
-  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory } = useAppContext()
+  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory, setStatus, setSelectAllFiles, folderItems, setFolderItems } = useAppContext()
   
   // All useState hooks next
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
     (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
   )
-  const [folderItems, setFolderItems] = useState<FileItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [sortColumn, setSortColumn] = useState<SortColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -187,40 +186,15 @@ export const FileGrid: React.FC = () => {
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
 
   // All useColorModeValue hooks next
-  const itemBgHover = useColorModeValue('#e8ecf5', 'gray.700')
-  const fileTextColor = useColorModeValue('gray.700', 'white')
-  const fileSubTextColor = useColorModeValue('gray.600', 'gray.400')
-  const tableBgColor = useColorModeValue('#f2f5fa', 'transparent')
-  const tableHeadBgColor = useColorModeValue('#e8ecf5', 'gray.800')
-  const tableHeadTextColor = useColorModeValue('gray.700', 'gray.300')
-  const tableBorderColor = useColorModeValue('#e2e8f0', 'gray.700')
+  const itemBgHover = useColorModeValue('#f1f5f9', 'gray.700')
+  const fileTextColor = useColorModeValue('#334155', 'white')
+  const fileSubTextColor = useColorModeValue('#64748b', 'gray.400')
+  const tableBgColor = useColorModeValue('#f8fafc', 'transparent')
+  const tableHeadBgColor = useColorModeValue('#f1f5f9', 'gray.800')
+  const tableHeadTextColor = useColorModeValue('#475569', 'gray.300')
+  const tableBorderColor = useColorModeValue('#d1d5db', 'gray.700')
 
-  useEffect(() => {
-    const loadDirectory = async () => {
-      if (!currentDirectory) return
-      setIsLoading(true)
-      try {
-        // Use currentDirectory as the full path
-        const fullPath = currentDirectory
-        const isValid = await (window.electronAPI as any).validatePath(fullPath)
-        if (!isValid) {
-          addLog(`Invalid path: ${fullPath}`, 'error')
-          return
-        }
-        const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
-        setFolderItems(contents)
-        addLog(`Loaded directory: ${formatPathForLog(currentDirectory)}`)
-      } catch (error) {
-        console.error('Failed to load directory:', error)
-        addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    loadDirectory()
-  }, [currentDirectory, addLog, rootDirectory])
-
-  // Sort files
+  // Update sorted files when folder items change
   useEffect(() => {
     const sorted = [...folderItems].sort((a, b) => {
       // Always sort folders first
@@ -246,6 +220,31 @@ export const FileGrid: React.FC = () => {
     setSortedFiles(sorted);
   }, [folderItems, sortColumn, sortDirection]);
 
+  // Load directory contents when current directory changes
+  useEffect(() => {
+    const loadDirectory = async () => {
+      if (!currentDirectory) return
+      setIsLoading(true)
+      try {
+        const fullPath = currentDirectory
+        const isValid = await (window.electronAPI as any).validatePath(fullPath)
+        if (!isValid) {
+          addLog(`Invalid path: ${fullPath}`, 'error')
+          return
+        }
+        const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
+        setFolderItems(contents)
+        addLog(`Loaded directory: ${formatPathForLog(currentDirectory)}`)
+      } catch (error) {
+        console.error('Failed to load directory:', error)
+        addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadDirectory()
+  }, [currentDirectory, addLog, rootDirectory, setFolderItems])
+
   // Handle column header click for sorting
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
@@ -266,19 +265,23 @@ export const FileGrid: React.FC = () => {
     if (file.type === 'folder') {
       setCurrentDirectory(file.path);
       addLog(`Changed directory to: ${file.path}`);
+      setStatus(`Opened folder: ${file.name}`, 'info');
     } else {
       // Open file externally
       try {
         if (!window.electronAPI || typeof (window.electronAPI as any).openFile !== 'function') {
           const msg = 'Electron API not available: openFile';
           addLog(msg, 'error');
+          setStatus('File API not available', 'error');
           console.error(msg);
           return;
         }
         (window.electronAPI as any).openFile(file.path);
         addLog(`Opened file: ${file.name}`);
+        setStatus(`Opened file: ${file.name}`, 'success');
       } catch (error: any) {
         addLog(`Failed to open file: ${file.name} (${file.path})\n${error?.message || error}`,'error');
+        setStatus(`Failed to open: ${file.name}`, 'error');
         console.error('Failed to open file:', file.path, error);
       }
     }
@@ -351,11 +354,14 @@ export const FileGrid: React.FC = () => {
         case 'rename':
           setIsRenaming(contextMenu.fileItem.name)
           setRenameValue(contextMenu.fileItem.name)
+          setStatus(`Renaming: ${contextMenu.fileItem.name}`, 'info')
           break
         case 'delete':
           if (selectedFiles.length > 1 && selectedFiles.includes(contextMenu.fileItem.name)) {
+            setStatus(`Deleting ${selectedFiles.length} files...`, 'info')
             await handleDeleteFile(sortedFiles.filter(f => selectedFiles.includes(f.name)))
           } else {
+            setStatus(`Deleting: ${contextMenu.fileItem.name}`, 'info')
             await handleDeleteFile(contextMenu.fileItem)
           }
           break
@@ -401,19 +407,56 @@ export const FileGrid: React.FC = () => {
         handleCloseContextMenu()
       }
     }
+    const handleFolderContentsChanged = (e: any) => {
+      // Support both CustomEvent and IPC event
+      const directory = e?.detail?.directory || (e?.directory ?? (e?.args && e.args[0]?.directory));
+      if (directory === currentDirectory) {
+        loadDirectory(currentDirectory);
+      }
+    }
+
     window.addEventListener(
       'viewModeChanged',
       handleViewModeChange as EventListener,
     )
+    window.addEventListener(
+      'folderContentsChanged',
+      handleFolderContentsChanged as EventListener,
+    )
+    if ((window as any).electron?.ipcRenderer) {
+      (window as any).electron.ipcRenderer.on('folderContentsChanged', handleFolderContentsChanged);
+    }
     document.addEventListener('click', handleClickOutside)
     return () => {
       window.removeEventListener(
         'viewModeChanged',
         handleViewModeChange as EventListener,
       )
+      window.removeEventListener(
+        'folderContentsChanged',
+        handleFolderContentsChanged as EventListener,
+      )
+      if ((window as any).electron?.ipcRenderer) {
+        (window as any).electron.ipcRenderer.removeAllListeners('folderContentsChanged');
+      }
       document.removeEventListener('click', handleClickOutside)
     }
-  }, [contextMenu.isOpen])
+  }, [contextMenu.isOpen, currentDirectory])
+
+  const loadDirectory = async (dirPath: string) => {
+    if (!dirPath) return;
+    setIsLoading(true);
+    try {
+      const contents = await (window.electronAPI as any).getDirectoryContents(dirPath);
+      setFolderItems(contents);
+      addLog(`Loaded directory: ${formatPathForLog(dirPath)}`);
+    } catch (error) {
+      console.error('Failed to load directory:', error);
+      addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Multi-select click logic
   const handleFileItemClick = (file: FileItem, index: number, event?: React.MouseEvent) => {
@@ -459,6 +502,12 @@ export const FileGrid: React.FC = () => {
   // Add F2 key support for rename
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if any input field is focused
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      if (isInputFocused) return;
+      
       if (e.key === 'F2' && selectedFile && !isRenaming) {
         setIsRenaming(selectedFile)
         setRenameValue(selectedFile)
@@ -471,7 +520,12 @@ export const FileGrid: React.FC = () => {
   // Keyboard shortcuts: Enter to open, Delete to delete
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isRenaming) return;
+      // Check if any input field is focused
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      if (isRenaming || isInputFocused) return;
+      
       if (e.key === 'Enter' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
         if (selectedFileObjs.length === 1) {
@@ -487,6 +541,31 @@ export const FileGrid: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedFiles, sortedFiles, isRenaming])
+
+  useEffect(() => {
+    // Register selectAllFiles callback
+    setSelectAllFiles(() => () => {
+      setSelectedFiles(sortedFiles.map(f => f.name));
+      setStatus(`Selected all files in ${currentDirectory.split(/[\\/]/).pop() || currentDirectory}`, 'info');
+      addLog(`Selected all files in ${currentDirectory}`);
+    });
+    return () => setSelectAllFiles(() => () => {});
+  }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog]);
+
+  useEffect(() => {
+    const handler = (event: any, data: { directory: string }) => {
+      if (data && data.directory && data.directory === currentDirectory) {
+        loadDirectory(currentDirectory);
+      }
+    };
+    if (window.require) {
+      const { ipcRenderer } = window.require('electron');
+      ipcRenderer.on('folderContentsChanged', handler);
+      return () => {
+        ipcRenderer.removeListener('folderContentsChanged', handler);
+      };
+    }
+  }, [currentDirectory]);
 
   // Grid view
   const renderGridView = () => (

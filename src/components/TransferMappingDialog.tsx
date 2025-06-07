@@ -39,8 +39,8 @@ interface TransferMappingDialogProps {
 declare global {
   interface Window {
     electronAPI: {
-      executeCommand: (command: string) => Promise<any>;
-      transfer: (options: { numFiles?: number; newName?: string; command?: string }) => Promise<any>;
+      executeCommand: (command: string, currentDirectory?: string) => Promise<any>;
+      transfer: (options: { numFiles?: number; newName?: string; command?: string; currentDirectory?: string }) => Promise<any>;
       getConfig: (key: string) => Promise<any>;
       setConfig: (key: string, value: any) => Promise<void>;
       selectDirectory: () => Promise<string>;

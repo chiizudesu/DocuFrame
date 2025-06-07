@@ -4,54 +4,51 @@ import { useAppContext } from '../context/AppContext';
 
 export const Footer: React.FC = () => {
   const {
-    outputLogs
+    statusMessage,
+    statusType
   } = useAppContext();
   
-  const bgColor = useColorModeValue('#f0f2f8', 'gray.800');
-  const borderColor = useColorModeValue('#e2e8f0', 'gray.700');
-  const textColor = useColorModeValue('gray.600', 'gray.400');
+  // Light mode footer colors
+  const bgColor = useColorModeValue('#f8fafc', '#181b20');
+  const borderColor = useColorModeValue('#e2e8f0', '#181b20');
+  const textColor = useColorModeValue('#64748b', 'gray.500');
   
-  const getLogColor = (type: string) => {
+  const getStatusColor = (type: string) => {
     switch (type) {
       case 'error':
-        return useColorModeValue('red.600', 'red.300');
-      case 'response':
-        return useColorModeValue('green.600', 'green.300');
+        return useColorModeValue('#dc2626', 'red.300');
+      case 'success':
+        return useColorModeValue('#059669', 'green.300');
+      case 'info':
+        return useColorModeValue('#3730a3', 'blue.300');
       default:
-        return useColorModeValue('gray.700', 'white');
+        return useColorModeValue('#64748b', 'gray.400');
     }
   };
-
-  // Get the latest log message if available
-  const latestLog = outputLogs.length > 0 ? outputLogs[outputLogs.length - 1] : null;
 
   return (
     <Flex 
       justify="space-between" 
       align="center" 
-      p={2} 
+      p={1} 
+      minH="28px"
       bg={bgColor} 
       borderTop="1px" 
       borderColor={borderColor} 
       h="100%"
     >
-      {latestLog && (
-        <Text 
-          fontSize="xs" 
-          fontFamily="monospace" 
-          color={getLogColor(latestLog.type)} 
-          isTruncated 
-          maxW="70%" 
-          userSelect="none"
-        >
-          {latestLog.message}
-        </Text>
-      )}
+      <Text 
+        fontSize="xs" 
+        fontFamily="monospace" 
+        color={getStatusColor(statusType)} 
+        isTruncated 
+        maxW="70%" 
+        userSelect="none"
+      >
+        {statusMessage}
+      </Text>
       <Flex align="center">
-        <Text fontSize="xs" color={textColor} mr={2} userSelect="none">
-          v1.0.0
-        </Text>
-        <Text fontSize="xs" color={textColor} userSelect="none">
+        <Text fontSize="10px" color={textColor} userSelect="none">
           developed by Matty
         </Text>
       </Flex>

@@ -16,14 +16,40 @@ const AppContent: React.FC = () => {
     setIsQuickNavigating,
     setInitialCommandMode,
     isSettingsOpen,
-    setIsSettingsOpen
+    setIsSettingsOpen,
+    currentDirectory,
+    setCurrentDirectory,
+    setStatus,
+    addLog,
+    selectAllFiles
   } = useAppContext();
-  // Handle keyboard events for quick navigation
+  // Handle keyboard events for quick navigation and backspace navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only trigger if no input/textarea is focused
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      // Ctrl+A to select all files in current directory
+      if (!isInputFocused && e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        selectAllFiles();
+        return;
+      }
+      // Backspace to go up one directory level
+      if (!isInputFocused && !isQuickNavigating && e.key === 'Backspace') {
+        e.preventDefault();
+        const parentPath = getParentDirectory(currentDirectory);
+        if (parentPath && parentPath !== currentDirectory) {
+          setCurrentDirectory(parentPath);
+          addLog(`Navigated up to: ${parentPath}`);
+          setStatus(`Navigated up to: ${parentPath.split('\\').pop() || parentPath.split('/').pop() || parentPath}`, 'info');
+        } else {
+          setStatus('Already at root directory', 'info');
+        }
+        return;
+      }
+      
       // If Ctrl + Space is pressed, open in command mode
       if (!isInputFocused && !isQuickNavigating && e.ctrlKey && e.code === 'Space') {
         setIsQuickNavigating(true);
@@ -37,12 +63,34 @@ const AppContent: React.FC = () => {
         setInitialCommandMode(false);
       }
     };
+
+    // Helper function to get parent directory
+    const getParentDirectory = (path: string): string | null => {
+      if (!path || path === '/') return null;
+      
+      // Handle Windows paths
+      if (path.includes('\\')) {
+        const parts = path.split('\\').filter(Boolean);
+        if (parts.length <= 1) return null; // Already at root
+        return parts.slice(0, -1).join('\\') + '\\';
+      }
+      
+      // Handle Unix paths
+      if (path.includes('/')) {
+        const parts = path.split('/').filter(Boolean);
+        if (parts.length <= 1) return null; // Already at root
+        return '/' + parts.slice(0, -1).join('/');
+      }
+      
+      return null;
+    };
+
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode]);
-  return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : 'gray.50'} color={colorMode === 'dark' ? 'white' : 'gray.800'} overflow="hidden" position="relative">
+  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, selectAllFiles]);
+  return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
       <Layout />
       <QuickNavigateOverlay />
       <SettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />

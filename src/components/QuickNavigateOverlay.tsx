@@ -1,26 +1,41 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Box, Input, Text, Flex, Icon, useColorModeValue, List, ListItem, Divider, IconButton } from '@chakra-ui/react';
-import { File, FolderOpen, Search, DollarSign } from 'lucide-react';
+import { File, FolderOpen, Search, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useFileSearch } from '../hooks/useFileSearch';
 import type { FileItem, TransferOptions } from '../types';
 import { joinPath, isAbsolutePath } from '../utils/path'
+
 
 export const QuickNavigateOverlay: React.FC = () => {
   // All useContext hooks first
   const {
-    rootDirectory: rootPath,
-    setRootDirectory: setRootPath,
+    currentDirectory,
     setCurrentDirectory: setCurrentPath,
     setPreviewFiles,
     previewFiles,
     addLog,
     addCommand,
-    allFiles,
+
     initialCommandMode,
     isQuickNavigating,
     setIsQuickNavigating,
-    commandHistory
+    commandHistory,
+    setStatus
   } = useAppContext();
+
+  // File search hook
+  const {
+    results: searchResultsList,
+    isLoading: isSearching,
+    error: searchError,
+    search: performSearch,
+    clearResults
+  } = useFileSearch({
+    currentDirectory,
+    maxResults: 12, // Increase results for better coverage
+    debounceMs: 75  // Faster response - reduce from 200ms to 75ms
+  });
 
   // All useState hooks next
   const [inputValue, setInputValue] = useState('');
@@ -39,25 +54,102 @@ export const QuickNavigateOverlay: React.FC = () => {
     };
   } | null>(null);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [transferMappings, setTransferMappings] = useState<{ [key: string]: string }>({});
 
   // All useRef hooks next
   const inputRef = useRef<HTMLInputElement>(null);
 
   // All useColorModeValue hooks next
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const bgColor = useColorModeValue('#ffffff', 'gray.800');
+
   const shadowColor = useColorModeValue('rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)');
-  const commandBgColor = useColorModeValue('gray.50', 'gray.700');
+  const commandBgColor = useColorModeValue('#f8fafc', 'gray.700');
+
+  // All useCallback hooks for functions used in useEffect
+  const handleTransferMappingPreview = useCallback(async (command: string) => {
+    try {
+      console.log('[QuickNavigate] Auto-requesting mapping preview for command:', command);
+      const previewOptions: TransferOptions = { 
+        numFiles: 1,
+        command: command,
+        currentDirectory: currentDirectory
+      };
+      const previewResult = await window.electronAPI.transfer(previewOptions);
+      console.log('[QuickNavigate] Mapping preview result:', previewResult);
+      
+      if (previewResult.success && previewResult.files) {
+        console.log('[QuickNavigate] Mapping preview successful, updating preview pane');
+        setPreviewFiles(previewResult.files);
+      } else {
+        console.log('[QuickNavigate] Mapping preview failed:', previewResult.message);
+        setPreviewFiles([]);
+      }
+    } catch (error) {
+      console.error('[QuickNavigate] Error during mapping preview:', error);
+      setPreviewFiles([]);
+    }
+  }, [currentDirectory, setPreviewFiles]);
+
+  const handleTransferPreview = useCallback(async (numFiles: number) => {
+    try {
+      console.log('[QuickNavigate] Auto-requesting transfer preview for', numFiles, 'files');
+      const previewOptions: TransferOptions = { 
+        numFiles,
+        command: 'preview',
+        currentDirectory: currentDirectory
+      };
+      const previewResult = await window.electronAPI.transfer(previewOptions);
+      console.log('[QuickNavigate] Auto-preview result:', previewResult);
+      
+      if (previewResult.success && previewResult.files) {
+        console.log('[QuickNavigate] Auto-preview successful, updating preview pane');
+        setPreviewFiles(previewResult.files);
+      } else {
+        console.log('[QuickNavigate] Auto-preview failed:', previewResult.message);
+        setPreviewFiles([]);
+      }
+    } catch (error) {
+      console.error('[QuickNavigate] Error during auto-preview:', error);
+      setPreviewFiles([]);
+    }
+  }, [currentDirectory, setPreviewFiles]);
+
+  // Fetch transfer mappings on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const config = await (window.electronAPI as any).getConfig('transferCommandMappings');
+        console.log('[QuickNavigate] Raw config result:', config);
+        // Extract just the transferCommandMappings part if it's nested
+        const mappings = config?.transferCommandMappings || config || {};
+        console.log('[QuickNavigate] Extracted transfer mappings:', mappings);
+        setTransferMappings(mappings);
+      } catch (error) {
+        console.error('[QuickNavigate] Error loading transfer mappings:', error);
+        setTransferMappings({});
+      }
+    })();
+  }, []);
+
+  // Re-trigger command info update when mappings are loaded
+  useEffect(() => {
+    if (Object.keys(transferMappings).length > 0 && inputValue && isCommandMode) {
+      const commandText = inputValue.trim().toLowerCase();
+      handleCommandInfoUpdate(commandText);
+    }
+  }, [transferMappings]);
 
   // Focus input when overlay opens and set initial mode
   useEffect(() => {
     if (isQuickNavigating && inputRef.current) {
       inputRef.current.focus();
-      // Set command mode only if explicitly triggered with $
+      // Set command mode only if explicitly triggered with Ctrl+Space
+      console.log('[QuickNavigate] Setting mode - initialCommandMode:', initialCommandMode);
       setIsCommandMode(initialCommandMode);
       setInputValue('');
     }
   }, [isQuickNavigating, initialCommandMode]);
+
   // Process input changes
   useEffect(() => {
     if (!inputValue) {
@@ -68,7 +160,7 @@ export const QuickNavigateOverlay: React.FC = () => {
         setCommandInfo({
           title: 'Command Info',
           description: 'Type a command to execute',
-          usage: '$ [command] [arguments]'
+          usage: '[command] [arguments]'
         });
       } else {
         setCommandInfo(null);
@@ -80,38 +172,100 @@ export const QuickNavigateOverlay: React.FC = () => {
       handleCommandInfoUpdate(commandText);
       setFilteredResults([]);
       
-      // Auto-preview for transfer commands
+      // Auto-preview for transfer commands (including mapping commands)
+      const commandParts = commandText.split(' ');
+      const command = commandParts[0];
+      const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
+      
       if (commandText.startsWith('transfer ')) {
-        const parts = commandText.split(' ');
-        if (parts.length > 1 && !isNaN(Number(parts[1]))) {
-          const numFiles = Number(parts[1]);
-          handleTransferPreview(numFiles);
-        } else {
-          setPreviewFiles([]); // Clear preview if invalid number
+        // Parse argument, supporting quoted strings
+        const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
+        let arg = match && (match[1] || match[2] || match[3]);
+        let numFiles: number | undefined = 1;
+        let newName: string | undefined = undefined;
+        if (arg) {
+          if (!isNaN(Number(arg))) {
+            numFiles = Number(arg);
+          } else {
+            newName = arg;
+          }
         }
+        // Always call preview API for transfer command
+        window.electronAPI.transfer({
+          numFiles,
+          newName,
+          command: 'preview',
+          currentDirectory
+        }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (mappingKey) {
+        // Auto-preview for mapping commands
+        handleTransferMappingPreview(command);
       } else {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
     } else {
-      // Regular search mode
-      const filtered = allFiles.filter(file => file.name.toLowerCase().includes(inputValue.toLowerCase()));
-      setFilteredResults(filtered.slice(0, 3)); // Limit to 3 results
+      // Regular search mode - use real file search
+      if (inputValue.trim()) {
+        performSearch(inputValue);
+      } else {
+        setFilteredResults([]);
+        clearResults();
+      }
       setCommandInfo(null);
       setPreviewFiles([]); // Clear preview in search mode
     }
-  }, [inputValue, isCommandMode, allFiles]);
+  }, [inputValue, isCommandMode, transferMappings, handleTransferPreview, handleTransferMappingPreview, performSearch, clearResults]);
+
+  // Sync search results to filtered results for display
+  useEffect(() => {
+    if (!isCommandMode && searchResultsList.length > 0) {
+      setFilteredResults(searchResultsList.slice(0, 10)); // Show more results
+    }
+  }, [searchResultsList, isCommandMode]);
+
   const handleCommandInfoUpdate = (commandText: string) => {
+    console.log('[QuickNavigate] handleCommandInfoUpdate called with commandText:', commandText);
+    console.log('[QuickNavigate] transferMappings object:', transferMappings);
+    console.log('[QuickNavigate] transferMappings keys:', Object.keys(transferMappings));
+    
     if (!commandText) {
       setCommandInfo({
         title: 'Command Info',
         description: 'Type a command to execute',
-        usage: '$ [command] [arguments]'
+        usage: '[command] [arguments]'
       });
       return;
     }
     // Parse command and show relevant info
     const commandParts = commandText.split(' ');
     const command = commandParts[0];
+    console.log('[QuickNavigate] Parsed command:', command);
+    
+    // Check for transfer mapping commands
+    const mappingKey = Object.keys(transferMappings).find(key => {
+      console.log('[QuickNavigate] Checking key:', key, 'against command:', command);
+      console.log('[QuickNavigate] key.toLowerCase():', key.toLowerCase(), 'command.toLowerCase():', command.toLowerCase());
+      const matches = key.toLowerCase() === command.toLowerCase();
+      console.log('[QuickNavigate] Match result:', matches);
+      return matches;
+    });
+    console.log('[QuickNavigate] Final mappingKey found:', mappingKey);
+    
+    if (mappingKey) {
+      console.log('[QuickNavigate] Setting transfer mapping command info');
+      setCommandInfo({
+        title: `Transfer Mapping: ${mappingKey}`,
+        description: `Transfer file(s) using mapping: ${transferMappings[mappingKey]}`,
+        usage: `$ ${mappingKey.toLowerCase()}`
+      });
+      return;
+    }
     if (command === 'merge') {
       setCommandInfo({
         title: 'Merge PDFs',
@@ -199,7 +353,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       setCommandInfo({
         title: 'Command Info',
         description: 'Type a command to execute',
-        usage: '$ [command] [arguments]'
+        usage: '[command] [arguments]'
       });
     } else {
       setCommandInfo(null);
@@ -213,13 +367,49 @@ export const QuickNavigateOverlay: React.FC = () => {
       setInputValue(newIndex === -1 ? '' : commandHistory[newIndex]);
     }
   };
+
+  const handleResultSelection = async (result: FileItem) => {
+    if (result.type === 'folder') {
+      setCurrentPath(isAbsolutePath(result.path) ? result.path : joinPath(result.path));
+      addLog(`Changed directory to: ${result.path}`);
+      setStatus(`Navigated to: ${result.name}`, 'info');
+    } else {
+      try {
+        if (window.electronAPI && (window.electronAPI as any).openFile) {
+          await (window.electronAPI as any).openFile(result.path);
+          addLog(`Opened file: ${result.path}`);
+          setStatus(`Opened: ${result.name}`, 'success');
+        } else {
+          addLog(`Cannot open file: ${result.path} - API not available`, 'error');
+          setStatus(`Failed to open: ${result.name}`, 'error');
+        }
+      } catch (error) {
+        addLog(`Failed to open file: ${result.path} - ${error}`, 'error');
+        setStatus(`Failed to open: ${result.name}`, 'error');
+      }
+    }
+    // Always close overlay after selection
+    setIsQuickNavigating(false);
+    setInputValue('');
+    clearResults();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsQuickNavigating(false);
       setInputValue('');
+      clearResults();
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      executeCommand();
+      
+      // If in search mode and we have results, navigate to first result
+      if (!isCommandMode && filteredResults.length > 0) {
+        const firstResult = filteredResults[0];
+        handleResultSelection(firstResult);
+      } else if (isCommandMode) {
+        // Execute command in command mode
+        executeCommand();
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       navigateHistory(-1);
@@ -230,12 +420,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       e.preventDefault();
       if (filteredResults.length > 0) {
         const firstResult = filteredResults[0];
-        if (firstResult.type === 'folder') {
-          setCurrentPath(isAbsolutePath(firstResult.path) ? firstResult.path : joinPath(firstResult.path));
-          addLog(`Changed directory to: ${firstResult.path}`);
-        } else {
-          setInputValue(firstResult.path);
-        }
+        handleResultSelection(firstResult);
       }
     }
   };
@@ -246,22 +431,33 @@ export const QuickNavigateOverlay: React.FC = () => {
     console.log('[QuickNavigate] Executing command:', command);
     addLog(`$ ${command}`, 'command');
     addCommand(command);
+    setStatus(`Executing: ${command}`, 'info');
 
     try {
       // For transfer commands, get preview first
       if (command.toLowerCase().startsWith('transfer')) {
         console.log('[QuickNavigate] Detected transfer command');
-        const parts = command.split(' ');
-        const numFiles = parts.length > 1 && !isNaN(Number(parts[1])) ? Number(parts[1]) : 1;
-        console.log('[QuickNavigate] Number of files to transfer:', numFiles);
-        
+        // Parse arguments, supporting quoted strings
+        const match = command.match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
+        let arg = match && (match[1] || match[2] || match[3]);
+        let numFiles: number | undefined = 1;
+        let newName: string | undefined = undefined;
+        if (arg) {
+          if (!isNaN(Number(arg))) {
+            numFiles = Number(arg);
+          } else {
+            newName = arg;
+          }
+        }
+        console.log('[QuickNavigate] Parsed transfer args:', { numFiles, newName });
         try {
           // Get preview first
           console.log('[QuickNavigate] Requesting transfer preview...');
           const previewOptions: TransferOptions = { 
             numFiles,
+            newName,
             command: 'preview',
-            currentDirectory: rootPath
+            currentDirectory: currentDirectory
           };
           const previewResult = await window.electronAPI.transfer(previewOptions);
           console.log('[QuickNavigate] Preview result:', previewResult);
@@ -275,8 +471,9 @@ export const QuickNavigateOverlay: React.FC = () => {
             console.log('[QuickNavigate] Executing transfer...');
             const transferOptions: TransferOptions = { 
               numFiles,
+              newName,
               command: 'transfer',
-              currentDirectory: rootPath
+              currentDirectory: currentDirectory
             };
             const transferResult = await window.electronAPI.transfer(transferOptions);
             console.log('[QuickNavigate] Transfer result:', transferResult);
@@ -284,9 +481,11 @@ export const QuickNavigateOverlay: React.FC = () => {
             if (transferResult.success) {
               console.log('[QuickNavigate] Transfer successful');
               addLog(transferResult.message, 'response');
+              setStatus('Transfer completed', 'success');
             } else {
               console.log('[QuickNavigate] Transfer failed:', transferResult.message);
               addLog(transferResult.message, 'error');
+              setStatus('Transfer failed', 'error');
             }
           } else {
             console.log('[QuickNavigate] Preview failed:', previewResult.message);
@@ -299,13 +498,15 @@ export const QuickNavigateOverlay: React.FC = () => {
       } else {
         // Handle other commands
         console.log('[QuickNavigate] Executing non-transfer command');
-        const result = await window.electronAPI.executeCommand(command);
+        const result = await window.electronAPI.executeCommand(command, currentDirectory);
         console.log('[QuickNavigate] Command execution result:', result);
         
         if (result.success) {
           addLog(result.message, 'response');
+          setStatus('Command completed', 'success');
         } else {
           addLog(result.message, 'error');
+          setStatus('Command failed', 'error');
         }
       }
     } catch (error) {
@@ -316,39 +517,25 @@ export const QuickNavigateOverlay: React.FC = () => {
     setIsQuickNavigating(false);
     setInputValue('');
   };
-  const handleTransferPreview = async (numFiles: number) => {
-    try {
-      console.log('[QuickNavigate] Auto-requesting transfer preview for', numFiles, 'files');
-      const previewOptions: TransferOptions = { 
-        numFiles,
-        command: 'preview',
-        currentDirectory: rootPath
-      };
-      const previewResult = await window.electronAPI.transfer(previewOptions);
-      console.log('[QuickNavigate] Auto-preview result:', previewResult);
-      
-      if (previewResult.success && previewResult.files) {
-        console.log('[QuickNavigate] Auto-preview successful, updating preview pane');
-        setPreviewFiles(previewResult.files);
-      } else {
-        console.log('[QuickNavigate] Auto-preview failed:', previewResult.message);
-        setPreviewFiles([]);
-      }
-    } catch (error) {
-      console.error('[QuickNavigate] Error during auto-preview:', error);
-      setPreviewFiles([]);
-    }
-  };
   if (!isQuickNavigating) return null;
   return <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="rgba(0,0,0,0.3)" zIndex="modal" display="flex" alignItems="flex-start" justifyContent="center" paddingTop="30vh" onClick={() => setIsQuickNavigating(false)}>
       <Box width="600px" maxWidth="90%" onClick={e => e.stopPropagation()}>
         {/* Fixed position input container - always visible */}
         <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
           <Flex align="center" p={3}>
-            <IconButton icon={isCommandMode ? <DollarSign size={16} strokeWidth={2} /> : <Search size={16} />} aria-label={isCommandMode ? 'Command mode' : 'Search mode'} variant="ghost" size="sm" color="blue.400" onClick={toggleCommandMode} />
-            <Input ref={inputRef} placeholder={isCommandMode ? 'Enter command...' : 'Type to search files and folders...'} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown} variant="unstyled" fontSize="md" ml={2} autoFocus />
+            <IconButton icon={isCommandMode ? <ChevronRight size={25} strokeWidth={2} /> : <Search size={18} />} aria-label={isCommandMode ? 'Command mode' : 'Search mode'} variant="ghost" size="sm" color="blue.400" onClick={toggleCommandMode} />
+            <Input ref={inputRef} placeholder={isCommandMode ? 'Enter command...' : 'Type to search files and folders... (Enter=Navigate, Backspace=Up)'} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown} variant="unstyled" fontSize="md" ml={2} autoFocus />
           </Flex>
         </Box>
+
+        
+        {/* Search error indicator */}
+        {!isCommandMode && searchError && (
+          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} p={4}>
+            <Text fontSize="sm" color="red.500">Search failed: {searchError}</Text>
+          </Box>
+        )}
+        
         {/* Command info panel - separate from input container */}
         {isCommandMode && commandInfo && (
           <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1}>
@@ -359,11 +546,11 @@ export const QuickNavigateOverlay: React.FC = () => {
               <Text fontSize="xs" color="gray.500" mb={1}>
                 {commandInfo.description}
               </Text>
-              <Flex align="center" bg={useColorModeValue('gray.100', 'gray.900')} p={2} borderRadius="md" mt={2} border="1px solid" borderColor={useColorModeValue('gray.200', 'gray.700')}>
-                <Flex align="center">
-                  <DollarSign size={12} color={useColorModeValue('#3182CE', '#63B3ED')} strokeWidth={2} />
-                  <Text fontSize="xs" fontFamily="monospace" color={useColorModeValue('blue.600', 'blue.300')} ml={1}>
-                    {commandInfo.usage.replace('$ ', '')}
+                              <Flex align="center" bg={useColorModeValue('#f1f5f9', 'gray.900')} p={2} borderRadius="md" mt={2} border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')}>
+                  <Flex align="center">
+                    <ChevronRight size={12} color={useColorModeValue('#3b82f6', '#63B3ED')} strokeWidth={2} />
+                    <Text fontSize="xs" fontFamily="monospace" color={useColorModeValue('#3b82f6', 'blue.300')} ml={1}>
+                    {commandInfo.usage.replace('> ', '')}
                   </Text>
                 </Flex>
               </Flex>
@@ -377,7 +564,7 @@ export const QuickNavigateOverlay: React.FC = () => {
                 <Box>
                   {commandInfo.preview.items.map((item, index) => (
                     <Flex key={index} align="center" py={1}>
-                      <DollarSign size={10} color={useColorModeValue('#4A5568', '#718096')} strokeWidth={2} />
+                      <ChevronRight size={10} color={useColorModeValue('#64748b', '#718096')} strokeWidth={2} />
                       <Text fontSize="xs" ml={2}>
                         {item.name} {item.size && `(${item.size})`}
                       </Text>
@@ -399,10 +586,18 @@ export const QuickNavigateOverlay: React.FC = () => {
               <Box>
                 {previewFiles.map((file, index) => (
                   <Flex key={index} align="center" py={1}>
-                    <Icon as={File} size={10} color={useColorModeValue('#4A5568', '#718096')} />
+                    <Icon as={File} size={10} color={useColorModeValue('#64748b', '#718096')} />
                     <Text fontSize="xs" ml={2}>
-                      {file.name} {file.size && `(${Math.round(parseFloat(file.size) / 1024)} KB)`}
+                      {file.originalName && file.originalName !== file.name
+                        ? `${file.originalName} → ${file.name}`
+                        : file.name}
+                      {file.size && ` (${Math.round(parseFloat(file.size) / 1024)} KB)`}
                     </Text>
+                    {file.name && file.name.match(/^F\s-\s|TESTFILE/i) && (
+                      <Box as="span" ml={2} px={2} py={0.5} bg="blue.100" color="blue.800" borderRadius="md" fontSize="10px" fontWeight="bold">
+                        MAPPED NAME
+                      </Box>
+                    )}
                   </Flex>
                 ))}
               </Box>
@@ -410,30 +605,37 @@ export const QuickNavigateOverlay: React.FC = () => {
           </Box>
         )}
         
-        {/* Search results - separate from input container */}
+        {/* Search results - separate from input container */}        
+        {/* No results message */}
+        {!isCommandMode && inputValue.trim() && !isSearching && filteredResults.length === 0 && (
+          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} p={4}>
+            <Text fontSize="sm" color="gray.500" textAlign="center">
+              No files or folders found for "{inputValue}"
+            </Text>
+          </Box>
+        )}
+        
         {!isCommandMode && filteredResults.length > 0 && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={1}>
             <List spacing={0}>
-              {filteredResults.map((result, index) => <ListItem key={index} p={2} bg={index === 0 ? useColorModeValue('blue.50', 'blue.900') : 'transparent'} _hover={{
-            bg: useColorModeValue('gray.100', 'gray.700')
-          }} onClick={() => {
-            if (result.type === 'folder') {
-              setCurrentPath(isAbsolutePath(result.path) ? result.path : joinPath(result.path));
-              addLog(`Changed directory to: ${result.path}`);
-            } else {
-              addLog(`Opening file: ${result.path}`);
-            }
-            setIsQuickNavigating(false);
-            setInputValue('');
-          }}>
+              {filteredResults.map((result, index) => <ListItem key={index} p={2} bg={index === 0 ? useColorModeValue('#eff6ff', 'blue.900') : 'transparent'} cursor="pointer" _hover={{
+            bg: useColorModeValue('#f8fafc', 'gray.700')
+          }} onClick={() => handleResultSelection(result)}>
                   <Flex align="center">
                     <Icon as={result.type === 'folder' ? FolderOpen : File} color={result.type === 'folder' ? 'blue.400' : 'gray.400'} boxSize={4} mr={3} />
                     <Box flex="1">
                       <Text fontSize="sm" fontWeight={index === 0 ? 'medium' : 'normal'}>
                         {result.name}
                       </Text>
-                      <Text fontSize="xs" color="gray.500">
-                        {result.path}
-                      </Text>
+                      <Flex align="center" gap={2}>
+                        <Text fontSize="xs" color="gray.500" flex="1" isTruncated>
+                          {result.path}
+                        </Text>
+                        {result.type !== 'folder' && result.size && String(result.size) !== '0' && String(result.size).trim() !== '' && (
+                          <Text fontSize="xs" color="gray.400">
+                            {result.size}
+                          </Text>
+                        )}
+                      </Flex>
                     </Box>
                     {index === 0 && <Text fontSize="xs" color="gray.500" ml={2}>
                         Press Enter to open

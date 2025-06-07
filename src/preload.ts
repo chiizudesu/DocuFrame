@@ -14,12 +14,12 @@ import { handleCommand } from './main/commandHandler';
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Command handling
-  executeCommand: async (command: string) => {
-    return await handleCommand(command, []);
+  executeCommand: async (command: string, currentDirectory?: string) => {
+    return await handleCommand(command, [], currentDirectory);
   },
   
   // Transfer command
-  transfer: async (options: { numFiles?: number; newName?: string; command?: string }) => {
+  transfer: async (options: { numFiles?: number; newName?: string; command?: string; currentDirectory?: string }) => {
     return await transferFiles(options);
   },
   

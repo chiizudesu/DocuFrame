@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -8,20 +8,36 @@ import { TransferMappingDialog } from './TransferMappingDialog';
 
 export const FunctionPanels: React.FC = () => {
   const {
-    addLog
+    addLog,
+    setStatus
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
-  const bgColor = useColorModeValue('#eef1f8', 'gray.900');
-  const headerBgColor = useColorModeValue('#4F46E5', 'gray.900');
-  const headerTextColor = useColorModeValue('white', 'white');
-  const buttonHoverBg = useColorModeValue('#e8ecf5', 'gray.700');
-  const borderColor = useColorModeValue('#4F46E5', 'gray.700');
+  const bgColor = useColorModeValue('#f1f5f9', 'gray.900');
+  const headerBgColor = useColorModeValue('#ffffff', 'gray.900');
+  const headerTextColor = useColorModeValue('#334155', 'white');
+  const buttonHoverBg = useColorModeValue('#e2e8f0', 'gray.700');
+  const borderColor = useColorModeValue('#cbd5e1', 'gray.700');
   const handleAction = (action: string) => {
     if (action === 'transfer_mapping') {
       setTransferMappingOpen(true);
+      setStatus('Opened transfer mapping', 'info');
       return;
     }
     addLog(`Executing action: ${action}`);
+    // Get user-friendly function names
+    const functionNames: { [key: string]: string } = {
+      gst_template: 'GST Template',
+      gst_rename: 'GST Rename',
+      copy_notes: 'Copy Notes',
+      merge_pdfs: 'Merge PDFs',
+      extract_zips: 'Extract Zips',
+      extract_eml: 'Extract EML',
+      transfer_mapping: 'Transfer Map',
+      ai_editor: 'AI Editor',
+      update: 'Update'
+    };
+    const friendlyName = functionNames[action] || action;
+    setStatus(`Executing ${friendlyName}...`, 'info');
   };
   const FunctionButton: React.FC<{
     icon: React.ElementType;
@@ -35,26 +51,65 @@ export const FunctionPanels: React.FC = () => {
     action,
     description,
     color = 'blue.400'
-  }) => <Tooltip label={description || action} placement="bottom" hasArrow>
-      <Button variant="ghost" display="flex" flexDirection="column" height="91px" width="52px" py={2} px={1} minW="auto" _hover={{
-      bg: buttonHoverBg
-    }} onClick={() => handleAction(action)}>
-        <Flex flex="1" align="center" justify="center" mb={1}>
-          <Icon as={icon} boxSize={7} color={color} />
-        </Flex>
-        <Text fontSize="9px" textAlign="center" lineHeight="1.2" fontWeight="normal" width="100%" whiteSpace="normal" wordBreak="break-word" height="28px" display="flex" alignItems="center" justifyContent="center">
-          {label}
-        </Text>
-      </Button>
-    </Tooltip>;
+  }) => {
+    const isLong = label.length > 18;
+    return (
+      <Tooltip label={description || action} placement="bottom" hasArrow>
+        <Button
+          variant="ghost"
+          display="flex"
+          flexDirection="column"
+          height="112px"
+          minWidth={isLong ? '96px' : '68px'}
+          maxWidth="130px"
+          width="fit-content"
+          py={3}
+          px={2}
+          _hover={{ bg: buttonHoverBg }}
+          onClick={() => handleAction(action)}
+        >
+          <Flex flex="1" align="center" justify="center" mb={2} width={isLong ? '48px' : '40px'} mx="auto">
+            <Icon as={icon} boxSize={9} color={color} />
+          </Flex>
+          <Text
+            as="span"
+            fontSize="12px"
+            textAlign="center"
+            lineHeight="1.2"
+            fontWeight="medium"
+            width="100%"
+            whiteSpace="normal"
+            wordBreak="break-word"
+            minHeight="34px"
+            maxHeight="34px"
+            display="inline-block"
+            overflow="hidden"
+          >
+            {(() => {
+              const words = label.split(' ');
+              if (words.length === 1) {
+                return <>{label}<br /></>;
+              } else if (words.length === 2) {
+                return <>{words[0]}<br />{words[1]}</>;
+              } else {
+                const mid = Math.ceil(words.length / 2);
+                return <>{words.slice(0, mid).join(' ')}<br />{words.slice(mid).join(' ')}</>;
+              }
+            })()}
+          </Text>
+        </Button>
+      </Tooltip>
+    );
+  };
   return <>
     <Flex direction="column">
       <Tabs variant="line" colorScheme="indigo" size="sm">
         <Flex align="center" justify="space-between" px={2} bg={headerBgColor} borderBottom="2px" borderColor={borderColor} boxShadow="0 1px 3px rgba(0,0,0,0.1)">
           <TabList borderBottom="none">
-            <Tab py={1} px={3} fontSize="sm" color={headerTextColor} _selected={{
-            color: 'white',
-            borderColor: 'white'
+            <Tab py={1} px={3} fontSize="sm" color={useColorModeValue('#3b82f6', 'white')} _selected={{
+            color: '#3b82f6',
+            borderColor: '#3b82f6',
+            fontWeight: 'semibold'
           }}>
               Functions
             </Tab>
@@ -66,25 +121,31 @@ export const FunctionPanels: React.FC = () => {
             <Flex gap={6}>
               <Box>
                 <Flex gap={1}>
-                  <FunctionButton icon={FilePlus2} label="Merge PDFs" action="merge_pdfs" description="Combine multiple PDF files into one document" color="green.400" _hover={{
-                  bg: buttonHoverBg
-                }} />
-                  <FunctionButton icon={FileText} label="Merge Inc PDFs" action="merge_inc_pdfs" description="Merge incrementally named PDF files" color="blue.400" />
-                  <FunctionButton icon={FileEdit} label="Rename PDFs" action="rename_pdfs" description="Batch rename PDF files with pattern matching" color="purple.400" />
+                  <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
+                  <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
+                  <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
+                </Flex>
+                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center">
+                  GST Functions
+                </Text>
+              </Box>
+              <Divider orientation="vertical" h="70px" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
+              <Box>
+                <Flex gap={1}>
+                  <FunctionButton icon={FilePlus2} label="Merge PDFs" action="merge_pdfs" description="Combine multiple PDF files into one document" color="red.400" />
                   <FunctionButton icon={Archive} label="Extract Zips" action="extract_zips" description="Extract all ZIP files in current directory" color="orange.400" />
-                  <FunctionButton icon={Move} label="Move Screenshot" action="move_screenshot" description="Automatically organize screenshots" color="cyan.400" />
-                  <FunctionButton icon={Settings} label="Transfer Mapping" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
+                  <FunctionButton icon={Mail} label="Extract EML" action="extract_eml" description="Extract attachments from EML files" color="cyan.400" />
+                  <FunctionButton icon={Settings} label="Transfer Map" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center">
                   File Management
                 </Text>
               </Box>
-              <Divider orientation="vertical" h="70px" borderColor={useColorModeValue('gray.300', 'gray.600')} />
+              <Divider orientation="vertical" h="70px" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
               <Box>
                 <Flex gap={1}>
-                  <FunctionButton icon={FileSymlink} label="Batch Rename" action="batch_rename" description="Rename multiple files using patterns" color="yellow.400" />
-                  <FunctionButton icon={FileText} label="Asset Notes" action="asset_notes" description="Generate asset notes from templates" color="pink.400" />
-                  <FunctionButton icon={AlertCircle} label="GST Validation" action="gst_validation" description="Validate GST numbers in documents" color="red.400" />
+                  <FunctionButton icon={Star} label="AI Editor" action="ai_editor" description="Email AI editor for content generation" color="yellow.400" />
+                  <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center">
                   Utilities
