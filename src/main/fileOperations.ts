@@ -14,7 +14,21 @@ export async function selectDirectory(): Promise<string | null> {
   return result.filePaths[0];
 }
 
-export async function getDirectoryContents(dirPath: string): Promise<{ name: string; isDirectory: boolean; size: number; modified: Date }[]> {
+export async function selectFile(options?: { title?: string; filters?: { name: string; extensions: string[] }[] }): Promise<string | null> {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    title: options?.title || 'Select File',
+    filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+  });
+  
+  if (result.canceled) {
+    return null;
+  }
+  
+  return result.filePaths[0];
+}
+
+export async function getDirectoryContents(dirPath: string): Promise<{ name: string; type: 'folder' | 'file'; path: string; size: string; modified: string }[]> {
   const items = fs.readdirSync(dirPath);
   
   return items.map(item => {
@@ -23,9 +37,10 @@ export async function getDirectoryContents(dirPath: string): Promise<{ name: str
     
     return {
       name: item,
-      isDirectory: stats.isDirectory(),
-      size: stats.size,
-      modified: stats.mtime
+      type: stats.isDirectory() ? 'folder' : 'file' as 'folder' | 'file',
+      path: fullPath,
+      size: stats.size.toString(),
+      modified: stats.mtime.toISOString()
     };
   });
 }

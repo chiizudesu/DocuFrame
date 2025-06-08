@@ -4,16 +4,17 @@ import type { FileItem, AppSettings, TransferOptions } from '../src/types';
 // Define the API interface
 interface ElectronAPI {
   getConfig: () => Promise<AppSettings>;
-  setConfig: (config: AppSettings) => Promise<void>;
+  setConfig: (config: AppSettings) => Promise<AppSettings>;
   validatePath: (path: string) => Promise<boolean>;
   getDirectoryContents: (path: string) => Promise<FileItem[]>;
   createDirectory: (path: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
   selectDirectory: () => Promise<string>;
+  selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
   confirmDelete: (fileNames: string[]) => Promise<void>;
-  executeCommand: (command: string, currentDirectory?: string) => Promise<any>;
+  executeCommand: (command: string, currentDirectory?: string, options?: any) => Promise<any>;
   transfer: (options: TransferOptions) => Promise<any>;
   openDirectory: (dirPath: string) => Promise<void>;
   minimize: () => Promise<void>;
@@ -23,15 +24,17 @@ interface ElectronAPI {
   isMaximized: () => Promise<boolean>;
   onWindowMaximize: (cb: (event: Electron.IpcRendererEvent) => void) => void;
   onWindowUnmaximize: (cb: (event: Electron.IpcRendererEvent) => void) => void;
+  onFolderContentsChanged: (cb: (event: Electron.IpcRendererEvent, data: { directory: string }) => void) => void;
+  removeAllListeners: (channel: string) => void;
 }
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
   // Command handling
-  executeCommand: async (command: string, currentDirectory?: string) => {
-    console.log('[Preload] Executing command:', command, 'currentDirectory:', currentDirectory);
-    const result = await ipcRenderer.invoke('execute-command', command, currentDirectory);
+  executeCommand: async (command: string, currentDirectory?: string, options?: any) => {
+    console.log('[Preload] Executing command:', command, 'currentDirectory:', currentDirectory, 'options:', options);
+    const result = await ipcRenderer.invoke('execute-command', command, currentDirectory, options);
     console.log('[Preload] Command result:', result);
     return result;
   },
@@ -45,16 +48,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   
   // Config management
-  getConfig: async (key: string) => {
+  getConfig: async () => {
     return await ipcRenderer.invoke('get-config');
   },
-  setConfig: async (key: string, value: any) => {
-    return await ipcRenderer.invoke('set-config', value);
+  setConfig: async (config: AppSettings) => {
+    return await ipcRenderer.invoke('set-config', config);
   },
   
   // Directory operations
   selectDirectory: async () => {
     return await ipcRenderer.invoke('select-directory');
+  },
+  selectFile: async (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    return await ipcRenderer.invoke('select-file', options);
   },
   getDirectoryContents: async (dirPath: string) => {
     return await ipcRenderer.invoke('get-directory-contents', dirPath);
@@ -81,4 +87,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onWindowMaximize: (cb) => ipcRenderer.on('window-maximized', cb),
   onWindowUnmaximize: (cb) => ipcRenderer.on('window-unmaximized', cb),
+  onFolderContentsChanged: (cb) => ipcRenderer.on('folderContentsChanged', cb),
+  removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 }); 

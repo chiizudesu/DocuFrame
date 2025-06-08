@@ -45,15 +45,40 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
     const numFiles = options.numFiles || 1;
     const filesToPreview = files.slice(0, numFiles);
 
-    // Map to FileItem[]
+    // Get filename template for both preview and actual transfer
+    let filenameTemplate: string | undefined;
+    if (options.command && options.command !== 'transfer' && options.command !== 'preview') {
+      const transferCommandMappings = await getConfig('transferCommandMappings');
+      console.log('[Transfer] transferCommandMappings:', transferCommandMappings);
+      if (transferCommandMappings && options.command) {
+        const mappingKey = Object.keys(transferCommandMappings)
+          .find(key => key.toLowerCase() === options.command!.toLowerCase());
+        filenameTemplate = mappingKey ? transferCommandMappings[mappingKey] : undefined;
+      }
+      console.log('Filename template:', filenameTemplate);
+    }
+
+    // Map to FileItem[] with proper naming logic
     let previewFiles: FileItem[] = filesToPreview.map(({ file, stats }, i) => {
       let previewName = file;
       let originalName = file;
-      if (options.command === 'preview' && i === 0 && options.newName) {
+      
+      if (i === 0 && options.newName) {
+        // Use newName for the first file, preserving extension
         const ext = path.extname(file);
         const newNameWithoutExt = options.newName.replace(/\.[^/.]+$/, '');
         previewName = newNameWithoutExt + ext;
+      } else if (filenameTemplate) {
+        // Use mapping template for the first file if present
+        const template = filenameTemplate;
+        const ext = path.extname(file);
+        const templateWithoutExt = template.replace(/\.[^/.]+$/, '');
+        previewName = templateWithoutExt + ext;
+      } else {
+        // Use original name for additional files
+        previewName = file;
       }
+      
       return {
         name: previewName,
         originalName,
@@ -63,7 +88,8 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
         modified: stats.mtime.toISOString(),
       };
     });
-    if (options.command === 'preview') {
+    
+    if (options.preview || options.command === 'preview') {
       console.log('Returning preview:', previewFiles);
       return {
         success: true,
@@ -76,18 +102,7 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
     const targetDirectory = options.currentDirectory || process.cwd();
     console.log('Target directory:', targetDirectory);
 
-    // Get filename template if command is provided
-    let filenameTemplate: string | undefined;
-    if (options.command && options.command !== 'preview') {
-      const transferCommandMappings = await getConfig('transferCommandMappings');
-      console.log('[Transfer] transferCommandMappings:', transferCommandMappings);
-      if (transferCommandMappings && options.command) {
-        const mappingKey = Object.keys(transferCommandMappings)
-          .find(key => key.toLowerCase() === options.command!.toLowerCase());
-        filenameTemplate = mappingKey ? transferCommandMappings[mappingKey] : undefined;
-      }
-      console.log('Filename template:', filenameTemplate);
-    }
+    // Note: filenameTemplate is already determined above for preview
 
     // Process each file
     console.log('Starting file transfer...');
@@ -122,7 +137,9 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
         }
 
         // Check if destination file already exists
-        if (fs.existsSync(destPath)) {
+        // For command mappings (like 'far'), allow overwriting
+        // For manual transfers, preserve safety check
+        if (fs.existsSync(destPath) && !filenameTemplate) {
           throw new Error(`File already exists at destination: ${destPath}`);
         }
 

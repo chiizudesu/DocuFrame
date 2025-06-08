@@ -1,6 +1,7 @@
 export interface Config {
   rootPath: string;
   apiKey?: string;
+  gstTemplatePath?: string;
 }
 
 class ConfigService {

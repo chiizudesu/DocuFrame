@@ -352,43 +352,63 @@ export const FolderInfoBar: React.FC = () => {
             />
           )}
           <Box position="relative" zIndex={2} width="100%" display="flex" alignItems="center" gap={1}>
-            {breadcrumbs.map((crumb, idx) => (
-              <Flex key={crumb.path} align="center">
-                <Flex
-                  align="center"
-                  px={2}
-                  py="2px"
-                  cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
-                  bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
-                  borderRadius="md"
-                  onClick={(e) => {
-                    e.stopPropagation(); // Prevent triggering the parent's onClick
-                    if (idx !== breadcrumbs.length - 1) {
-                      setCurrentDirectory(crumb.path)
-                      addLog(`Changed directory to: ${crumb.path}`)
-                      setStatus(`Navigated to ${crumb.label}`, 'info')
-                    }
-                  }}
-                >
-                  <Text
-                    fontSize="sm"
-                    fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
-                    color={idx === breadcrumbs.length - 1 ? 'white' : textColor}
-                    userSelect="none"
+            {isEditing ? (
+              <Input
+                ref={inputRef}
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+                size="sm"
+                variant="unstyled"
+                bg={inputBgColor}
+                color={textColor}
+                px={0}
+                autoFocus
+                width="100%"
+                height="28px"
+                borderRadius="md"
+                style={{ fontFamily: 'monospace', fontSize: '14px' }}
+              />
+            ) : (
+              breadcrumbs.map((crumb, idx) => (
+                <Flex key={crumb.path} align="center">
+                  <Flex
+                    align="center"
+                    px={2}
+                    py="2px"
+                    cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
+                    bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
+                    borderRadius="md"
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent triggering the parent's onClick
+                      if (idx !== breadcrumbs.length - 1) {
+                        setCurrentDirectory(crumb.path)
+                        addLog(`Changed directory to: ${crumb.path}`)
+                        setStatus(`Navigated to ${crumb.label}`, 'info')
+                      }
+                    }}
                   >
-                    {crumb.label}
-                  </Text>
+                    <Text
+                      fontSize="sm"
+                      fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
+                      color={idx === breadcrumbs.length - 1 ? 'white' : textColor}
+                      userSelect="none"
+                    >
+                      {crumb.label}
+                    </Text>
+                  </Flex>
+                  {idx < breadcrumbs.length - 1 && (
+                    <Text
+                      color={textColor}
+                      style={{ margin: '0 2px', opacity: 0.8 }}
+                    >
+                      \
+                    </Text>
+                  )}
                 </Flex>
-                {idx < breadcrumbs.length - 1 && (
-                  <Text
-                    color={textColor}
-                    style={{ margin: '0 2px', opacity: 0.8 }}
-                  >
-                    \
-                  </Text>
-                )}
-              </Flex>
-            ))}
+              ))
+            )}
           </Box>
         </Flex>
         <HStack spacing={1} px={1} style={{ WebkitAppRegion: 'no-drag' } as any}>

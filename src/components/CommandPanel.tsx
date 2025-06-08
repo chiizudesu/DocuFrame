@@ -37,7 +37,7 @@ export const CommandPanel: React.FC = () => {
               <Box mt={2}>
                 {previewFiles.map((file, index) => (
                   <Text key={index} fontSize="xs">
-                    • {file.name} {file.size && `(${file.size})`}
+                    • {file.name}
                   </Text>
                 ))}
               </Box>

@@ -28,7 +28,9 @@ async function loadConfig(): Promise<Config> {
   } catch (error) {
     // Create default config if it doesn't exist
     const defaultConfig: Config = {
-      rootPath: app.getPath('documents')
+      rootPath: app.getPath('documents'),
+      apiKey: undefined,
+      gstTemplatePath: undefined
     };
     await fs.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
     return defaultConfig;
@@ -37,7 +39,22 @@ async function loadConfig(): Promise<Config> {
 
 // Save config
 async function saveConfig(config: Config) {
-  await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+  if (!config) {
+    throw new Error('Config object is undefined or null');
+  }
+  
+  try {
+    const configData = JSON.stringify(config, null, 2);
+    if (!configData) {
+      throw new Error('Failed to serialize config to JSON');
+    }
+    
+    await fs.writeFile(configPath, configData);
+    console.log('[Main] Config saved successfully:', config);
+  } catch (error) {
+    console.error('[Main] Error in saveConfig:', error);
+    throw error;
+  }
 }
 
 const createWindow = () => {
@@ -53,6 +70,20 @@ const createWindow = () => {
       contextIsolation: true,
       sandbox: false,
     },
+  });
+
+  // Intercept window.open and open external URLs in the default browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('file://')) {
+      return { action: 'allow' };
+    }
+    // Allow OAuth popup windows for authentication (Xero, etc.)
+    if (url.includes('login.xero.com') || url.includes('oauth') || url.includes('auth')) {
+      return { action: 'allow' };
+    }
+    // Open all other external URLs in the default browser
+    shell.openExternal(url);
+    return { action: 'deny' };
   });
 
   // and load the index.html of the app.
@@ -94,10 +125,10 @@ app.on('activate', () => {
 });
 
 // IPC Handlers
-ipcMain.handle('execute-command', async (_, command: string, currentDirectory?: string) => {
+ipcMain.handle('execute-command', async (_, command: string, currentDirectory?: string, options?: any) => {
   try {
-    console.log('[Main] Received command:', command, 'currentDirectory:', currentDirectory);
-    const result = await handleCommand(command, [], currentDirectory);
+    console.log('[Main] Received command:', command, 'currentDirectory:', currentDirectory, 'options:', options);
+    const result = await handleCommand(command, [], currentDirectory, options);
     console.log('[Main] Command result:', result);
     return result;
   } catch (error) {
@@ -129,10 +160,17 @@ ipcMain.handle('get-config', async () => {
 
 ipcMain.handle('set-config', async (_, config: Config) => {
   try {
+    console.log('[Main] Received set-config request:', config);
+    
+    if (!config) {
+      throw new Error('Config parameter is undefined or null');
+    }
+    
     await saveConfig(config);
+    console.log('[Main] Config successfully saved and returned');
     return config;
   } catch (error) {
-    console.error('Error setting config:', error);
+    console.error('Error occurred in handler for \'set-config\':', error);
     throw error;
   }
 });
@@ -149,8 +187,8 @@ ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
           name: entry.name,
           path: fullPath,
           type: entry.isDirectory() ? 'folder' : 'file',
-          size: stats.size,
-          lastModified: stats.mtime,
+          size: stats.size.toString(),
+          modified: stats.mtime.toISOString(),
           extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined
         });
       } catch (error) {
@@ -183,17 +221,102 @@ ipcMain.handle('create-directory', async (_, dirPath: string) => {
   }
 });
 
+
+
 ipcMain.handle('delete-item', async (_, itemPath: string) => {
+  // Fast path: Try immediate deletion first
+  let stats;
   try {
-    const stats = await fs.stat(itemPath);
+    stats = await fs.stat(itemPath);
+    
     if (stats.isDirectory()) {
       await fs.rmdir(itemPath, { recursive: true });
     } else {
       await fs.unlink(itemPath);
     }
-  } catch (error) {
-    console.error('Error deleting item:', error);
-    throw error;
+    return; // Success - immediate deletion worked
+  } catch (error: any) {
+    // Only proceed with retries/alternatives if deletion failed
+    console.log(`Fast deletion failed for ${itemPath}: ${error.code} - ${error.message}`);
+    
+    // Retry logic for locked files only
+    if (error.code === 'EPERM' || error.code === 'EBUSY' || error.code === 'ENOTEMPTY') {
+      // Quick retry with permission fix and different approaches
+      try {
+        if (stats && !stats.isDirectory()) {
+          // Method 1: Try chmod + unlink
+          try {
+            await fs.chmod(itemPath, 0o666);
+            await fs.unlink(itemPath);
+            return; // Success after permission fix
+          } catch (chmodError) {
+            console.log(`chmod+unlink failed: ${chmodError.code}`);
+          }
+          
+          // Method 2: Try fs.rm (newer Node.js API, sometimes more effective)
+          try {
+            await fs.rm(itemPath, { force: true });
+            console.log(`Successfully deleted ${itemPath} using fs.rm`);
+            return; // Success with fs.rm
+          } catch (rmError) {
+            console.log(`fs.rm failed: ${rmError.code}`);
+          }
+        } else {
+          // For directories, try the newer rmdir approach
+          await fs.rm(itemPath, { recursive: true, force: true });
+          return; // Success for directory
+        }
+      } catch (retryError: any) {
+                 // Try faster Windows alternatives before PowerShell
+         if (process.platform === 'win32' && (retryError.code === 'EPERM' || retryError.code === 'EBUSY')) {
+           try {
+             // Method 1: Try cmd /c del - faster than PowerShell
+             const { execSync } = require('child_process');
+             const quotedPath = `"${itemPath}"`;
+             
+             console.log(`Trying CMD deletion for ${itemPath}...`);
+             execSync(`cmd /c del /f /q ${quotedPath}`, { timeout: 1000 });
+             console.log(`Successfully force-deleted ${itemPath} using CMD`);
+             return; // Success with CMD
+           } catch (cmdError) {
+             console.log('CMD deletion failed, trying PowerShell...');
+             
+             // Method 2: PowerShell as fallback (but with shorter timeout)
+             try {
+               const { execSync } = require('child_process');
+               const escapedPath = itemPath.replace(/'/g, "''");
+               
+               execSync(`powershell -Command "Remove-Item -Path '${escapedPath}' -Force"`, 
+                 { timeout: 1500 });
+               
+               console.log(`Successfully force-deleted ${itemPath} using PowerShell`);
+               return; // Success with PowerShell
+             } catch (powerShellError) {
+               console.warn('PowerShell deletion also failed:', powerShellError);
+             }
+           }
+         }
+        
+        // Final error - provide helpful message without slow process detection
+        const fileName = path.basename(itemPath);
+        let helpfulMessage = `Cannot delete "${fileName}". `;
+        
+        if (retryError.code === 'EPERM') {
+          helpfulMessage += 'File is likely open in another application (PDF reader, Word, etc.). Please close the application and try again.';
+        } else if (retryError.code === 'EBUSY') {
+          helpfulMessage += 'File is currently in use. Please wait and try again.';
+        } else if (retryError.code === 'ENOTEMPTY') {
+          helpfulMessage += 'Directory is not empty or contains locked files.';
+        } else {
+          helpfulMessage += retryError.message;
+        }
+        
+        throw new Error(helpfulMessage);
+      }
+    } else {
+      // For non-permission errors, throw immediately
+      throw error;
+    }
   }
 });
 
@@ -210,6 +333,24 @@ ipcMain.handle('select-directory', async () => {
     return null;
   } catch (error) {
     console.error('Error selecting directory:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('select-file', async (_, options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: options?.title || 'Select File',
+      filters: options?.filters || [{ name: 'All Files', extensions: ['*'] }]
+    });
+
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  } catch (error) {
+    console.error('Error selecting file:', error);
     throw error;
   }
 });

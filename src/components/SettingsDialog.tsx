@@ -27,11 +27,13 @@ interface SettingsDialogProps {
 interface Settings {
   rootPath: string;
   apiKey?: string;
+  gstTemplatePath?: string;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
   const [rootPath, setRootPath] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [gstTemplatePath, setGstTemplatePath] = useState('');
   const toast = useToast();
   const { setRootDirectory, setCurrentDirectory } = useAppContext();
 
@@ -41,6 +43,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         const loadedSettings = await settingsService.getSettings() as Settings;
         setRootPath(loadedSettings.rootPath);
         setApiKey(loadedSettings.apiKey || '');
+        setGstTemplatePath(loadedSettings.gstTemplatePath || '');
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -63,6 +66,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       const newSettings: Settings = {
         rootPath,
         apiKey: apiKey || undefined,
+        gstTemplatePath: gstTemplatePath || undefined,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -104,6 +108,30 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
+  const handleBrowseGstTemplate = async () => {
+    try {
+      const result = await (window.electronAPI as any).selectFile({
+        title: 'Select GST Template',
+        filters: [
+          { name: 'Spreadsheet Files', extensions: ['xlsx', 'xls', 'csv'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (result) {
+        setGstTemplatePath(result);
+      }
+    } catch (error) {
+      console.error('Error selecting GST template:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select GST template file',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
@@ -121,6 +149,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               />
               <InputRightElement width="4.5rem">
                 <Button h="1.75rem" size="sm" onClick={handleBrowseFolder}>
+                  <FolderOpen size={16} />
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
+          <FormControl mb={4}>
+            <FormLabel>GST Template Path</FormLabel>
+            <InputGroup>
+              <Input
+                value={gstTemplatePath}
+                onChange={(e) => setGstTemplatePath(e.target.value)}
+                placeholder="Enter GST template file path"
+              />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" size="sm" onClick={handleBrowseGstTemplate}>
                   <FolderOpen size={16} />
                 </Button>
               </InputRightElement>

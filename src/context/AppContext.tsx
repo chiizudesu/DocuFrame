@@ -3,7 +3,7 @@ import { settingsService } from '../services/settings';
 
 interface FileItem {
   name: string;
-  type: 'folder' | 'pdf' | 'image' | 'document';
+  type: 'folder' | 'file' | 'pdf' | 'image' | 'document';
   path: string;
   size?: string;
   modified?: string;

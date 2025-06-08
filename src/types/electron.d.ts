@@ -20,6 +20,7 @@ interface ElectronAPI {
   deleteItem: (path: string) => Promise<void>;
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
   selectDirectory: () => Promise<string>;
+  selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
   confirmDelete: (fileNames: string[]) => Promise<boolean>;
 }

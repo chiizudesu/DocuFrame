@@ -1,6 +1,6 @@
 export interface FileItem {
   name: string;
-  type: 'folder' | 'pdf' | 'image' | 'document';
+  type: 'folder' | 'file' | 'pdf' | 'image' | 'document';
   path: string;
   size?: string;
   modified?: string;
@@ -24,6 +24,7 @@ export interface TransferOptions {
   newName?: string;
   command?: string;
   currentDirectory?: string;
+  preview?: boolean;
 }
 
 // Extend the Window interface to include our electron API
@@ -38,6 +39,7 @@ declare global {
       deleteItem: (path: string) => Promise<void>;
       renameItem: (oldPath: string, newPath: string) => Promise<void>;
       selectDirectory: () => Promise<string>;
+  selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
     };
   }
 } 

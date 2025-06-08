@@ -71,7 +71,8 @@ export const QuickNavigateOverlay: React.FC = () => {
       console.log('[QuickNavigate] Auto-requesting mapping preview for command:', command);
       const previewOptions: TransferOptions = { 
         numFiles: 1,
-        command: command,
+        command: command, // Pass the actual command for mapping lookup
+        preview: true, // Enable preview mode - doesn't actually transfer files
         currentDirectory: currentDirectory
       };
       const previewResult = await window.electronAPI.transfer(previewOptions);
@@ -206,6 +207,15 @@ export const QuickNavigateOverlay: React.FC = () => {
       } else if (mappingKey) {
         // Auto-preview for mapping commands
         handleTransferMappingPreview(command);
+      } else if (command === 'finals') {
+        // Auto-preview for finals command
+        window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
       } else {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
@@ -288,6 +298,12 @@ export const QuickNavigateOverlay: React.FC = () => {
         description: 'Transfer file(s) from Downloads folder',
         usage: '$ transfer [number_of_files | new_filename]'
       });
+    } else if (command === 'finals') {
+      setCommandInfo({
+        title: 'Finals Processing',
+        description: 'Rename tax return files and financial statements to standard format',
+        usage: '$ finals'
+      });
     } else if (command === 'rename') {
       setCommandInfo({
         title: 'Rename Files',
@@ -329,6 +345,8 @@ export const QuickNavigateOverlay: React.FC = () => {
             name: 'merge - Combine PDF files'
           }, {
             name: 'transfer - Transfer files from Downloads'
+          }, {
+            name: 'finals - Rename tax return files'
           }, {
             name: 'rename - Batch rename files'
           }, {
@@ -538,7 +556,7 @@ export const QuickNavigateOverlay: React.FC = () => {
         
         {/* Command info panel - separate from input container */}
         {isCommandMode && commandInfo && (
-          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1}>
+          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} className="thin-scrollbar" maxH="300px" overflowY="auto">
             <Box p={4} bg={commandBgColor}>
               <Text fontSize="sm" fontWeight="medium" mb={2}>
                 {commandInfo.title}
@@ -583,22 +601,31 @@ export const QuickNavigateOverlay: React.FC = () => {
               <Text fontSize="sm" fontWeight="medium" mb={2}>
                 Preview of {previewFiles.length} file{previewFiles.length > 1 ? 's' : ''} to transfer:
               </Text>
-              <Box>
+              <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
                 {previewFiles.map((file, index) => (
-                  <Flex key={index} align="center" py={1}>
-                    <Icon as={File} size={10} color={useColorModeValue('#64748b', '#718096')} />
-                    <Text fontSize="xs" ml={2}>
-                      {file.originalName && file.originalName !== file.name
-                        ? `${file.originalName} → ${file.name}`
-                        : file.name}
-                      {file.size && ` (${Math.round(parseFloat(file.size) / 1024)} KB)`}
+                  <Box
+                    key={index}
+                    fontSize="sm"
+                    borderRadius="lg"
+                    bg={useColorModeValue('gray.100', 'gray.700')}
+                    px={3}
+                    py={2}
+                    boxShadow="sm"
+                    borderWidth="1px"
+                    borderColor={useColorModeValue('gray.200', 'gray.600')}
+                    w="100%"
+                    overflow="visible"
+                    display="flex"
+                    flexDirection="column"
+                    gap={1}
+                  >
+                    <Text whiteSpace="normal" wordBreak="break-all" title={file.originalName || file.name} fontWeight="medium" overflow="visible">
+                      {file.originalName && file.originalName !== file.name ? file.originalName : file.name}
                     </Text>
-                    {file.name && file.name.match(/^F\s-\s|TESTFILE/i) && (
-                      <Box as="span" ml={2} px={2} py={0.5} bg="blue.100" color="blue.800" borderRadius="md" fontSize="10px" fontWeight="bold">
-                        MAPPED NAME
-                      </Box>
-                    )}
-                  </Flex>
+                    <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={file.name} fontWeight="medium" overflow="visible">
+                      {file.originalName && file.originalName !== file.name ? file.name : ''}
+                    </Text>
+                  </Box>
                 ))}
               </Box>
             </Box>
@@ -615,7 +642,7 @@ export const QuickNavigateOverlay: React.FC = () => {
           </Box>
         )}
         
-        {!isCommandMode && filteredResults.length > 0 && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={1}>
+        {!isCommandMode && filteredResults.length > 0 && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={1} className="enhanced-scrollbar" maxH="400px" overflowY="auto">
             <List spacing={0}>
               {filteredResults.map((result, index) => <ListItem key={index} p={2} bg={index === 0 ? useColorModeValue('#eff6ff', 'blue.900') : 'transparent'} cursor="pointer" _hover={{
             bg: useColorModeValue('#f8fafc', 'gray.700')

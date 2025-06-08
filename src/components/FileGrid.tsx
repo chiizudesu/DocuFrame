@@ -36,11 +36,15 @@ import {
   Download,
   ChevronUp,
   ChevronDown,
+  FilePlus2,
+  Archive,
+  Mail,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { settingsService } from '../services/settings'
 import type { FileItem } from '../types'
 import { joinPath, isAbsolutePath } from '../utils/path'
+import { MergePDFDialog } from './MergePDFDialog'
 
 interface ContextMenuPosition {
   x: number
@@ -184,6 +188,8 @@ export const FileGrid: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
+  const lastNavTimeRef = useRef<number | null>(null);
+  const [isMergePDFOpen, setMergePDFOpen] = useState(false)
 
   // All useColorModeValue hooks next
   const itemBgHover = useColorModeValue('#f1f5f9', 'gray.700')
@@ -225,6 +231,8 @@ export const FileGrid: React.FC = () => {
     const loadDirectory = async () => {
       if (!currentDirectory) return
       setIsLoading(true)
+      // Start timer at the beginning
+      const navStart = performance.now();
       try {
         const fullPath = currentDirectory
         const isValid = await (window.electronAPI as any).validatePath(fullPath)
@@ -234,6 +242,9 @@ export const FileGrid: React.FC = () => {
         }
         const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
         setFolderItems(contents)
+        // Log folder load time after contents are set
+        const navEnd = performance.now();
+        addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
         addLog(`Loaded directory: ${formatPathForLog(currentDirectory)}`)
       } catch (error) {
         console.error('Failed to load directory:', error)
@@ -318,6 +329,7 @@ export const FileGrid: React.FC = () => {
     const filesToDelete = Array.isArray(fileOrFiles)
       ? fileOrFiles.map(f => f.name)
       : (selectedFiles.length > 1 ? selectedFiles : [fileOrFiles.name])
+    
     try {
       if (!window.electronAPI || typeof (window.electronAPI as any).confirmDelete !== 'function') {
         const msg = 'Electron API not available: confirmDelete';
@@ -325,20 +337,52 @@ export const FileGrid: React.FC = () => {
         console.error(msg);
         return;
       }
+      
       const confirmed = await (window.electronAPI as any).confirmDelete(filesToDelete)
       if (!confirmed) return
+      
       const files = Array.isArray(fileOrFiles) ? fileOrFiles : filesToDelete.map(name => sortedFiles.find(f => f.name === name)).filter(Boolean) as FileItem[]
+      const deletedFiles: string[] = [];
+      const failedFiles: { name: string; error: string }[] = [];
+      
+      // Delete files one by one to handle individual errors
       for (const f of files) {
-        await (window.electronAPI as any).deleteItem(f.path)
+        try {
+          setStatus(`Deleting: ${f.name}...`, 'info');
+          await (window.electronAPI as any).deleteItem(f.path);
+          deletedFiles.push(f.name);
+          addLog(`Deleted: ${f.name}`, 'response');
+        } catch (error: any) {
+          const errorMessage = error?.message || error;
+          failedFiles.push({ name: f.name, error: errorMessage });
+          addLog(`Failed to delete: ${f.name} - ${errorMessage}`, 'error');
+          console.error('Failed to delete:', f.name, error);
+        }
       }
-      addLog(`Deleted: ${files.map(f => f.name).join(', ')}`)
-      // Refresh the current directory
+      
+      // Provide summary feedback
+      if (deletedFiles.length > 0) {
+        setStatus(`Successfully deleted ${deletedFiles.length} file(s)`, 'success');
+      }
+      
+      if (failedFiles.length > 0) {
+        setStatus(`Failed to delete ${failedFiles.length} file(s). Check console for details.`, 'error');
+        
+        // Show detailed error message for failed files
+        const errorDetails = failedFiles.map(f => `• ${f.name}: ${f.error}`).join('\n');
+        addLog(`Delete operation completed with errors:\n${errorDetails}`, 'error');
+      }
+      
+      // Refresh the current directory regardless of errors
       const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
       setFolderItems(contents)
       setSelectedFiles([])
+      
     } catch (error: any) {
-      addLog(`Failed to delete: ${filesToDelete.join(', ')}\n${error?.message || error}`, 'error')
-      console.error('Failed to delete:', filesToDelete, error)
+      const errorMessage = error?.message || error;
+      addLog(`Delete operation failed: ${errorMessage}`, 'error');
+      setStatus('Delete operation failed', 'error');
+      console.error('Delete operation failed:', error);
     }
   }
 
@@ -363,6 +407,110 @@ export const FileGrid: React.FC = () => {
           } else {
             setStatus(`Deleting: ${contextMenu.fileItem.name}`, 'info')
             await handleDeleteFile(contextMenu.fileItem)
+          }
+          break
+        case 'merge_pdfs':
+          // Get selected PDF files
+          const selectedPDFs = selectedFiles.length > 1 
+            ? selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'))
+            : [];
+          setMergePDFOpen(true)
+          setStatus('Opening Merge PDF dialog', 'info')
+          break
+        case 'extract_zip':
+          const selectedZipFiles = selectedFiles.filter(filename => 
+            filename.toLowerCase().endsWith('.zip')
+          );
+          const zipFilesToExtract = selectedZipFiles.length > 1 ? selectedZipFiles : [contextMenu.fileItem.name];
+          
+          if (zipFilesToExtract.length === 1) {
+            setStatus(`Extracting: ${zipFilesToExtract[0]}`, 'info')
+            addLog(`Extracting ZIP file: ${zipFilesToExtract[0]}`)
+            try {
+              const result = await (window.electronAPI as any).executeCommand('extract_single_zip', currentDirectory, {
+                filename: zipFilesToExtract[0]
+              });
+              if (result.success) {
+                addLog(result.message, 'response');
+                setStatus('ZIP extraction completed', 'success');
+                // Refresh folder view
+                const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+                setFolderItems(contents);
+              } else {
+                addLog(result.message, 'error');
+                setStatus('ZIP extraction failed', 'error');
+              }
+            } catch (error) {
+              addLog(`Failed to extract ZIP: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+              setStatus('ZIP extraction failed', 'error');
+            }
+          } else {
+            setStatus(`Extracting ${zipFilesToExtract.length} ZIP files...`, 'info')
+            addLog(`Extracting ${zipFilesToExtract.length} ZIP files`)
+            try {
+              const result = await (window.electronAPI as any).executeCommand('extract_zips', currentDirectory);
+              if (result.success) {
+                addLog(result.message, 'response');
+                setStatus(`${zipFilesToExtract.length} ZIP files extracted successfully`, 'success');
+                // Refresh folder view
+                const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+                setFolderItems(contents);
+              } else {
+                addLog(result.message, 'error');
+                setStatus('ZIP extraction failed', 'error');
+              }
+            } catch (error) {
+              addLog(`Failed to extract ZIPs: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+              setStatus('ZIP extraction failed', 'error');
+            }
+          }
+          break
+        case 'extract_eml':
+          const selectedEmlFiles = selectedFiles.filter(filename => 
+            filename.toLowerCase().endsWith('.eml')
+          );
+          const emlFilesToExtract = selectedEmlFiles.length > 1 ? selectedEmlFiles : [contextMenu.fileItem.name];
+          
+          if (emlFilesToExtract.length === 1) {
+            setStatus(`Extracting attachments: ${emlFilesToExtract[0]}`, 'info')
+            addLog(`Extracting EML attachments: ${emlFilesToExtract[0]}`)
+            try {
+              const result = await (window.electronAPI as any).executeCommand('extract_single_eml', currentDirectory, {
+                filename: emlFilesToExtract[0]
+              });
+              if (result.success) {
+                addLog(result.message, 'response');
+                setStatus('EML extraction completed', 'success');
+                // Refresh folder view
+                const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+                setFolderItems(contents);
+              } else {
+                addLog(result.message, 'error');
+                setStatus('EML extraction failed', 'error');
+              }
+            } catch (error) {
+              addLog(`Failed to extract EML: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+              setStatus('EML extraction failed', 'error');
+            }
+          } else {
+            setStatus(`Extracting attachments from ${emlFilesToExtract.length} EML files...`, 'info')
+            addLog(`Extracting attachments from ${emlFilesToExtract.length} EML files`)
+            try {
+              const result = await (window.electronAPI as any).executeCommand('extract_eml', currentDirectory);
+              if (result.success) {
+                addLog(result.message, 'response');
+                setStatus(`${emlFilesToExtract.length} EML files processed successfully`, 'success');
+                // Refresh folder view
+                const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+                setFolderItems(contents);
+              } else {
+                addLog(result.message, 'error');
+                setStatus('EML extraction failed', 'error');
+              }
+            } catch (error) {
+              addLog(`Failed to extract EML: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+              setStatus('EML extraction failed', 'error');
+            }
           }
           break
         default:
@@ -407,10 +555,10 @@ export const FileGrid: React.FC = () => {
         handleCloseContextMenu()
       }
     }
-    const handleFolderContentsChanged = (e: any) => {
-      // Support both CustomEvent and IPC event
-      const directory = e?.detail?.directory || (e?.directory ?? (e?.args && e.args[0]?.directory));
-      if (directory === currentDirectory) {
+    const handleFolderContentsChanged = (event: any, data: { directory: string }) => {
+      console.log('[FileGrid] Folder contents changed event received:', data);
+      if (data && data.directory === currentDirectory) {
+        console.log('[FileGrid] Refreshing current directory:', currentDirectory);
         loadDirectory(currentDirectory);
       }
     }
@@ -419,26 +567,24 @@ export const FileGrid: React.FC = () => {
       'viewModeChanged',
       handleViewModeChange as EventListener,
     )
-    window.addEventListener(
-      'folderContentsChanged',
-      handleFolderContentsChanged as EventListener,
-    )
-    if ((window as any).electron?.ipcRenderer) {
-      (window as any).electron.ipcRenderer.on('folderContentsChanged', handleFolderContentsChanged);
+    
+    // Listen for IPC events through the properly exposed API
+    if ((window.electronAPI as any).onFolderContentsChanged) {
+      (window.electronAPI as any).onFolderContentsChanged(handleFolderContentsChanged);
     }
+    
     document.addEventListener('click', handleClickOutside)
     return () => {
       window.removeEventListener(
         'viewModeChanged',
         handleViewModeChange as EventListener,
       )
-      window.removeEventListener(
-        'folderContentsChanged',
-        handleFolderContentsChanged as EventListener,
-      )
-      if ((window as any).electron?.ipcRenderer) {
-        (window as any).electron.ipcRenderer.removeAllListeners('folderContentsChanged');
+      
+      // Clean up IPC listeners
+      if ((window.electronAPI as any).removeAllListeners) {
+        (window.electronAPI as any).removeAllListeners('folderContentsChanged');
       }
+      
       document.removeEventListener('click', handleClickOutside)
     }
   }, [contextMenu.isOpen, currentDirectory])
@@ -552,20 +698,7 @@ export const FileGrid: React.FC = () => {
     return () => setSelectAllFiles(() => () => {});
   }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog]);
 
-  useEffect(() => {
-    const handler = (event: any, data: { directory: string }) => {
-      if (data && data.directory && data.directory === currentDirectory) {
-        loadDirectory(currentDirectory);
-      }
-    };
-    if (window.require) {
-      const { ipcRenderer } = window.require('electron');
-      ipcRenderer.on('folderContentsChanged', handler);
-      return () => {
-        ipcRenderer.removeListener('folderContentsChanged', handler);
-      };
-    }
-  }, [currentDirectory]);
+
 
   // Grid view
   const renderGridView = () => (
@@ -746,7 +879,7 @@ export const FileGrid: React.FC = () => {
                   </Flex>
                 </Td>
                 <Td borderColor={tableBorderColor} color={fileSubTextColor}>
-                  {file.size ? formatFileSize(file.size) : '-'}
+                  {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
                 </Td>
                 <Td borderColor={tableBorderColor} color={fileSubTextColor}>
                   {file.modified ? new Date(file.modified).toLocaleString() : '-'}
@@ -762,6 +895,27 @@ export const FileGrid: React.FC = () => {
   // Context Menu
   const renderContextMenu = () => {
     if (!contextMenu.isOpen || !contextMenu.fileItem) return null
+
+    // Check if multiple PDFs are selected
+    const selectedPDFs = selectedFiles.filter(filename => 
+      filename.toLowerCase().endsWith('.pdf')
+    );
+    const showMergePDFs = selectedPDFs.length > 1;
+
+    // Check if current file or selected files are extractable
+    const fileName = contextMenu.fileItem.name.toLowerCase();
+    const isZipFile = fileName.endsWith('.zip');
+    const isEmlFile = fileName.endsWith('.eml');
+    
+    // Check for multiple selected extractable files
+    const selectedZipFiles = selectedFiles.filter(filename => 
+      filename.toLowerCase().endsWith('.zip')
+    );
+    const selectedEmlFiles = selectedFiles.filter(filename => 
+      filename.toLowerCase().endsWith('.eml')
+    );
+    const showExtractZips = selectedZipFiles.length > 1 || (isZipFile && selectedZipFiles.length >= 1);
+    const showExtractEmls = selectedEmlFiles.length > 1 || (isEmlFile && selectedEmlFiles.length >= 1);
 
     return (
       <Box
@@ -799,6 +953,48 @@ export const FileGrid: React.FC = () => {
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
           </Flex>
+          {showMergePDFs && (
+            <Flex
+              align="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+              onClick={() => handleMenuAction('merge_pdfs')}
+              color="red.400"
+            >
+              <FilePlus2 size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Merge PDFs ({selectedPDFs.length})</Text>
+            </Flex>
+          )}
+          {showExtractZips && (
+            <Flex
+              align="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+              onClick={() => handleMenuAction('extract_zip')}
+              color="orange.400"
+            >
+              <Archive size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
+            </Flex>
+          )}
+          {showExtractEmls && (
+            <Flex
+              align="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+              onClick={() => handleMenuAction('extract_eml')}
+              color="cyan.400"
+            >
+              <Mail size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
+            </Flex>
+          )}
           <Flex
             align="center"
             px={3}
@@ -865,6 +1061,12 @@ export const FileGrid: React.FC = () => {
     <Box p={viewMode === 'grid' ? 0 : 0} m={0}>
       {viewMode === 'grid' ? renderGridView() : renderListView()}
       {renderContextMenu()}
+      <MergePDFDialog 
+        isOpen={isMergePDFOpen} 
+        onClose={() => setMergePDFOpen(false)} 
+        currentDirectory={currentDirectory}
+        preselectedFiles={selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'))}
+      />
     </Box>
   )
 }

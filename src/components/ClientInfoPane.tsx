@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Badge, Tooltip, IconButton } from '@chakra-ui/react';
 import { ExternalLink, Building, Hash, FileText, Info, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -31,6 +31,159 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
   const handleExternalLink = (destination: string) => {
     addLog(`Opening external link: ${destination}`);
+  };
+
+  // Xero OAuth state
+  const [loadedClient, setLoadedClient] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // Handle Xero connect with silent auth fallback
+  const handleXeroConnect = async () => {
+    setIsConnecting(true);
+    
+    const tryAuth = async (prompt?: string) => {
+      const response = await fetch('/api/xero/auth/initiate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to initiate OAuth flow');
+      }
+      
+      const data = await response.json();
+      return data.authUrl;
+    };
+
+    try {
+      // Check if we're in Electron - if so, skip silent auth since it won't work
+      const isElectron = window.navigator.userAgent.includes('Electron');
+      
+      // First try silent auth (no login prompt if already logged in) - but skip in Electron
+      let authUrl = await tryAuth(isElectron ? 'login' : 'none');
+      
+      // Open popup window
+      const popup = window.open(
+        authUrl,
+        'xero-oauth',
+        'width=600,height=700,scrollbars=yes,resizable=yes'
+      );
+      
+      if (!popup) {
+        setIsConnecting(false);
+        return;
+      }
+
+      // Poll to detect if popup is closed manually
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed);
+          setIsConnecting(false);
+          window.removeEventListener('message', handleMessage);
+        }
+      }, 1000);
+
+      // Listen for postMessage from popup
+      const handleMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        
+        if (event.data.type === 'XERO_OAUTH_SUCCESS') {
+          clearInterval(checkClosed);
+          setIsConnecting(false);
+          // Exchange code and state for org info
+          fetch('/api/xero/organizations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: event.data.code, state: event.data.state }),
+          })
+            .then(res => res.json())
+            .then(data => {
+              if (data.organizations && data.organizations.length > 0) {
+                setLoadedClient(data.organizations[0].xeroName);
+              }
+            });
+          window.removeEventListener('message', handleMessage);
+          popup.close();
+        } else if (event.data.type === 'XERO_OAUTH_ERROR') {
+          clearInterval(checkClosed);
+          // If silent auth failed (user not logged in), try with login prompt
+          // Only retry if we originally tried silent auth (not in Electron)
+          const isElectron = window.navigator.userAgent.includes('Electron');
+          if (!isElectron && event.data.error === 'login_required') {
+            window.removeEventListener('message', handleMessage);
+            popup.close();
+            
+            // Retry with login prompt
+            tryAuth('login').then(retryAuthUrl => {
+              const retryPopup = window.open(
+                retryAuthUrl,
+                'xero-oauth',
+                'width=600,height=700,scrollbars=yes,resizable=yes'
+              );
+              
+              if (retryPopup) {
+                // Poll to detect if retry popup is closed manually
+                const checkRetryClosed = setInterval(() => {
+                  if (retryPopup.closed) {
+                    clearInterval(checkRetryClosed);
+                    setIsConnecting(false);
+                    window.removeEventListener('message', handleRetryMessage);
+                  }
+                }, 1000);
+
+                // Set up message handler for retry popup
+                const handleRetryMessage = (event: MessageEvent) => {
+                  if (event.origin !== window.location.origin) return;
+                  
+                  if (event.data.type === 'XERO_OAUTH_SUCCESS') {
+                    clearInterval(checkRetryClosed);
+                    setIsConnecting(false);
+                    fetch('/api/xero/organizations', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ code: event.data.code, state: event.data.state }),
+                    })
+                      .then(res => res.json())
+                      .then(data => {
+                        if (data.organizations && data.organizations.length > 0) {
+                          setLoadedClient(data.organizations[0].xeroName);
+                        }
+                      });
+                    window.removeEventListener('message', handleRetryMessage);
+                    retryPopup.close();
+                  } else if (event.data.type === 'XERO_OAUTH_ERROR') {
+                    clearInterval(checkRetryClosed);
+                    setIsConnecting(false);
+                    alert(event.data.error || 'OAuth authentication failed');
+                    window.removeEventListener('message', handleRetryMessage);
+                    retryPopup.close();
+                  }
+                };
+                window.addEventListener('message', handleRetryMessage);
+              } else {
+                setIsConnecting(false);
+              }
+            }).catch(() => {
+              setIsConnecting(false);
+              alert('Failed to retry OAuth flow');
+            });
+          } else {
+            clearInterval(checkClosed);
+            setIsConnecting(false);
+            alert(event.data.error || 'OAuth authentication failed');
+            window.removeEventListener('message', handleMessage);
+            popup.close();
+          }
+        }
+      };
+      
+      window.addEventListener('message', handleMessage);
+      
+    } catch (err) {
+      setIsConnecting(false);
+      alert('Failed to connect to Xero');
+    }
   };
 
   if (collapsed) {
@@ -67,10 +220,11 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             variant="outline" 
             size="sm" 
             flex="1" 
-            onClick={() => handleExternalLink('Xero')} 
+            onClick={handleXeroConnect} 
             borderColor={accentColor} 
             color={accentColor}
             fontWeight="medium"
+            isLoading={isConnecting}
             _hover={{
               bg: useColorModeValue('#f1f5f9', 'gray.700'),
               borderColor: accentColor
@@ -97,6 +251,13 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         </Flex>
         <IconButton aria-label="Collapse sidebar" icon={<ChevronLeft size={20} strokeWidth={2.5} />} size="sm" variant="ghost" ml={2} onClick={onToggleCollapse} />
       </Flex>
+
+      {/* Xero loaded client indicator row */}
+      <Box mt={2} mb={4} px={2} py={1} borderRadius="md" bg={useColorModeValue('#e0e7ef', 'gray.700')}>
+        <Text fontSize="xs" color={loadedClient ? 'green.600' : 'gray.500'} fontWeight="medium" textAlign="center">
+          {loadedClient ? `Loaded client: ${loadedClient}` : 'No client is loaded'}
+        </Text>
+      </Box>
 
       <Divider mb={6} borderColor={useColorModeValue('#e2e8f0', 'gray.700')} />
 

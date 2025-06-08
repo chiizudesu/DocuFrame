@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Grid, GridItem, Box, Flex, useColorModeValue, Text, HStack, IconButton } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
 import { FolderInfoBar } from './FolderInfoBar';
@@ -13,27 +13,38 @@ import { ChevronLeft, ChevronRight, Minimize2, Maximize2, X, Square } from 'luci
 const CustomTitleBar: React.FC = () => {
   const [isMaximized, setIsMaximized] = useState(false);
   // Window controls
-  const handleMinimize = () => window.electronAPI?.minimize?.();
-  const handleMaximize = () => window.electronAPI?.maximize?.();
-  const handleUnmaximize = () => window.electronAPI?.unmaximize?.();
-  const handleClose = () => window.electronAPI?.close?.();
+  const handleMinimize = useCallback(() => window.electronAPI?.minimize?.(), []);
+  const handleMaximize = useCallback(() => window.electronAPI?.maximize?.(), []);
+  const handleUnmaximize = useCallback(() => window.electronAPI?.unmaximize?.(), []);
+  const handleClose = useCallback(() => window.electronAPI?.close?.(), []);
+
   useEffect(() => {
     if (!window.electronAPI) return;
-    window.electronAPI.isMaximized?.().then(setIsMaximized);
-    window.electronAPI.onWindowMaximize?.(() => setIsMaximized(true));
-    window.electronAPI.onWindowUnmaximize?.(() => setIsMaximized(false));
+    let mounted = true;
+    window.electronAPI.isMaximized?.().then((val: boolean) => {
+      if (mounted) setIsMaximized(val);
+    });
+    const onMax = () => setIsMaximized(true);
+    const onUnmax = () => setIsMaximized(false);
+    window.electronAPI.onWindowMaximize?.(onMax);
+    window.electronAPI.onWindowUnmaximize?.(onUnmax);
+    return () => {
+      mounted = false;
+      // No off/unsubscribe available in this API, so nothing to clean up
+    };
   }, []);
+
   const bgColor = useColorModeValue('#f1f5f9', 'gray.800');
   const iconColor = useColorModeValue('#64748b', 'gray.400');
   return (
-    <Flex align="center" width="100%" bg={bgColor} h="32px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any} px={0} borderBottom="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')}>
+    <Flex align="center" width="100%" bg={bgColor} h="32px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties} px={0} borderBottom="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')}>
       <Box display="flex" alignItems="center" gap={2} pl={2}>
         {/* Logo placeholder */}
         <Box w="20px" h="20px" bg={useColorModeValue('#3b82f6', 'blue.400')} borderRadius="md" mr={2} />
         <Text fontWeight="bold" fontSize="sm" color={iconColor} userSelect="none">DocuFrame</Text>
       </Box>
       <Box flex="1" />
-      <Flex height="32px" align="center" style={{ WebkitAppRegion: 'no-drag' } as any}>
+      <Flex height="32px" align="center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {/* Minimize */}
         <IconButton
           aria-label="Minimize"
@@ -54,15 +65,19 @@ const CustomTitleBar: React.FC = () => {
           icon={<Box w="10px" h="1px" bg={iconColor} borderRadius="1px" />}
         />
         {/* Maximize/Restore */}
-        <IconButton
+        <Box
+          as="button"
           aria-label={isMaximized ? 'Restore' : 'Maximize'}
-          variant="ghost"
-          size="sm"
           onClick={isMaximized ? handleUnmaximize : handleMaximize}
           color={iconColor}
-          _hover={{ bg: '#e5e7eb !important' }}
+          bg="transparent"
+          border="none"
+          cursor="pointer"
+          outline="none"
+          transition="background-color 0.2s"
+          _hover={{ bg: useColorModeValue('#e5e7eb', 'gray.600') }}
           _focus={{ boxShadow: 'none', bg: 'transparent' }}
-          _active={{ bg: '#d1d5db' }}
+          _active={{ bg: useColorModeValue('#d1d5db', 'gray.500') }}
           borderRadius={0}
           minW="32px"
           h="32px"
@@ -70,21 +85,48 @@ const CustomTitleBar: React.FC = () => {
           display="flex"
           alignItems="center"
           justifyContent="center"
-          icon={
+          sx={{
+            '& .window-icon': {
+              borderColor: 'currentColor',
+            },
+            '& .maximize-icon': {
+              display: isMaximized ? 'none' : 'block',
+            },
+            '& .restore-icon': {
+              display: isMaximized ? 'block' : 'none',
+            },
+          }}
+        >
+          {/* Maximize icon - single square */}
+          <Box
+            className="window-icon maximize-icon"
+            w="10px"
+            h="10px"
+            border="1px solid"
+            bg="transparent"
+          />
+          {/* Restore icon - two overlapping squares */}
+          <Box className="window-icon restore-icon" position="relative" w="10px" h="10px">
             <Box
-              fontFamily="Segoe MDL2 Assets"
-              fontSize="10px"
-              lineHeight={1}
-              color="inherit"
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              pointerEvents="none"
-            >
-              {isMaximized ? '\uE923' : '\uE922'}
-            </Box>
-          }
-        />
+              position="absolute"
+              top="0px"
+              right="0px"
+              w="7px"
+              h="7px"
+              border="1px solid"
+              bg="transparent"
+            />
+            <Box
+              position="absolute"
+              bottom="0px"
+              left="0px"
+              w="7px"
+              h="7px"
+              border="1px solid"
+              bg="transparent"
+            />
+          </Box>
+        </Box>
         {/* Close */}
         <IconButton
           aria-label="Close"
@@ -122,14 +164,14 @@ export const Layout: React.FC = () => {
   const startY = useRef(0);
   const startHeight = useRef(0);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
     startY.current = e.clientY;
     startHeight.current = logHeight;
     document.body.style.cursor = 'row-resize';
-  };
+  }, [logHeight]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging.current) return;
       const delta = e.clientY - startY.current;
@@ -166,8 +208,8 @@ export const Layout: React.FC = () => {
       <FunctionPanels />
     </GridItem>
     {/* Client Info Sidebar (formerly Folder Tree) */}
-    <GridItem area="sidebar" borderRight="1px" borderColor={borderColor} bg={bgColor} overflowY="auto" display="flex" flexDirection="column" boxShadow="1px 0px 3px rgba(0,0,0,0.05)">
-      <Box flex="1" overflowY="auto">
+    <GridItem area="sidebar" borderRight="1px" borderColor={borderColor} bg={bgColor} overflowY="auto" display="flex" flexDirection="column" boxShadow="1px 0px 3px rgba(0,0,0,0.05)" className="enhanced-scrollbar">
+      <Box flex="1" overflowY="auto" className="enhanced-scrollbar">
         <ClientInfoPane collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)} isCollapsed={sidebarCollapsed} />
       </Box>
     </GridItem>
@@ -176,7 +218,7 @@ export const Layout: React.FC = () => {
       <FolderInfoBar />
     </GridItem>
     {/* Main Content Area */}
-    <GridItem area="main" bg={mainBgColor} overflow="auto">
+    <GridItem area="main" bg={mainBgColor} overflow="auto" className="enhanced-scrollbar">
       <FileGrid />
     </GridItem>
     {/* Resize Handle for Output Log (only over main content, not sidebar) */}

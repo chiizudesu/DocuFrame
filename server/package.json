@@ -1,0 +1,23 @@
+{
+  "name": "docuframe-server",
+  "version": "1.0.0",
+  "description": "DocuFrame backend server with Xero OAuth integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "xero-node": "^4.34.0",
+    "express-session": "^1.17.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+} 

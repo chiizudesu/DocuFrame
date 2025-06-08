@@ -2,6 +2,7 @@
 export interface AppSettings {
   rootPath: string;
   apiKey?: string;
+  gstTemplatePath?: string;
 }
 
 class SettingsService {

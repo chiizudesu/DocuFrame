@@ -1,8 +1,9 @@
 import { contextBridge } from 'electron';
 import { transferFiles } from './main/commands/transfer';
 import { getConfig, setConfig } from './main/config';
-import { 
+import {
   selectDirectory,
+  selectFile,
   getDirectoryContents,
   renameItem,
   deleteItem,
@@ -34,6 +35,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Directory operations
   selectDirectory: async () => {
     return await selectDirectory();
+  },
+  selectFile: async (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    return await selectFile(options);
   },
   getDirectoryContents: async (dirPath: string) => {
     return await getDirectoryContents(dirPath);

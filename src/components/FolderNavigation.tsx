@@ -292,6 +292,11 @@ export const FolderNavigation: React.FC = () => {
               {formatFileSize(item.size)}
             </Text>
           )}
+          {item.modified && (
+            <Text fontSize="xs" color={useColorModeValue('gray.400', 'gray.500')}> 
+              {new Date(item.modified).toLocaleString()}
+            </Text>
+          )}
         </Box>
       </Flex>
     );

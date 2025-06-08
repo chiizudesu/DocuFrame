@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xero OAuth Callback</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f7fafc;
+        }
+        .container {
+            text-align: center;
+            padding: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .spinner {
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #3182ce;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            color: #e53e3e;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <p>Processing authentication...</p>
+        <div id="error" class="error" style="display: none;"></div>
+    </div>
+
+    <script>
+        (function() {
+            try {
+                // Parse URL parameters
+                const urlParams = new URLSearchParams(window.location.search);
+                const code = urlParams.get('code');
+                const error = urlParams.get('error');
+                const state = urlParams.get('state');
+
+                if (error) {
+                    document.getElementById('error').textContent = `Authentication failed: ${error}`;
+                    document.getElementById('error').style.display = 'block';
+                    // Send error to parent window
+                    if (window.opener) {
+                        window.opener.postMessage({
+                            type: 'XERO_OAUTH_ERROR',
+                            error: error
+                        }, window.location.origin);
+                        setTimeout(() => {
+                            window.close();
+                        }, 1000);
+                    } else {
+                        // Fallback: redirect to app root with error
+                        setTimeout(() => {
+                            window.location.href = '/?error=' + encodeURIComponent(error);
+                        }, 2000);
+                    }
+                    return;
+                }
+
+                if (code) {
+                    console.log('Redirecting with code:', code, 'and state:', state);
+                    // Send success message to parent window
+                    if (window.opener) {
+                        window.opener.postMessage({
+                            type: 'XERO_OAUTH_SUCCESS',
+                            code: code,
+                            state: state
+                        }, window.location.origin);
+                        setTimeout(() => {
+                            window.close();
+                        }, 1000);
+                    } else {
+                        // Fallback: redirect to app root with code/state
+                        window.location.href = '/?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+                    }
+                    return;
+                } else {
+                    throw new Error('No authorization code received');
+                }
+            } catch (err) {
+                console.error('OAuth callback error:', err);
+                document.getElementById('error').textContent = 'Authentication processing failed';
+                document.getElementById('error').style.display = 'block';
+                
+                // Redirect back to main app with error
+                setTimeout(() => {
+                    window.location.href = '/?error=' + encodeURIComponent(err.message);
+                }, 2000);
+            }
+        })();
+    </script>
+</body>
+</html> 
