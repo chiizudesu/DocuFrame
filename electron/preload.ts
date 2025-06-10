@@ -26,6 +26,7 @@ interface ElectronAPI {
   onWindowUnmaximize: (cb: (event: Electron.IpcRendererEvent) => void) => void;
   onFolderContentsChanged: (cb: (event: Electron.IpcRendererEvent, data: { directory: string }) => void) => void;
   removeAllListeners: (channel: string) => void;
+  readCsv: (filePath: string) => Promise<any[]>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -89,4 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWindowUnmaximize: (cb) => ipcRenderer.on('window-unmaximized', cb),
   onFolderContentsChanged: (cb) => ipcRenderer.on('folderContentsChanged', cb),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+  readCsv: async (filePath: string) => {
+    return await ipcRenderer.invoke('read-csv', filePath);
+  },
 }); 

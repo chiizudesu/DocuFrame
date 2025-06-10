@@ -1,12 +1,14 @@
 // main.ts - Updated with IPC handlers
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron';
 import path from 'path';
-import { promises as fs } from 'fs';
+import fs from 'fs';
+import { promises as fsPromises } from 'fs';
 import { fileURLToPath } from 'url';
 import { fileSystemService } from '../src/services/fileSystem';
 import type { Config } from '../src/services/config';
 import { handleCommand } from '../src/main/commandHandler';
 import { transferFiles } from '../src/main/commands/transfer';
+const { parse } = require('csv-parse/sync');
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +25,7 @@ const configPath = path.join(app.getPath('userData'), 'config.json');
 // Load or create config
 async function loadConfig(): Promise<Config> {
   try {
-    const data = await fs.readFile(configPath, 'utf-8');
+    const data = await fsPromises.readFile(configPath, 'utf-8');
     return JSON.parse(data);
   } catch (error) {
     // Create default config if it doesn't exist
@@ -32,7 +34,7 @@ async function loadConfig(): Promise<Config> {
       apiKey: undefined,
       gstTemplatePath: undefined
     };
-    await fs.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
+    await fsPromises.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
     return defaultConfig;
   }
 }
@@ -49,7 +51,7 @@ async function saveConfig(config: Config) {
       throw new Error('Failed to serialize config to JSON');
     }
     
-    await fs.writeFile(configPath, configData);
+    await fsPromises.writeFile(configPath, configData);
     console.log('[Main] Config saved successfully:', config);
   } catch (error) {
     console.error('[Main] Error in saveConfig:', error);
@@ -70,6 +72,13 @@ const createWindow = () => {
       contextIsolation: true,
       sandbox: false,
     },
+  });
+
+  // Enable drag and drop for files
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('file://')) {
+      event.preventDefault();
+    }
   });
 
   // Intercept window.open and open external URLs in the default browser
@@ -177,12 +186,12 @@ ipcMain.handle('set-config', async (_, config: Config) => {
 
 ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
     const results: any[] = [];
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       try {
-        const stats = await fs.stat(fullPath);
+        const stats = await fsPromises.stat(fullPath);
         results.push({
           name: entry.name,
           path: fullPath,
@@ -206,8 +215,8 @@ ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
 
 ipcMain.handle('create-directory', async (_, dirPath: string) => {
   try {
-    await fs.mkdir(dirPath, { recursive: true });
-    const stats = await fs.stat(dirPath);
+    await fsPromises.mkdir(dirPath, { recursive: true });
+    const stats = await fsPromises.stat(dirPath);
     return {
       name: path.basename(dirPath),
       path: dirPath,
@@ -221,18 +230,16 @@ ipcMain.handle('create-directory', async (_, dirPath: string) => {
   }
 });
 
-
-
 ipcMain.handle('delete-item', async (_, itemPath: string) => {
   // Fast path: Try immediate deletion first
   let stats;
   try {
-    stats = await fs.stat(itemPath);
+    stats = await fsPromises.stat(itemPath);
     
     if (stats.isDirectory()) {
-      await fs.rmdir(itemPath, { recursive: true });
+      await fsPromises.rmdir(itemPath, { recursive: true });
     } else {
-      await fs.unlink(itemPath);
+      await fsPromises.unlink(itemPath);
     }
     return; // Success - immediate deletion worked
   } catch (error: any) {
@@ -246,8 +253,8 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
         if (stats && !stats.isDirectory()) {
           // Method 1: Try chmod + unlink
           try {
-            await fs.chmod(itemPath, 0o666);
-            await fs.unlink(itemPath);
+            await fsPromises.chmod(itemPath, 0o666);
+            await fsPromises.unlink(itemPath);
             return; // Success after permission fix
           } catch (chmodError) {
             console.log(`chmod+unlink failed: ${chmodError.code}`);
@@ -255,7 +262,7 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
           
           // Method 2: Try fs.rm (newer Node.js API, sometimes more effective)
           try {
-            await fs.rm(itemPath, { force: true });
+            await fsPromises.rm(itemPath, { force: true });
             console.log(`Successfully deleted ${itemPath} using fs.rm`);
             return; // Success with fs.rm
           } catch (rmError) {
@@ -263,7 +270,7 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
           }
         } else {
           // For directories, try the newer rmdir approach
-          await fs.rm(itemPath, { recursive: true, force: true });
+          await fsPromises.rm(itemPath, { recursive: true, force: true });
           return; // Success for directory
         }
       } catch (retryError: any) {
@@ -357,7 +364,7 @@ ipcMain.handle('select-file', async (_, options?: { title?: string; filters?: { 
 
 ipcMain.handle('validate-path', async (_, dirPath: string) => {
   try {
-    const stats = await fs.stat(dirPath);
+    const stats = await fsPromises.stat(dirPath);
     return stats.isDirectory();
   } catch (error) {
     console.error('Error validating path:', error);
@@ -376,7 +383,7 @@ ipcMain.handle('move-item', async (_, sourcePath: string, destinationPath: strin
 
 ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
   try {
-    await fs.rename(oldPath, newPath);
+    await fsPromises.rename(oldPath, newPath);
     return true;
   } catch (error) {
     console.error('Error renaming item:', error);
@@ -442,6 +449,183 @@ ipcMain.handle('window-is-maximized', (event) => {
   return win ? win.isMaximized() : false;
 });
 
+// Get file icon using Windows file associations
+ipcMain.handle('get-file-icon', async (_, filePath: string) => {
+  try {
+    if (process.platform === 'win32') {
+      // Get system icon for the file
+      const icon = await app.getFileIcon(filePath, { size: 'normal' });
+      if (icon) {
+        return icon.toDataURL();
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting file icon:', error);
+    return null;
+  }
+});
+
+// Handle file upload via drag and drop
+ipcMain.handle('upload-files', async (_, files: { path: string; name: string }[], targetDirectory: string) => {
+  try {
+    const results: Array<{ file: string; status: string; path?: string; error?: string }> = [];
+    
+    for (const file of files) {
+      try {
+        const targetPath = path.join(targetDirectory, file.name);
+        
+        // Check if file already exists
+        try {
+          await fsPromises.access(targetPath);
+          // File exists, ask user what to do
+          const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Replace', 'Skip', 'Cancel'],
+            defaultId: 0,
+            title: 'File Already Exists',
+            message: `The file "${file.name}" already exists in the destination folder.`,
+            detail: 'Do you want to replace it?'
+          });
+          
+          if (response === 2) { // Cancel
+            throw new Error('Upload cancelled by user');
+          } else if (response === 1) { // Skip
+            results.push({ file: file.name, status: 'skipped' });
+            continue;
+          }
+          // response === 0 means replace, continue with copy
+        } catch (error) {
+          // File doesn't exist, continue with copy
+        }
+        
+        // Copy the file
+        await fsPromises.copyFile(file.path, targetPath);
+        results.push({ file: file.name, status: 'success', path: targetPath });
+      } catch (error) {
+        console.error(`Error uploading file ${file.name}:`, error);
+        results.push({ file: file.name, status: 'error', error: error.message });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error in upload-files handler:', error);
+    throw error;
+  }
+});
+
+// Move files by dragging
+ipcMain.handle('move-files', async (_, files: string[], targetDirectory: string) => {
+  try {
+    const results: Array<{ file: string; status: string; path?: string; error?: string; reason?: string }> = [];
+    
+    for (const filePath of files) {
+      try {
+        const fileName = path.basename(filePath);
+        const targetPath = path.join(targetDirectory, fileName);
+        
+        // Check if target is different from source
+        if (path.dirname(filePath) === targetDirectory) {
+          results.push({ file: fileName, status: 'skipped', reason: 'Same directory' });
+          continue;
+        }
+        
+        // Check if file already exists in target
+        try {
+          await fsPromises.access(targetPath);
+          const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Replace', 'Skip', 'Cancel'],
+            defaultId: 1,
+            title: 'File Already Exists',
+            message: `The file "${fileName}" already exists in the destination folder.`,
+            detail: 'Do you want to replace it?'
+          });
+          
+          if (response === 2) { // Cancel
+            throw new Error('Move cancelled by user');
+          } else if (response === 1) { // Skip
+            results.push({ file: fileName, status: 'skipped', reason: 'File exists' });
+            continue;
+          }
+          // response === 0 means replace, continue with move
+        } catch (error) {
+          // File doesn't exist, continue with move
+        }
+        
+        // Move the file
+        await fsPromises.rename(filePath, targetPath);
+        results.push({ file: fileName, status: 'success', path: targetPath });
+      } catch (error) {
+        console.error(`Error moving file ${filePath}:`, error);
+        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error in move-files handler:', error);
+    throw error;
+  }
+});
+
+// Copy files by dragging with Ctrl key
+ipcMain.handle('copy-files', async (_, files: string[], targetDirectory: string) => {
+  try {
+    const results: Array<{ file: string; status: string; path?: string; error?: string; reason?: string }> = [];
+    
+    for (const filePath of files) {
+      try {
+        const fileName = path.basename(filePath);
+        const targetPath = path.join(targetDirectory, fileName);
+        
+        // Check if file already exists in target
+        try {
+          await fsPromises.access(targetPath);
+          const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Replace', 'Skip', 'Cancel'],
+            defaultId: 1,
+            title: 'File Already Exists',
+            message: `The file "${fileName}" already exists in the destination folder.`,
+            detail: 'Do you want to replace it?'
+          });
+          
+          if (response === 2) { // Cancel
+            throw new Error('Copy cancelled by user');
+          } else if (response === 1) { // Skip
+            results.push({ file: fileName, status: 'skipped', reason: 'File exists' });
+            continue;
+          }
+          // response === 0 means replace, continue with copy
+        } catch (error) {
+          // File doesn't exist, continue with copy
+        }
+        
+        // Copy the file
+        const stats = await fsPromises.stat(filePath);
+        if (stats.isDirectory()) {
+          // For directories, copy recursively
+          await fsPromises.cp(filePath, targetPath, { recursive: true });
+        } else {
+          await fsPromises.copyFile(filePath, targetPath);
+        }
+        
+        results.push({ file: fileName, status: 'success', path: targetPath });
+      } catch (error) {
+        console.error(`Error copying file ${filePath}:`, error);
+        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error in copy-files handler:', error);
+    throw error;
+  }
+});
+
 // Emit events for maximize/unmaximize
 app.on('browser-window-created', (event, win) => {
   win.on('maximize', () => {
@@ -450,4 +634,24 @@ app.on('browser-window-created', (event, win) => {
   win.on('unmaximize', () => {
     win.webContents.send('window-unmaximized');
   });
+});
+
+ipcMain.on('ondragstart', (event, filePath) => {
+  // Use a generic icon or a file-type-specific icon if you have one
+  const iconPath = path.join(__dirname, '../public/file-icon.png'); // Adjust path as needed
+  event.sender.startDrag({
+    file: filePath,
+    icon: iconPath
+  });
+});
+
+ipcMain.handle('read-csv', async (_, filePath) => {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const records = parse(content, { columns: true, skip_empty_lines: true });
+    return records;
+  } catch (err) {
+    console.error('Failed to read CSV:', err);
+    return [];
+  }
 });

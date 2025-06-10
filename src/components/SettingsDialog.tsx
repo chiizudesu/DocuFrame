@@ -28,12 +28,14 @@ interface Settings {
   rootPath: string;
   apiKey?: string;
   gstTemplatePath?: string;
+  clientbasePath?: string;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
   const [rootPath, setRootPath] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [gstTemplatePath, setGstTemplatePath] = useState('');
+  const [clientbasePath, setClientbasePath] = useState('');
   const toast = useToast();
   const { setRootDirectory, setCurrentDirectory } = useAppContext();
 
@@ -44,6 +46,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         setRootPath(loadedSettings.rootPath);
         setApiKey(loadedSettings.apiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
+        setClientbasePath(loadedSettings.clientbasePath || '');
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -67,6 +70,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         rootPath,
         apiKey: apiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
+        clientbasePath: clientbasePath || undefined,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -132,6 +136,30 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
+  const handleBrowseClientbase = async () => {
+    try {
+      const result = await (window.electronAPI as any).selectFile({
+        title: 'Select Clientbase CSV File',
+        filters: [
+          { name: 'CSV Files', extensions: ['csv'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (result) {
+        setClientbasePath(result);
+      }
+    } catch (error) {
+      console.error('Error selecting clientbase CSV:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select clientbase CSV file',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
@@ -164,6 +192,21 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               />
               <InputRightElement width="4.5rem">
                 <Button h="1.75rem" size="sm" onClick={handleBrowseGstTemplate}>
+                  <FolderOpen size={16} />
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
+          <FormControl mb={4}>
+            <FormLabel>Clientbase CSV Path</FormLabel>
+            <InputGroup>
+              <Input
+                value={clientbasePath}
+                onChange={(e) => setClientbasePath(e.target.value)}
+                placeholder="Enter clientbase CSV file path"
+              />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" size="sm" onClick={handleBrowseClientbase}>
                   <FolderOpen size={16} />
                 </Button>
               </InputRightElement>

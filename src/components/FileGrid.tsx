@@ -39,12 +39,14 @@ import {
   FilePlus2,
   Archive,
   Mail,
+  Upload,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { settingsService } from '../services/settings'
 import type { FileItem } from '../types'
 import { joinPath, isAbsolutePath } from '../utils/path'
 import { MergePDFDialog } from './MergePDFDialog'
+import { DraggableFileItem } from './DraggableFileItem'
 
 interface ContextMenuPosition {
   x: number
@@ -190,6 +192,11 @@ export const FileGrid: React.FC = () => {
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
   const lastNavTimeRef = useRef<number | null>(null);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
+
+  // Drag and drop state
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [dragCounter, setDragCounter] = useState(0)
+  const dropAreaRef = useRef<HTMLDivElement>(null)
 
   // All useColorModeValue hooks next
   const itemBgHover = useColorModeValue('#f1f5f9', 'gray.700')
@@ -698,10 +705,193 @@ export const FileGrid: React.FC = () => {
     return () => setSelectAllFiles(() => () => {});
   }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog]);
 
+  // Drag and drop handlers for the main container
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter(prev => prev + 1);
+    
+    // Debug drag enter
+    console.log('=== DRAG ENTER DEBUG ===');
+    console.log('DataTransfer types:', e.dataTransfer.types);
+    console.log('DataTransfer items.length:', e.dataTransfer.items.length);
+    console.log('DataTransfer effectAllowed:', e.dataTransfer.effectAllowed);
+    
+    // Check for external files (from OS file explorer) - NOT internal drags
+    const hasExternalFiles = e.dataTransfer.types.includes('Files');
+    const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+    
+    console.log('Has external Files type:', hasExternalFiles);
+    console.log('Is internal drag:', isInternalDrag);
+    
+    // Only show upload overlay for external files, not internal drags
+    if (hasExternalFiles && !isInternalDrag) {
+      setIsDragOver(true);
+    }
+  };
 
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter(prev => prev - 1);
+    
+    // Only hide drag overlay when counter reaches 0
+    if (dragCounter <= 1) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Set appropriate drop effect based on drag type
+    const hasExternalFiles = e.dataTransfer.types.includes('Files');
+    const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+    
+    if (hasExternalFiles) {
+      e.dataTransfer.dropEffect = 'copy'; // External files are copied/uploaded
+    } else if (isInternalDrag) {
+      // For internal drags, respect the modifier keys
+      e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+    } else {
+      e.dataTransfer.dropEffect = 'none';
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    setDragCounter(0);
+
+    // Debug: Log all available data transfer info
+    console.log('=== DROP EVENT DEBUG ===');
+    console.log('DataTransfer types:', e.dataTransfer.types);
+    console.log('DataTransfer files.length:', e.dataTransfer.files.length);
+    console.log('DataTransfer items.length:', e.dataTransfer.items.length);
+    console.log('DataTransfer effectAllowed:', e.dataTransfer.effectAllowed);
+    console.log('Files array:', Array.from(e.dataTransfer.files));
+    
+    // Check what type of drag this is
+    const hasExternalFiles = e.dataTransfer.types.includes('Files');
+    const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+    
+    console.log('Has external Files type:', hasExternalFiles);
+    console.log('Is internal drag:', isInternalDrag);
+    
+    // Log each file's properties
+    Array.from(e.dataTransfer.files).forEach((file, index) => {
+      console.log(`File ${index}:`, {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        lastModified: file.lastModified,
+        path: (file as any).path, // Electron-specific path property
+        webkitRelativePath: file.webkitRelativePath
+      });
+    });
+
+    // Handle external files (from OS file explorer)
+    if (hasExternalFiles && e.dataTransfer.files.length > 0) {
+      try {
+        const files = Array.from(e.dataTransfer.files).map((f, index) => {
+          const filePath = (f as any).path || f.name; // Fallback to name if path not available
+          console.log(`Processing file ${index}: ${f.name}, path: ${filePath}`);
+          
+          return {
+            path: filePath,
+            name: f.name
+          };
+        });
+        
+        // Validate that we have valid file paths
+        const validFiles = files.filter(f => f.path && f.path !== f.name);
+        if (validFiles.length === 0) {
+          console.error('No valid file paths found. This might be a web browser drag, not OS drag.');
+          addLog('Failed to upload: No valid file paths found. Please drag files from your file explorer, not from a web browser.', 'error');
+          setStatus('Upload failed: Invalid file source', 'error');
+          return;
+        }
+        
+        addLog(`Uploading ${validFiles.length} file(s) to current directory`);
+        setStatus('Uploading files...', 'info');
+        
+        const results = await window.electronAPI.uploadFiles(validFiles, currentDirectory);
+        
+        // Process results
+        const successful = results.filter((r: any) => r.status === 'success').length;
+        const failed = results.filter((r: any) => r.status === 'error').length;
+        const skipped = results.filter((r: any) => r.status === 'skipped').length;
+        
+        let message = `Upload complete: ${successful} successful`;
+        if (failed > 0) message += `, ${failed} failed`;
+        if (skipped > 0) message += `, ${skipped} skipped`;
+        
+        addLog(message);
+        setStatus(message, failed > 0 ? 'error' : 'success');
+        
+        // Refresh current directory
+        const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+        setFolderItems(contents);
+        
+      } catch (error) {
+        console.error('Upload failed:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        addLog(`Upload failed: ${errorMessage}`, 'error');
+        setStatus('Upload failed', 'error');
+      }
+    } 
+    // Handle internal drags (files dragged within the app)
+    else if (isInternalDrag) {
+      console.log('This is an internal drag operation - ignoring at grid level');
+      // Internal drags are handled by individual DraggableFileItem components
+      // We don't need to do anything here for internal drags
+    }
+    else {
+      console.log('Unknown drag type or no valid data');
+    }
+  };
 
   // Grid view
   const renderGridView = () => (
+    <Box
+      ref={dropAreaRef}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      position="relative"
+      minHeight="200px"
+    >
+      {/* Drag overlay */}
+      {isDragOver && (
+        <Box
+          position="absolute"
+          top={0}
+          left={0}
+          right={0}
+          bottom={0}
+          bg="blue.500"
+          opacity={0.1}
+          borderRadius="md"
+          border="2px dashed"
+          borderColor="blue.500"
+          zIndex={1000}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          pointerEvents="none"
+        >
+          <Flex direction="column" align="center" color="blue.600">
+            <Icon as={Upload} boxSize={12} mb={2} />
+            <Text fontSize="lg" fontWeight="bold">
+              Drop files here to upload
+            </Text>
+          </Flex>
+        </Box>
+      )}
+      
     <Grid templateColumns="repeat(auto-fit, minmax(220px, 1fr))" maxW="100%" gap={4} p={4}>
       {sortedFiles.map((file, index) => (
         isRenaming === file.name ? (
@@ -722,8 +912,16 @@ export const FileGrid: React.FC = () => {
             </form>
           </Box>
         ) : (
-          <Flex
+            <DraggableFileItem
             key={index}
+              file={file}
+              isSelected={selectedFiles.includes(file.name)}
+              onSelect={handleFileItemClick}
+              onContextMenu={handleContextMenu}
+              index={index}
+              selectedFiles={selectedFiles}
+            >
+              <Flex
             p={4}
             alignItems="center"
             cursor="pointer"
@@ -737,8 +935,6 @@ export const FileGrid: React.FC = () => {
               borderColor: useColorModeValue('blue.200', 'blue.700'),
             }}
             transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
-            onContextMenu={(e) => handleContextMenu(e, file)}
-            onClick={(e) => handleFileItemClick(file, index, e)}
             style={{ userSelect: 'none' }}
           >
             <Icon
@@ -756,14 +952,56 @@ export const FileGrid: React.FC = () => {
               </Text>
             </Box>
           </Flex>
+            </DraggableFileItem>
         )
       ))}
     </Grid>
+    </Box>
   )
 
   // List view
   const renderListView = () => (
-    <Box overflowX="auto" p={0} m={0}>
+    <Box 
+      ref={dropAreaRef}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      position="relative"
+      overflowX="auto" 
+      p={0} 
+      m={0}
+      minHeight="300px"
+      width="100%"
+    >
+      {/* Drag overlay - now covers the entire file list area */}
+      {isDragOver && (
+        <Box
+          position="absolute"
+          top={0}
+          left={0}
+          right={0}
+          bottom={0}
+          bg="blue.500"
+          opacity={0.1}
+          borderRadius="md"
+          border="2px dashed"
+          borderColor="blue.500"
+          zIndex={1000}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          pointerEvents="none"
+        >
+          <Flex direction="column" align="center" color="blue.600">
+            <Icon as={Upload} boxSize={12} mb={2} />
+            <Text fontSize="lg" fontWeight="bold">
+              Drop files here to upload
+            </Text>
+          </Flex>
+        </Box>
+      )}
+      
       <Table
         size="sm"
         variant="simple"
@@ -771,7 +1009,11 @@ export const FileGrid: React.FC = () => {
         borderRadius={0}
         overflow="unset"
         mt={0}
-        style={{ userSelect: 'none' }}
+        style={{ 
+          userSelect: 'none',
+          tableLayout: 'fixed', // Prevent column width changes
+          width: '100%'
+        }}
       >
         <Thead bg={tableHeadBgColor}>
           <Tr>
@@ -780,6 +1022,7 @@ export const FileGrid: React.FC = () => {
               cursor="pointer"
               onClick={() => handleSort('name')}
               borderColor={tableBorderColor}
+              width="50%"
             >
               <Flex align="center">
                 Name
@@ -798,6 +1041,7 @@ export const FileGrid: React.FC = () => {
               cursor="pointer"
               onClick={() => handleSort('size')}
               borderColor={tableBorderColor}
+              width="25%"
             >
               <Flex align="center">
                 Size
@@ -816,6 +1060,7 @@ export const FileGrid: React.FC = () => {
               cursor="pointer"
               onClick={() => handleSort('modified')}
               borderColor={tableBorderColor}
+              width="25%"
             >
               <Flex align="center">
                 Modified
@@ -854,18 +1099,17 @@ export const FileGrid: React.FC = () => {
                 </Td>
               </Tr>
             ) : (
-              <Tr
+              <DraggableFileItem
                 key={index}
-                cursor="pointer"
-                _hover={{
-                  bg: itemBgHover,
-                }}
-                onContextMenu={(e) => handleContextMenu(e, file)}
-                onClick={(e) => handleFileItemClick(file, index, e)}
-                bg={selectedFiles.includes(file.name) ? useColorModeValue('blue.50', 'blue.900') : undefined}
-                style={{ userSelect: 'none' }}
+                file={file}
+                isSelected={selectedFiles.includes(file.name)}
+                onSelect={handleFileItemClick}
+                onContextMenu={handleContextMenu}
+                index={index}
+                selectedFiles={selectedFiles}
+                as="tr"
               >
-                <Td borderColor={tableBorderColor}>
+                <Td borderColor={tableBorderColor} width="50%">
                   <Flex align="center">
                     <Icon
                       as={getFileIcon(file.type, file.name)}
@@ -878,13 +1122,13 @@ export const FileGrid: React.FC = () => {
                     </Text>
                   </Flex>
                 </Td>
-                <Td borderColor={tableBorderColor} color={fileSubTextColor}>
+                <Td borderColor={tableBorderColor} color={fileSubTextColor} width="25%">
                   {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
                 </Td>
-                <Td borderColor={tableBorderColor} color={fileSubTextColor}>
+                <Td borderColor={tableBorderColor} color={fileSubTextColor} width="25%">
                   {file.modified ? new Date(file.modified).toLocaleString() : '-'}
                 </Td>
-              </Tr>
+              </DraggableFileItem>
             );
           })}
         </Tbody>

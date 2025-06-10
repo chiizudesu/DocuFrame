@@ -119,10 +119,10 @@ export const QuickNavigateOverlay: React.FC = () => {
   useEffect(() => {
     (async () => {
       try {
-        const config = await (window.electronAPI as any).getConfig('transferCommandMappings');
+        const config = await (window.electronAPI as any).getConfig();
         console.log('[QuickNavigate] Raw config result:', config);
-        // Extract just the transferCommandMappings part if it's nested
-        const mappings = config?.transferCommandMappings || config || {};
+        // Extract just the transferCommandMappings part
+        const mappings = config?.transferCommandMappings || {};
         console.log('[QuickNavigate] Extracted transfer mappings:', mappings);
         setTransferMappings(mappings);
       } catch (error) {
@@ -535,25 +535,23 @@ export const QuickNavigateOverlay: React.FC = () => {
     setIsQuickNavigating(false);
     setInputValue('');
   };
+
   if (!isQuickNavigating) return null;
-  return <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="rgba(0,0,0,0.3)" zIndex="modal" display="flex" alignItems="flex-start" justifyContent="center" paddingTop="30vh" onClick={() => setIsQuickNavigating(false)}>
-      <Box width="600px" maxWidth="90%" onClick={e => e.stopPropagation()}>
+  return <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="rgba(0,0,0,0.3)" zIndex="modal" display="flex" alignItems="flex-start" justifyContent="center" paddingTop="22vh" onClick={() => setIsQuickNavigating(false)}>
+      <Box width="480px" maxWidth="90vw" borderRadius="lg" boxShadow="0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" bg={bgColor} onClick={e => e.stopPropagation()}>
         {/* Fixed position input container - always visible */}
-        <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
+        <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
           <Flex align="center" p={3}>
             <IconButton icon={isCommandMode ? <ChevronRight size={25} strokeWidth={2} /> : <Search size={18} />} aria-label={isCommandMode ? 'Command mode' : 'Search mode'} variant="ghost" size="sm" color="blue.400" onClick={toggleCommandMode} />
             <Input ref={inputRef} placeholder={isCommandMode ? 'Enter command...' : 'Type to search files and folders... (Enter=Navigate, Backspace=Up)'} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown} variant="unstyled" fontSize="md" ml={2} autoFocus />
           </Flex>
         </Box>
-
-        
         {/* Search error indicator */}
         {!isCommandMode && searchError && (
           <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} p={4}>
             <Text fontSize="sm" color="red.500">Search failed: {searchError}</Text>
           </Box>
         )}
-        
         {/* Command info panel - separate from input container */}
         {isCommandMode && commandInfo && (
           <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} className="thin-scrollbar" maxH="300px" overflowY="auto">
@@ -593,7 +591,6 @@ export const QuickNavigateOverlay: React.FC = () => {
             )}
           </Box>
         )}
-        
         {/* Preview files panel - shows actual files to be transferred */}
         {previewFiles.length > 0 && (
           <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1}>
@@ -631,18 +628,8 @@ export const QuickNavigateOverlay: React.FC = () => {
             </Box>
           </Box>
         )}
-        
-        {/* Search results - separate from input container */}        
-        {/* No results message */}
-        {!isCommandMode && inputValue.trim() && !isSearching && filteredResults.length === 0 && (
-          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} p={4}>
-            <Text fontSize="sm" color="gray.500" textAlign="center">
-              No files or folders found for "{inputValue}"
-            </Text>
-          </Box>
-        )}
-        
-        {!isCommandMode && filteredResults.length > 0 && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={1} className="enhanced-scrollbar" maxH="400px" overflowY="auto">
+        {/* Search results - now always inside modal, below input */}
+        {!isCommandMode && filteredResults.length > 0 && <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={2} className="enhanced-scrollbar" maxH="300px" overflowY="auto">
             <List spacing={0}>
               {filteredResults.map((result, index) => <ListItem key={index} p={2} bg={index === 0 ? useColorModeValue('#eff6ff', 'blue.900') : 'transparent'} cursor="pointer" _hover={{
             bg: useColorModeValue('#f8fafc', 'gray.700')
@@ -671,6 +658,14 @@ export const QuickNavigateOverlay: React.FC = () => {
                 </ListItem>)}
             </List>
           </Box>}
+        {/* No results message */}
+        {!isCommandMode && inputValue.trim() && !isSearching && filteredResults.length === 0 && (
+          <Box bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={2} p={4}>
+            <Text fontSize="sm" color="gray.500" textAlign="center">
+              No files or folders found for "{inputValue}"
+            </Text>
+          </Box>
+        )}
       </Box>
     </Box>;
 };

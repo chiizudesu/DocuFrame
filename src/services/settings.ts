@@ -3,6 +3,7 @@ export interface AppSettings {
   rootPath: string;
   apiKey?: string;
   gstTemplatePath?: string;
+  clientbasePath?: string;
 }
 
 class SettingsService {
@@ -34,8 +35,11 @@ class SettingsService {
 
   async setSettings(settings: AppSettings): Promise<void> {
     try {
-      await (window.electronAPI as any).setConfig(settings);
-      this.settings = settings;
+      // Always merge with existing config to avoid overwriting unrelated fields
+      const currentConfig = await (window.electronAPI as any).getConfig();
+      const mergedConfig = { ...currentConfig, ...settings };
+      await (window.electronAPI as any).setConfig(mergedConfig);
+      this.settings = mergedConfig;
     } catch (error) {
       console.error('Error setting settings:', error);
       throw error;

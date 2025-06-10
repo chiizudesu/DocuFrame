@@ -11,6 +11,14 @@ interface PathInfo {
   error?: string;
 }
 
+interface OperationResult {
+  file: string;
+  status: 'success' | 'error' | 'skipped';
+  path?: string;
+  error?: string;
+  reason?: string;
+}
+
 interface ElectronAPI {
   getConfig: () => Promise<AppSettings>;
   setConfig: (config: AppSettings) => Promise<void>;
@@ -23,6 +31,31 @@ interface ElectronAPI {
   selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
   confirmDelete: (fileNames: string[]) => Promise<boolean>;
+  
+  // Drag and drop operations
+  uploadFiles: (files: { path: string; name: string }[], targetDirectory: string) => Promise<OperationResult[]>;
+  moveFiles: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;
+  copyFiles: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;
+  
+  // File icon support
+  getFileIcon: (filePath: string) => Promise<string | null>;
+  
+  // CSV reading
+  readCsv: (filePath: string) => Promise<any[]>;
+  
+  // Window operations
+  minimize: () => void;
+  maximize: () => void;
+  unmaximize: () => void;
+  close: () => void;
+  isMaximized: () => Promise<boolean>;
+  onWindowMaximize: (callback: () => void) => void;
+  onWindowUnmaximize: (callback: () => void) => void;
+  
+  // Event listeners
+  onFolderContentsChanged: (callback: (event: any, data: { directory: string }) => void) => void;
+  removeAllListeners: (channel: string) => void;
+  startDrag: (filePath: string) => void;
 }
 
 declare global {

@@ -5,6 +5,7 @@ import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
 import { SettingsDialog } from './components/SettingsDialog';
 import { AppProvider } from './context/AppContext';
+import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 
 // Separate component to use context
 const AppContent: React.FC = () => {
@@ -93,6 +94,7 @@ const AppContent: React.FC = () => {
   return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
       <Layout />
       <QuickNavigateOverlay />
+      <ClientSearchOverlay />
       <SettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </Box>;
 };

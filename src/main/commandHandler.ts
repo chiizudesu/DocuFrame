@@ -5,6 +5,7 @@ import { mergePdfs } from './commands/mergePdfs';
 import { extractZips } from './commands/extractZips';
 import { extractEml } from './commands/extractEml';
 import { gstTemplate } from './commands/gstTemplate';
+import { updateApp } from './commands/updateApp';
 import { getConfig } from './config';
 
 interface CommandResult {
@@ -207,6 +208,18 @@ export async function handleCommand(command: string, args: string[], currentDire
     const directory = currentDirectory || process.cwd();
     
     const result = await gstTemplate(directory);
+    return {
+      success: result.success,
+      message: result.message
+    };
+  }
+  
+  // Handle update command
+  if (cmd.toLowerCase() === 'update') {
+    console.log('[CommandHandler] Executing update command');
+    const directory = currentDirectory || process.cwd();
+    
+    const result = await updateApp(directory);
     return {
       success: result.success,
       message: result.message

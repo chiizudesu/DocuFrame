@@ -36,21 +36,7 @@ interface TransferMappingDialogProps {
   onClose: () => void;
 }
 
-declare global {
-  interface Window {
-    electronAPI: {
-      executeCommand: (command: string, currentDirectory?: string) => Promise<any>;
-      transfer: (options: { numFiles?: number; newName?: string; command?: string; currentDirectory?: string }) => Promise<any>;
-      getConfig: (key: string) => Promise<any>;
-      setConfig: (key: string, value: any) => Promise<void>;
-      selectDirectory: () => Promise<string>;
-      getDirectoryContents: (dirPath: string) => Promise<any>;
-      renameItem: (oldPath: string, newPath: string) => Promise<void>;
-      deleteItem: (path: string) => Promise<void>;
-      createDirectory: (path: string) => Promise<void>;
-    }
-  }
-}
+
 
 export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ isOpen, onClose }) => {
   const [mappings, setMappings] = useState<TransferMapping[]>([]);
@@ -62,9 +48,10 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
     const loadMappings = async () => {
       if (isOpen) {
         try {
-          const settings = await window.electronAPI.getConfig('settings');
-          if (settings?.transferCommandMappings) {
-            const mappingArray = Object.entries(settings.transferCommandMappings).map(([command, filename]) => ({
+          const config = await window.electronAPI.getConfig();
+          console.log('Loaded config:', config);
+          if (config?.transferCommandMappings) {
+            const mappingArray = Object.entries(config.transferCommandMappings).map(([command, filename]) => ({
               command,
               filename: filename as string
             }));
@@ -92,11 +79,17 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
         return acc;
       }, {} as { [key: string]: string });
 
-      const settings = await window.electronAPI.getConfig('settings');
-      await window.electronAPI.setConfig('settings', {
-        ...settings,
+      // Get the entire config, update it, then save it back
+      const config = await window.electronAPI.getConfig();
+      console.log('Current config before update:', config);
+      
+      const updatedConfig = {
+        ...config,
         transferCommandMappings
-      });
+      };
+      
+      console.log('Updated config to save:', updatedConfig);
+      await window.electronAPI.setConfig(updatedConfig);
       
       toast({
         title: 'Success',

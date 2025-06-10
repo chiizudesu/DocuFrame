@@ -256,6 +256,27 @@ export const FunctionPanels: React.FC = () => {
       return;
     }
 
+    if (action === 'gst_transfer') {
+      addLog('Executing GST Transfer (transfer 3)');
+      setStatus('Transferring 3 files from DL...', 'info');
+      try {
+        const result = await window.electronAPI.transfer({ numFiles: 3, command: 'transfer', currentDirectory });
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('GST Transfer completed', 'success');
+        } else {
+          addLog(result.message, 'error');
+          setStatus('GST Transfer failed', 'error');
+        }
+      } catch (error) {
+        const errorMsg = `Error executing GST Transfer: ${error}`;
+        addLog(errorMsg, 'error');
+        setStatus('GST Transfer failed', 'error');
+        console.error('[FunctionPanels] GST Transfer error:', error);
+      }
+      return;
+    }
+
     addLog(`Executing action: ${action}`);
     // Get user-friendly function names
     const functionNames: { [key: string]: string } = {
@@ -435,6 +456,7 @@ export const FunctionPanels: React.FC = () => {
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
                 <Flex gap={1}>
+                  <FunctionButton icon={Download} label="GST Transfer" action="gst_transfer" description="Transfer 3 files from DL to current path" color="blue.600" />
                   <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
                   <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
                   <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
