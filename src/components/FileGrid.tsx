@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import {
   Grid,
   Box,
@@ -197,6 +197,12 @@ export const FileGrid: React.FC = () => {
   const [isDragOver, setIsDragOver] = useState(false)
   const [dragCounter, setDragCounter] = useState(0)
   const dropAreaRef = useRef<HTMLDivElement>(null)
+
+  // Function to reset drag state - can be called by child components
+  const resetDragState = useCallback(() => {
+    setIsDragOver(false);
+    setDragCounter(0);
+  }, []);
 
   // All useColorModeValue hooks next
   const itemBgHover = useColorModeValue('#f1f5f9', 'gray.700')
@@ -414,6 +420,20 @@ export const FileGrid: React.FC = () => {
           } else {
             setStatus(`Deleting: ${contextMenu.fileItem.name}`, 'info')
             await handleDeleteFile(contextMenu.fileItem)
+          }
+          break
+        case 'extract_text':
+          if (contextMenu.fileItem.name.toLowerCase().endsWith('.pdf')) {
+            setStatus(`Extracting text from: ${contextMenu.fileItem.name}`, 'info')
+            addLog(`Extracting text from PDF: ${contextMenu.fileItem.name}`)
+            try {
+              const text = await window.electronAPI.readPdfText(contextMenu.fileItem.path)
+              addLog(`Extracted text from ${contextMenu.fileItem.name}:\n${text}`, 'response')
+              setStatus('Text extraction completed', 'success')
+            } catch (error) {
+              addLog(`Failed to extract text: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+              setStatus('Text extraction failed', 'error')
+            }
           }
           break
         case 'merge_pdfs':
@@ -817,7 +837,7 @@ export const FileGrid: React.FC = () => {
         addLog(`Uploading ${validFiles.length} file(s) to current directory`);
         setStatus('Uploading files...', 'info');
         
-        const results = await window.electronAPI.uploadFiles(validFiles, currentDirectory);
+        const results = await window.electronAPI.moveFiles(validFiles.map(f => f.path), currentDirectory);
         
         // Process results
         const successful = results.filter((r: any) => r.status === 'success').length;
@@ -919,7 +939,9 @@ export const FileGrid: React.FC = () => {
               onSelect={handleFileItemClick}
               onContextMenu={handleContextMenu}
               index={index}
-              selectedFiles={selectedFiles}
+                              selectedFiles={selectedFiles}
+                sortedFiles={sortedFiles}
+                onDragStateReset={resetDragState}
             >
               <Flex
             p={4}
@@ -1078,7 +1100,7 @@ export const FileGrid: React.FC = () => {
         </Thead>
         <Tbody>
           {sortedFiles.map((file, index) => {
-            console.log('Rendering row:', file.name, 'type:', file.type);
+            // console.log('Rendering row:', file.name, 'type:', file.type);
             return isRenaming === file.name ? (
               <Tr key={index}>
                 <Td colSpan={3} borderColor={tableBorderColor}>
@@ -1107,6 +1129,8 @@ export const FileGrid: React.FC = () => {
                 onContextMenu={handleContextMenu}
                 index={index}
                 selectedFiles={selectedFiles}
+                sortedFiles={sortedFiles}
+                onDragStateReset={resetDragState}
                 as="tr"
               >
                 <Td borderColor={tableBorderColor} width="50%">
@@ -1197,6 +1221,20 @@ export const FileGrid: React.FC = () => {
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
           </Flex>
+          {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
+            <Flex
+              align="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+              onClick={() => handleMenuAction('extract_text')}
+              color="blue.400"
+            >
+              <FileText size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Extract Text</Text>
+            </Flex>
+          )}
           {showMergePDFs && (
             <Flex
               align="center"

@@ -27,6 +27,9 @@ interface ElectronAPI {
   onFolderContentsChanged: (cb: (event: Electron.IpcRendererEvent, data: { directory: string }) => void) => void;
   removeAllListeners: (channel: string) => void;
   readCsv: (filePath: string) => Promise<any[]>;
+  moveFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
+  copyFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
+  readPdfText: (filePath: string) => Promise<string>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -93,9 +96,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readCsv: async (filePath: string) => {
     return await ipcRenderer.invoke('read-csv', filePath);
   },
+  moveFiles: async (files: string[], targetDirectory: string) => {
+    return await ipcRenderer.invoke('move-files', files, targetDirectory);
+  },
+  copyFiles: async (files: string[], targetDirectory: string) => {
+    return await ipcRenderer.invoke('copy-files', files, targetDirectory);
+  },
+  readPdfText: async (filePath: string) => {
+    return await ipcRenderer.invoke('read-pdf-text', filePath);
+  },
 }); 
 
 // Expose the electron API exactly as documented for native file drag and drop
 contextBridge.exposeInMainWorld('electron', {
-  startDrag: (fileName: string) => ipcRenderer.send('ondragstart', fileName)
+  startDrag: (files: string | string[]) => ipcRenderer.send('ondragstart', files)
 });

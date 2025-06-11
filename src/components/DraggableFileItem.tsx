@@ -7,11 +7,13 @@ interface DraggableFileItemProps {
   file: FileItem;
   isSelected: boolean;
   children: React.ReactNode;
-  onSelect: (file: FileItem, index: number, event?: React.MouseEvent) => void;
-  onContextMenu: (e: React.MouseEvent, file: FileItem) => void;
+  onSelect: (file: FileItem, index: number, event: React.MouseEvent) => void;
+  onContextMenu: (event: React.MouseEvent, file: FileItem) => void;
   index: number;
-  selectedFiles: string[];
+  selectedFiles?: string[];
+  sortedFiles?: FileItem[];
   as?: 'box' | 'tr'; // Add prop to specify rendering element
+  onDragStateReset?: () => void; // Add callback to reset parent drag state
 }
 
 export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
@@ -22,7 +24,9 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   onContextMenu,
   index,
   selectedFiles,
-  as = 'box' // Default to box
+  sortedFiles,
+  as = 'box', // Default to box
+  onDragStateReset,
 }) => {
   const { addLog, currentDirectory, setStatus, setFolderItems } = useAppContext();
   const [isDragging, setIsDragging] = useState(false);
@@ -56,14 +60,23 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     // Use Electron's native file drag and drop exactly as documented
     e.preventDefault();
     
-    // For native drag, we can only drag one file at a time as per Electron's native implementation
-    // If multiple files are selected, we'll drag just this file
-    const filePath = file.path;
+    // If multiple files are selected, use those files
+    // Otherwise, use the current file being dragged
+    const filesToDrag = selectedFiles && selectedFiles.length > 0 && sortedFiles
+      ? selectedFiles.map(name => {
+          // Find the full file path from the sorted files in the parent component
+          const selectedFile = sortedFiles.find(f => f.name === name);
+          return selectedFile ? selectedFile.path : null;
+        }).filter((path): path is string => path !== null)
+      : [file.path];
+    
+    // Set data transfer type for internal drags
+    e.dataTransfer.setData('application/x-docuframe-files', '');
     
     // Use Electron's native file drag and drop exactly as documented
     if (window.electron && typeof window.electron.startDrag === 'function') {
-      window.electron.startDrag(filePath);
-      addLog(`Started native drag for: ${file.name}`);
+      window.electron.startDrag(filesToDrag);
+      addLog(`Started native drag for ${filesToDrag.length} file(s)`);
       setIsDragging(true);
       
       // Reset drag state after a short delay since native drag doesn't trigger onDragEnd reliably
@@ -76,8 +89,10 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   };
 
   const handleDragEnd = (e: React.DragEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
+    setIsHovering(false);
     addLog('Drag operation ended');
   };
 
@@ -86,27 +101,27 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       e.preventDefault();
       e.stopPropagation();
       
-      // Only show hover effect for grid view, not table rows
-      if (as !== 'tr') {
-      setIsHovering(true);
+      // Set appropriate drop effect based on drag type
+      const hasExternalFiles = e.dataTransfer.types.includes('Files');
+      const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+      
+      if (hasExternalFiles) {
+        e.dataTransfer.dropEffect = 'copy'; // External files are copied/uploaded
+      } else if (isInternalDrag) {
+        // For internal drags, respect the modifier keys
+        e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
       }
       
-      // Determine drop effect based on modifier keys
-      if (e.ctrlKey) {
-        e.dataTransfer.dropEffect = 'copy';
-      } else {
-        e.dataTransfer.dropEffect = 'move';
-      }
+      // Show hover effect for both grid and table views
+      setIsHovering(true);
     }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     if (file.type === 'folder') {
+      e.preventDefault();
       e.stopPropagation();
-      // Only reset hover effect for grid view, not table rows
-      if (as !== 'tr') {
       setIsHovering(false);
-      }
     }
   };
 
@@ -126,8 +141,12 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     console.log('Files array:', Array.from(e.dataTransfer.files));
     
     try {
-      // Only handle external files from file explorer (native drag and drop)
-      if (e.dataTransfer.files.length > 0) {
+      // Check what type of drag this is
+      const hasExternalFiles = e.dataTransfer.types.includes('Files');
+      const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+      
+      // Handle external files (from OS file explorer)
+      if (hasExternalFiles && e.dataTransfer.files.length > 0) {
         console.log('Processing external files drop into folder:', file.name);
         
         // Handle external file drop (upload)
@@ -153,7 +172,8 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
         addLog(`Uploading ${validFiles.length} file(s) to ${file.name}`);
         setStatus('Uploading files...', 'info');
         
-        const results = await window.electronAPI.uploadFiles(validFiles, file.path);
+        // Use moveFiles instead of uploadFiles
+        const results = await window.electronAPI.moveFiles(validFiles.map(f => f.path), file.path);
         
         // Process results
         const successful = results.filter((r: any) => r.status === 'success').length;
@@ -166,21 +186,75 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
         
         addLog(message);
         setStatus(message, failed > 0 ? 'error' : 'success');
-        
-        // Refresh current directory if needed
-        if (file.path === currentDirectory) {
+        // Refresh current directory after successful upload
+        if (successful > 0 && typeof window.electronAPI.getDirectoryContents === 'function' && typeof setFolderItems === 'function') {
           const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
           setFolderItems(contents);
         }
+      } 
+      // Handle internal drags (files dragged within the app)
+      else if (isInternalDrag && selectedFiles && selectedFiles.length > 0 && sortedFiles) {
+        console.log('Processing internal files drop into folder:', file.name);
+        
+        // Get the full paths of selected files
+        const filesToMove = selectedFiles
+          .map(name => {
+            const selectedFile = sortedFiles.find(f => f.name === name);
+            return selectedFile ? selectedFile.path : null;
+          })
+          .filter((path): path is string => path !== null);
+        
+        if (filesToMove.length === 0) {
+          addLog('No valid files to move', 'error');
+          setStatus('Move failed: No valid files', 'error');
+          return;
+        }
+        
+        // Determine if this is a copy (Ctrl key) or move operation
+        const isCopy = e.ctrlKey || e.metaKey;
+        const operation = isCopy ? 'copy' : 'move';
+        
+        addLog(`${operation === 'copy' ? 'Copying' : 'Moving'} ${filesToMove.length} file(s) to ${file.name}`);
+        setStatus(`${operation === 'copy' ? 'Copying' : 'Moving'} files...`, 'info');
+        
+        try {
+          const results = await window.electronAPI[operation === 'copy' ? 'copyFiles' : 'moveFiles'](filesToMove, file.path);
+          
+          // Process results
+          const successful = results.filter((r: any) => r.status === 'success').length;
+          const failed = results.filter((r: any) => r.status === 'error').length;
+          const skipped = results.filter((r: any) => r.status === 'skipped').length;
+          
+          let message = `${operation === 'copy' ? 'Copy' : 'Move'} complete: ${successful} successful`;
+          if (failed > 0) message += `, ${failed} failed`;
+          if (skipped > 0) message += `, ${skipped} skipped`;
+          
+          addLog(message);
+          setStatus(message, failed > 0 ? 'error' : 'success');
+          // Refresh current directory after successful move/copy
+          if (successful > 0 && typeof window.electronAPI.getDirectoryContents === 'function' && typeof setFolderItems === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            setFolderItems(contents);
+          }
+        } catch (error) {
+          console.error(`${operation} operation failed:`, error);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          addLog(`${operation} operation failed: ${errorMessage}`, 'error');
+          setStatus(`${operation} operation failed`, 'error');
+        }
       } else {
-        console.log('No external files detected - native drag and drop from app does not support internal moves');
-        addLog('Native drag and drop only supports dragging files out of the app to external applications', 'info');
+        console.log('No valid files detected for drop operation');
+        addLog('No valid files to process', 'info');
       }
     } catch (error) {
       console.error('Drop operation failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Drop operation failed: ${errorMessage}`, 'error');
       setStatus('Drop operation failed', 'error');
+    }
+
+    if (onDragStateReset) {
+      onDragStateReset();
     }
   };
 
@@ -191,13 +265,6 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   };
 
   const getBackgroundColor = () => {
-    // Don't apply hover background color for table rows to prevent highlighting
-    if (as === 'tr') {
-      if (isSelected) return selectedBg;
-      return 'transparent';
-    }
-    
-    // For grid view, keep the hover effect only for folders
     if (isHovering && file.type === 'folder') return '#dbeafe';
     if (isSelected) return selectedBg;
     return isDragging ? itemBgHover : 'transparent';
@@ -206,15 +273,13 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   const getHoverStyles = () => {
     if (as === 'tr') {
       return {
-        // Remove bg highlight for hovered folders completely for table rows
-        bg: isSelected ? selectedBg : undefined,
-        // Also remove border highlighting during hover to prevent table row highlighting
-        borderLeft: '4px solid transparent',
+        bg: isHovering && file.type === 'folder' ? '#dbeafe' : (isSelected ? selectedBg : undefined),
+        borderLeft: isHovering && file.type === 'folder' ? '4px solid #3b82f6' : '4px solid transparent',
         transition: 'all 0.2s ease'
       };
     }
     return {
-      bg: isSelected ? selectedBg : itemBgHover
+      bg: isHovering && file.type === 'folder' ? '#dbeafe' : (isSelected ? selectedBg : itemBgHover)
     };
   };
 
@@ -229,7 +294,11 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     onClick: (e: React.MouseEvent) => onSelect(file, index, e),
     cursor: "pointer" as const,
     opacity: isDragging ? 0.5 : 1,
-    transition: "all 0.2s"
+    transition: "all 0.2s",
+    borderLeft: file.type === 'folder' ? '4px solid' : undefined,
+    borderLeftColor: getBorderColor(),
+    bg: getBackgroundColor(),
+    _hover: getHoverStyles()
   };
 
   // For table rows, we need different styling approach

@@ -1,13 +1,15 @@
 // main.ts - Updated with IPC handlers
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron';
-import path from 'path';
-import fs from 'fs';
+import * as path from 'path';
+import * as fs from 'fs';
 import { promises as fsPromises } from 'fs';
 import { fileURLToPath } from 'url';
 import { fileSystemService } from '../src/services/fileSystem';
 import type { Config } from '../src/services/config';
 import { handleCommand } from '../src/main/commandHandler';
 import { transferFiles } from '../src/main/commands/transfer';
+import { PDFDocument } from 'pdf-lib';
+import PDFParser from 'pdf2json';
 const { parse } = require('csv-parse/sync');
 
 // Fix __dirname in ESM
@@ -21,6 +23,20 @@ const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.NODE_ENV === 'development'
 
 // Config file path
 const configPath = path.join(app.getPath('userData'), 'config.json');
+
+interface PDFText {
+  R: Array<{
+    T: string;
+  }>;
+}
+
+interface PDFPage {
+  Texts: PDFText[];
+}
+
+interface PDFData {
+  Pages: PDFPage[];
+}
 
 // Load or create config
 async function loadConfig(): Promise<Config> {
@@ -554,11 +570,29 @@ ipcMain.handle('move-files', async (_, files: string[], targetDirectory: string)
           // File doesn't exist, continue with move
         }
         
-        // Move the file
-        await fsPromises.rename(filePath, targetPath);
+        // Copy the file first
+        await fsPromises.copyFile(filePath, targetPath);
+        
+        // Verify the copy was successful
+        try {
+          await fsPromises.access(targetPath);
+        } catch (error) {
+          throw new Error('File copy failed - destination file not found after copy');
+        }
+        
+        // Delete the original file
+        await fsPromises.unlink(filePath);
+        
         results.push({ file: fileName, status: 'success', path: targetPath });
       } catch (error) {
         console.error(`Error moving file ${filePath}:`, error);
+        // If copy succeeded but delete failed, try to clean up
+        try {
+          await fsPromises.access(targetPath);
+          await fsPromises.unlink(targetPath);
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
         results.push({ file: path.basename(filePath), status: 'error', error: error.message });
       }
     }
@@ -636,16 +670,23 @@ app.on('browser-window-created', (event, win) => {
   });
 });
 
-ipcMain.on('ondragstart', async (event, fileName) => {
+ipcMain.on('ondragstart', async (event, files) => {
   try {
-    // Get the absolute path to the file
-    const filePath = path.isAbsolute(fileName) ? fileName : path.join(__dirname, fileName);
+    // Convert single file to array for consistent handling
+    const filePaths = Array.isArray(files) ? files : [files];
     
-    // Try to get a proper icon for the file
+    // Filter out any undefined or empty paths
+    const validPaths = filePaths.filter(path => path && typeof path === 'string');
+    
+    if (validPaths.length === 0) {
+      throw new Error('No valid file paths provided for drag operation');
+    }
+
+    // Get icon for the first file only (as per Electron's drag and drop API)
     let iconPath = '';
     try {
-      // First try to get the system icon and save it as a temp file
-      const icon = await app.getFileIcon(filePath, { size: 'normal' });
+      const firstFilePath = path.isAbsolute(validPaths[0]) ? validPaths[0] : path.join(__dirname, validPaths[0]);
+      const icon = await app.getFileIcon(firstFilePath, { size: 'normal' });
       if (icon) {
         const tempIconPath = path.join(__dirname, 'temp-drag-icon.png');
         const iconBuffer = icon.toPNG();
@@ -654,21 +695,29 @@ ipcMain.on('ondragstart', async (event, fileName) => {
       }
     } catch (iconError) {
       console.warn('Could not get file icon:', iconError);
-      // Fallback to empty string - Electron will use system default
-      iconPath = '';
+      // Continue without icon - Electron will use system default
     }
     
     event.sender.startDrag({
-      file: filePath,
-      icon: iconPath
+      file: validPaths[0], // Required by Electron's type definition
+      files: validPaths,   // The actual array of files to drag
+      icon: iconPath || '' // Ensure icon is never undefined
     });
   } catch (error) {
     console.error('Error in drag start:', error);
     // Fallback - still try to drag without icon
-    event.sender.startDrag({
-      file: fileName,
-      icon: ''
-    });
+    const filePaths = Array.isArray(files) ? files : [files];
+    const validPaths = filePaths.filter(path => path && typeof path === 'string');
+    
+    if (validPaths.length > 0) {
+      event.sender.startDrag({
+        file: validPaths[0],
+        files: validPaths,
+        icon: ''
+      });
+    } else {
+      console.error('No valid paths to drag');
+    }
   }
 });
 
@@ -680,5 +729,66 @@ ipcMain.handle('read-csv', async (_, filePath) => {
   } catch (err) {
     console.error('Failed to read CSV:', err);
     return [];
+  }
+});
+
+// Add PDF text reading handler
+ipcMain.handle('read-pdf-text', async (_, filePath: string) => {
+  try {
+    console.log(`Reading PDF text from: ${filePath}`);
+    
+    if (!fs.existsSync(filePath)) {
+      throw new Error('PDF file not found');
+    }
+
+    // Create a new PDFParser instance
+    const pdfParser = new PDFParser();
+    
+    // Read the PDF file
+    const pdfBuffer = fs.readFileSync(filePath);
+    
+    // Parse the PDF
+    const pdfData = await new Promise<PDFData>((resolve, reject) => {
+      pdfParser.on('pdfParser_dataReady', (pdfData) => {
+        resolve(pdfData as PDFData);
+      });
+      
+      pdfParser.on('pdfParser_dataError', (error) => {
+        reject(error);
+      });
+      
+      pdfParser.parseBuffer(pdfBuffer);
+    });
+    
+    // Extract text from all pages
+    let extractedText = '';
+    if (pdfData && pdfData.Pages) {
+      for (const page of pdfData.Pages) {
+        if (page.Texts) {
+          for (const text of page.Texts) {
+            if (text.R && text.R[0] && text.R[0].T) {
+              extractedText += decodeURIComponent(text.R[0].T) + ' ';
+            }
+          }
+        }
+      }
+    }
+
+    // Clean up the extracted text
+    extractedText = extractedText
+      .replace(/\r\n/g, '\n')  // Normalize line endings
+      .replace(/\n{3,}/g, '\n\n')  // Remove excessive newlines
+      .replace(/\s+/g, ' ')  // Normalize spaces
+      .trim();
+
+    // If no text was extracted or it's too short, return a message
+    if (!extractedText || extractedText.length < 50) {
+      return 'No readable text could be extracted from this PDF. The file might be scanned or contain only images.';
+    }
+
+    return extractedText;
+  } catch (error) {
+    console.error('Error reading PDF text:', error);
+    throw error;
   }
 });

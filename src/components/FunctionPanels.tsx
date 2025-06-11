@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2 } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -8,6 +8,7 @@ import { TransferMappingDialog } from './TransferMappingDialog';
 import { OrgCodesDialog } from './OrgCodesDialog';
 import { MergePDFDialog } from './MergePDFDialog';
 import { ExtractionResultDialog } from './ExtractionResultDialog';
+import { LateClaimsDialog } from './LateClaimsDialog';
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
   const [preview, setPreview] = useState<{ original: string; preview: string }[] | null>(null);
@@ -81,6 +82,7 @@ export const FunctionPanels: React.FC = () => {
   const [isOrgCodesOpen, setOrgCodesOpen] = useState(false);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
   const [isExtractionResultOpen, setExtractionResultOpen] = useState(false);
+  const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
   const [extractionResult, setExtractionResult] = useState<{
     type: 'zip' | 'eml';
     extractedFiles: string[];
@@ -165,6 +167,12 @@ export const FunctionPanels: React.FC = () => {
         setStatus('Failed to copy notes', 'error');
         addLog('Failed to copy notes to clipboard', 'error');
       }
+      return;
+    }
+
+    if (action === 'late_claims') {
+      setLateClaimsOpen(true);
+      setStatus('Opened Late Claims Calculator', 'info');
       return;
     }
 
@@ -467,6 +475,7 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
                   <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
                   <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
+                  <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   GST Functions
@@ -532,6 +541,8 @@ export const FunctionPanels: React.FC = () => {
     <TransferMappingDialog isOpen={isTransferMappingOpen} onClose={() => setTransferMappingOpen(false)} />
     <OrgCodesDialog isOpen={isOrgCodesOpen} onClose={() => setOrgCodesOpen(false)} />
     <MergePDFDialog isOpen={isMergePDFOpen} onClose={() => setMergePDFOpen(false)} currentDirectory={currentDirectory} />
+    <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
+    
     {extractionResult && (
       <ExtractionResultDialog
         isOpen={isExtractionResultOpen}
