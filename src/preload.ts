@@ -106,4 +106,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readCsv: async (filePath: string) => {
     return await ipcRenderer.invoke('read-csv', filePath);
   }
+});
+
+// Expose the electron API exactly as documented
+contextBridge.exposeInMainWorld('electron', {
+  startDrag: (fileName: string) => ipcRenderer.send('ondragstart', fileName)
 }); 

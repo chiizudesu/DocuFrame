@@ -264,6 +264,13 @@ export const FunctionPanels: React.FC = () => {
         if (result.success) {
           addLog(result.message, 'response');
           setStatus('GST Transfer completed', 'success');
+          // Refresh folder view
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
         } else {
           addLog(result.message, 'error');
           setStatus('GST Transfer failed', 'error');

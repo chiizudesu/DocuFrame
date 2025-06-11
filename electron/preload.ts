@@ -94,3 +94,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return await ipcRenderer.invoke('read-csv', filePath);
   },
 }); 
+
+// Expose the electron API exactly as documented for native file drag and drop
+contextBridge.exposeInMainWorld('electron', {
+  startDrag: (fileName: string) => ipcRenderer.send('ondragstart', fileName)
+});

@@ -39,7 +39,10 @@ declare global {
       deleteItem: (path: string) => Promise<void>;
       renameItem: (oldPath: string, newPath: string) => Promise<void>;
       selectDirectory: () => Promise<string>;
-  selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
+      selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
+      
+      // Native file drag and drop as documented
+      startDrag: (fileName: string) => void;
     };
   }
 } 

@@ -77,6 +77,9 @@ declare global {
       // Config operations
       getConfig: () => Promise<AppSettings>;
       setConfig: (config: AppSettings) => Promise<void>;
+      
+      // Native file drag and drop as documented
+      startDrag: (fileName: string) => void;
     };
     
     // New electronAPI for file explorer

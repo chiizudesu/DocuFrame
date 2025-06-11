@@ -636,13 +636,40 @@ app.on('browser-window-created', (event, win) => {
   });
 });
 
-ipcMain.on('ondragstart', (event, filePath) => {
-  // Use a generic icon or a file-type-specific icon if you have one
-  const iconPath = path.join(__dirname, '../public/file-icon.png'); // Adjust path as needed
-  event.sender.startDrag({
-    file: filePath,
-    icon: iconPath
-  });
+ipcMain.on('ondragstart', async (event, fileName) => {
+  try {
+    // Get the absolute path to the file
+    const filePath = path.isAbsolute(fileName) ? fileName : path.join(__dirname, fileName);
+    
+    // Try to get a proper icon for the file
+    let iconPath = '';
+    try {
+      // First try to get the system icon and save it as a temp file
+      const icon = await app.getFileIcon(filePath, { size: 'normal' });
+      if (icon) {
+        const tempIconPath = path.join(__dirname, 'temp-drag-icon.png');
+        const iconBuffer = icon.toPNG();
+        fs.writeFileSync(tempIconPath, iconBuffer);
+        iconPath = tempIconPath;
+      }
+    } catch (iconError) {
+      console.warn('Could not get file icon:', iconError);
+      // Fallback to empty string - Electron will use system default
+      iconPath = '';
+    }
+    
+    event.sender.startDrag({
+      file: filePath,
+      icon: iconPath
+    });
+  } catch (error) {
+    console.error('Error in drag start:', error);
+    // Fallback - still try to drag without icon
+    event.sender.startDrag({
+      file: fileName,
+      icon: ''
+    });
+  }
 });
 
 ipcMain.handle('read-csv', async (_, filePath) => {

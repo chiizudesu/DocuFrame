@@ -10,7 +10,8 @@ export const CommandLine: React.FC = () => {
     addCommand,
     setPreviewFiles,
     currentDirectory,
-    setStatus
+    setStatus,
+    setFolderItems
   } = useAppContext();
   const [command, setCommand] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -60,6 +61,13 @@ export const CommandLine: React.FC = () => {
               console.log('[CommandLine] Transfer successful');
               addLog(transferResult.message, 'response');
               setStatus('Transfer completed', 'success');
+              // Refresh folder view
+              setStatus('Refreshing folder...', 'info');
+              if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+                const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+                if (typeof setFolderItems === 'function') setFolderItems(contents);
+                setStatus('Folder refreshed', 'success');
+              }
             } else {
               console.log('[CommandLine] Transfer failed:', transferResult.message);
               addLog(transferResult.message, 'error');
@@ -131,7 +139,7 @@ export const CommandLine: React.FC = () => {
   }, []);
 
   return (
-    <Flex align="center" bg={bgColor} border="1px" borderColor={borderColor} borderRadius="md" overflow="hidden" h="32px">
+    <Flex align="center" bg={bgColor} border="1px" borderColor={borderColor} borderRadius="md" overflow="hidden" h="35px" width="600px" position="absolute" top="44%" left="50%" transform="translate(-50%, -50%)">
       <Text px={3} color="blue.500" fontSize="sm" fontFamily="monospace">
         $
       </Text>
@@ -148,6 +156,7 @@ export const CommandLine: React.FC = () => {
         fontFamily="monospace" 
         flex="1" 
         color={useColorModeValue('gray.800', 'white')} 
+        height="31px"
       />
       <IconButton 
         icon={<ArrowUp size={14} />} 

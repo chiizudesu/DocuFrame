@@ -192,7 +192,7 @@ export const FolderNavigation: React.FC = () => {
       // Filter hidden files if needed
       const filteredItems = showHidden 
         ? directoryItems 
-        : directoryItems.filter(item => !item.isHidden);
+        : directoryItems.filter((item: FileItem) => !item.isHidden);
       
       setItems(filteredItems);
       setCurrentPath(dirPath);
@@ -383,21 +383,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
 });
 
-// 4. TypeScript declarations (if using TypeScript)
-// Create a file: src/types/electron.d.ts
-declare global {
-  interface Window {
-    electronAPI: {
-      readDirectory: (dirPath: string) => Promise<FileItem[]>;
-      checkPath: (dirPath: string) => Promise<{
-        exists: boolean;
-        isDirectory: boolean;
-        isFile: boolean;
-        readable: boolean;
-        error?: string;
-      }>;
-      getHomeDirectory: () => Promise<string>;
-      getRootDirectories: () => Promise<FileItem[]>;
-    };
-  }
-}
+// TypeScript declarations are already defined elsewhere in the codebase

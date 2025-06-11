@@ -99,25 +99,29 @@ export const ClientSearchOverlay: React.FC = () => {
       left="0" 
       right="0" 
       bottom="0" 
-      bg={overlayBg} 
+      bg="rgba(0,0,0,0.3)" 
       zIndex={1999} 
       display="flex" 
-      alignItems="flex-start" 
+      alignItems="center" 
       justifyContent="center" 
-      paddingTop="22vh"
       onClick={closeOverlay}
     >
+      {/* Absolute centered input container */}
       <Box 
-        width="480px" 
+        position="absolute"
+        top="44%"
+        left="50%"
+        transform="translate(-50%, -50%)"
+        width="600px" 
         maxWidth="90vw" 
         borderRadius="lg" 
         boxShadow="0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" 
         bg={bgColor} 
         onClick={e => e.stopPropagation()}
       >
-        {/* Fixed position input container */}
+        {/* Input container */}
         <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
-          <Flex align="center" p={3}>
+          <Flex align="center" p={3} minH="47px">
             <Icon as={Search} size={18} color="blue.400" mr={3} />
             <InputGroup flex="1">
               <Input
@@ -129,8 +133,9 @@ export const ClientSearchOverlay: React.FC = () => {
                 fontSize="md"
                 autoFocus
                 pr="60px"
+                height="41px"
               />
-              <InputRightElement width="60px">
+              <InputRightElement width="60px" height="100%" display="flex" alignItems="center" justifyContent="center">
                 <IconButton
                   aria-label="Toggle year"
                   icon={<Flex align="center">{selectedYear} <ChevronDown size={14} style={{ marginLeft: 4 }} /></Flex>}
@@ -146,91 +151,97 @@ export const ClientSearchOverlay: React.FC = () => {
             </InputGroup>
           </Flex>
         </Box>
-
-        {/* Results dropdown */}
-        {(isLoading || results.length > 0 || searchValue) && (
-          <Box 
-            bg={bgColor} 
-            borderRadius="md" 
-            boxShadow={`0 4px 12px ${shadowColor}`} 
-            overflow="hidden" 
-            mt={1} 
-            maxH="300px" 
-            overflowY="auto"
-          >
-            {isLoading ? (
-              <Flex justify="center" align="center" py={6}>
-                <Text color="gray.500" fontSize="sm">Searching...</Text>
-              </Flex>
-            ) : results.length > 0 ? (
-              <VStack spacing={0} align="stretch" p={2}>
-                {results.map((row, idx) => {
-                  const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
-                  const clientNameField = clientNameFields.find(field => row[field] !== undefined);
-                  const clientName = clientNameField ? row[clientNameField] : `Client ${idx + 1}`;
-                  const group = row['Group'] || 'No Group';
-                  return (
-                    <Box
-                      key={idx}
-                      bg={cardBg}
-                      borderRadius="md"
-                      borderWidth="1px"
-                      borderColor={borderColor}
-                      p={3}
-                      _hover={{ borderColor: 'blue.300', transform: 'translateY(-1px)', boxShadow: 'sm' }}
-                      transition="all 0.15s ease"
-                    >
-                      <Flex justify="space-between" align="center" gap={3}>
-                        <VStack align="start" spacing={1} flex="1" minW="0">
-                          <Flex align="center" gap={2} flexWrap="wrap">
-                            <Text fontWeight="medium" fontSize="sm" color={useColorModeValue('gray.800', 'white')} noOfLines={1}>{clientName}</Text>
-                            <Badge colorScheme="purple" borderRadius="sm" px={2} py={0} fontSize="10px" textTransform="none">{group}</Badge>
-                          </Flex>
-                          {row['Address'] && (<Text fontSize="xs" color="gray.500" noOfLines={1}>📍 {row['Address']}</Text>)}
-                          {row['IRD No.'] && (<Text fontSize="10px" color="gray.400">IRD: {row['IRD No.']}</Text>)}
-                        </VStack>
-                        <HStack spacing={2}>
-                          <Button 
-                            leftIcon={<Icon as={User} boxSize="3" />} 
-                            colorScheme="gray" 
-                            variant="outline" 
-                            size="xs" 
-                            fontSize="11px" 
-                            px={2} 
-                            onClick={() => handleClientAction(row)} 
-                            _hover={{ bg: useColorModeValue('gray.50', 'gray.600'), transform: 'translateY(-1px)' }} 
-                            transition="all 0.15s" 
-                            isDisabled={!row['Client Link']}
-                          >
-                            Client
-                          </Button>
-                          <Button 
-                            leftIcon={<Icon as={Briefcase} boxSize="3" />} 
-                            colorScheme="blue" 
-                            size="xs" 
-                            fontSize="11px" 
-                            px={2} 
-                            onClick={() => handleJobAction(row)} 
-                            _hover={{ transform: 'translateY(-1px)', boxShadow: 'sm' }} 
-                            transition="all 0.15s" 
-                            isDisabled={!row[`${selectedYear} Job Link`]}
-                          >
-                            {selectedYear}
-                          </Button>
-                        </HStack>
-                      </Flex>
-                    </Box>
-                  );
-                })}
-              </VStack>
-            ) : searchValue ? (
-              <Box textAlign="center" py={6}>
-                <Text color="gray.500" fontSize="sm">No clients found</Text>
-              </Box>
-            ) : null}
-          </Box>
-        )}
       </Box>
+      {/* Dropdown container, positioned below input */}
+      {(isLoading || results.length > 0 || searchValue) && (
+        <Box 
+          position="absolute"
+          top="calc(44% + 35px)"
+          left="50%"
+          transform="translate(-50%, 0)"
+          width="600px"
+          maxWidth="90vw"
+          bg={bgColor} 
+          borderRadius="md" 
+          boxShadow={`0 4px 12px ${shadowColor}`} 
+          overflow="hidden" 
+          mt={1} 
+          maxH="300px" 
+          overflowY="auto"
+          onClick={e => e.stopPropagation()}
+        >
+          {isLoading ? (
+            <Flex justify="center" align="center" py={6}>
+              <Text color="gray.500" fontSize="sm">Searching...</Text>
+            </Flex>
+          ) : results.length > 0 ? (
+            <VStack spacing={0} align="stretch" p={2}>
+              {results.map((row, idx) => {
+                const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+                const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+                const clientName = clientNameField ? row[clientNameField] : `Client ${idx + 1}`;
+                const group = row['Group'] || 'No Group';
+                return (
+                  <Box
+                    key={idx}
+                    bg={cardBg}
+                    borderRadius="md"
+                    borderWidth="1px"
+                    borderColor={borderColor}
+                    p={3}
+                    _hover={{ borderColor: 'blue.300', transform: 'translateY(-1px)', boxShadow: 'sm' }}
+                    transition="all 0.15s ease"
+                  >
+                    <Flex justify="space-between" align="center" gap={3}>
+                      <VStack align="start" spacing={1} flex="1" minW="0">
+                        <Flex align="center" gap={2} flexWrap="wrap">
+                          <Text fontWeight="medium" fontSize="sm" color={useColorModeValue('gray.800', 'white')} noOfLines={1}>{clientName}</Text>
+                          <Badge colorScheme="purple" borderRadius="sm" px={2} py={0} fontSize="10px" textTransform="none">{group}</Badge>
+                        </Flex>
+                        {row['Address'] && (<Text fontSize="xs" color="gray.500" noOfLines={1}>{row['Address']}</Text>)}
+                        {row['IRD No.'] && (<Text fontSize="10px" color="gray.400">IRD: {row['IRD No.']}</Text>)}
+                      </VStack>
+                      <HStack spacing={2}>
+                        <Button 
+                          leftIcon={<Icon as={User} boxSize="3" />} 
+                          colorScheme="gray" 
+                          variant="outline" 
+                          size="xs" 
+                          fontSize="11px" 
+                          px={2} 
+                          onClick={() => handleClientAction(row)} 
+                          _hover={{ bg: useColorModeValue('gray.50', 'gray.600'), transform: 'translateY(-1px)' }} 
+                          transition="all 0.15s" 
+                          isDisabled={!row['Client Link']}
+                        >
+                          Client
+                        </Button>
+                        <Button 
+                          leftIcon={<Icon as={Briefcase} boxSize="3" />} 
+                          colorScheme="blue" 
+                          size="xs" 
+                          fontSize="11px" 
+                          px={2} 
+                          onClick={() => handleJobAction(row)} 
+                          _hover={{ transform: 'translateY(-1px)', boxShadow: 'sm' }} 
+                          transition="all 0.15s" 
+                          isDisabled={!row[`${selectedYear} Job Link`]}
+                        >
+                          {selectedYear}
+                        </Button>
+                      </HStack>
+                    </Flex>
+                  </Box>
+                );
+              })}
+            </VStack>
+          ) : searchValue ? (
+            <Box textAlign="center" py={6}>
+              <Text color="gray.500" fontSize="sm">No clients found</Text>
+            </Box>
+          ) : null}
+        </Box>
+      )}
     </Box>
   );
 }; 
