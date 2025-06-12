@@ -12,6 +12,7 @@ import { PDFDocument } from 'pdf-lib';
 import PDFParser from 'pdf2json';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
+import { spawn, ChildProcess } from 'child_process';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -38,6 +39,8 @@ interface PDFPage {
 interface PDFData {
   Pages: PDFPage[];
 }
+
+let backendProcess: ChildProcess | null = null;
 
 // Load or create config
 async function loadConfig(): Promise<Config> {
@@ -127,6 +130,22 @@ const createWindow = () => {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
+  // Start backend server
+  const serverPath = path.join(__dirname, '../server/index.js');
+  backendProcess = spawn(process.execPath, [serverPath], {
+    cwd: path.join(__dirname, '../server'),
+    env: { ...process.env, NODE_ENV: process.env.NODE_ENV || 'production' },
+    stdio: 'inherit',
+  });
+  if (backendProcess) {
+    backendProcess.on('error', (err) => {
+      console.error('[Main] Backend process failed to start:', err);
+    });
+    backendProcess.on('exit', (code, signal) => {
+      console.log(`[Main] Backend process exited with code ${code}, signal ${signal}`);
+    });
+  }
+
   // Load config before creating window
   const config = await loadConfig();
   console.log('[Main] Loaded config on window start:', config);
@@ -137,8 +156,19 @@ app.whenReady().then(async () => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  if (backendProcess) {
+    backendProcess.kill();
+    backendProcess = null;
+  }
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('quit', () => {
+  if (backendProcess) {
+    backendProcess.kill();
+    backendProcess = null;
   }
 });
 
