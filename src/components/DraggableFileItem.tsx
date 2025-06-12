@@ -14,6 +14,9 @@ interface DraggableFileItemProps {
   sortedFiles?: FileItem[];
   as?: 'box' | 'tr'; // Add prop to specify rendering element
   onDragStateReset?: () => void; // Add callback to reset parent drag state
+  isCut?: boolean; // Add isCut prop for cut indicator
+  onFileMouseDown?: (file: FileItem, index: number, event: React.MouseEvent) => void;
+  onFileClick?: (file: FileItem, index: number, event: React.MouseEvent) => void;
 }
 
 export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
@@ -27,6 +30,9 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   sortedFiles,
   as = 'box', // Default to box
   onDragStateReset,
+  isCut,
+  onFileMouseDown,
+  onFileClick,
 }) => {
   const { addLog, currentDirectory, setStatus, setFolderItems } = useAppContext();
   const [isDragging, setIsDragging] = useState(false);
@@ -59,27 +65,18 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   const handleDragStart = (e: React.DragEvent) => {
     // Use Electron's native file drag and drop exactly as documented
     e.preventDefault();
-    
-    // If multiple files are selected, use those files
-    // Otherwise, use the current file being dragged
-    const filesToDrag = selectedFiles && selectedFiles.length > 0 && sortedFiles
+    const filesToDrag: string[] = Array.isArray(selectedFiles) && selectedFiles.length > 0 && sortedFiles
       ? selectedFiles.map(name => {
-          // Find the full file path from the sorted files in the parent component
           const selectedFile = sortedFiles.find(f => f.name === name);
           return selectedFile ? selectedFile.path : null;
         }).filter((path): path is string => path !== null)
       : [file.path];
-    
     // Set data transfer type for internal drags
     e.dataTransfer.setData('application/x-docuframe-files', '');
-    
-    // Use Electron's native file drag and drop exactly as documented
     if (window.electron && typeof window.electron.startDrag === 'function') {
-      window.electron.startDrag(filesToDrag);
+      window.electron.startDrag(filesToDrag[0]);
       addLog(`Started native drag for ${filesToDrag.length} file(s)`);
       setIsDragging(true);
-      
-      // Reset drag state after a short delay since native drag doesn't trigger onDragEnd reliably
       setTimeout(() => {
         setIsDragging(false);
       }, 100);
@@ -258,6 +255,14 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     }
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (onFileMouseDown) onFileMouseDown(file, index, e);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (onFileClick) onFileClick(file, index, e);
+  };
+
   const getBorderColor = () => {
     if (isHovering && file.type === 'folder') return '#3b82f6';
     if (isSelected) return selectedBg;
@@ -291,14 +296,15 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     onDragLeave: handleDragLeave,
     onDrop: handleDrop,
     onContextMenu: (e: React.MouseEvent) => onContextMenu(e, file),
-    onClick: (e: React.MouseEvent) => onSelect(file, index, e),
+    onClick: handleClick,
     cursor: "pointer" as const,
     opacity: isDragging ? 0.5 : 1,
     transition: "all 0.2s",
     borderLeft: file.type === 'folder' ? '4px solid' : undefined,
     borderLeftColor: getBorderColor(),
     bg: getBackgroundColor(),
-    _hover: getHoverStyles()
+    _hover: getHoverStyles(),
+    onMouseDown: handleMouseDown
   };
 
   // For table rows, we need different styling approach
@@ -309,7 +315,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
         {...commonProps}
         bg={getBackgroundColor()}
         _hover={getHoverStyles()}
-        style={{ userSelect: 'none', borderLeft: '4px solid transparent' }}
+        style={{ userSelect: 'none', borderLeft: '4px solid transparent', opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
       >
         {/* Display system icon if available */}
         {dragImage && file.type === 'file' && (
@@ -342,6 +348,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       borderColor={getBorderColor()}
       position="relative"
       _hover={getHoverStyles()}
+      style={{ opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
     >
       {/* Display system icon if available */}
       {dragImage && file.type === 'file' && (

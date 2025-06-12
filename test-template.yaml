@@ -1,0 +1,18 @@
+name: "Test Client Email Template"
+description: "A simple test template for client communication"
+categories:
+  - "financial_statement"
+  - "tax_return"
+template: |
+  Dear {{client_name}},
+
+  I hope this email finds you well. I have completed the review of your financial documents and wanted to provide you with a summary of my findings.
+
+  Based on the financial statement provided, I can see that {{financial_summary}}.
+
+  Additionally, from your tax return, I note that {{tax_summary}}.
+
+  Please let me know if you have any questions or would like to schedule a meeting to discuss these findings in more detail.
+
+  Best regards,
+  {{accountant_name}} 

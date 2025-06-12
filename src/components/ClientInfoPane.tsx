@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Badge, Tooltip, IconButton } from '@chakra-ui/react';
-import { ExternalLink, Building, Hash, FileText, Info, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Badge, Tooltip, IconButton, Spacer } from '@chakra-ui/react';
+import { ExternalLink, Building, Hash, FileText, Info, Clock, ChevronLeft, ChevronRight, RefreshCw, MapPin } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: () => void, isCollapsed?: boolean }> = ({ collapsed = false, onToggleCollapse, isCollapsed }) => {
   const {
     currentDirectory,
-    addLog
+    addLog,
+    rootDirectory
   } = useAppContext();
 
   const bgColor = useColorModeValue('#f8fafc', 'gray.800');
@@ -17,16 +18,71 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const textColor = useColorModeValue('#334155', 'white');
   const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
 
-  // Extract client name from path if available
-  const pathSegments = currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '');
-  const clientName = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : 'No Client Selected';
+  // State for loaded client info
+  const [clientInfo, setClientInfo] = useState<any | null>(null);
+  const [loadingClient, setLoadingClient] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
 
-  // Mock client data - in a real app, this would be fetched based on the client name
-  const clientData = {
-    name: clientName,
-    companyNumber: '1234567',
-    irdNumber: '123-456-789',
-    status: 'Active'
+  // Extract client name and tax year from path
+  const pathSegments = currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '');
+  // Find the index of the root (Client) folder
+  const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === rootDirectory.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase());
+  // Client Name is the third segment after root, Tax Year is the second segment after root
+  const taxYear = rootIdx !== -1 && pathSegments.length > rootIdx + 1 ? pathSegments[rootIdx + 1] : '';
+  const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 2 ? pathSegments[rootIdx + 2] : '';
+
+  // Handler for loading client info
+  const handleLoadClientInfo = async () => {
+    // Log path info for debugging only when loading client info
+    addLog(`[ClientInfoPane] pathSegments: ${JSON.stringify(pathSegments)}, rootIdx: ${rootIdx}, rootDirectory: ${rootDirectory}`);
+    setLoadingClient(true);
+    setClientError(null);
+    // Log the extracted clientName for debugging
+    console.log('[ClientInfoPane] Extracted clientName:', clientName);
+    addLog(`[ClientInfoPane] Extracted clientName: ${clientName}`);
+    if (!clientName) {
+      setClientError('Could not extract client name from path.');
+      setClientInfo(null);
+      setLoadingClient(false);
+      return;
+    }
+    try {
+      const config = await window.electronAPI.getConfig();
+      const csvPath = config.clientbasePath;
+      if (!csvPath) {
+        setClientError('Clientbase CSV path not configured');
+        setLoadingClient(false);
+        return;
+      }
+      const rows = await window.electronAPI.readCsv(csvPath);
+      if (!rows || rows.length === 0) {
+        setClientError('No client data found');
+        setLoadingClient(false);
+        return;
+      }
+      // Fuzzy/case-insensitive match
+      const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+      const match = rows.find((row: any) => {
+        const field = clientNameFields.find(f => row[f] !== undefined);
+        if (!field) return false;
+        return String(row[field]).toLowerCase().replace(/\s+/g, '') === clientName.toLowerCase().replace(/\s+/g, '');
+      }) || rows.find((row: any) => {
+        const field = clientNameFields.find(f => row[f] !== undefined);
+        if (!field) return false;
+        return String(row[field]).toLowerCase().includes(clientName.toLowerCase());
+      });
+      if (!match) {
+        setClientError('No matching client found');
+        setClientInfo(null);
+        setLoadingClient(false);
+        return;
+      }
+      setClientInfo(match);
+    } catch (err: any) {
+      setClientError('Failed to load client info');
+      setClientInfo(null);
+    }
+    setLoadingClient(false);
   };
 
   const handleExternalLink = (destination: string) => {
@@ -193,22 +249,38 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         <Box w="100%" display="flex" justifyContent="center" mb={3}>
           <IconButton aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} icon={<ChevronRight size={20} strokeWidth={2.5} />} size="sm" variant="ghost" onClick={onToggleCollapse} />
         </Box>
-        {/* Stacked icons below (no collapse icon here) */}
-        <Tooltip label="Xero" placement="right">
-          <IconButton aria-label="Xero" icon={<ExternalLink size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#1976d2" color="#e3f0fa" borderRadius="lg" _hover={{ bg: '#1976d2', color: '#cbe3f7' }} mb={2} />
-        </Tooltip>
-        <Tooltip label="XPM" placement="right">
-          <IconButton aria-label="XPM" icon={<ExternalLink size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#388e3c" color="#e3fae3" borderRadius="lg" _hover={{ bg: '#388e3c', color: '#c8f7cb' }} mb={2} />
-        </Tooltip>
-        <Tooltip label={<Box minW="180px"><Text fontWeight="bold">Client Information</Text><Divider my={1} /><Text fontSize="sm"><b>Name:</b> {clientData.name}<br/><b>Company #:</b> {clientData.companyNumber}<br/><b>IRD #:</b> {clientData.irdNumber}</Text></Box>} placement="right" hasArrow>
+        {/* Only 3 icons: Client Info, Client Link, Job Link */}
+        <Tooltip label={<Box minW="180px"><Text fontWeight="bold">Client Information</Text><Divider my={1} />
+          <Text fontSize="sm"><b>Name:</b> {clientInfo ? (clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']) : 'No client loaded'}<br/>
+          <b>IRD #:</b> {clientInfo ? (clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-') : '-'}<br/>
+          <b>Address:</b> {clientInfo && clientInfo['Address'] ? clientInfo['Address'] : '-'}</Text></Box>} placement="right" hasArrow>
           <IconButton aria-label="Client Info" icon={<Info size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#6d28d9" color="#ede9fe" borderRadius="lg" _hover={{ bg: '#6d28d9', color: '#ddd6fe' }} mb={2} />
         </Tooltip>
-        <Tooltip label={<Box minW="180px"><Text fontWeight="bold">Recent Activity</Text><Divider my={1} /><Text fontSize="sm">Files updated: 2024-04-15<br/>Last accessed: 2024-04-10<br/>Files merged: 2024-04-05</Text></Box>} placement="right" hasArrow>
-          <IconButton aria-label="Recent Activity" icon={<Clock size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#b45309" color="#fef9c3" borderRadius="lg" _hover={{ bg: '#b45309', color: '#fef08a' }} />
-        </Tooltip>
+        {clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) && (
+          <Tooltip label="Open Client Page" placement="right" hasArrow>
+            <IconButton aria-label="Client Link" icon={<ExternalLink size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#1976d2" color="#e3f0fa" borderRadius="lg" _hover={{ bg: '#1976d2', color: '#cbe3f7' }} mb={2} as="a" href={clientInfo['Client Link'] || clientInfo['ClientLink']} target="_blank" />
+          </Tooltip>
+        )}
+        {clientInfo && taxYear && clientInfo[`${taxYear} Job Link`] && (
+          <Tooltip label={`Open ${taxYear} Job`} placement="right" hasArrow>
+            <IconButton aria-label="Job Link" icon={<FileText size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#388e3c" color="#e3fae3" borderRadius="lg" _hover={{ bg: '#388e3c', color: '#c8f7cb' }} as="a" href={clientInfo[`${taxYear} Job Link`]} target="_blank" />
+          </Tooltip>
+        )}
       </Box>
     );
   }
+
+  // Expanded sidebar: replace Xero/XPM with Client/Job buttons
+  const handleOpenClientLink = () => {
+    if (clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink'])) {
+      window.open(clientInfo['Client Link'] || clientInfo['ClientLink'], '_blank');
+    }
+  };
+  const handleOpenJobLink = () => {
+    if (clientInfo && taxYear && clientInfo[`${taxYear} Job Link`]) {
+      window.open(clientInfo[`${taxYear} Job Link`], '_blank');
+    }
+  };
 
   return (
     <Box p={4} h="100%" overflowY="auto" bg={bgColor}>
@@ -216,100 +288,92 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       <Flex mb={6} alignItems="center">
         <Flex gap={3} flex="1">
           <Button 
-            leftIcon={<ExternalLink size={16} />} 
+            leftIcon={<Info size={16} />} 
             variant="outline" 
             size="sm" 
             flex="1" 
-            onClick={handleXeroConnect} 
+            onClick={handleOpenClientLink} 
             borderColor={accentColor} 
             color={accentColor}
             fontWeight="medium"
-            isLoading={isConnecting}
+            isDisabled={!(clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']))}
             _hover={{
               bg: useColorModeValue('#f1f5f9', 'gray.700'),
               borderColor: accentColor
             }}
           >
-            Xero
+            Client
           </Button>
           <Button 
-            leftIcon={<ExternalLink size={16} />} 
+            leftIcon={<FileText size={16} />} 
             variant="outline" 
             size="sm" 
             flex="1" 
-            onClick={() => handleExternalLink('XPM Job Page')} 
+            onClick={handleOpenJobLink} 
             borderColor="green.500" 
             color="green.600"
             fontWeight="medium"
+            isDisabled={!(clientInfo && taxYear && clientInfo[`${taxYear} Job Link`])}
             _hover={{
               bg: useColorModeValue('#f0fdf4', 'gray.700'),
               borderColor: "green.500"
             }}
           >
-            XPM
+            Job
           </Button>
         </Flex>
         <IconButton aria-label="Collapse sidebar" icon={<ChevronLeft size={20} strokeWidth={2.5} />} size="sm" variant="ghost" ml={2} onClick={onToggleCollapse} />
       </Flex>
 
-      {/* Xero loaded client indicator row */}
-      <Box mt={2} mb={4} px={2} py={1} borderRadius="md" bg={useColorModeValue('#e0e7ef', 'gray.700')}>
-        <Text fontSize="xs" color={loadedClient ? 'green.600' : 'gray.500'} fontWeight="medium" textAlign="center">
-          {loadedClient ? `Loaded client: ${loadedClient}` : 'No client is loaded'}
-        </Text>
-      </Box>
-
-      <Divider mb={6} borderColor={useColorModeValue('#e2e8f0', 'gray.700')} />
-
       {/* Client Information */}
-      <Box mb={6}>
-        <Flex align="center" mb={4}>
+      <Box mb={2}>
+        <Flex align="center" mb={2}>
           <Text fontSize="sm" fontWeight="semibold" color={textColor}>
             Client Information
           </Text>
+          <Spacer />
+          <IconButton
+            aria-label="Load client info"
+            icon={<RefreshCw size={16} />}
+            size="sm"
+            ml={2}
+            isLoading={loadingClient}
+            onClick={handleLoadClientInfo}
+            variant="ghost"
+            color={accentColor}
+            _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+          />
         </Flex>
-        
+        {/* Client name indicator below header, revert to previous box style */}
+        <Box mb={2} px={2} py={1} borderRadius="md" bg={useColorModeValue('#e0e7ef', 'gray.700')}>
+          <Text fontSize="md" fontWeight="bold" color={clientInfo ? textColor : 'gray.500'} textAlign="left">
+            {clientInfo ? (clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']) : 'No client is loaded'}
+          </Text>
+        </Box>
         <Box 
-          p={4} 
-          borderRadius="lg" 
+          p={3} 
+          borderRadius="md" 
           border="1px solid" 
           borderColor={borderColor} 
-          bg={panelBgColor} 
-          boxShadow="0 2px 4px rgba(0,0,0,0.05)"
+          bg={useColorModeValue('gray.800', 'gray.700')} 
+          boxShadow="none"
         >
-          <VStack align="stretch" spacing={4}>
+          <VStack align="stretch" spacing={3}>
+            {/* IRD Number */}
             <Box>
-              <Flex align="center" mb={1}>
-                <Text fontSize="xs" fontWeight="semibold" color={labelColor} textTransform="uppercase" letterSpacing="0.5px">
-                  Client Name
-                </Text>
-              </Flex>
-              <Text fontSize="sm" fontWeight="medium" color={textColor}>
-                {clientData.name}
-              </Text>
-            </Box>
-            
-            <Box>
-              <Flex align="center" mb={1}>
-                <Text fontSize="xs" fontWeight="semibold" color={labelColor} textTransform="uppercase" letterSpacing="0.5px">
-                  Company Number
-                </Text>
-              </Flex>
+              <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>IRD Number</Text>
               <Text fontSize="sm" color={secondaryTextColor} fontFamily="mono">
-                {clientData.companyNumber}
+                {clientInfo ? (clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-') : '-'}
               </Text>
             </Box>
-            
-            <Box>
-              <Flex align="center" mb={1}>
-                <Text fontSize="xs" fontWeight="semibold" color={labelColor} textTransform="uppercase" letterSpacing="0.5px">
-                  IRD Number
-                </Text>
-              </Flex>
-              <Text fontSize="sm" color={secondaryTextColor} fontFamily="mono">
-                {clientData.irdNumber}
-              </Text>
-            </Box>
+            {/* Address */}
+            {clientInfo && clientInfo['Address'] && (
+              <Box>
+                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>Address</Text>
+                <Text fontSize="sm" color={secondaryTextColor}>{clientInfo['Address']}</Text>
+              </Box>
+            )}
+            {clientError && <Text color="red.500" fontSize="sm">{clientError}</Text>}
           </VStack>
         </Box>
       </Box>
@@ -317,34 +381,13 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       <Divider mb={6} borderColor={useColorModeValue('#e2e8f0', 'gray.700')} />
 
       {/* Recent Activity */}
-      <Box>
-        <Text fontSize="sm" fontWeight="semibold" mb={3} color={textColor}>
-          Recent Activity
-        </Text>
-        <Box 
-          p={4} 
-          borderRadius="lg" 
-          border="1px solid" 
-          borderColor={borderColor} 
-          bg={panelBgColor} 
-          boxShadow="0 2px 4px rgba(0,0,0,0.05)"
-        >
-          <VStack align="stretch" spacing={3}>
-            <Flex justify="space-between" align="center">
-              <Text fontSize="sm" color={textColor}>Files updated</Text>
-              <Text fontSize="xs" color={labelColor} fontFamily="mono">2024-04-15</Text>
-            </Flex>
-            <Flex justify="space-between" align="center">
-              <Text fontSize="sm" color={textColor}>Last accessed</Text>
-              <Text fontSize="xs" color={labelColor} fontFamily="mono">2024-04-10</Text>
-            </Flex>
-            <Flex justify="space-between" align="center">
-              <Text fontSize="sm" color={textColor}>Files merged</Text>
-              <Text fontSize="xs" color={labelColor} fontFamily="mono">2024-04-05</Text>
-            </Flex>
-          </VStack>
-        </Box>
-      </Box>
+      {/* Removed as per user request */}
     </Box>
   );
 };
+
+
+
+
+
+

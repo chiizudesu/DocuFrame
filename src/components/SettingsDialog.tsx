@@ -14,8 +14,9 @@ import {
   useToast,
   InputGroup,
   InputRightElement,
+  IconButton,
 } from '@chakra-ui/react';
-import { FolderOpen } from 'lucide-react';
+import { Folder, FolderOpen } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
 
@@ -36,6 +37,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [apiKey, setApiKey] = useState('');
   const [gstTemplatePath, setGstTemplatePath] = useState('');
   const [clientbasePath, setClientbasePath] = useState('');
+  const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
   const toast = useToast();
   const { setRootDirectory, setCurrentDirectory } = useAppContext();
 
@@ -47,6 +49,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         setApiKey(loadedSettings.apiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
         setClientbasePath(loadedSettings.clientbasePath || '');
+        settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -160,6 +163,25 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
+  const handleTemplateFolderChange = async () => {
+    try {
+      const result = await (window.electronAPI as any).selectDirectory();
+      if (result) {
+        setTemplateFolderPath(result);
+        await settingsService.setTemplateFolderPath(result);
+      }
+    } catch (error) {
+      console.error('Error selecting template folder:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select template folder',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
       <ModalOverlay />
@@ -219,6 +241,17 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               onChange={(e) => setApiKey(e.target.value)}
               type="password"
             />
+          </FormControl>
+          <FormControl mb={4}>
+            <FormLabel>Template Folder Path</FormLabel>
+            <InputGroup>
+              <Input value={templateFolderPath} isReadOnly placeholder="Select template folder..." />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" onClick={handleTemplateFolderChange}>
+                  <FolderOpen size={16} />
+                </Button>
+              </InputRightElement>
+            </InputGroup>
           </FormControl>
         </ModalBody>
         <ModalFooter>

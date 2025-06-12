@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -9,6 +9,8 @@ import { OrgCodesDialog } from './OrgCodesDialog';
 import { MergePDFDialog } from './MergePDFDialog';
 import { ExtractionResultDialog } from './ExtractionResultDialog';
 import { LateClaimsDialog } from './LateClaimsDialog';
+import { AIEditorDialog } from './AIEditorDialog';
+import { AITemplaterDialog } from './AITemplaterDialog';
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
   const [preview, setPreview] = useState<{ original: string; preview: string }[] | null>(null);
@@ -83,6 +85,8 @@ export const FunctionPanels: React.FC = () => {
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
   const [isExtractionResultOpen, setExtractionResultOpen] = useState(false);
   const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
+  const [isAIEditorOpen, setAIEditorOpen] = useState(false);
+  const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [extractionResult, setExtractionResult] = useState<{
     type: 'zip' | 'eml';
     extractedFiles: string[];
@@ -173,6 +177,18 @@ export const FunctionPanels: React.FC = () => {
     if (action === 'late_claims') {
       setLateClaimsOpen(true);
       setStatus('Opened Late Claims Calculator', 'info');
+      return;
+    }
+
+    if (action === 'ai_editor') {
+      setAIEditorOpen(true);
+      setStatus('Opened AI Email Editor', 'info');
+      return;
+    }
+
+    if (action === 'ai_templater') {
+      setAITemplaterOpen(true);
+      setStatus('Opened AI Templater', 'info');
       return;
     }
 
@@ -507,6 +523,7 @@ export const FunctionPanels: React.FC = () => {
               >
                 <Flex gap={1}>
                   <FunctionButton icon={Star} label="AI Editor" action="ai_editor" description="Email AI editor for content generation" color="yellow.400" />
+                  <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
@@ -542,6 +559,8 @@ export const FunctionPanels: React.FC = () => {
     <OrgCodesDialog isOpen={isOrgCodesOpen} onClose={() => setOrgCodesOpen(false)} />
     <MergePDFDialog isOpen={isMergePDFOpen} onClose={() => setMergePDFOpen(false)} currentDirectory={currentDirectory} />
     <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
+    <AIEditorDialog isOpen={isAIEditorOpen} onClose={() => setAIEditorOpen(false)} />
+    <AITemplaterDialog isOpen={isAITemplaterOpen} onClose={() => setAITemplaterOpen(false)} currentDirectory={currentDirectory} />
     
     {extractionResult && (
       <ExtractionResultDialog

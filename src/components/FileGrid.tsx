@@ -11,14 +11,6 @@ import {
   Tr,
   Th,
   Td,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  MenuDivider,
-  Portal,
-  IconButton,
-  useColorModeValue,
   Input,
 } from '@chakra-ui/react'
 import {
@@ -29,11 +21,9 @@ import {
   Trash2,
   Edit2,
   ExternalLink,
-  MoreHorizontal,
   Copy,
   Scissors,
   FileSymlink,
-  Download,
   ChevronUp,
   ChevronDown,
   FilePlus2,
@@ -42,16 +32,11 @@ import {
   Upload,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
-import { settingsService } from '../services/settings'
-import type { FileItem } from '../types'
 import { joinPath, isAbsolutePath } from '../utils/path'
 import { MergePDFDialog } from './MergePDFDialog'
 import { DraggableFileItem } from './DraggableFileItem'
-
-interface ContextMenuPosition {
-  x: number
-  y: number
-}
+import { useColorModeValue } from '@chakra-ui/react'
+import type { FileItem } from '../types'
 
 // Sort types for list view
 type SortColumn = 'name' | 'size' | 'modified'
@@ -190,13 +175,19 @@ export const FileGrid: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
-  const lastNavTimeRef = useRef<number | null>(null);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
   const [dragCounter, setDragCounter] = useState(0)
   const dropAreaRef = useRef<HTMLDivElement>(null)
+
+  // Clipboard state for cut/copy
+  const [clipboard, setClipboard] = useState<{ files: FileItem[]; operation: 'cut' | 'copy' | null }>({ files: [], operation: null });
+  const [blankContextMenu, setBlankContextMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({ isOpen: false, position: { x: 0, y: 0 } });
+
+  // Add state for lastClickedFile
+  const [lastClickedFile, setLastClickedFile] = useState<string | null>(null);
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
@@ -631,46 +622,41 @@ export const FileGrid: React.FC = () => {
     }
   };
 
-  // Multi-select click logic
+  // Add this function for selection on mouse down
+  const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
+    // Only select if not already selected
+    if (!selectedFiles.includes(file.name)) {
+      setSelectedFiles([file.name]);
+      setLastSelectedIndex(index);
+      setSelectedFile(file.name);
+    }
+  };
+
+  // Add this function for selection on click
   const handleFileItemClick = (file: FileItem, index: number, event?: React.MouseEvent) => {
-    const now = Date.now()
-    const isCtrl = event?.ctrlKey || event?.metaKey
-    const isShift = event?.shiftKey
-    if (isShift && lastSelectedIndex !== null) {
-      // Range select
-      const start = Math.min(lastSelectedIndex, index)
-      const end = Math.max(lastSelectedIndex, index)
-      const range = sortedFiles.slice(start, end + 1).map(f => f.name)
-      setSelectedFiles(Array.from(new Set([...selectedFiles, ...range])))
-    } else if (isCtrl) {
-      // Toggle selection
-      setSelectedFiles(selectedFiles.includes(file.name)
-        ? selectedFiles.filter(f => f !== file.name)
-        : [...selectedFiles, file.name])
-      setLastSelectedIndex(index)
-    } else {
-      // Single select
-      setSelectedFiles([file.name])
-      setLastSelectedIndex(index)
-      setSelectedFile(file.name)
-      setLastClickTime(now)
-      if (clickTimer) clearTimeout(clickTimer)
+    const now = Date.now();
+    // Only handle double-click logic if already selected
+    if (selectedFiles.includes(file.name)) {
+      if (lastClickedFile === file.name && now - lastClickTime < 500) {
+        (async () => {
+          clearTimeout(clickTimer as NodeJS.Timeout);
+          setLastClickTime(0);
+          setClickTimer(null);
+          setLastClickedFile(null);
+          const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name));
+          if (selectedFileObjs.every(f => f.type !== 'folder')) {
+            for (const f of selectedFileObjs) await handleOpenOrNavigate(f);
+          } else if (selectedFileObjs.length === 1 && selectedFileObjs[0].type === 'folder') {
+            handleOpenOrNavigate(selectedFileObjs[0]);
+          }
+        })();
+      } else {
+        setLastClickTime(now);
+        setLastClickedFile(file.name);
+        if (clickTimer) clearTimeout(clickTimer);
+      }
     }
-    // Double click: open all selected files if all are files
-    if (selectedFiles.includes(file.name) && now - lastClickTime < 500) {
-      (async () => {
-        clearTimeout(clickTimer as NodeJS.Timeout)
-        setLastClickTime(0)
-        setClickTimer(null)
-        const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
-        if (selectedFileObjs.every(f => f.type !== 'folder')) {
-          for (const f of selectedFileObjs) await handleOpenOrNavigate(f)
-        } else if (selectedFileObjs.length === 1 && selectedFileObjs[0].type === 'folder') {
-          handleOpenOrNavigate(selectedFileObjs[0])
-        }
-      })();
-    }
-  }
+  };
 
   // Add F2 key support for rename
   useEffect(() => {
@@ -873,6 +859,48 @@ export const FileGrid: React.FC = () => {
     }
   };
 
+  // Keyboard shortcuts for cut/copy/paste
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isInputFocused = (e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
+      if (isRenaming || isInputFocused) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedFiles.length > 0) {
+        // Cut
+        setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'cut' });
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedFiles.length > 0) {
+        // Copy
+        setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'copy' });
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clipboard.files.length > 0) {
+        // Paste
+        handlePaste();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedFiles, sortedFiles, clipboard, isRenaming]);
+
+  // Paste handler
+  const handlePaste = async () => {
+    if (!clipboard.files.length || !clipboard.operation) return;
+    const op = clipboard.operation;
+    try {
+      if (op === 'cut') {
+        await window.electronAPI.moveFiles(clipboard.files.map(f => f.path), currentDirectory);
+      } else if (op === 'copy') {
+        await window.electronAPI.copyFiles(clipboard.files.map(f => f.path), currentDirectory);
+      }
+      setClipboard({ files: [], operation: null });
+      setStatus(`${op === 'cut' ? 'Moved' : 'Copied'} ${clipboard.files.length} item(s)`, 'success');
+      const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+      setFolderItems(contents);
+    } catch (err) {
+      setStatus(`Failed to ${op === 'cut' ? 'move' : 'copy'} files`, 'error');
+    }
+  };
+
+  // Add this helper function before renderGridView and renderListView
+  const isFileCut = (file: FileItem) => clipboard.operation === 'cut' && clipboard.files.some(f => f.path === file.path);
+
   // Grid view
   const renderGridView = () => (
     <Box
@@ -883,6 +911,12 @@ export const FileGrid: React.FC = () => {
       onDrop={handleDrop}
       position="relative"
       minHeight="200px"
+      onContextMenu={e => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          setBlankContextMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+        }
+      }}
     >
       {/* Drag overlay */}
       {isDragOver && (
@@ -942,6 +976,9 @@ export const FileGrid: React.FC = () => {
                               selectedFiles={selectedFiles}
                 sortedFiles={sortedFiles}
                 onDragStateReset={resetDragState}
+                isCut={isFileCut(file)}
+                onFileMouseDown={handleFileItemMouseDown}
+                onFileClick={handleFileItemClick}
             >
               <Flex
             p={4}
@@ -957,7 +994,7 @@ export const FileGrid: React.FC = () => {
               borderColor: useColorModeValue('blue.200', 'blue.700'),
             }}
             transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
-            style={{ userSelect: 'none' }}
+            style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
           >
             <Icon
               as={getFileIcon(file.type, file.name)}
@@ -995,6 +1032,12 @@ export const FileGrid: React.FC = () => {
       m={0}
       minHeight="300px"
       width="100%"
+      onContextMenu={e => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          setBlankContextMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+        }
+      }}
     >
       {/* Drag overlay - now covers the entire file list area */}
       {isDragOver && (
@@ -1131,6 +1174,9 @@ export const FileGrid: React.FC = () => {
                 selectedFiles={selectedFiles}
                 sortedFiles={sortedFiles}
                 onDragStateReset={resetDragState}
+                isCut={isFileCut(file)}
+                onFileMouseDown={handleFileItemMouseDown}
+                onFileClick={handleFileItemClick}
                 as="tr"
               >
                 <Td borderColor={tableBorderColor} width="50%">
@@ -1160,189 +1206,166 @@ export const FileGrid: React.FC = () => {
     </Box>
   )
 
-  // Context Menu
-  const renderContextMenu = () => {
-    if (!contextMenu.isOpen || !contextMenu.fileItem) return null
+  // Convert renderContextMenu to a component
+  const ContextMenu: React.FC<{
+    contextMenu: typeof contextMenu;
+    selectedFiles: string[];
+    sortedFiles: FileItem[];
+    clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
+    setClipboard: typeof setClipboard;
+    handleMenuAction: (action: string) => void;
+    handlePaste: () => void;
+    handleCloseContextMenu: () => void;
+  }> = ({ contextMenu, selectedFiles, sortedFiles, clipboard, setClipboard, handleMenuAction, handlePaste, handleCloseContextMenu }) => {
+    const boxBg = useColorModeValue('white', 'gray.800');
+    const borderCol = useColorModeValue('gray.200', 'gray.700');
+    const hoverBg = useColorModeValue('gray.100', 'gray.700');
+    if (!contextMenu.isOpen || !contextMenu.fileItem) return null;
 
-    // Check if multiple PDFs are selected
-    const selectedPDFs = selectedFiles.filter(filename => 
-      filename.toLowerCase().endsWith('.pdf')
-    );
+    const selectedPDFs = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'));
     const showMergePDFs = selectedPDFs.length > 1;
-
-    // Check if current file or selected files are extractable
     const fileName = contextMenu.fileItem.name.toLowerCase();
     const isZipFile = fileName.endsWith('.zip');
     const isEmlFile = fileName.endsWith('.eml');
-    
-    // Check for multiple selected extractable files
-    const selectedZipFiles = selectedFiles.filter(filename => 
-      filename.toLowerCase().endsWith('.zip')
-    );
-    const selectedEmlFiles = selectedFiles.filter(filename => 
-      filename.toLowerCase().endsWith('.eml')
-    );
+    const selectedZipFiles = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.zip'));
+    const selectedEmlFiles = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.eml'));
     const showExtractZips = selectedZipFiles.length > 1 || (isZipFile && selectedZipFiles.length >= 1);
     const showExtractEmls = selectedEmlFiles.length > 1 || (isEmlFile && selectedEmlFiles.length >= 1);
+
+    const getClipboardFiles = () => {
+      if (
+        selectedFiles.length > 1 &&
+        contextMenu.fileItem &&
+        typeof contextMenu.fileItem.name === 'string' &&
+        selectedFiles.includes(contextMenu.fileItem.name)
+      ) {
+        return sortedFiles.filter((f): f is FileItem => !!f && typeof f.name === 'string' && selectedFiles.includes(f.name));
+      } else if (contextMenu.fileItem) {
+        return [contextMenu.fileItem];
+      }
+      return [];
+    };
 
     return (
       <Box
         position="fixed"
         top={contextMenu.position.y}
         left={contextMenu.position.x}
-        bg={useColorModeValue('white', 'gray.800')}
+        bg={boxBg}
         borderRadius="md"
         boxShadow="lg"
         zIndex="modal"
         minW="200px"
         border="1px solid"
-        borderColor={useColorModeValue('gray.200', 'gray.700')}
+        borderColor={borderCol}
       >
         <Box py={1}>
-          <Flex
-            align="center"
-            px={3}
-            py={2}
-            cursor="pointer"
-            _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-            onClick={() => handleMenuAction('open')}
-          >
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('open')}>
             <ExternalLink size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Open</Text>
           </Flex>
-          <Flex
-            align="center"
-            px={3}
-            py={2}
-            cursor="pointer"
-            _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-            onClick={() => handleMenuAction('rename')}
-          >
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('rename')}>
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
           </Flex>
           {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
-            <Flex
-              align="center"
-              px={3}
-              py={2}
-              cursor="pointer"
-              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-              onClick={() => handleMenuAction('extract_text')}
-              color="blue.400"
-            >
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')} color="blue.400">
               <FileText size={16} style={{ marginRight: '8px' }} />
               <Text fontSize="sm">Extract Text</Text>
             </Flex>
           )}
           {showMergePDFs && (
-            <Flex
-              align="center"
-              px={3}
-              py={2}
-              cursor="pointer"
-              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-              onClick={() => handleMenuAction('merge_pdfs')}
-              color="red.400"
-            >
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('merge_pdfs')} color="red.400">
               <FilePlus2 size={16} style={{ marginRight: '8px' }} />
               <Text fontSize="sm">Merge PDFs ({selectedPDFs.length})</Text>
             </Flex>
           )}
           {showExtractZips && (
-            <Flex
-              align="center"
-              px={3}
-              py={2}
-              cursor="pointer"
-              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-              onClick={() => handleMenuAction('extract_zip')}
-              color="orange.400"
-            >
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_zip')} color="orange.400">
               <Archive size={16} style={{ marginRight: '8px' }} />
               <Text fontSize="sm">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
             </Flex>
           )}
           {showExtractEmls && (
-            <Flex
-              align="center"
-              px={3}
-              py={2}
-              cursor="pointer"
-              _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-              onClick={() => handleMenuAction('extract_eml')}
-              color="cyan.400"
-            >
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_eml')} color="cyan.400">
               <Mail size={16} style={{ marginRight: '8px' }} />
               <Text fontSize="sm">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
             </Flex>
           )}
-          <Flex
-            align="center"
-            px={3}
-            py={2}
-            cursor="pointer"
-            _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-            onClick={() => handleMenuAction('delete')}
-            color="red.500"
-          >
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }} color="red.500">
+            <Scissors size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Cut</Text>
+          </Flex>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }} color="blue.500">
+            <Copy size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Copy</Text>
+          </Flex>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); handleCloseContextMenu(); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
+            <FileSymlink size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Paste</Text>
+          </Flex>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('delete')} color="red.500">
             <Trash2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Delete</Text>
           </Flex>
         </Box>
       </Box>
-    )
-  }
+    );
+  };
 
-  const renderFileItem = (file: FileItem) => {
-    if (isRenaming === file.name) {
-      return (
-        <form onSubmit={handleRenameSubmit}>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={handleRenameSubmit}
-            autoFocus
-            size="sm"
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setIsRenaming(null)
-              }
-            }}
-          />
-        </form>
-      )
-    }
-
+  // Convert renderBlankContextMenu to a component
+  const BlankContextMenu: React.FC<{
+    blankContextMenu: typeof blankContextMenu;
+    clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
+    handlePaste: () => void;
+    setBlankContextMenu: typeof setBlankContextMenu;
+  }> = ({ blankContextMenu, clipboard, handlePaste, setBlankContextMenu }) => {
+    const boxBg = useColorModeValue('white', 'gray.800');
+    const borderCol = useColorModeValue('gray.200', 'gray.700');
+    const hoverBg = useColorModeValue('gray.100', 'gray.700');
+    const menuRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+      if (!blankContextMenu.isOpen) return;
+      const handleClick = (e: MouseEvent) => {
+        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+          setBlankContextMenu({ ...blankContextMenu, isOpen: false });
+        }
+      };
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }, [blankContextMenu, setBlankContextMenu]);
+    if (!blankContextMenu.isOpen) return null;
     return (
-      <Flex
-        direction="column"
-        align="center"
-        justify="center"
-        p={2}
-        cursor="pointer"
-        borderRadius="md"
-        _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
-        onContextMenu={(e) => handleContextMenu(e, file)}
-        onClick={() => handleOpenOrNavigate(file)}
-      >
-        <Icon as={getFileIcon(file.type, file.name)} boxSize={8} mb={2} />
-        <Text fontSize="sm" textAlign="center" noOfLines={2}>
-          {file.name}
-        </Text>
-        {file.modified && (
-          <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')}>
-            {new Date(file.modified).toLocaleDateString()}
-          </Text>
-        )}
-      </Flex>
-    )
-  }
+      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} bg={boxBg} borderRadius="md" boxShadow="lg" zIndex="modal" minW="200px" border="1px solid" borderColor={borderCol}>
+        <Box py={1}>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
+            <FileSymlink size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Paste</Text>
+          </Flex>
+        </Box>
+      </Box>
+    );
+  };
 
   return (
     <Box p={viewMode === 'grid' ? 0 : 0} m={0}>
       {viewMode === 'grid' ? renderGridView() : renderListView()}
-      {renderContextMenu()}
+      <ContextMenu 
+        contextMenu={contextMenu}
+        selectedFiles={selectedFiles}
+        sortedFiles={sortedFiles}
+        clipboard={clipboard}
+        setClipboard={setClipboard}
+        handleMenuAction={handleMenuAction}
+        handlePaste={handlePaste}
+        handleCloseContextMenu={handleCloseContextMenu}
+      />
+      <BlankContextMenu 
+        blankContextMenu={blankContextMenu}
+        clipboard={clipboard}
+        handlePaste={handlePaste}
+        setBlankContextMenu={setBlankContextMenu}
+      />
       <MergePDFDialog 
         isOpen={isMergePDFOpen} 
         onClose={() => setMergePDFOpen(false)} 

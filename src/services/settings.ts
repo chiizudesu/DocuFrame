@@ -4,6 +4,7 @@ export interface AppSettings {
   apiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
+  templateFolderPath?: string;
 }
 
 class SettingsService {
@@ -64,6 +65,16 @@ class SettingsService {
       console.error('Error setting root path:', error);
       throw error;
     }
+  }
+
+  async getTemplateFolderPath(): Promise<string | undefined> {
+    const settings = await this.getSettings();
+    return settings.templateFolderPath;
+  }
+
+  async setTemplateFolderPath(path: string): Promise<void> {
+    const settings = await this.getSettings();
+    await this.setSettings({ ...settings, templateFolderPath: path });
   }
 }
 

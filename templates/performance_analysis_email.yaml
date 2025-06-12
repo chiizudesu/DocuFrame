@@ -1,0 +1,38 @@
+name: Company Annual Accounts & Tax Return
+description: Email template for summarizing company performance and tax return for the year.
+categories:
+  - financial_statements
+  - tax_return
+template: |
+  Company Annual Accounts
+
+  For the 12 months ending March 2025, revenue was ${{revenue}} – this is an overall {{revenue_change_direction}} of {{revenue_change_percent}}% from the year ending March 2024. This was largely due to {{revenue_reason}}.
+
+  Direct costs have naturally {{direct_costs_direction}} alongside sales, and the gross profit margin has {{gross_profit_direction}} from the 2024 year at {{gross_profit_2024}}% to last year at {{gross_profit_2025}}%. This was largely due to {{gross_profit_reason}}.
+
+  Overheads (excluding shareholder salaries) have seen a reasonable {{overheads_direction}} of ${{overheads_amount_less_shareholder_salaries}} or {{overheads_percent_less_shareholder_salaries}}%. Key movements for the year were:
+
+  - {{expenses_1}} by ${{expenses_1_amount}} or {{expenses_1_percent}}%
+  - {{expenses_2}} by ${{expenses_2_amount}} or {{expenses_2_percent}}%
+  - {{expenses_3}} by ${{expenses_3_amount}} or {{expenses_3_percent}}%
+  - {{expenses_4}} by ${{expenses_4_amount}} or {{expenses_4_percent}}%
+  - {{expenses_5}} by ${{expenses_5_amount}} or {{expenses_5_percent}}%
+  - {{expenses_6}} by ${{expenses_6_amount}} or {{expenses_6_percent}}%
+  - {{expenses_7}} by ${{expenses_7_amount}} or {{expenses_7_percent}}%
+    {{fill any other expense here if needed}}
+  
+  {{OR if no comparatives
+  Overheads (excluding shareholder salaries) for the year totalled ${{overheads_total_less_shareholder_salariesl}}. A majority of the overhead expenses were made up of: 
+  - {{expenses_1}} by ${{expenses_1_amount}} or {{expenses_1_percent}}%
+  - {{expenses_2}} by ${{expenses_2_amount}} or {{expenses_2_percent}}%
+  - {{expenses_3}} by ${{expenses_3_amount}} or {{expenses_3_percent}}%
+  - {{expenses_4}} by ${{expenses_4_amount}} or {{expenses_4_percent}}%
+  - {{expenses_5}} by ${{expenses_5_amount}} or {{expenses_5_percent}}%
+  - {{expenses_6}} by ${{expenses_6_amount}} or {{expenses_6_percent}}%
+  - {{expenses_7}} by ${{expenses_7_amount}} or {{expenses_7_percent}}% }}
+
+  [Check internal queries for any points to add to the final email]
+
+  Company tax return
+
+  From a tax perspective, there is taxable income in the Company of ${{taxable_income}}. Tax on this amount is ${{tax_amount}}. After accounting for tax credits on investment income and provisional tax paid during the year, the Company is due to receive a refund of ${{tax_refund}}/has tax to pay of ${{tax_payable}}. This is due for payment on 7 April 2026 and we will be in touch closer to the due date with our standard reminder letter. 

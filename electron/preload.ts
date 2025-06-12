@@ -30,6 +30,7 @@ interface ElectronAPI {
   moveFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   readPdfText: (filePath: string) => Promise<string>;
+  loadYamlTemplate: (filePath: string) => Promise<any>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -104,6 +105,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   readPdfText: async (filePath: string) => {
     return await ipcRenderer.invoke('read-pdf-text', filePath);
+  },
+  loadYamlTemplate: async (filePath: string) => {
+    return await ipcRenderer.invoke('load-yaml-template', filePath);
   },
 }); 
 

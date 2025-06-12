@@ -11,6 +11,7 @@ import { transferFiles } from '../src/main/commands/transfer';
 import { PDFDocument } from 'pdf-lib';
 import PDFParser from 'pdf2json';
 const { parse } = require('csv-parse/sync');
+import yaml from 'js-yaml';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -791,4 +792,9 @@ ipcMain.handle('read-pdf-text', async (_, filePath: string) => {
     console.error('Error reading PDF text:', error);
     throw error;
   }
+});
+
+ipcMain.handle('load-yaml-template', async (event, filePath) => {
+  const content = fs.readFileSync(filePath, 'utf8');
+  return yaml.load(content);
 });
