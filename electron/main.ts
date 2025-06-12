@@ -123,29 +123,13 @@ const createWindow = () => {
   }
 
   // Open the DevTools.
-  mainWindow.webContents.openDevTools();
+  // mainWindow.webContents.openDevTools();
 };
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
-  // Start backend server
-  const serverPath = path.join(__dirname, '../server/index.js');
-  backendProcess = spawn(process.execPath, [serverPath], {
-    cwd: path.join(__dirname, '../server'),
-    env: { ...process.env, NODE_ENV: process.env.NODE_ENV || 'production' },
-    stdio: 'inherit',
-  });
-  if (backendProcess) {
-    backendProcess.on('error', (err) => {
-      console.error('[Main] Backend process failed to start:', err);
-    });
-    backendProcess.on('exit', (code, signal) => {
-      console.log(`[Main] Backend process exited with code ${code}, signal ${signal}`);
-    });
-  }
-
   // Load config before creating window
   const config = await loadConfig();
   console.log('[Main] Loaded config on window start:', config);
