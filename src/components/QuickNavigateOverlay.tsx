@@ -149,8 +149,15 @@ export const QuickNavigateOverlay: React.FC = () => {
       console.log('[QuickNavigate] Setting mode - initialCommandMode:', initialCommandMode);
       setIsCommandMode(initialCommandMode);
       setInputValue('');
+    } else if (!isQuickNavigating) {
+      // Clear everything when overlay closes
+      setInputValue('');
+      setFilteredResults([]);
+      clearResults();
+      setCommandInfo(null);
+      setPreviewFiles([]);
     }
-  }, [isQuickNavigating, initialCommandMode]);
+  }, [isQuickNavigating, initialCommandMode, clearResults, setPreviewFiles]);
 
   // Process input changes
   useEffect(() => {
@@ -552,7 +559,20 @@ export const QuickNavigateOverlay: React.FC = () => {
         <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
           <Flex align="center" p={3} minH="47px">
             <IconButton icon={isCommandMode ? <ChevronRight size={25} strokeWidth={2} /> : <Search size={18} />} aria-label={isCommandMode ? 'Command mode' : 'Search mode'} variant="ghost" size="sm" color="blue.400" onClick={toggleCommandMode} />
-            <Input ref={inputRef} placeholder={isCommandMode ? 'Enter command...' : 'Type to search files and folders... (Enter=Navigate, Backspace=Up)'} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={handleKeyDown} variant="unstyled" fontSize="md" ml={2} autoFocus pr="60px" height="41px" />
+            <Input 
+              ref={inputRef} 
+              placeholder={isCommandMode ? 'Enter command...' : 'Type to search files and folders... (Enter=Navigate, Backspace=Up)'} 
+              value={inputValue} 
+              onChange={e => setInputValue(e.target.value)} 
+              onKeyDown={handleKeyDown} 
+
+              variant="unstyled" 
+              fontSize="md" 
+              ml={2} 
+              autoFocus 
+              pr="60px" 
+              height="41px" 
+            />
           </Flex>
         </Box>
         {/* Search error indicator */}

@@ -35,6 +35,14 @@ export const ClientSearchOverlay: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen]);
 
+  // Clear search when overlay closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchValue('');
+      setResults([]);
+    }
+  }, [isOpen]);
+
   const handleSearch = async (value: string) => {
     setSearchValue(value);
     if (!value.trim()) {
@@ -128,6 +136,7 @@ export const ClientSearchOverlay: React.FC = () => {
                 ref={inputRef}
                 value={searchValue}
                 onChange={(e) => handleSearch(e.target.value)}
+
                 placeholder="Type client name..."
                 variant="unstyled"
                 fontSize="md"

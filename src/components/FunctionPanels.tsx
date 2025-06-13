@@ -148,6 +148,16 @@ export const FunctionPanels: React.FC = () => {
         if (result.success) {
           addLog(result.message, 'response');
           setStatus('GST Rename completed', 'success');
+          
+          // Refresh folder view to show renamed files
+          try {
+            const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+            setFolderItems(contents);
+            addLog('Folder view refreshed to show renamed files', 'info');
+          } catch (refreshError) {
+            console.error('Failed to refresh folder view:', refreshError);
+            addLog('Warning: Failed to refresh folder view. Please refresh manually.', 'error');
+          }
         } else {
           addLog(result.message, 'error');
           setStatus('GST Rename failed', 'error');

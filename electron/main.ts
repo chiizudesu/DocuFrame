@@ -272,6 +272,13 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
     } else {
       await fsPromises.unlink(itemPath);
     }
+    
+    // Emit folder contents changed event to trigger refresh
+    const parentDirectory = path.dirname(itemPath);
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+    });
+    
     return; // Success - immediate deletion worked
   } catch (error: any) {
     // Only proceed with retries/alternatives if deletion failed
@@ -286,6 +293,13 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
           try {
             await fsPromises.chmod(itemPath, 0o666);
             await fsPromises.unlink(itemPath);
+            
+            // Emit folder contents changed event
+            const parentDirectory = path.dirname(itemPath);
+            BrowserWindow.getAllWindows().forEach(win => {
+              win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+            });
+            
             return; // Success after permission fix
           } catch (chmodError) {
             console.log(`chmod+unlink failed: ${chmodError.code}`);
@@ -295,6 +309,13 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
           try {
             await fsPromises.rm(itemPath, { force: true });
             console.log(`Successfully deleted ${itemPath} using fs.rm`);
+            
+            // Emit folder contents changed event
+            const parentDirectory = path.dirname(itemPath);
+            BrowserWindow.getAllWindows().forEach(win => {
+              win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+            });
+            
             return; // Success with fs.rm
           } catch (rmError) {
             console.log(`fs.rm failed: ${rmError.code}`);
@@ -302,6 +323,13 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
         } else {
           // For directories, try the newer rmdir approach
           await fsPromises.rm(itemPath, { recursive: true, force: true });
+          
+          // Emit folder contents changed event
+          const parentDirectory = path.dirname(itemPath);
+          BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+          });
+          
           return; // Success for directory
         }
       } catch (retryError: any) {
@@ -315,6 +343,13 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
              console.log(`Trying CMD deletion for ${itemPath}...`);
              execSync(`cmd /c del /f /q ${quotedPath}`, { timeout: 1000 });
              console.log(`Successfully force-deleted ${itemPath} using CMD`);
+             
+             // Emit folder contents changed event
+             const parentDirectory = path.dirname(itemPath);
+             BrowserWindow.getAllWindows().forEach(win => {
+               win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+             });
+             
              return; // Success with CMD
            } catch (cmdError) {
              console.log('CMD deletion failed, trying PowerShell...');
@@ -328,6 +363,13 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
                  { timeout: 1500 });
                
                console.log(`Successfully force-deleted ${itemPath} using PowerShell`);
+               
+               // Emit folder contents changed event
+               const parentDirectory = path.dirname(itemPath);
+               BrowserWindow.getAllWindows().forEach(win => {
+                 win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+               });
+               
                return; // Success with PowerShell
              } catch (powerShellError) {
                console.warn('PowerShell deletion also failed:', powerShellError);
@@ -498,6 +540,23 @@ ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
       try {
         await fsPromises.rename(oldPath, newPath);
         console.log(`Successfully renamed: ${oldPath} -> ${newPath}`);
+        
+        // Emit folder contents changed event to trigger refresh
+        const parentDirectory = path.dirname(oldPath);
+        const targetDirectory = path.dirname(newPath);
+        
+        // Notify about the source directory change
+        BrowserWindow.getAllWindows().forEach(win => {
+          win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+        });
+        
+        // If moving to a different directory, also notify about target directory
+        if (parentDirectory !== targetDirectory) {
+          BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('folderContentsChanged', { directory: targetDirectory });
+          });
+        }
+        
         return true;
       } catch (error) {
         attempts++;

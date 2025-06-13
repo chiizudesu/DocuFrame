@@ -555,9 +555,8 @@ export const FileGrid: React.FC = () => {
       await (window.electronAPI as any).renameItem(oldPath, newPath)
       addLog(`Renamed ${isRenaming} to ${renameValue}`)
       setIsRenaming(null)
-      // Refresh the current directory
-      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
-      setFolderItems(contents)
+      // Use the existing folder refresh system
+      loadDirectory(currentDirectory)
     } catch (error) {
       console.error('Error renaming:', error)
       addLog(`Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
@@ -568,9 +567,21 @@ export const FileGrid: React.FC = () => {
     const handleViewModeChange = (e: CustomEvent) => {
       setViewMode(e.detail as 'grid' | 'list')
     }
-    const handleClickOutside = () => {
+    const handleClickOutside = (e: MouseEvent) => {
       if (contextMenu.isOpen) {
         handleCloseContextMenu()
+      }
+      
+      // Clear multi-selection when clicking outside any file
+      if (selectedFiles.length > 1) {
+        const target = e.target as HTMLElement;
+        // Check if the click was outside the file grid
+        const fileGridElement = dropAreaRef.current;
+        if (fileGridElement && !fileGridElement.contains(target)) {
+          // Clear all selections
+          setSelectedFiles([]);
+          setSelectedFile(null);
+        }
       }
     }
     const handleFolderContentsChanged = (event: any, data: { directory: string }) => {
@@ -956,6 +967,13 @@ export const FileGrid: React.FC = () => {
           setBlankContextMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
         }
       }}
+      onClick={e => {
+        // Clear multi-selection when clicking on empty space within the grid
+        if (e.target === e.currentTarget && selectedFiles.length > 1) {
+          setSelectedFiles([]);
+          setSelectedFile(null);
+        }
+      }}
     >
       {/* Drag overlay */}
       {isDragOver && (
@@ -1075,6 +1093,13 @@ export const FileGrid: React.FC = () => {
         if (e.target === e.currentTarget) {
           e.preventDefault();
           setBlankContextMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+        }
+      }}
+      onClick={e => {
+        // Clear multi-selection when clicking on empty space within the list
+        if (e.target === e.currentTarget && selectedFiles.length > 1) {
+          setSelectedFiles([]);
+          setSelectedFile(null);
         }
       }}
     >
