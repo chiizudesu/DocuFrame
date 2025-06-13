@@ -624,8 +624,47 @@ export const FileGrid: React.FC = () => {
 
   // Add this function for selection on mouse down
   const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
-    // Only select if not already selected
-    if (!selectedFiles.includes(file.name)) {
+    if (!event) {
+      // Fallback for no event - simple selection
+      setSelectedFiles([file.name]);
+      setLastSelectedIndex(index);
+      setSelectedFile(file.name);
+      return;
+    }
+
+    if (event.shiftKey && lastSelectedIndex !== null) {
+      // Shift+click: Select range from last selected to current
+      const start = Math.min(lastSelectedIndex, index);
+      const end = Math.max(lastSelectedIndex, index);
+      const rangeSelection = sortedFiles.slice(start, end + 1).map(f => f.name);
+      setSelectedFiles(rangeSelection);
+      setSelectedFile(file.name);
+      // Don't update lastSelectedIndex for shift-click to maintain range anchor
+    } else if (event.ctrlKey || event.metaKey) {
+      // Ctrl+click: Toggle selection
+      if (selectedFiles.includes(file.name)) {
+        // Remove from selection
+        const newSelection = selectedFiles.filter(name => name !== file.name);
+        setSelectedFiles(newSelection);
+        setSelectedFile(newSelection.length > 0 ? newSelection[newSelection.length - 1] : null);
+        if (newSelection.length === 0) {
+          setLastSelectedIndex(null);
+        }
+      } else {
+        // Add to selection
+        const newSelection = [...selectedFiles, file.name];
+        setSelectedFiles(newSelection);
+        setSelectedFile(file.name);
+        setLastSelectedIndex(index);
+      }
+    } else if (selectedFiles.includes(file.name) && selectedFiles.length > 1) {
+      // File is already selected and we have multiple selections
+      // Don't change selection - this could be the start of a drag operation
+      // Just update the primary selected file
+      setSelectedFile(file.name);
+      setLastSelectedIndex(index);
+    } else {
+      // Regular click: Select only this file (clear others)
       setSelectedFiles([file.name]);
       setLastSelectedIndex(index);
       setSelectedFile(file.name);

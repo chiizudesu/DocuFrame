@@ -74,7 +74,8 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     // Set data transfer type for internal drags
     e.dataTransfer.setData('application/x-docuframe-files', '');
     if (window.electron && typeof window.electron.startDrag === 'function') {
-      window.electron.startDrag(filesToDrag[0]);
+      // Pass all files for multi-file drag - startDrag accepts string | string[]
+      window.electron.startDrag(filesToDrag);
       addLog(`Started native drag for ${filesToDrag.length} file(s)`);
       setIsDragging(true);
       setTimeout(() => {

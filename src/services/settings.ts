@@ -5,6 +5,7 @@ export interface AppSettings {
   gstTemplatePath?: string;
   clientbasePath?: string;
   templateFolderPath?: string;
+  showOutputLog?: boolean;
 }
 
 class SettingsService {

@@ -15,6 +15,9 @@ import {
   InputGroup,
   InputRightElement,
   IconButton,
+  Switch,
+  Box,
+  Text,
 } from '@chakra-ui/react';
 import { Folder, FolderOpen } from 'lucide-react';
 import { settingsService } from '../services/settings';
@@ -30,6 +33,7 @@ interface Settings {
   apiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
+  showOutputLog?: boolean;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
@@ -39,7 +43,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [clientbasePath, setClientbasePath] = useState('');
   const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
   const toast = useToast();
-  const { setRootDirectory, setCurrentDirectory } = useAppContext();
+  const { setRootDirectory, setCurrentDirectory, showOutputLog, setShowOutputLog } = useAppContext();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -74,6 +78,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         apiKey: apiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
+        showOutputLog,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -252,6 +257,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                 </Button>
               </InputRightElement>
             </InputGroup>
+          </FormControl>
+          <FormControl mb={4}>
+            <FormLabel htmlFor="show-output-log">Show Output Log</FormLabel>
+            <Box>
+              <Switch
+                id="show-output-log"
+                isChecked={showOutputLog}
+                onChange={(e) => setShowOutputLog(e.target.checked)}
+                colorScheme="blue"
+              />
+              <Text fontSize="sm" color="gray.500" mt={1}>
+                Toggle the visibility of the output log area at the bottom of the application
+              </Text>
+            </Box>
           </FormControl>
         </ModalBody>
         <ModalFooter>

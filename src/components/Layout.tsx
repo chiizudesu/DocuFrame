@@ -8,6 +8,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { FileGrid } from './FileGrid';
 import { Footer } from './Footer';
 import { ChevronLeft, ChevronRight, Minimize2, Maximize2, X, Square } from 'lucide-react';
+import { useAppContext } from '../context/AppContext';
 
 // CustomTitleBar component
 const CustomTitleBar: React.FC = () => {
@@ -152,6 +153,7 @@ const CustomTitleBar: React.FC = () => {
 };
 
 export const Layout: React.FC = () => {
+  const { showOutputLog } = useAppContext();
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [logHeight, setLogHeight] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -196,9 +198,9 @@ export const Layout: React.FC = () => {
         "ribbon ribbon ribbon"
         "sidebar header header"
         "sidebar main main"
-        "sidebar footer footer"
+        ${showOutputLog ? '"sidebar footer footer"' : ''}
         "status status status"
-      `} gridTemplateRows={`auto auto auto 1fr ${logMinimized ? 40 : logHeight}px auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr 1fr`} h="100%" gap="0" bg={mainBgColor}>
+      `} gridTemplateRows={`auto auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr 1fr`} h="100%" gap="0" bg={mainBgColor}>
     {/* Custom Title Bar */}
     <GridItem area="titlebar" bg={bgColor} zIndex={100}>
       <CustomTitleBar />
@@ -222,7 +224,7 @@ export const Layout: React.FC = () => {
       <FileGrid />
     </GridItem>
     {/* Resize Handle for Output Log (only over main content, not sidebar) */}
-    {!logMinimized && (
+    {showOutputLog && !logMinimized && (
       <Box
         onMouseDown={handleMouseDown}
         cursor="row-resize"
@@ -234,9 +236,11 @@ export const Layout: React.FC = () => {
       />
     )}
     {/* Output Log */}
-    <GridItem area="footer" bg={bgColor} borderTop="1px" borderColor={borderColor} position="relative">
-      <OutputLog minimized={logMinimized} setMinimized={setLogMinimized} />
-    </GridItem>
+    {showOutputLog && (
+      <GridItem area="footer" bg={bgColor} borderTop="1px" borderColor={borderColor} position="relative">
+        <OutputLog minimized={logMinimized} setMinimized={setLogMinimized} />
+      </GridItem>
+    )}
     {/* Status Footer */}
     <GridItem area="status" bg={bgColor} borderTop="1px" borderColor={borderColor}>
       <Footer />

@@ -42,6 +42,8 @@ interface AppContextType {
   setApiKey: (key: string) => void;
   isSettingsOpen: boolean;
   setIsSettingsOpen: (isOpen: boolean) => void;
+  showOutputLog: boolean;
+  setShowOutputLog: (show: boolean) => void;
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
@@ -73,6 +75,7 @@ export const AppProvider: React.FC<{
   const [rootDirectory, setRootDirectoryState] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showOutputLog, setShowOutputLog] = useState(true);
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [selectAllFiles, setSelectAllFiles] = useState<() => void>(() => () => {});
@@ -90,6 +93,8 @@ export const AppProvider: React.FC<{
           setRootDirectoryState(settings.rootPath);
           setCurrentDirectory(settings.rootPath);
         }
+        // Load showOutputLog setting, default to true if not set
+        setShowOutputLog(settings.showOutputLog !== false);
       } catch (error) {
         console.error('Error loading settings:', error);
       }
@@ -156,6 +161,8 @@ export const AppProvider: React.FC<{
     setApiKey,
     isSettingsOpen,
     setIsSettingsOpen: setIsSettingsOpenWithStatus,
+    showOutputLog,
+    setShowOutputLog,
     // Preview
     previewFiles,
     setPreviewFiles,

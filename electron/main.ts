@@ -414,7 +414,115 @@ ipcMain.handle('move-item', async (_, sourcePath: string, destinationPath: strin
 
 ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
   try {
-    await fsPromises.rename(oldPath, newPath);
+    // Validate input paths
+    if (!oldPath || !newPath) {
+      throw new Error('Invalid paths provided for rename operation');
+    }
+
+    // Check if source file exists
+    try {
+      await fsPromises.access(oldPath, fs.constants.F_OK);
+    } catch (error) {
+      throw new Error(`Source file does not exist: ${oldPath}`);
+    }
+
+    // Check if source and target are the same
+    if (path.resolve(oldPath) === path.resolve(newPath)) {
+      throw new Error('Source and destination paths are identical');
+    }
+
+    // Check if the source file is currently open/locked
+    try {
+      const handle = await fsPromises.open(oldPath, 'r+');
+      await handle.close();
+    } catch (error) {
+      if (error.code === 'EBUSY' || error.code === 'EPERM') {
+        throw new Error(`Cannot rename: File is currently open or in use by another application`);
+      }
+      // Other errors might not be locks, so continue
+    }
+
+    // Check if target directory exists
+    const targetDir = path.dirname(newPath);
+    try {
+      await fsPromises.access(targetDir, fs.constants.F_OK);
+    } catch (error) {
+      throw new Error(`Target directory does not exist: ${targetDir}`);
+    }
+
+    // Check if target file already exists
+    try {
+      await fsPromises.access(newPath, fs.constants.F_OK);
+      // If we get here, file exists - ask user what to do
+      const { response } = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Replace', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'File Already Exists',
+        message: `A file named "${path.basename(newPath)}" already exists.`,
+        detail: 'Do you want to replace it?'
+      });
+      
+      if (response === 1) { // Cancel
+        throw new Error('Rename cancelled: Target file already exists');
+      }
+      
+      // User chose to replace, delete the existing file
+      await fsPromises.unlink(newPath);
+    } catch (error) {
+      // If error is not about file existing, it's something else
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+      // ENOENT means file doesn't exist, which is good - continue with rename
+    }
+
+    // Validate filename - check for invalid characters
+    const fileName = path.basename(newPath);
+    const invalidChars = /[<>:"/\\|?*\x00-\x1f]/;
+    if (invalidChars.test(fileName)) {
+      throw new Error('Filename contains invalid characters');
+    }
+
+    // Check filename length (Windows has 255 char limit)
+    if (fileName.length > 255) {
+      throw new Error('Filename is too long (maximum 255 characters)');
+    }
+
+    // Perform the rename with retry logic
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
+      try {
+        await fsPromises.rename(oldPath, newPath);
+        console.log(`Successfully renamed: ${oldPath} -> ${newPath}`);
+        return true;
+      } catch (error) {
+        attempts++;
+        console.log(`Rename attempt ${attempts} failed:`, error.message);
+        
+        if (attempts >= maxAttempts) {
+          // Final attempt failed
+          if (error.code === 'ENOENT') {
+            throw new Error(`Source file disappeared during rename operation: ${oldPath}`);
+          } else if (error.code === 'EEXIST') {
+            throw new Error(`Target file already exists: ${newPath}`);
+          } else if (error.code === 'EBUSY' || error.code === 'EPERM') {
+            throw new Error(`File is currently open or in use. Please close it and try again.`);
+          } else if (error.code === 'EACCES') {
+            throw new Error(`Permission denied. Check file permissions and try again.`);
+          } else {
+            throw new Error(`Rename failed: ${error.message}`);
+          }
+        }
+        
+        // Wait a bit before retrying
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
     return true;
   } catch (error) {
     console.error('Error renaming item:', error);
@@ -602,6 +710,8 @@ ipcMain.handle('move-files', async (_, files: string[], targetDirectory: string)
       } catch (error) {
         console.error(`Error moving file ${filePath}:`, error);
         // If copy succeeded but delete failed, try to clean up
+        const fileName = path.basename(filePath);
+        const targetPath = path.join(targetDirectory, fileName);
         try {
           await fsPromises.access(targetPath);
           await fsPromises.unlink(targetPath);
