@@ -14,7 +14,7 @@
     "validate-setup": "node setup.js --validate",
     "start-backend": "cd server && npm run dev",
     "install-backend": "cd server && npm install",
-    "dev-all": "concurrently \"npm run start-backend\" \"npm start\"",
+    "dev-all": "concurrently \"npm start\"",
     "setup-all": "npm run setup && npm run install-backend && echo \"Setup complete! Run: npm run dev-all\"",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "electron-pack": "electron-builder",
@@ -66,5 +66,32 @@
     "vite": "^5.1.0",
     "vite-plugin-electron": "^0.28.0",
     "vite-plugin-electron-renderer": "^0.14.5"
+  },
+  "build": {
+    "appId": "com.edwardmatias.docuframe",
+    "productName": "DocuFrame",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "icon": "public/256.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "public/256.ico"
+    },
+    "linux": {
+      "icon": "public/256.ico"
+    }
   }
 }

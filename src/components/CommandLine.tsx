@@ -81,6 +81,28 @@ export const CommandLine: React.FC = () => {
           console.error('[CommandLine] Error during transfer:', error);
           addLog(`Error during transfer: ${error}`, 'error');
         }
+      } else if (command.toLowerCase().startsWith('finals')) {
+        // Handle finals command with folder refresh
+        console.log('[CommandLine] Executing finals command');
+        const result = await window.electronAPI.executeCommand(command, currentDirectory);
+        console.log('[CommandLine] Finals command execution result:', result);
+        
+        if (result.success) {
+          console.log('[CommandLine] Finals command successful');
+          addLog(result.message, 'response');
+          setStatus('Finals completed', 'success');
+          // Refresh folder view to show renamed files
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          console.log('[CommandLine] Finals command failed:', result.message);
+          addLog(result.message, 'error');
+          setStatus('Finals failed', 'error');
+        }
       } else {
         // Handle other commands
         console.log('[CommandLine] Executing non-transfer command');

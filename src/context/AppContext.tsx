@@ -52,6 +52,17 @@ interface AppContextType {
   // Folder items
   folderItems: FileItem[];
   setFolderItems: (files: FileItem[]) => void;
+  // Document insights
+  documentInsights: string;
+  setDocumentInsights: (insights: string) => void;
+  isExtractingInsights: boolean;
+  setIsExtractingInsights: (isExtracting: boolean) => void;
+  // Selected files for function buttons
+  selectedFiles: string[];
+  setSelectedFiles: (files: string[]) => void;
+  // Clipboard for cut/copy/paste operations - persists across navigation
+  clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
+  setClipboard: (clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null }) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -80,6 +91,13 @@ export const AppProvider: React.FC<{
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [selectAllFiles, setSelectAllFiles] = useState<() => void>(() => () => {});
   const [folderItems, setFolderItems] = useState<FileItem[]>([]);
+  // Document insights state
+  const [documentInsights, setDocumentInsights] = useState<string>('');
+  const [isExtractingInsights, setIsExtractingInsights] = useState<boolean>(false);
+  // Selected files for function buttons
+  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+  // Clipboard for cut/copy/paste operations - persists across navigation
+  const [clipboard, setClipboard] = useState<{ files: FileItem[]; operation: 'cut' | 'copy' | null }>({ files: [], operation: null });
 
   // Load settings on mount
   useEffect(() => {
@@ -171,6 +189,17 @@ export const AppProvider: React.FC<{
     // Folder items
     folderItems,
     setFolderItems,
+    // Document insights
+    documentInsights,
+    setDocumentInsights,
+    isExtractingInsights,
+    setIsExtractingInsights,
+    // Selected files for function buttons
+    selectedFiles,
+    setSelectedFiles,
+    // Clipboard for cut/copy/paste operations
+    clipboard,
+    setClipboard,
   };
 
   return <AppContext.Provider value={value}>

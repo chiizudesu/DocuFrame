@@ -68,6 +68,8 @@ export const FolderInfoBar: React.FC = () => {
   )
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
+  const [clickCount, setClickCount] = useState(0)
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Optimized color values for consistent light mode appearance
   const bgColor = useColorModeValue('#f1f5f9', 'gray.800')
@@ -131,11 +133,28 @@ export const FolderInfoBar: React.FC = () => {
   }, [currentDirectory])
 
   const handleClick = () => {
-    setIsEditing(true)
-    setTimeout(() => {
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    }, 0)
+    if (isEditing) {
+      // If already editing, don't select all text on additional clicks
+      return;
+    }
+
+    setClickCount(prev => prev + 1);
+    
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+    }
+
+    clickTimeoutRef.current = setTimeout(() => {
+      setClickCount(0);
+    }, 300);
+
+    if (clickCount === 0) {
+      setIsEditing(true);
+      setTimeout(() => {
+        inputRef.current?.focus();
+        // Don't select all text, just focus to allow editing at any position
+      }, 0);
+    }
   }
 
   const handleBlur = () => {

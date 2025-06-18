@@ -52,8 +52,7 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   currentDirectory,
 }) => {
   const { addLog, setStatus } = useAppContext();
-  const [lateClaimsAmount, setLateClaimsAmount] = useState<number>(0);
-  const [claimsSection, setClaimsSection] = useState<'sales' | 'purchases'>('sales');
+
   const [isLoading, setIsLoading] = useState(false);
   const [gstData, setGstData] = useState<GSTData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,7 +116,7 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   };
 
   const extractGSTValues = (text: string, fileName: string): GSTData => {
-    // Extract numbers from GST return patterns
+    // Extract numbers from GST return patterns with their positions
     const salesPattern = /(?:box 5|total sales and income)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
     const purchasesPattern = /(?:box 11|total purchases and expenses)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
     const gstCollectedPattern = /(?:box 8|total gst collected on sales and income)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
@@ -143,28 +142,11 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
       totalGSTCredits,
       lateClaimsAmount,
       fileName,
-      extractedText: text.substring(0, 500) + '...', // Preview of extracted text
+      extractedText: text, // Keep full text for position analysis
     };
   };
 
-  const calculateLateClaimsAdjustment = () => {
-    if (lateClaimsAmount <= 0) return 0;
-    
-    // Late claims calculation: (late claims amount / 0.15) * 1.15
-    return (lateClaimsAmount / 0.15) * 1.15;
-  };
 
-  const getAdjustedTotal = () => {
-    if (!gstData) return 0;
-    
-    const adjustment = calculateLateClaimsAdjustment();
-    
-    if (claimsSection === 'sales') {
-      return gstData.totalSalesAndIncome + adjustment;
-    } else {
-      return gstData.totalPurchasesAndExpenses + adjustment;
-    }
-  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-NZ', {
@@ -177,19 +159,52 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   const handleClose = () => {
     setGstData(null);
     setError(null);
-    setLateClaimsAmount(0);
-    setClaimsSection('sales');
     onClose();
   };
 
-  // Helper to determine if late claims is for sales or purchases
-  function isLateClaimOnSales(text: string) {
-    // Heuristic: look for 'late claims on sales' or similar in the extracted text
-    return /late claims.*sales/i.test(text);
-  }
+  // Calculate grossed up late claims amount
+  const calculateGrossedUpLateClaimsAmount = (lateClaimsAmount: number): number => {
+    if (lateClaimsAmount <= 0) return 0;
+    // Gross up calculation: (late claims amount / 0.15) * 1.15
+    return (lateClaimsAmount / 0.15) * 1.15;
+  };
 
-  function isLateClaimOnPurchases(text: string) {
-    return /late claims.*purchases|expenses/i.test(text);
+  // Determine if late claims should be added to sales or purchases based on position
+  function determineLateClaimsTarget(text: string): 'sales' | 'purchases' | 'none' {
+    if (!text) return 'none';
+    
+    // Find positions of key sections in the text
+    const salesPattern = /(?:box 5|total sales and income)/i;
+    const purchasesPattern = /(?:box 11|total purchases and expenses)/i;
+    const lateClaimsPattern = /(?:late claims)/i;
+    
+    const salesMatch = text.search(salesPattern);
+    const purchasesMatch = text.search(purchasesPattern);
+    const lateClaimsMatch = text.search(lateClaimsPattern);
+    
+    // If no late claims found, return none
+    if (lateClaimsMatch === -1) return 'none';
+    
+    // If sales or purchases sections not found, fall back to text analysis
+    if (salesMatch === -1 || purchasesMatch === -1) {
+      // Check explicit text mentions
+      if (/late claims.*on.*sales/i.test(text)) return 'sales';
+      if (/late claims.*on.*purchases|late claims.*on.*expenses/i.test(text)) return 'purchases';
+      // Default to sales if unclear
+      return 'sales';
+    }
+    
+    // Determine position logic:
+    // If late claims appears after both sales and purchases sections, add to purchases
+    // If late claims appears between sales and purchases, add to sales
+    if (lateClaimsMatch > Math.max(salesMatch, purchasesMatch)) {
+      return 'purchases';
+    } else if (lateClaimsMatch > salesMatch && lateClaimsMatch < purchasesMatch) {
+      return 'sales';
+    } else {
+      // Default case: if late claims appears before both or in unclear position, add to sales
+      return 'sales';
+    }
   }
 
   return (
@@ -203,37 +218,76 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
         <ModalBody p={6}>
           {isLoading ? (
             <Flex justify="center" align="center" minH="120px"><Spinner /></Flex>
+          ) : error ? (
+            <Alert status="error">
+              <AlertIcon />
+              <Box>
+                <AlertTitle>Error!</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Box>
+            </Alert>
           ) : gstData ? (
-            <VStack align="stretch" spacing={4}>
-              {/* Emphasized result box */}
-              <Box bgGradient="linear(to-r, teal.400, blue.400)" color="white" borderRadius="md" p={4} boxShadow="md" textAlign="center">
-                <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>Amount after late claims</Text>
-                <Text fontSize="2xl" fontWeight="extrabold">
-                  {(() => {
-                    const { lateClaimsAmount, totalSalesAndIncome, totalPurchasesAndExpenses, extractedText } = gstData;
-                    const lateClaimValue = (lateClaimsAmount / 0.15) * 1.15;
-                    let result = totalSalesAndIncome;
-                    if (isLateClaimOnPurchases(extractedText)) {
-                      result = totalPurchasesAndExpenses + lateClaimValue;
-                    } else {
-                      result = totalSalesAndIncome + lateClaimValue;
-                    }
-                    return formatCurrency(result);
-                  })()}
-                </Text>
-              </Box>
-              {/* Info summary */}
-              <Box bg="gray.800" borderRadius="md" p={4}>
-                <VStack align="stretch" spacing={1}>
-                  <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
-                  <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
-                  <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
-                  <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
-                  <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
-                  <Text fontSize="sm"><strong>Late Claims Amount:</strong> {formatCurrency(gstData.lateClaimsAmount)}</Text>
+            (() => {
+              const { lateClaimsAmount, totalSalesAndIncome, totalPurchasesAndExpenses, extractedText } = gstData;
+              const lateClaimsTarget = determineLateClaimsTarget(extractedText);
+              const grossedUpAmount = calculateGrossedUpLateClaimsAmount(lateClaimsAmount);
+              
+              if (lateClaimsTarget === 'none' || lateClaimsAmount <= 0) {
+                // No late claims scenario
+                return (
+                  <VStack align="stretch" spacing={4}>
+                    <Box bgGradient="linear(to-r, gray.400, gray.600)" color="white" borderRadius="md" p={4} boxShadow="md" textAlign="center">
+                      <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>No Late Claims</Text>
+                      <Text fontSize="lg" fontWeight="bold">No adjustments required</Text>
+                    </Box>
+                    <Box bg="gray.800" borderRadius="md" p={4}>
+                      <VStack align="stretch" spacing={1}>
+                        <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
+                        <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
+                        <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
+                        <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
+                        <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
+                        <Text fontSize="sm" color="gray.400"><strong>Late Claims Amount:</strong> {formatCurrency(0)}</Text>
+                      </VStack>
+                    </Box>
+                  </VStack>
+                );
+              }
+              
+              // Late claims exist - calculate adjusted amount
+              const adjustedAmount = lateClaimsTarget === 'purchases' 
+                ? totalPurchasesAndExpenses + grossedUpAmount
+                : totalSalesAndIncome + grossedUpAmount;
+              
+              const targetSection = lateClaimsTarget === 'purchases' ? 'Total Purchases and Expenses' : 'Total Sales and Income';
+              
+              return (
+                <VStack align="stretch" spacing={4}>
+                  <Box bgGradient="linear(to-r, teal.400, blue.400)" color="white" borderRadius="md" p={4} boxShadow="md" textAlign="center">
+                    <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>
+                      {targetSection} after Late Claims
+                    </Text>
+                    <Text fontSize="2xl" fontWeight="extrabold">
+                      {formatCurrency(adjustedAmount)}
+                    </Text>
+                    <Text fontSize="xs" mt={1} opacity={0.9}>
+                      Added to {lateClaimsTarget === 'purchases' ? 'Purchases' : 'Sales'}
+                    </Text>
+                  </Box>
+                  <Box bg="gray.800" borderRadius="md" p={4}>
+                    <VStack align="stretch" spacing={1}>
+                      <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
+                      <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
+                      <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
+                      <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
+                      <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
+                      <Text fontSize="sm" color="orange.400"><strong>Late Claims Amount:</strong> {formatCurrency(gstData.lateClaimsAmount)}</Text>
+                      <Text fontSize="sm" color="green.400"><strong>Grossed Up Amount:</strong> {formatCurrency(grossedUpAmount)}</Text>
+                    </VStack>
+                  </Box>
                 </VStack>
-              </Box>
-            </VStack>
+              );
+            }) ()
           ) : (
             <Text>No GST data found.</Text>
           )}

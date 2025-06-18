@@ -36,6 +36,8 @@ interface ElectronAPI {
   uploadFiles: (files: { path: string; name: string }[], targetDirectory: string) => Promise<OperationResult[]>;
   moveFiles: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;
   copyFiles: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;
+  moveFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;
+  copyFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;
   
   // File icon support
   getFileIcon: (filePath: string) => Promise<string | null>;

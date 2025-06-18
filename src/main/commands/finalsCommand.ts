@@ -40,7 +40,7 @@ export async function finalsCommand(currentDirectory: string, preview: boolean =
       "IR7": "LTC Tax Return"
     };
 
-    const files: string[] = [];
+    let files: string[] = [];
     const entities: { [key: string]: { Year: string; Type: string; Desc: string } } = {};
     const resultFiles: FileItem[] = [];
     let renamedCount = 0;
@@ -113,41 +113,96 @@ export async function finalsCommand(currentDirectory: string, preview: boolean =
       }
     }
 
+    // Re-read directory contents after first pass for accurate file processing
+    if (!preview) {
+      files = [];
+      const updatedDirContents = fs.readdirSync(currentDirectory);
+      for (const item of updatedDirContents) {
+        const filePath = path.join(currentDirectory, item);
+        const stats = fs.statSync(filePath);
+        if (stats.isFile()) {
+          files.push(filePath);
+        }
+      }
+    }
+
     // Second pass: identify financial statements and minutes
     for (const filePath of files) {
-      // Skip files that were renamed in the first pass (only in non-preview mode)
-      if (!preview && !fs.existsSync(filePath)) {
-        continue;
-      }
-
       const filename = path.basename(filePath);
       if (!filename.toLowerCase().endsWith('.pdf')) {
         continue;
       }
 
+      // Skip files that contain IR codes (already processed in first pass)
+      if (filename.includes("IR3") || filename.includes("IR4") || filename.includes("IR6") || filename.includes("IR7") || filename.includes("IR526")) {
+        continue;
+      }
+
       const base = path.parse(filename).name;
-      let baseClean = base.replace(/\s*\(\d+\)/g, '').replace(/_/g, ' ');
-      baseClean = baseClean.replace(/\s+/g, ' ');
+      // Remove duplicate indicators like (1), (2), etc.
+      let baseClean = base.replace(/\s*\(\d+\)/g, '');
 
-      const entityMatch = baseClean.match(/^(.*?) - /);
-      if (entityMatch && !filename.includes("IR")) {
-        const key = entityMatch[1].trim();
+      // Handle underscore format: "Entity_-_Document" or "Entity_Document"
+      let entityMatch = baseClean.match(/^(.*?)_-_(.*)$/);
+      if (!entityMatch) {
+        // Try alternative pattern: "Entity_Document"
+        entityMatch = baseClean.match(/^(.*?)_(.*)$/);
+      }
 
-        if (entities[key]) {
-          const year = entities[key].Year;
+      if (entityMatch) {
+        let rawEntityName = entityMatch[1].trim();
+        let documentType = entityMatch[2].trim();
+
+        // Normalize entity name: replace underscores with spaces and fix apostrophes
+        let normalizedEntityName = rawEntityName
+          .replace(/_s_/g, "'s ")  // Convert _s_ to 's 
+          .replace(/_/g, ' ')      // Convert remaining underscores to spaces
+          .replace(/\s+/g, ' ')    // Clean up multiple spaces
+          .trim();
+
+        // Find matching entity from first pass
+        let matchedEntityKey = null;
+        let matchedEntityData = null;
+
+        // Try exact match first
+        if (entities[normalizedEntityName]) {
+          matchedEntityKey = normalizedEntityName;
+          matchedEntityData = entities[normalizedEntityName];
+        } else {
+          // Try fuzzy matching - look for entities that contain similar words
+          for (const [entityKey, entityData] of Object.entries(entities)) {
+            // Simple fuzzy matching: check if key words match
+            const normalizedWords = normalizedEntityName.toLowerCase().split(' ').filter(w => w.length > 2);
+            const entityWords = entityKey.toLowerCase().split(' ').filter(w => w.length > 2);
+            
+            const matchCount = normalizedWords.filter(word => 
+              entityWords.some(entityWord => entityWord.includes(word) || word.includes(entityWord))
+            ).length;
+
+            // If most words match, consider it a match
+            if (matchCount >= Math.min(normalizedWords.length, entityWords.length) * 0.7) {
+              matchedEntityKey = entityKey;
+              matchedEntityData = entityData;
+              break;
+            }
+          }
+        }
+
+        if (matchedEntityData) {
+          const year = matchedEntityData.Year;
           let suffix: string;
 
-          if (baseClean.includes("Financial Statements")) {
+          if (documentType.toLowerCase().includes("financial") && documentType.toLowerCase().includes("statements")) {
             suffix = "Financial Statements";
-          } else if (baseClean.includes("Minutes")) {
+          } else if (documentType.toLowerCase().includes("minutes")) {
             suffix = "Annual Minutes";
-          } else if (baseClean.includes("Profit and Loss")) {
+          } else if (documentType.toLowerCase().includes("profit") && documentType.toLowerCase().includes("loss")) {
             suffix = "Statement of Profit and Loss";
           } else {
             continue;
           }
 
-          const newName = `${key} - ${year} ${suffix}.pdf`;
+          const newName = `${matchedEntityKey} - ${year} ${suffix}.pdf`;
           const newPath = path.join(currentDirectory, newName);
 
           if (filename !== newName) {

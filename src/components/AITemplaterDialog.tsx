@@ -45,7 +45,8 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
 
-  const isFinals = /[\\/]Finals[\\/]?$/i.test(currentDirectory);
+  // Remove finals folder restriction - allow AI templater to work in any folder
+  // const isFinals = /[\\/]Finals[\\/]?$/i.test(currentDirectory);
 
   useEffect(() => {
     if (isOpen) {
@@ -160,222 +161,215 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
         </ModalHeader>
         <ModalCloseButton />
         <ModalBody p={6} overflow="hidden" display="flex" flexDirection="column">
-          {!isFinals ? (
-            <Alert status="error" borderRadius="md">
-              <AlertIcon />
-              This function is only available in a folder named "Finals".
-            </Alert>
-          ) : (
-            <Flex 
-              direction={{ base: "column", md: "row" }}
-              gap={6}
-              flex="1"
-              overflow="hidden"
+          <Flex 
+            direction={{ base: "column", md: "row" }}
+            gap={6}
+            flex="1"
+            overflow="hidden"
+          >
+            {/* Left Column - Form */}
+            <Box 
+              flex={{ base: "none", md: "0 0 400px" }}
+              minH={{ base: "auto", md: "0" }}
+              display="flex"
+              flexDirection="column"
+              p={4}
+              bg={useColorModeValue('gray.50', 'gray.700')}
+              borderRadius="md"
             >
-              {/* Left Column - Form */}
-              <Box 
-                flex={{ base: "none", md: "0 0 400px" }}
-                minH={{ base: "auto", md: "0" }}
-                display="flex"
-                flexDirection="column"
-                p={4}
-                bg={useColorModeValue('gray.50', 'gray.700')}
-                borderRadius="md"
-              >
-                <VStack align="stretch" spacing={4} h="full">
-                  <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
-                    Generate a client email from a template, using data extracted from selected PDFs.
-                  </Text>
-                  
-                  <FormControl>
-                    <FormLabel fontSize="sm">Select Template</FormLabel>
-                    <Select 
-                      placeholder="Select template..." 
-                      value={selectedTemplate?.filename || ''} 
-                      onChange={handleTemplateChange} 
-                      isDisabled={loading || templates.length === 0}
-                      size="sm"
-                    >
-                      {templates.map(t => (
-                        <option key={t.filename} value={t.filename}>{t.name}</option>
-                      ))}
-                    </Select>
-                  </FormControl>
-
-                  {/* PDF Selection Area - Scrollable */}
-                  <Box flex="1" minH="0" display="flex" flexDirection="column">
-                    {selectedTemplate && (selectedTemplate.categories as string[]).map((cat: string) => (
-                      <FormControl key={cat} mb={4} flex="1" display="flex" flexDirection="column">
-                        <FormLabel fontSize="sm">
-                          Select PDF for {cat.replace(/_/g, ' ')}
-                        </FormLabel>
-                        <Box 
-                          flex="1"
-                          maxH="150px"
-                          overflowY="auto"
-                          border="1px solid"
-                          borderColor={borderColor}
-                          borderRadius="md"
-                          p={3}
-                          css={{
-                            '&::-webkit-scrollbar': {
-                              width: '4px',
-                            },
-                            '&::-webkit-scrollbar-track': {
-                              background: 'transparent',
-                            },
-                            '&::-webkit-scrollbar-thumb': {
-                              background: useColorModeValue('#CBD5E0', '#4A5568'),
-                              borderRadius: '2px',
-                            },
-                          }}
-                        >
-                          <VStack align="start" spacing={2}>
-                            {files.map(f => (
-                              <Checkbox
-                                key={f.path}
-                                isChecked={selectedFiles[cat] === f.path}
-                                onChange={() => handleFileSelect(cat, f)}
-                                isDisabled={loading}
-                                size="sm"
-                                w="full"
-                              >
-                                <Text fontSize="xs" noOfLines={1} w="full">
-                                  {f.name}
-                                </Text>
-                              </Checkbox>
-                            ))}
-                          </VStack>
-                        </Box>
-                      </FormControl>
-                    ))}
-                  </Box>
-
-                  <Button
-                    leftIcon={<Sparkles size={16} />}
-                    colorScheme="yellow"
-                    onClick={handleGenerate}
-                    isLoading={loading}
-                    loadingText="Generating..."
-                    isDisabled={loading || !selectedTemplate || (selectedTemplate.categories as string[]).some((cat: string) => !selectedFiles[cat])}
-                    size="sm"
-                    w="full"
-                    mt={3}
-                  >
-                    Generate Email
-                  </Button>
-
-                  {error && (
-                    <Alert status="error" borderRadius="md" fontSize="sm" p={3}>
-                      <AlertIcon boxSize={4} />
-                      <Text fontSize="xs">{error}</Text>
-                    </Alert>
-                  )}
-                </VStack>
-              </Box>
-
-              {/* Right Column - Generated Email */}
-              <Box 
-                flex="1"
-                minH={{ base: "300px", md: "0" }}
-                display="flex"
-                flexDirection="column"
-                p={4}
-                bg={useColorModeValue('gray.50', 'gray.700')}
-                borderRadius="md"
-              >
-                <Text 
-                  fontSize="sm" 
-                  color={useColorModeValue('gray.600', 'gray.300')} 
-                  fontWeight="semibold"
-                  mb={4}
-                >
-                  Generated Email
+              <VStack align="stretch" spacing={4} h="full">
+                <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
+                  Generate a client email from a template, using data extracted from selected PDFs.
                 </Text>
                 
-                <Box 
-                  bg={useColorModeValue('yellow.50', 'gray.900')} 
-                  borderRadius="md" 
-                  p={4}
-                  borderWidth="1px" 
-                  borderColor={borderColor} 
-                  position="relative"
-                  h="450px"
-                  display="flex"
-                  flexDirection="column"
-                >
-                  {loading && (
-                    <Flex justify="center" align="center" flex="1">
-                      <VStack spacing={3}>
-                        <Spinner size="md" color="yellow.500" />
-                        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.300')}>
-                          Generating email...
-                        </Text>
-                      </VStack>
-                    </Flex>
-                  )}
-                  
-                  {!loading && !result && (
-                    <Flex justify="center" align="center" flex="1">
-                      <Text 
-                        fontSize="sm" 
-                        color={useColorModeValue('gray.500', 'gray.400')} 
-                        textAlign="center"
-                        maxW="250px"
-                      >
-                        Select a template and PDFs, then click "Generate Email" to see the result here.
-                      </Text>
-                    </Flex>
-                  )}
-                  
-                  {result && !loading && (
-                    <Box 
-                      flex="1"
-                      overflowY="auto" 
-                      pr={2}
-                      css={{
-                        '&::-webkit-scrollbar': {
-                          width: '6px',
-                        },
-                        '&::-webkit-scrollbar-track': {
-                          background: 'transparent',
-                        },
-                        '&::-webkit-scrollbar-thumb': {
-                          background: useColorModeValue('#CBD5E0', '#4A5568'),
-                          borderRadius: '3px',
-                        },
-                        '&::-webkit-scrollbar-thumb:hover': {
-                          background: useColorModeValue('#A0AEC0', '#2D3748'),
-                        },
-                      }}
-                    >
-                      <Text 
-                        whiteSpace="pre-line" 
-                        fontSize="sm"
-                        lineHeight="1.5"
-                      >
-                        {result}
-                      </Text>
-                    </Box>
-                  )}
-                  
-                  <IconButton
-                    aria-label="Copy generated email"
-                    icon={<Copy size={16} />}
+                <FormControl>
+                  <FormLabel fontSize="sm">Select Template</FormLabel>
+                  <Select 
+                    placeholder="Select template..." 
+                    value={selectedTemplate?.filename || ''} 
+                    onChange={handleTemplateChange} 
+                    isDisabled={loading || templates.length === 0}
                     size="sm"
-                    position="absolute"
-                    top={2}
-                    right={2}
-                    onClick={handleCopy}
-                    colorScheme={copied ? 'green' : 'gray'}
-                    variant="ghost"
-                    title={copied ? 'Copied!' : 'Copy to clipboard'}
-                    style={{ display: result && !loading ? 'flex' : 'none' }}
-                  />
+                  >
+                    {templates.map(t => (
+                      <option key={t.filename} value={t.filename}>{t.name}</option>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                {/* PDF Selection Area - Scrollable */}
+                <Box flex="1" minH="0" display="flex" flexDirection="column">
+                  {selectedTemplate && (selectedTemplate.categories as string[]).map((cat: string) => (
+                    <FormControl key={cat} mb={4} flex="1" display="flex" flexDirection="column">
+                      <FormLabel fontSize="sm">
+                        Select PDF for {cat.replace(/_/g, ' ')}
+                      </FormLabel>
+                      <Box 
+                        flex="1"
+                        maxH="150px"
+                        overflowY="auto"
+                        border="1px solid"
+                        borderColor={borderColor}
+                        borderRadius="md"
+                        p={3}
+                        css={{
+                          '&::-webkit-scrollbar': {
+                            width: '4px',
+                          },
+                          '&::-webkit-scrollbar-track': {
+                            background: 'transparent',
+                          },
+                          '&::-webkit-scrollbar-thumb': {
+                            background: useColorModeValue('#CBD5E0', '#4A5568'),
+                            borderRadius: '2px',
+                          },
+                        }}
+                      >
+                        <VStack align="start" spacing={2}>
+                          {files.map(f => (
+                            <Checkbox
+                              key={f.path}
+                              isChecked={selectedFiles[cat] === f.path}
+                              onChange={() => handleFileSelect(cat, f)}
+                              isDisabled={loading}
+                              size="sm"
+                              w="full"
+                            >
+                              <Text fontSize="xs" noOfLines={1} w="full">
+                                {f.name}
+                              </Text>
+                            </Checkbox>
+                          ))}
+                        </VStack>
+                      </Box>
+                    </FormControl>
+                  ))}
                 </Box>
+
+                <Button
+                  leftIcon={<Sparkles size={16} />}
+                  colorScheme="yellow"
+                  onClick={handleGenerate}
+                  isLoading={loading}
+                  loadingText="Generating..."
+                  isDisabled={loading || !selectedTemplate || (selectedTemplate.categories as string[]).some((cat: string) => !selectedFiles[cat])}
+                  size="sm"
+                  w="full"
+                  mt={3}
+                >
+                  Generate Email
+                </Button>
+
+                {error && (
+                  <Alert status="error" borderRadius="md" fontSize="sm" p={3}>
+                    <AlertIcon boxSize={4} />
+                    <Text fontSize="xs">{error}</Text>
+                  </Alert>
+                )}
+              </VStack>
+            </Box>
+
+            {/* Right Column - Generated Email */}
+            <Box 
+              flex="1"
+              minH={{ base: "300px", md: "0" }}
+              display="flex"
+              flexDirection="column"
+              p={4}
+              bg={useColorModeValue('gray.50', 'gray.700')}
+              borderRadius="md"
+            >
+              <Text 
+                fontSize="sm" 
+                color={useColorModeValue('gray.600', 'gray.300')} 
+                fontWeight="semibold"
+                mb={4}
+              >
+                Generated Email
+              </Text>
+              
+              <Box 
+                bg={useColorModeValue('yellow.50', 'gray.900')} 
+                borderRadius="md" 
+                p={4}
+                borderWidth="1px" 
+                borderColor={borderColor} 
+                position="relative"
+                h="450px"
+                display="flex"
+                flexDirection="column"
+              >
+                {loading && (
+                  <Flex justify="center" align="center" flex="1">
+                    <VStack spacing={3}>
+                      <Spinner size="md" color="yellow.500" />
+                      <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.300')}>
+                        Generating email...
+                      </Text>
+                    </VStack>
+                  </Flex>
+                )}
+                
+                {!loading && !result && (
+                  <Flex justify="center" align="center" flex="1">
+                    <Text 
+                      fontSize="sm" 
+                      color={useColorModeValue('gray.500', 'gray.400')} 
+                      textAlign="center"
+                      maxW="250px"
+                    >
+                      Select a template and PDFs, then click "Generate Email" to see the result here.
+                    </Text>
+                  </Flex>
+                )}
+                
+                {result && !loading && (
+                  <Box 
+                    flex="1"
+                    overflowY="auto" 
+                    pr={2}
+                    css={{
+                      '&::-webkit-scrollbar': {
+                        width: '6px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        background: 'transparent',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        background: useColorModeValue('#CBD5E0', '#4A5568'),
+                        borderRadius: '3px',
+                      },
+                      '&::-webkit-scrollbar-thumb:hover': {
+                        background: useColorModeValue('#A0AEC0', '#2D3748'),
+                      },
+                    }}
+                  >
+                    <Text 
+                      whiteSpace="pre-line" 
+                      fontSize="sm"
+                      lineHeight="1.5"
+                    >
+                      {result}
+                    </Text>
+                  </Box>
+                )}
+                
+                <IconButton
+                  aria-label="Copy generated email"
+                  icon={<Copy size={16} />}
+                  size="sm"
+                  position="absolute"
+                  top={2}
+                  right={2}
+                  onClick={handleCopy}
+                  colorScheme={copied ? 'green' : 'gray'}
+                  variant="ghost"
+                  title={copied ? 'Copied!' : 'Copy to clipboard'}
+                  style={{ display: result && !loading ? 'flex' : 'none' }}
+                />
               </Box>
-            </Flex>
-          )}
+            </Box>
+          </Flex>
         </ModalBody>
       </ModalContent>
     </Modal>

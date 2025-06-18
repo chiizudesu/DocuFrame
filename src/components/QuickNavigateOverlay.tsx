@@ -528,6 +528,26 @@ export const QuickNavigateOverlay: React.FC = () => {
           console.error('[QuickNavigate] Error during transfer:', error);
           addLog(`Error during transfer: ${error}`, 'error');
         }
+      } else if (command === 'finals') {
+        // Handle finals command with folder refresh
+        console.log('[QuickNavigate] Executing finals command');
+        const result = await window.electronAPI.executeCommand(command, currentDirectory);
+        console.log('[QuickNavigate] Finals command execution result:', result);
+        
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('Finals completed', 'success');
+          // Refresh folder view to show renamed files
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          addLog(result.message, 'error');
+          setStatus('Finals failed', 'error');
+        }
       } else {
         // Handle other commands
         console.log('[QuickNavigate] Executing non-transfer command');
@@ -625,7 +645,7 @@ export const QuickNavigateOverlay: React.FC = () => {
           <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>
             <Box p={4} bg={commandBgColor}>
               <Text fontSize="sm" fontWeight="medium" mb={2}>
-                Preview of {previewFiles.length} file{previewFiles.length > 1 ? 's' : ''} to transfer:
+                Preview of {previewFiles.length} file{previewFiles.length > 1 ? 's' : ''} to {inputValue.trim().startsWith('finals') ? 'rename' : 'transfer'}:
               </Text>
               <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
                 {previewFiles.map((file, index) => (

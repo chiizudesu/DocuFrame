@@ -143,7 +143,7 @@ const formatFileSize = (size: string | undefined) => {
 
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
-  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory, setStatus, setSelectAllFiles, folderItems, setFolderItems } = useAppContext()
+  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory, setStatus, setSelectAllFiles, folderItems, setFolderItems, selectedFiles, setSelectedFiles, setDocumentInsights, setIsExtractingInsights, clipboard, setClipboard } = useAppContext()
   
   // All useState hooks next
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
@@ -170,7 +170,6 @@ export const FileGrid: React.FC = () => {
   })
   const [isRenaming, setIsRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([])
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
@@ -182,8 +181,6 @@ export const FileGrid: React.FC = () => {
   const [dragCounter, setDragCounter] = useState(0)
   const dropAreaRef = useRef<HTMLDivElement>(null)
 
-  // Clipboard state for cut/copy
-  const [clipboard, setClipboard] = useState<{ files: FileItem[]; operation: 'cut' | 'copy' | null }>({ files: [], operation: null });
   const [blankContextMenu, setBlankContextMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({ isOpen: false, position: { x: 0, y: 0 } });
 
   // Add state for lastClickedFile
@@ -424,6 +421,40 @@ export const FileGrid: React.FC = () => {
             } catch (error) {
               addLog(`Failed to extract text: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
               setStatus('Text extraction failed', 'error')
+            }
+          }
+          break
+        case 'extract_insights':
+          if (contextMenu.fileItem.name.toLowerCase().endsWith('.pdf')) {
+            // Set this file as the selected file for the Extract Insights function
+            setSelectedFiles([contextMenu.fileItem.name])
+            setIsExtractingInsights(true)
+            setStatus(`Extracting insights from: ${contextMenu.fileItem.name}`, 'info')
+            addLog(`Extracting insights from: ${contextMenu.fileItem.name}`)
+            
+            try {
+              // Read PDF content
+              const pdfText = await window.electronAPI.readPdfText(contextMenu.fileItem.path)
+              
+              if (!pdfText || pdfText.trim().length === 0) {
+                throw new Error('Failed to extract text from PDF or PDF is empty')
+              }
+
+              // Import the extract insights function dynamically
+              const { extractDocumentInsights } = await import('../services/openai')
+              const insights = await extractDocumentInsights(pdfText, contextMenu.fileItem.name)
+              
+              // Set document insights in the context
+              setDocumentInsights(insights)
+              setStatus('Document insights extracted successfully', 'success')
+              addLog(`Successfully extracted insights from ${contextMenu.fileItem.name}`, 'response')
+            } catch (error) {
+              const errorMsg = `Failed to extract insights: ${error instanceof Error ? error.message : 'Unknown error'}`
+              addLog(errorMsg, 'error')
+              setStatus('Failed to extract insights', 'error')
+              setDocumentInsights('')
+            } finally {
+              setIsExtractingInsights(false)
             }
           }
           break
@@ -929,22 +960,51 @@ export const FileGrid: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedFiles, sortedFiles, clipboard, isRenaming]);
 
-  // Paste handler
+  // Enhanced paste handler with conflict resolution
   const handlePaste = async () => {
     if (!clipboard.files.length || !clipboard.operation) return;
     const op = clipboard.operation;
+    
     try {
+      let results: Array<{ file: string; status: string; path?: string; error?: string; reason?: string }> = [];
+      
       if (op === 'cut') {
-        await window.electronAPI.moveFiles(clipboard.files.map(f => f.path), currentDirectory);
+        results = await window.electronAPI.moveFilesWithConflictResolution(clipboard.files.map(f => f.path), currentDirectory);
       } else if (op === 'copy') {
-        await window.electronAPI.copyFiles(clipboard.files.map(f => f.path), currentDirectory);
+        results = await window.electronAPI.copyFilesWithConflictResolution(clipboard.files.map(f => f.path), currentDirectory);
       }
-      setClipboard({ files: [], operation: null });
-      setStatus(`${op === 'cut' ? 'Moved' : 'Copied'} ${clipboard.files.length} item(s)`, 'success');
+      
+      // Process results
+      const successful = results.filter(r => r.status === 'success').length;
+      const failed = results.filter(r => r.status === 'error').length;
+      const skipped = results.filter(r => r.status === 'skipped').length;
+      
+      // Clear clipboard only for cut operations or successful operations
+      if (op === 'cut' || successful > 0) {
+        setClipboard({ files: [], operation: null });
+      }
+      
+      // Show status message
+      let message = '';
+      if (successful > 0) {
+        message += `${op === 'cut' ? 'Moved' : 'Copied'} ${successful} item(s)`;
+      }
+      if (skipped > 0) {
+        message += `${successful > 0 ? ', ' : ''}${skipped} skipped`;
+      }
+      if (failed > 0) {
+        message += `${(successful > 0 || skipped > 0) ? ', ' : ''}${failed} failed`;
+      }
+      
+      setStatus(message || `${op === 'cut' ? 'Move' : 'Copy'} completed`, successful > 0 ? 'success' : failed > 0 ? 'error' : 'info');
+      
+      // Refresh folder contents
       const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
       setFolderItems(contents);
+      
     } catch (err) {
-      setStatus(`Failed to ${op === 'cut' ? 'move' : 'copy'} files`, 'error');
+      setStatus(`Failed to ${op === 'cut' ? 'move' : 'copy'} files: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+      addLog(`Paste operation failed: ${err}`, 'error');
     }
   };
 
@@ -1084,10 +1144,11 @@ export const FileGrid: React.FC = () => {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       position="relative"
+      overflowY="auto"
       overflowX="auto" 
       p={0} 
       m={0}
-      minHeight="300px"
+      height="100%"
       width="100%"
       onContextMenu={e => {
         if (e.target === e.currentTarget) {
@@ -1333,10 +1394,16 @@ export const FileGrid: React.FC = () => {
             <Text fontSize="sm">Rename</Text>
           </Flex>
           {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')} color="blue.400">
-              <FileText size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Extract Text</Text>
-            </Flex>
+            <>
+              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')} color="blue.400">
+                <FileText size={16} style={{ marginRight: '8px' }} />
+                <Text fontSize="sm">Extract Text</Text>
+              </Flex>
+              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_insights')} color="cyan.400">
+                <FileText size={16} style={{ marginRight: '8px' }} />
+                <Text fontSize="sm">Extract Insights</Text>
+              </Flex>
+            </>
           )}
           {showMergePDFs && (
             <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('merge_pdfs')} color="red.400">
@@ -1412,7 +1479,7 @@ export const FileGrid: React.FC = () => {
   };
 
   return (
-    <Box p={viewMode === 'grid' ? 0 : 0} m={0}>
+    <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%">
       {viewMode === 'grid' ? renderGridView() : renderListView()}
       <ContextMenu 
         contextMenu={contextMenu}

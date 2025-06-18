@@ -39,9 +39,11 @@ const CustomTitleBar: React.FC = () => {
   const iconColor = useColorModeValue('#64748b', 'gray.400');
   return (
     <Flex align="center" width="100%" bg={bgColor} h="32px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties} px={0} borderBottom="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')}>
-      <Box display="flex" alignItems="center" gap={2} pl={2}>
-        {/* Logo placeholder */}
-        <Box w="20px" h="20px" bg={useColorModeValue('#3b82f6', 'blue.400')} borderRadius="md" mr={2} />
+      <Box display="flex" alignItems="center" gap={1} pl={2}>
+        {/* App Icon */}
+        <Box w="20px" h="20px" mr={1}>
+          <img src="/32.ico" alt="DocuFrame" style={{ width: '20px', height: '20px' }} />
+        </Box>
         <Text fontWeight="bold" fontSize="sm" color={iconColor} userSelect="none">DocuFrame</Text>
       </Box>
       <Box flex="1" />
@@ -57,7 +59,7 @@ const CustomTitleBar: React.FC = () => {
           _focus={{ boxShadow: 'none', bg: 'transparent' }}
           _active={{ bg: '#d1d5db' }}
           borderRadius={0}
-          minW="32px"
+          minW="46px"
           h="32px"
           p={0}
           display="flex"
@@ -80,7 +82,7 @@ const CustomTitleBar: React.FC = () => {
           _focus={{ boxShadow: 'none', bg: 'transparent' }}
           _active={{ bg: useColorModeValue('#d1d5db', 'gray.500') }}
           borderRadius={0}
-          minW="32px"
+          minW="46px"
           h="32px"
           p={0}
           display="flex"
@@ -139,7 +141,7 @@ const CustomTitleBar: React.FC = () => {
           _focus={{ boxShadow: 'none', bg: 'transparent' }}
           _active={{ bg: '#dc2626', color: 'white' }}
           borderRadius={0}
-          minW="32px"
+          minW="46px"
           h="32px"
           p={0}
           display="flex"
@@ -166,6 +168,16 @@ export const Layout: React.FC = () => {
   const startY = useRef(0);
   const startHeight = useRef(0);
 
+  // Sidebar resize functionality
+  const isSidebarDragging = useRef(false);
+  const startX = useRef(0);
+  const startWidth = useRef(0);
+  const lastUpdateTime = useRef(0);
+  const MIN_SIDEBAR_WIDTH = 200;
+  const MAX_SIDEBAR_WIDTH = 600;
+  const COLLAPSE_THRESHOLD = 180;
+  const THROTTLE_MS = 16; // ~60fps
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
     startY.current = e.clientY;
@@ -173,25 +185,78 @@ export const Layout: React.FC = () => {
     document.body.style.cursor = 'row-resize';
   }, [logHeight]);
 
+  // Sidebar resize handlers
+  const handleSidebarMouseDown = useCallback((e: React.MouseEvent) => {
+    if (sidebarCollapsed) return; // Don't resize if collapsed
+    isSidebarDragging.current = true;
+    startX.current = e.clientX;
+    startWidth.current = sidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  }, [sidebarWidth, sidebarCollapsed]);
+
   useEffect(() => {
+    let animationFrame: number;
+    
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current) return;
-      const delta = e.clientY - startY.current;
-      let newHeight = startHeight.current - delta;
-      newHeight = Math.max(100, Math.min(newHeight, 500)); // Clamp height
-      setLogHeight(newHeight);
+      // Use requestAnimationFrame for smooth resizing
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
+      
+      animationFrame = requestAnimationFrame(() => {
+        const now = Date.now();
+        const timeSinceLastUpdate = now - lastUpdateTime.current;
+        
+        // Throttle updates for better performance
+        if (timeSinceLastUpdate < THROTTLE_MS) {
+          return;
+        }
+        
+        lastUpdateTime.current = now;
+        
+        // Handle log resize
+        if (isDragging.current) {
+          const delta = e.clientY - startY.current;
+          let newHeight = startHeight.current - delta;
+          newHeight = Math.max(100, Math.min(newHeight, 500)); // Clamp height
+          setLogHeight(newHeight);
+        }
+        
+        // Handle sidebar resize
+        if (isSidebarDragging.current) {
+          const delta = e.clientX - startX.current;
+          let newWidth = startWidth.current + delta;
+          newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(newWidth, MAX_SIDEBAR_WIDTH));
+          setSidebarWidth(newWidth);
+          
+          // Auto-collapse if width gets too small
+          if (newWidth < COLLAPSE_THRESHOLD && !sidebarCollapsed) {
+            setSidebarCollapsed(true);
+          }
+        }
+      });
     };
+    
     const handleMouseUp = () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
       isDragging.current = false;
+      isSidebarDragging.current = false;
       document.body.style.cursor = '';
     };
-    window.addEventListener('mousemove', handleMouseMove);
+    
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
     window.addEventListener('mouseup', handleMouseUp);
     return () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+      }
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [logHeight]);
+  }, [logHeight, sidebarWidth, sidebarCollapsed]);
 
   return <Grid templateAreas={`
         "titlebar titlebar titlebar"
@@ -210,17 +275,48 @@ export const Layout: React.FC = () => {
       <FunctionPanels />
     </GridItem>
     {/* Client Info Sidebar (formerly Folder Tree) */}
-    <GridItem area="sidebar" borderRight="1px" borderColor={borderColor} bg={bgColor} overflowY="auto" display="flex" flexDirection="column" boxShadow="1px 0px 3px rgba(0,0,0,0.05)" className="enhanced-scrollbar">
+    <GridItem area="sidebar" borderRight="1px" borderColor={borderColor} bg={bgColor} overflowY="auto" display="flex" flexDirection="column" boxShadow="1px 0px 3px rgba(0,0,0,0.05)" className="enhanced-scrollbar" position="relative">
       <Box flex="1" overflowY="auto" className="enhanced-scrollbar">
-        <ClientInfoPane collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)} isCollapsed={sidebarCollapsed} />
+        <ClientInfoPane 
+          collapsed={sidebarCollapsed} 
+          onToggleCollapse={() => {
+            setSidebarCollapsed(c => {
+              // If expanding from collapsed state, ensure minimum width
+              if (c && sidebarWidth < MIN_SIDEBAR_WIDTH) {
+                setSidebarWidth(MIN_SIDEBAR_WIDTH);
+              }
+              return !c;
+            });
+          }} 
+          isCollapsed={sidebarCollapsed} 
+        />
       </Box>
+      {/* Sidebar Resize Handle */}
+      {!sidebarCollapsed && (
+        <Box
+          position="absolute"
+          top="0"
+          right="-3px"
+          width="6px"
+          height="100%"
+          cursor="col-resize"
+          onMouseDown={handleSidebarMouseDown}
+          bg="transparent"
+          _hover={{
+            bg: useColorModeValue('blue.200', 'blue.600'),
+            opacity: 0.7
+          }}
+          transition="all 0.2s"
+          zIndex={10}
+        />
+      )}
     </GridItem>
     {/* Folder Info Bar */}
     <GridItem area="header" bg={bgColor} p={2} borderBottom="1px" borderColor={borderColor}>
       <FolderInfoBar />
     </GridItem>
     {/* Main Content Area */}
-    <GridItem area="main" bg={mainBgColor} overflow="auto" className="enhanced-scrollbar">
+    <GridItem area="main" bg={mainBgColor} overflow="auto" className="enhanced-scrollbar" display="flex" flexDirection="column" minHeight="0">
       <FileGrid />
     </GridItem>
     {/* Resize Handle for Output Log (only over main content, not sidebar) */}

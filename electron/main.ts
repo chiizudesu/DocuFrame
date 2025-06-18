@@ -86,6 +86,7 @@ const createWindow = () => {
     height: 800,
     frame: false,
     titleBarStyle: 'hidden',
+    icon: path.join(__dirname, '../public/256.ico'), // Use the high-resolution icon
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -844,6 +845,162 @@ ipcMain.handle('copy-files', async (_, files: string[], targetDirectory: string)
   }
 });
 
+// Enhanced move files with conflict resolution and copy numbering
+ipcMain.handle('move-files-with-conflict-resolution', async (_, files: string[], targetDirectory: string) => {
+  try {
+    const results: Array<{ file: string; status: string; path?: string; error?: string; reason?: string }> = [];
+    
+    for (const filePath of files) {
+      try {
+        const fileName = path.basename(filePath);
+        let targetPath = path.join(targetDirectory, fileName);
+        
+        // Check if target is different from source
+        if (path.dirname(filePath) === targetDirectory) {
+          results.push({ file: fileName, status: 'skipped', reason: 'Same directory' });
+          continue;
+        }
+        
+        // Handle file conflicts with user choice
+        if (await fileExists(targetPath)) {
+          const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Replace', 'Make Copy', 'Skip', 'Cancel'],
+            defaultId: 1,
+            title: 'File Already Exists',
+            message: `The file "${fileName}" already exists in the destination folder.`,
+            detail: 'Choose how to handle this conflict:'
+          });
+          
+          if (response === 3) { // Cancel
+            throw new Error('Move cancelled by user');
+          } else if (response === 2) { // Skip
+            results.push({ file: fileName, status: 'skipped', reason: 'File exists, skipped by user' });
+            continue;
+          } else if (response === 1) { // Make Copy
+            targetPath = await generateUniqueFileName(targetPath);
+          }
+          // response === 0 means replace, continue with original targetPath
+        }
+        
+        // Copy the file first
+        await fsPromises.copyFile(filePath, targetPath);
+        
+        // Verify the copy was successful
+        if (!(await fileExists(targetPath))) {
+          throw new Error('File copy failed - destination file not found after copy');
+        }
+        
+        // Delete the original file
+        await fsPromises.unlink(filePath);
+        
+        results.push({ file: path.basename(targetPath), status: 'success', path: targetPath });
+      } catch (error) {
+        console.error(`Error moving file ${filePath}:`, error);
+        // If copy succeeded but delete failed, try to clean up
+        const fileName = path.basename(filePath);
+        const targetPath = path.join(targetDirectory, fileName);
+        try {
+          if (await fileExists(targetPath)) {
+            await fsPromises.unlink(targetPath);
+          }
+        } catch (cleanupError) {
+          // Ignore cleanup errors
+        }
+        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error in move-files-with-conflict-resolution handler:', error);
+    throw error;
+  }
+});
+
+// Enhanced copy files with conflict resolution and copy numbering
+ipcMain.handle('copy-files-with-conflict-resolution', async (_, files: string[], targetDirectory: string) => {
+  try {
+    const results: Array<{ file: string; status: string; path?: string; error?: string; reason?: string }> = [];
+    
+    for (const filePath of files) {
+      try {
+        const fileName = path.basename(filePath);
+        let targetPath = path.join(targetDirectory, fileName);
+        
+        // Handle file conflicts with user choice
+        if (await fileExists(targetPath)) {
+          const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Replace', 'Make Copy', 'Skip', 'Cancel'],
+            defaultId: 1,
+            title: 'File Already Exists',
+            message: `The file "${fileName}" already exists in the destination folder.`,
+            detail: 'Choose how to handle this conflict:'
+          });
+          
+          if (response === 3) { // Cancel
+            throw new Error('Copy cancelled by user');
+          } else if (response === 2) { // Skip
+            results.push({ file: fileName, status: 'skipped', reason: 'File exists, skipped by user' });
+            continue;
+          } else if (response === 1) { // Make Copy
+            targetPath = await generateUniqueFileName(targetPath);
+          }
+          // response === 0 means replace, continue with original targetPath
+        }
+        
+        // Copy the file
+        const stats = await fsPromises.stat(filePath);
+        if (stats.isDirectory()) {
+          // For directories, copy recursively
+          await fsPromises.cp(filePath, targetPath, { recursive: true });
+        } else {
+          await fsPromises.copyFile(filePath, targetPath);
+        }
+        
+        results.push({ file: path.basename(targetPath), status: 'success', path: targetPath });
+      } catch (error) {
+        console.error(`Error copying file ${filePath}:`, error);
+        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+      }
+    }
+    
+    return results;
+  } catch (error) {
+    console.error('Error in copy-files-with-conflict-resolution handler:', error);
+    throw error;
+  }
+});
+
+// Helper function to check if file exists
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fsPromises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Helper function to generate unique filename with (#) suffix
+async function generateUniqueFileName(originalPath: string): Promise<string> {
+  const dir = path.dirname(originalPath);
+  const ext = path.extname(originalPath);
+  const nameWithoutExt = path.basename(originalPath, ext);
+  
+  let counter = 1;
+  let newPath = originalPath;
+  
+  while (await fileExists(newPath)) {
+    const newName = `${nameWithoutExt} (${counter})${ext}`;
+    newPath = path.join(dir, newName);
+    counter++;
+  }
+  
+  return newPath;
+}
+
 // Emit events for maximize/unmaximize
 app.on('browser-window-created', (event, win) => {
   win.on('maximize', () => {
@@ -980,4 +1137,35 @@ ipcMain.handle('read-pdf-text', async (_, filePath: string) => {
 ipcMain.handle('load-yaml-template', async (event, filePath) => {
   const content = fs.readFileSync(filePath, 'utf8');
   return yaml.load(content);
+});
+
+// File operations for template management
+ipcMain.handle('read-text-file', async (_, filePath: string) => {
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    return content;
+  } catch (error) {
+    console.error('Error reading text file:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('write-text-file', async (_, filePath: string, content: string) => {
+  try {
+    fs.writeFileSync(filePath, content, 'utf8');
+    return { success: true };
+  } catch (error) {
+    console.error('Error writing text file:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('delete-file', async (_, filePath: string) => {
+  try {
+    fs.unlinkSync(filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    throw error;
+  }
 });

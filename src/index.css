@@ -1,0 +1,78 @@
+/* Custom Scrollbar Styling with higher specificity */
+.enhanced-scrollbar {
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent !important;
+  transition: scrollbar-color 0.3s ease !important;
+}
+
+.enhanced-scrollbar:hover {
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent !important;
+}
+
+/* Webkit Scrollbar Styling with higher specificity */
+.enhanced-scrollbar::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+  border-radius: 10px !important;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent !important;
+  border-radius: 10px !important;
+  border: 2px solid transparent !important;
+  background-clip: content-box !important;
+  transition: background-color 0.3s ease !important;
+}
+
+.enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5) !important;
+  background-clip: content-box !important;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.8) !important;
+  background-clip: content-box !important;
+}
+
+.enhanced-scrollbar::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Dark mode scrollbar */
+[data-theme="dark"] .enhanced-scrollbar:hover {
+  scrollbar-color: rgba(107, 114, 128, 0.5) transparent !important;
+}
+
+[data-theme="dark"] .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(107, 114, 128, 0.5) !important;
+  background-clip: content-box !important;
+}
+
+[data-theme="dark"] .enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.8) !important;
+  background-clip: content-box !important;
+}
+
+/* Global override for any conflicting scrollbar styles */
+* .enhanced-scrollbar::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+* .enhanced-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+* .enhanced-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent !important;
+  border-radius: 10px !important;
+  transition: background-color 0.3s ease !important;
+}
+
+* .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5) !important;
+} 

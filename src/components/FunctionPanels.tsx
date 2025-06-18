@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -11,6 +11,7 @@ import { ExtractionResultDialog } from './ExtractionResultDialog';
 import { LateClaimsDialog } from './LateClaimsDialog';
 import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
+import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
   const [preview, setPreview] = useState<{ original: string; preview: string }[] | null>(null);
@@ -78,7 +79,11 @@ export const FunctionPanels: React.FC = () => {
     addLog,
     setStatus,
     currentDirectory,
-    setFolderItems
+    setFolderItems,
+    folderItems,
+    setDocumentInsights,
+    setIsExtractingInsights,
+    selectedFiles
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const [isOrgCodesOpen, setOrgCodesOpen] = useState(false);
@@ -87,6 +92,7 @@ export const FunctionPanels: React.FC = () => {
   const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
   const [isAIEditorOpen, setAIEditorOpen] = useState(false);
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
+  const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [extractionResult, setExtractionResult] = useState<{
     type: 'zip' | 'eml';
     extractedFiles: string[];
@@ -199,6 +205,74 @@ export const FunctionPanels: React.FC = () => {
     if (action === 'ai_templater') {
       setAITemplaterOpen(true);
       setStatus('Opened AI Templater', 'info');
+      return;
+    }
+
+    if (action === 'manage_templates') {
+      setManageTemplatesOpen(true);
+      setStatus('Opened Template Manager', 'info');
+      return;
+    }
+
+    if (action === 'extract_insights') {
+      // Get selected PDF files from the shared state
+      console.log('[Extract Insights] Selected files:', selectedFiles);
+      console.log('[Extract Insights] Folder items:', folderItems);
+      
+      const selectedPDFs = selectedFiles
+        .map(filename => folderItems.find(item => item.name === filename))
+        .filter(item => item && item.type === 'file' && item.name.toLowerCase().endsWith('.pdf'));
+      
+      console.log('[Extract Insights] Selected PDFs:', selectedPDFs);
+      
+      if (selectedFiles.length === 0) {
+        console.log('[Extract Insights] No files selected');
+        setStatus('Please select a file first', 'error');
+        return;
+      }
+      
+      if (selectedFiles.length > 1) {
+        console.log('[Extract Insights] Multiple files selected:', selectedFiles.length);
+        setStatus('Please select only one file for insights extraction', 'error');
+        return;
+      }
+      
+      if (selectedPDFs.length === 0) {
+        console.log('[Extract Insights] No PDF files found in selection');
+        setStatus('Please select a PDF document for insights extraction', 'error');
+        setDocumentInsights(''); // Clear previous insights for invalid files
+        return;
+      }
+
+      const targetFile = selectedPDFs[0]!; // We know this exists due to the check above
+      
+      setIsExtractingInsights(true);
+      setStatus('Extracting document insights...', 'info');
+      addLog(`Extracting insights from: ${targetFile.name}`);
+
+      try {
+        // Read PDF content
+        const pdfText = await window.electronAPI.readPdfText(targetFile.path);
+        
+        if (!pdfText || pdfText.trim().length === 0) {
+          throw new Error('Failed to extract text from PDF or PDF is empty');
+        }
+
+        // Import the extract insights function dynamically
+        const { extractDocumentInsights } = await import('../services/openai');
+        const insights = await extractDocumentInsights(pdfText, targetFile.name);
+        
+        setDocumentInsights(insights);
+        setStatus('Document insights extracted successfully', 'success');
+        addLog(`Successfully extracted insights from ${targetFile.name}`, 'response');
+      } catch (error) {
+        const errorMsg = `Failed to extract insights: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        addLog(errorMsg, 'error');
+        setStatus('Failed to extract insights', 'error');
+        setDocumentInsights('');
+      } finally {
+        setIsExtractingInsights(false);
+      }
       return;
     }
 
@@ -344,12 +418,14 @@ export const FunctionPanels: React.FC = () => {
     action: string;
     description?: string;
     color?: string;
+    isDisabled?: boolean;
   }> = ({
     icon,
     label,
     action,
     description,
-    color = 'blue.400'
+    color = 'blue.400',
+    isDisabled = false
   }) => {
     const isLong = label.length > 18;
     const { currentDirectory } = useAppContext();
@@ -380,11 +456,14 @@ export const FunctionPanels: React.FC = () => {
               width="fit-content"
               py={2}
               px={1}
-              _hover={{ bg: buttonHoverBg }}
-              onClick={() => handleAction(action)}
+              _hover={{ bg: isDisabled ? undefined : buttonHoverBg }}
+              onClick={() => !isDisabled && handleAction(action)}
+              isDisabled={isDisabled}
+              opacity={isDisabled ? 0.5 : 1}
+              cursor={isDisabled ? 'not-allowed' : 'pointer'}
             >
               <Flex flex="1" align="center" justify="center" mb={1} width={isLong ? '42px' : '36px'} mx="auto">
-                <Icon as={icon} boxSize={7} color={color} />
+                <Icon as={icon} boxSize={7} color={isDisabled ? 'gray.400' : color} />
               </Flex>
               <Text
                 as="span"
@@ -429,11 +508,14 @@ export const FunctionPanels: React.FC = () => {
           width="fit-content"
           py={2}
           px={1}
-          _hover={{ bg: buttonHoverBg }}
-          onClick={() => handleAction(action)}
+          _hover={{ bg: isDisabled ? undefined : buttonHoverBg }}
+          onClick={() => !isDisabled && handleAction(action)}
+          isDisabled={isDisabled}
+          opacity={isDisabled ? 0.5 : 1}
+          cursor={isDisabled ? 'not-allowed' : 'pointer'}
         >
           <Flex flex="1" align="center" justify="center" mb={1} width={isLong ? '42px' : '36px'} mx="auto">
-            <Icon as={icon} boxSize={7} color={color} />
+            <Icon as={icon} boxSize={7} color={isDisabled ? 'gray.400' : color} />
           </Flex>
           <Text
             as="span"
@@ -498,8 +580,8 @@ export const FunctionPanels: React.FC = () => {
               >
                 <Flex gap={1}>
                   <FunctionButton icon={Download} label="GST Transfer" action="gst_transfer" description="Transfer 3 files from DL to current path" color="blue.600" />
-                  <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
                   <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
+                  <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
                   <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
                   <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
                 </Flex>
@@ -534,6 +616,29 @@ export const FunctionPanels: React.FC = () => {
                 <Flex gap={1}>
                   <FunctionButton icon={Star} label="AI Editor" action="ai_editor" description="Email AI editor for content generation" color="yellow.400" />
                   <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
+                  <FunctionButton icon={FileEdit} label="Manage Templates" action="manage_templates" description="Create, edit, and manage template YAMLs" color="indigo.400" />
+                  <FunctionButton 
+                    icon={FileSearch} 
+                    label="Extract Insights" 
+                    action="extract_insights" 
+                    description="Extract insights from selected document using AI" 
+                    color="cyan.400"
+                    isDisabled={(() => {
+                      console.log('[Extract Insights Button] selectedFiles:', selectedFiles);
+                      console.log('[Extract Insights Button] folderItems:', folderItems);
+                      if (selectedFiles.length === 0 || selectedFiles.length > 1) {
+                        console.log('[Extract Insights Button] Disabled: incorrect file count');
+                        return true;
+                      }
+                      const selectedPDFs = selectedFiles
+                        .map(filename => folderItems.find(item => item.name === filename))
+                        .filter(item => item && item.type === 'file' && item.name.toLowerCase().endsWith('.pdf'));
+                      console.log('[Extract Insights Button] selectedPDFs:', selectedPDFs);
+                      const isDisabled = selectedPDFs.length === 0;
+                      console.log('[Extract Insights Button] isDisabled:', isDisabled);
+                      return isDisabled;
+                    })()}
+                  />
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
@@ -571,6 +676,7 @@ export const FunctionPanels: React.FC = () => {
     <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
     <AIEditorDialog isOpen={isAIEditorOpen} onClose={() => setAIEditorOpen(false)} />
     <AITemplaterDialog isOpen={isAITemplaterOpen} onClose={() => setAITemplaterOpen(false)} currentDirectory={currentDirectory} />
+    <ManageTemplatesDialog isOpen={isManageTemplatesOpen} onClose={() => setManageTemplatesOpen(false)} currentDirectory={currentDirectory} />
     
     {extractionResult && (
       <ExtractionResultDialog

@@ -29,8 +29,13 @@ interface ElectronAPI {
   readCsv: (filePath: string) => Promise<any[]>;
   moveFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
+  moveFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
+  copyFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   readPdfText: (filePath: string) => Promise<string>;
   loadYamlTemplate: (filePath: string) => Promise<any>;
+  readTextFile: (filePath: string) => Promise<string>;
+  writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
+  deleteFile: (filePath: string) => Promise<{ success: boolean }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -103,11 +108,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copyFiles: async (files: string[], targetDirectory: string) => {
     return await ipcRenderer.invoke('copy-files', files, targetDirectory);
   },
+  moveFilesWithConflictResolution: async (files: string[], targetDirectory: string) => {
+    return await ipcRenderer.invoke('move-files-with-conflict-resolution', files, targetDirectory);
+  },
+  copyFilesWithConflictResolution: async (files: string[], targetDirectory: string) => {
+    return await ipcRenderer.invoke('copy-files-with-conflict-resolution', files, targetDirectory);
+  },
   readPdfText: async (filePath: string) => {
     return await ipcRenderer.invoke('read-pdf-text', filePath);
   },
   loadYamlTemplate: async (filePath: string) => {
     return await ipcRenderer.invoke('load-yaml-template', filePath);
+  },
+  readTextFile: async (filePath: string) => {
+    return await ipcRenderer.invoke('read-text-file', filePath);
+  },
+  writeTextFile: async (filePath: string, content: string) => {
+    return await ipcRenderer.invoke('write-text-file', filePath, content);
+  },
+  deleteFile: async (filePath: string) => {
+    return await ipcRenderer.invoke('delete-file', filePath);
   },
 }); 
 
