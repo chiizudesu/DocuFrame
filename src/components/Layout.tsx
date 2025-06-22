@@ -65,6 +65,7 @@ const CustomTitleBar: React.FC = () => {
           display="flex"
           alignItems="center"
           justifyContent="center"
+          cursor="default"
           icon={<Box w="10px" h="1px" bg={iconColor} borderRadius="1px" />}
         />
         {/* Maximize/Restore */}
@@ -75,7 +76,7 @@ const CustomTitleBar: React.FC = () => {
           color={iconColor}
           bg="transparent"
           border="none"
-          cursor="pointer"
+          cursor="default"
           outline="none"
           transition="background-color 0.2s"
           _hover={{ bg: useColorModeValue('#e5e7eb', 'gray.600') }}
@@ -147,6 +148,7 @@ const CustomTitleBar: React.FC = () => {
           display="flex"
           alignItems="center"
           justifyContent="center"
+          cursor="default"
           icon={<X size={16} strokeWidth={1.5} style={{ display: 'block', margin: 'auto' }} />}
         />
       </Flex>

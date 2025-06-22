@@ -6,6 +6,8 @@ export interface AppSettings {
   clientbasePath?: string;
   templateFolderPath?: string;
   showOutputLog?: boolean;
+  activationShortcut?: string;
+  enableActivationShortcut?: boolean;
 }
 
 class SettingsService {

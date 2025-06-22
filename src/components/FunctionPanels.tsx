@@ -12,6 +12,8 @@ import { LateClaimsDialog } from './LateClaimsDialog';
 import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
+import { UpdateDialog } from './UpdateDialog';
+import { getAppVersion } from '../utils/version';
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
   const [preview, setPreview] = useState<{ original: string; preview: string }[] | null>(null);
@@ -93,6 +95,26 @@ export const FunctionPanels: React.FC = () => {
   const [isAIEditorOpen, setAIEditorOpen] = useState(false);
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{
+    currentVersion: string;
+    availableVersion?: string;
+    releaseNotes?: string;
+    downloadSize?: string;
+    isDownloading: boolean;
+    downloadProgress?: number;
+    isDownloaded: boolean;
+    error?: string;
+  }>({
+    currentVersion: getAppVersion(),
+    availableVersion: undefined,
+    releaseNotes: undefined,
+    downloadSize: undefined,
+    isDownloading: false,
+    downloadProgress: undefined,
+    isDownloaded: false,
+    error: undefined
+  });
   const [extractionResult, setExtractionResult] = useState<{
     type: 'zip' | 'eml';
     extractedFiles: string[];
@@ -392,6 +414,13 @@ export const FunctionPanels: React.FC = () => {
       return;
     }
 
+    // Handle update action
+    if (action === 'update') {
+      setIsUpdateDialogOpen(true);
+      setStatus('Opened update dialog', 'info');
+      return;
+    }
+
     addLog(`Executing action: ${action}`);
     // Get user-friendly function names
     const functionNames: { [key: string]: string } = {
@@ -412,6 +441,81 @@ export const FunctionPanels: React.FC = () => {
     const friendlyName = functionNames[action] || action;
     setStatus(`Executing ${friendlyName}...`, 'info');
   };
+
+  const handleCheckForUpdates = async () => {
+    addLog('Checking for updates...', 'info');
+    setUpdateInfo(prev => ({ ...prev, error: undefined }));
+    
+    try {
+      const result = await window.electronAPI.executeCommand('update', currentDirectory);
+      
+      if (result.success) {
+        addLog('Update check completed', 'response');
+        // For now, simulate no update available
+        setUpdateInfo(prev => ({
+          ...prev,
+          availableVersion: undefined,
+          error: undefined
+        }));
+      } else {
+        addLog(result.message, 'error');
+        setUpdateInfo(prev => ({
+          ...prev,
+          error: result.message
+        }));
+      }
+    } catch (error) {
+      const errorMsg = `Error checking for updates: ${error}`;
+      addLog(errorMsg, 'error');
+      setUpdateInfo(prev => ({
+        ...prev,
+        error: errorMsg
+      }));
+    }
+  };
+
+  const handleDownloadUpdate = async () => {
+    addLog('Downloading update...', 'info');
+    setUpdateInfo(prev => ({ 
+      ...prev, 
+      isDownloading: true, 
+      downloadProgress: 0,
+      error: undefined 
+    }));
+    
+    // Simulate download progress
+    const progressInterval = setInterval(() => {
+      setUpdateInfo(prev => {
+        if (prev.downloadProgress! >= 100) {
+          clearInterval(progressInterval);
+          return {
+            ...prev,
+            isDownloading: false,
+            isDownloaded: true
+          };
+        }
+        return {
+          ...prev,
+          downloadProgress: (prev.downloadProgress || 0) + 10
+        };
+      });
+    }, 500);
+  };
+
+  const handleInstallUpdate = async () => {
+    addLog('Installing update...', 'info');
+    try {
+      await window.electronAPI.quitAndInstall();
+    } catch (error) {
+      const errorMsg = `Error installing update: ${error}`;
+      addLog(errorMsg, 'error');
+      setUpdateInfo(prev => ({
+        ...prev,
+        error: errorMsg
+      }));
+    }
+  };
+
   const FunctionButton: React.FC<{
     icon: React.ElementType;
     label: string;
@@ -673,22 +777,24 @@ export const FunctionPanels: React.FC = () => {
     <TransferMappingDialog isOpen={isTransferMappingOpen} onClose={() => setTransferMappingOpen(false)} />
     <OrgCodesDialog isOpen={isOrgCodesOpen} onClose={() => setOrgCodesOpen(false)} />
     <MergePDFDialog isOpen={isMergePDFOpen} onClose={() => setMergePDFOpen(false)} currentDirectory={currentDirectory} />
+    <ExtractionResultDialog 
+      isOpen={isExtractionResultOpen} 
+      onClose={() => setExtractionResultOpen(false)} 
+      type={extractionResult?.type || 'zip'}
+      extractedFiles={extractionResult?.extractedFiles || []}
+      sourceFiles={extractionResult?.sourceFiles || []}
+    />
     <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
     <AIEditorDialog isOpen={isAIEditorOpen} onClose={() => setAIEditorOpen(false)} />
     <AITemplaterDialog isOpen={isAITemplaterOpen} onClose={() => setAITemplaterOpen(false)} currentDirectory={currentDirectory} />
     <ManageTemplatesDialog isOpen={isManageTemplatesOpen} onClose={() => setManageTemplatesOpen(false)} currentDirectory={currentDirectory} />
-    
-    {extractionResult && (
-      <ExtractionResultDialog
-        isOpen={isExtractionResultOpen}
-        onClose={() => {
-          setExtractionResultOpen(false);
-          setExtractionResult(null);
-        }}
-        type={extractionResult.type}
-        extractedFiles={extractionResult.extractedFiles}
-        sourceFiles={extractionResult.sourceFiles}
-      />
-    )}
+    <UpdateDialog 
+      isOpen={isUpdateDialogOpen} 
+      onClose={() => setIsUpdateDialogOpen(false)}
+      onCheckForUpdates={handleCheckForUpdates}
+      onDownloadUpdate={handleDownloadUpdate}
+      onInstallUpdate={handleInstallUpdate}
+      updateInfo={updateInfo}
+    />
   </>;
 };

@@ -3,6 +3,9 @@ export interface Config {
   apiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
+  showOutputLog?: boolean;
+  activationShortcut?: string;
+  enableActivationShortcut?: boolean;
 }
 
 class ConfigService {

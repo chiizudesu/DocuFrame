@@ -78,6 +78,13 @@
       "dist-electron/**/*",
       "public/**/*"
     ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "edwardmatias",
+        "repo": "DocuFrame"
+      }
+    ],
     "win": {
       "icon": "public/256.ico",
       "target": [

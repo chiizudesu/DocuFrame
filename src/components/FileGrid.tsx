@@ -944,15 +944,25 @@ export const FileGrid: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInputFocused = (e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
-      if (isRenaming || isInputFocused) return;
+      
+      // Check if user has selected text anywhere on the page
+      const selection = window.getSelection();
+      const hasTextSelection = selection && selection.toString().length > 0;
+      
+      // Don't interfere with copy/paste if user is in input fields, renaming, or has text selected
+      if (isRenaming || isInputFocused || hasTextSelection) return;
+      
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedFiles.length > 0) {
-        // Cut
+        // Cut files
+        e.preventDefault();
         setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'cut' });
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedFiles.length > 0) {
-        // Copy
+        // Copy files
+        e.preventDefault();
         setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'copy' });
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clipboard.files.length > 0) {
-        // Paste
+        // Paste files
+        e.preventDefault();
         handlePaste();
       }
     };
@@ -1100,7 +1110,7 @@ export const FileGrid: React.FC = () => {
               <Flex
             p={4}
             alignItems="center"
-            cursor="pointer"
+            cursor="default"
             borderRadius="lg"
             borderWidth="1px"
             borderColor={selectedFiles.includes(file.name) ? 'blue.400' : useColorModeValue('gray.200', 'gray.700')}

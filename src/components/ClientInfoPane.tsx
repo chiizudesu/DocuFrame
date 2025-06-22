@@ -121,6 +121,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                               overflowWrap="break-word"
                               wordBreak="break-word"
                               whiteSpace="pre-wrap"
+                              userSelect="text"
                             >
                               {cell}
                             </Text>
@@ -151,6 +152,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               mb={1}
               overflowWrap="break-word"
               wordBreak="break-word"
+              userSelect="text"
             >
               {content}
             </Text>
@@ -167,6 +169,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                 mb={1}
                 overflowWrap="break-word"
                 wordBreak="break-word"
+                userSelect="text"
               >
                 • <Text as="span" fontWeight="bold" color="blue.200">{match[1]}</Text>{match[2]}
               </Text>
@@ -182,6 +185,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               mb={1}
               overflowWrap="break-word"
               wordBreak="break-word"
+              userSelect="text"
             >
               • {line.slice(2)}
             </Text>
@@ -198,6 +202,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               mb={1}
               overflowWrap="break-word"
               wordBreak="break-word"
+              userSelect="text"
             >
               {line}
             </Text>
@@ -216,6 +221,12 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         wordBreak="break-word" 
         maxWidth="100%"
         overflowX="hidden"
+        userSelect="text"
+        sx={{
+          '& *': {
+            userSelect: 'text'
+          }
+        }}
       >
         {parseMarkdown(children)}
       </Box>

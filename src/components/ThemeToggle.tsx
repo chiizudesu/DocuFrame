@@ -3,6 +3,8 @@ import { IconButton, useColorMode, Flex, Text, useColorModeValue } from '@chakra
 import { Sun, Moon, Settings } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { SettingsDialog } from './SettingsDialog';
+import { getAppVersion } from '../utils/version';
+
 export const ThemeToggle: React.FC = () => {
   const {
     colorMode,
@@ -32,7 +34,7 @@ export const ThemeToggle: React.FC = () => {
   };
   return <Flex gap={1} align="center">
       <Text fontSize="10px" color={colorMode === 'light' ? 'gray.400' : 'gray.600'} mr={2} userSelect="none">
-        v1.1.0
+        v{getAppVersion()}
       </Text>
       <IconButton icon={colorMode === 'light' ? <Moon size={16} /> : <Sun size={16} />} aria-label="Toggle theme" variant="ghost" size="sm" onClick={handleToggle} color={buttonColor} />
       <IconButton icon={<Settings size={16} />} aria-label="Settings" variant="ghost" size="sm" onClick={handleSettings} color={buttonColor} />

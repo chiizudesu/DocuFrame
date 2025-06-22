@@ -1,33 +1,22 @@
-// Update command - placeholder for when electron-updater is installed
+// Update command - uses electron-updater for manual update checks
+import { autoUpdaterService } from '../autoUpdater';
+
 interface UpdateResult {
   success: boolean;
   message: string;
 }
 
-export async function updateApp(directory: string): Promise<UpdateResult> {
+export async function updateApp(_directory: string): Promise<UpdateResult> {
   console.log('[UpdateApp] Manual update check requested');
   
   try {
-    // This will be replaced with actual auto-updater logic once electron-updater is installed
-    // For now, return a placeholder response
-    
-    return {
-      success: true,
-      message: 'Update check initiated. This feature requires electron-updater to be installed and configured.'
-    };
-    
-    /* 
-    // Future implementation with electron-updater:
-    
-    import { autoUpdaterService } from '../autoUpdater';
-    
+    // Use the autoUpdater service to check for updates
     autoUpdaterService.checkForUpdates();
     
     return {
       success: true,
-      message: 'Checking for updates...'
+      message: 'Update check initiated. You will be notified if an update is available.'
     };
-    */
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

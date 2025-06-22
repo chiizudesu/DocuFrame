@@ -10,6 +10,14 @@ class AutoUpdaterService {
     log.transports.file.level = 'info';
     autoUpdater.logger = log;
 
+    // Configure auto-updater for GitHub releases
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'edwardmatias',
+      repo: 'DocuFrame',
+      private: false
+    });
+
     // Configure auto-updater
     this.setupAutoUpdater();
   }
@@ -20,7 +28,7 @@ class AutoUpdaterService {
 
   private setupAutoUpdater() {
     // Check for updates on app start (optional, can be disabled)
-    autoUpdater.checkForUpdatesAndNotify();
+    // autoUpdater.checkForUpdatesAndNotify();
 
     // Update downloaded
     autoUpdater.on('update-downloaded', () => {
@@ -43,21 +51,24 @@ class AutoUpdaterService {
     });
 
     // Update available
-    autoUpdater.on('update-available', () => {
+    autoUpdater.on('update-available', (info) => {
+      console.log('Update available:', info);
       if (this.mainWindow) {
+        // Notify renderer process
         this.mainWindow.webContents.send('update-available');
       }
       
       dialog.showMessageBox({
         type: 'info',
         title: 'Update Available',
-        message: 'A new version is available. It will be downloaded in the background.',
+        message: `A new version (${info.version}) is available. It will be downloaded in the background.`,
         buttons: ['OK']
       });
     });
 
     // No update available
-    autoUpdater.on('update-not-available', () => {
+    autoUpdater.on('update-not-available', (info) => {
+      console.log('No update available:', info);
       if (this.mainWindow) {
         this.mainWindow.webContents.send('update-not-available');
       }
@@ -73,19 +84,32 @@ class AutoUpdaterService {
 
     // Download progress
     autoUpdater.on('download-progress', (progressObj) => {
+      console.log('Download progress:', progressObj);
       if (this.mainWindow) {
         this.mainWindow.webContents.send('update-progress', progressObj);
       }
+    });
+
+    // Checking for updates
+    autoUpdater.on('checking-for-update', () => {
+      console.log('Checking for updates...');
+    });
+
+    // Update downloaded
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('Update downloaded:', info);
     });
   }
 
   // Method to manually check for updates
   checkForUpdates() {
+    console.log('Manual update check initiated');
     autoUpdater.checkForUpdatesAndNotify();
   }
 
   // Method to quit and install update
   quitAndInstall() {
+    console.log('Quitting and installing update');
     autoUpdater.quitAndInstall();
   }
 }

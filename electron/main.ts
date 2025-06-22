@@ -1,5 +1,5 @@
 // main.ts - Updated with IPC handlers
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, globalShortcut } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { promises as fsPromises } from 'fs';
@@ -13,6 +13,7 @@ import PDFParser from 'pdf2json';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
 import { spawn, ChildProcess } from 'child_process';
+import { autoUpdaterService } from '../src/main/autoUpdater';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -95,6 +96,9 @@ const createWindow = () => {
     },
   });
 
+  // Initialize autoUpdater service with the main window
+  autoUpdaterService.setMainWindow(mainWindow);
+
   // Enable drag and drop for files
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (url.startsWith('file://')) {
@@ -135,6 +139,106 @@ app.whenReady().then(async () => {
   const config = await loadConfig();
   console.log('[Main] Loaded config on window start:', config);
   createWindow();
+  
+  // Register global shortcut for app activation
+  await registerGlobalShortcut(config);
+});
+
+// Global shortcut management
+let currentShortcut: string | null = null;
+
+async function registerGlobalShortcut(config: Config) {
+  try {
+    // Unregister existing shortcut if any
+    if (currentShortcut) {
+      globalShortcut.unregister(currentShortcut);
+      currentShortcut = null;
+    }
+
+    // Check if activation shortcut is enabled
+    if (config.enableActivationShortcut !== false) {
+      const shortcut = config.activationShortcut || '`';
+      
+      // Convert shortcut to Electron format
+      const electronShortcut = convertToElectronShortcut(shortcut);
+      
+      // Register the global shortcut
+      const success = globalShortcut.register(electronShortcut, () => {
+        console.log('[Main] Global shortcut triggered:', shortcut);
+        activateApp();
+      });
+
+      if (success) {
+        currentShortcut = electronShortcut;
+        console.log('[Main] Global shortcut registered successfully:', electronShortcut);
+      } else {
+        console.error('[Main] Failed to register global shortcut:', electronShortcut);
+      }
+    }
+  } catch (error) {
+    console.error('[Main] Error registering global shortcut:', error);
+  }
+}
+
+function convertToElectronShortcut(shortcut: string): string {
+  // Convert common shortcuts to Electron format
+  switch (shortcut) {
+    case '`':
+      return '`';
+    case 'F12':
+      return 'F12';
+    case 'F11':
+      return 'F11';
+    case 'F10':
+      return 'F10';
+    case 'F9':
+      return 'F9';
+    case 'F8':
+      return 'F8';
+    case 'F7':
+      return 'F7';
+    case 'F6':
+      return 'F6';
+    default:
+      return shortcut;
+  }
+}
+
+function activateApp() {
+  const windows = BrowserWindow.getAllWindows();
+  if (windows.length > 0) {
+    const mainWindow = windows[0];
+    
+    // Show the window if it's hidden
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+    
+    // Focus the window
+    mainWindow.focus();
+    
+    // Restore if minimized
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    
+    // Bring to front
+    mainWindow.setAlwaysOnTop(true);
+    mainWindow.setAlwaysOnTop(false);
+    
+    console.log('[Main] App activated via global shortcut');
+  }
+}
+
+// IPC handler to update global shortcut
+ipcMain.handle('update-global-shortcut', async (_, config: Config) => {
+  try {
+    await registerGlobalShortcut(config);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error updating global shortcut:', error);
+    throw error;
+  }
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common
@@ -1166,6 +1270,27 @@ ipcMain.handle('delete-file', async (_, filePath: string) => {
     return { success: true };
   } catch (error) {
     console.error('Error deleting file:', error);
+    throw error;
+  }
+});
+
+// Update-related IPC handlers
+ipcMain.handle('check-for-updates', async () => {
+  try {
+    autoUpdaterService.checkForUpdates();
+    return { success: true, message: 'Update check initiated' };
+  } catch (error) {
+    console.error('Error checking for updates:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('quit-and-install', async () => {
+  try {
+    autoUpdaterService.quitAndInstall();
+    return { success: true };
+  } catch (error) {
+    console.error('Error quitting and installing update:', error);
     throw error;
   }
 });

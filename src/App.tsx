@@ -24,6 +24,50 @@ const AppContent: React.FC = () => {
     addLog,
     selectAllFiles
   } = useAppContext();
+
+  // Handle update events from main process
+  useEffect(() => {
+    // Update available
+    window.electronAPI?.onUpdateAvailable?.((_event: Electron.IpcRendererEvent) => {
+      addLog('Update available - downloading in background', 'info');
+      setStatus('Update available - downloading in background', 'info');
+    });
+
+    // Update downloaded
+    window.electronAPI?.onUpdateDownloaded?.((_event: Electron.IpcRendererEvent) => {
+      addLog('Update downloaded - restart to install', 'info');
+      setStatus('Update downloaded - restart to install', 'info');
+    });
+
+    // No update available
+    window.electronAPI?.onUpdateNotAvailable?.((_event: Electron.IpcRendererEvent) => {
+      addLog('No updates available', 'info');
+      setStatus('No updates available', 'info');
+    });
+
+    // Update error
+    window.electronAPI?.onUpdateError?.((_event: Electron.IpcRendererEvent, error: string) => {
+      addLog(`Update error: ${error}`, 'error');
+      setStatus('Update check failed', 'error');
+    });
+
+    // Update progress
+    window.electronAPI?.onUpdateProgress?.((_event: Electron.IpcRendererEvent, progress: any) => {
+      const percent = Math.round(progress.percent || 0);
+      addLog(`Downloading update: ${percent}%`, 'info');
+      setStatus(`Downloading update: ${percent}%`, 'info');
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      window.electronAPI?.removeAllListeners?.('update-available');
+      window.electronAPI?.removeAllListeners?.('update-downloaded');
+      window.electronAPI?.removeAllListeners?.('update-not-available');
+      window.electronAPI?.removeAllListeners?.('update-error');
+      window.electronAPI?.removeAllListeners?.('update-progress');
+    };
+  }, [addLog, setStatus]);
+
   // Handle keyboard events for quick navigation and backspace navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

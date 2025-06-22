@@ -36,6 +36,16 @@ interface ElectronAPI {
   readTextFile: (filePath: string) => Promise<string>;
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<{ success: boolean }>;
+  // Update-related methods
+  checkForUpdates: () => Promise<{ success: boolean; message: string }>;
+  quitAndInstall: () => Promise<{ success: boolean }>;
+  onUpdateAvailable: (cb: (event: Electron.IpcRendererEvent) => void) => void;
+  onUpdateDownloaded: (cb: (event: Electron.IpcRendererEvent) => void) => void;
+  onUpdateNotAvailable: (cb: (event: Electron.IpcRendererEvent) => void) => void;
+  onUpdateError: (cb: (event: Electron.IpcRendererEvent, error: string) => void) => void;
+  onUpdateProgress: (cb: (event: Electron.IpcRendererEvent, progress: any) => void) => void;
+  // Global shortcut methods
+  updateGlobalShortcut: (config: AppSettings) => Promise<{ success: boolean }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -129,6 +139,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteFile: async (filePath: string) => {
     return await ipcRenderer.invoke('delete-file', filePath);
   },
+  // Update-related methods
+  checkForUpdates: async () => {
+    return await ipcRenderer.invoke('check-for-updates');
+  },
+  quitAndInstall: async () => {
+    return await ipcRenderer.invoke('quit-and-install');
+  },
+  onUpdateAvailable: (cb) => ipcRenderer.on('update-available', cb),
+  onUpdateDownloaded: (cb) => ipcRenderer.on('update-downloaded', cb),
+  onUpdateNotAvailable: (cb) => ipcRenderer.on('update-not-available', cb),
+  onUpdateError: (cb) => ipcRenderer.on('update-error', cb),
+  onUpdateProgress: (cb) => ipcRenderer.on('update-progress', cb),
+  // Global shortcut methods
+  updateGlobalShortcut: async (config: AppSettings) => {
+    return await ipcRenderer.invoke('update-global-shortcut', config);
+  }
 }); 
 
 // Expose the electron API exactly as documented for native file drag and drop
