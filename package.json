@@ -8,6 +8,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build-safe": "tsc --noEmit false --skipLibCheck && vite build",
+    "build-no-check": "vite build",
     "preview": "vite preview",
     "start": "vite",
     "setup": "node setup.js",
@@ -21,6 +23,9 @@
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
     "dist-win": "npm run build && electron-builder --win",
+    "dist-win-safe": "npm run build-no-check && electron-builder --win",
+    "dist-win-unsigned": "npm run build-no-check && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
+    "publish-github": "npm run build-no-check && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --publish=always",
     "make": "electron-forge make",
     "publish": "electron-forge publish"
   },
@@ -92,7 +97,18 @@
           "target": "nsis",
           "arch": ["x64"]
         }
-      ]
+      ],
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false,
+      "signExts": null,
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DocuFrame"
     },
     "mac": {
       "icon": "public/256.ico"
