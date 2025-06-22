@@ -1,7 +1,7 @@
 {
   "name": "docuframe",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "Edward Matias <edwardjohncpa@gmail.com>",
   "type": "commonjs",
   "main": "dist-electron/main.js",
@@ -81,6 +81,10 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "public/**/*",
+      "build/icon.ico"
+    ],
+    "asarUnpack": [
       "public/**/*"
     ],
     "publish": [
@@ -91,7 +95,7 @@
       }
     ],
     "win": {
-      "icon": "public/256.ico",
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -111,10 +115,10 @@
       "shortcutName": "DocuFrame"
     },
     "mac": {
-      "icon": "public/256.ico"
+      "icon": "build/icon.ico"
     },
     "linux": {
-      "icon": "public/256.ico"
+      "icon": "build/icon.ico"
     }
   }
 }
