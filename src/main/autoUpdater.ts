@@ -13,7 +13,7 @@ class AutoUpdaterService {
     // Configure auto-updater for GitHub releases
     autoUpdater.setFeedURL({
       provider: 'github',
-      owner: 'edwardmatias',
+      owner: 'chiizudesu',
       repo: 'DocuFrame',
       private: false
     });

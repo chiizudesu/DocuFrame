@@ -1,7 +1,7 @@
 {
   "name": "docuframe",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "Edward Matias <edwardjohncpa@gmail.com>",
   "type": "commonjs",
   "main": "dist-electron/main.js",
@@ -86,7 +86,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "edwardmatias",
+        "owner": "chiizudesu",
         "repo": "DocuFrame"
       }
     ],
