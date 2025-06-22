@@ -87,7 +87,9 @@ const createWindow = () => {
     height: 800,
     frame: false,
     titleBarStyle: 'hidden',
-    icon: path.join(__dirname, '../public/256.ico'), // Use the high-resolution icon
+    icon: process.env.NODE_ENV === 'development' 
+      ? path.join(__dirname, '../public/256.ico')
+      : path.join(__dirname, '../public/256.ico'), // Use the high-resolution icon
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

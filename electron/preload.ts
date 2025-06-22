@@ -36,6 +36,7 @@ interface ElectronAPI {
   readTextFile: (filePath: string) => Promise<string>;
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<{ success: boolean }>;
+  getFileIcon: (filePath: string) => Promise<string | null>;
   // Update-related methods
   checkForUpdates: () => Promise<{ success: boolean; message: string }>;
   quitAndInstall: () => Promise<{ success: boolean }>;
@@ -138,6 +139,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteFile: async (filePath: string) => {
     return await ipcRenderer.invoke('delete-file', filePath);
+  },
+  getFileIcon: async (filePath: string) => {
+    return await ipcRenderer.invoke('get-file-icon', filePath);
   },
   // Update-related methods
   checkForUpdates: async () => {

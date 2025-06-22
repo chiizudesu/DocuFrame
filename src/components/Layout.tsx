@@ -42,7 +42,7 @@ const CustomTitleBar: React.FC = () => {
       <Box display="flex" alignItems="center" gap={1} pl={2}>
         {/* App Icon */}
         <Box w="20px" h="20px" mr={1}>
-          <img src="/32.ico" alt="DocuFrame" style={{ width: '20px', height: '20px' }} />
+          <img src="./32.ico" alt="DocuFrame" style={{ width: '20px', height: '20px' }} />
         </Box>
         <Text fontWeight="bold" fontSize="sm" color={iconColor} userSelect="none">DocuFrame</Text>
       </Box>
