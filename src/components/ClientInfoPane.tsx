@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Spinner, Input, Menu, MenuButton, MenuList, MenuItem, Portal, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useDisclosure } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, Brain, Send, ChevronDown, Maximize2 } from 'lucide-react';
+import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, Brain, Send, ChevronDown, Maximize2, Copy } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: () => void, isCollapsed?: boolean }> = ({ collapsed = false, onToggleCollapse }) => {
@@ -24,6 +24,35 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   
   // State for document summary
   const [documentSummary, setDocumentSummary] = useState<string>('');
+
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus('Copied to clipboard!', 'success');
+    } catch (err) {
+      // Fallback for older browsers or restricted environments
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) {
+          setStatus('Copied to clipboard!', 'success');
+        } else {
+          setStatus('Copy failed - please select text and use Ctrl+C', 'error');
+        }
+      } catch (fallbackErr) {
+        setStatus('Copy not supported - please select text and use Ctrl+C', 'error');
+      }
+    }
+  };
 
   // Simple markdown parser component
   const MarkdownText: React.FC<{ children: string }> = ({ children }) => {
@@ -151,6 +180,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               mb={1}
               overflowWrap="break-word"
               wordBreak="break-word"
+              userSelect="text"
             >
               {content}
             </Text>
@@ -160,16 +190,17 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
           const match = line.match(/^- \*\*(.*?)\*\*(.*)/);
           if (match) {
             elements.push(
-              <Text 
-                key={i} 
-                fontSize="sm" 
-                ml={2} 
-                mb={1}
-                overflowWrap="break-word"
-                wordBreak="break-word"
-              >
-                • <Text as="span" fontWeight="bold" color="blue.200">{match[1]}</Text>{match[2]}
-              </Text>
+                          <Text 
+              key={i} 
+              fontSize="sm" 
+              ml={2} 
+              mb={1}
+              overflowWrap="break-word"
+              wordBreak="break-word"
+              userSelect="text"
+            >
+              • <Text as="span" fontWeight="bold" color="blue.200" userSelect="text">{match[1]}</Text>{match[2]}
+            </Text>
             );
           }
         } else if (line.startsWith('- ')) {
@@ -182,6 +213,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               mb={1}
               overflowWrap="break-word"
               wordBreak="break-word"
+              userSelect="text"
             >
               • {line.slice(2)}
             </Text>
@@ -198,6 +230,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               mb={1}
               overflowWrap="break-word"
               wordBreak="break-word"
+              userSelect="text"
             >
               {line}
             </Text>
@@ -216,6 +249,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         wordBreak="break-word" 
         maxWidth="100%"
         overflowX="hidden"
+        userSelect="text"
+        cursor="text"
       >
         {parseMarkdown(children)}
       </Box>
@@ -259,7 +294,20 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
       // Import and call OpenAI service
       const { extractDocumentInsights } = await import('../services/openai');
-      const context = `Previous analysis:\n${documentInsights}\n\nUser's follow-up question: ${userMessage}\n\nPlease provide a focused answer to the user's question based on the document analysis.`;
+      const context = `You are a helpful document analysis assistant having a conversation with a user about their document. Based on your previous analysis below, please answer their follow-up question in a natural, conversational way.
+
+Previous analysis:
+${documentInsights}
+
+User's question: ${userMessage}
+
+Guidelines for your response:
+- Be conversational and friendly, like a knowledgeable colleague
+- If the question requires information not in the document, clearly state that
+- Feel free to ask clarifying questions if the user's question is vague
+- Provide context and explain your reasoning when helpful
+- If relevant, suggest related insights or next steps they might consider
+- Keep it concise but comprehensive - aim for clarity over brevity`;
       
       const response = await extractDocumentInsights(context, 'Follow-up Analysis');
       
@@ -293,7 +341,20 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
       // Import and call OpenAI service
       const { extractDocumentInsights } = await import('../services/openai');
-      const context = `Previous analysis:\n${documentInsights}\n\nUser's follow-up question: ${userMessage}\n\nPlease provide a focused answer to the user's question based on the document analysis.`;
+      const context = `You are a helpful document analysis assistant having a conversation with a user about their document. Based on your previous analysis below, please answer their follow-up question in a natural, conversational way.
+
+Previous analysis:
+${documentInsights}
+
+User's question: ${userMessage}
+
+Guidelines for your response:
+- Be conversational and friendly, like a knowledgeable colleague
+- If the question requires information not in the document, clearly state that
+- Feel free to ask clarifying questions if the user's question is vague
+- Provide context and explain your reasoning when helpful
+- If relevant, suggest related insights or next steps they might consider
+- Keep it concise but comprehensive - aim for clarity over brevity`;
       
       const response = await extractDocumentInsights(context, 'Follow-up Analysis');
       
@@ -825,32 +886,51 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
           <Spacer />
           {documentInsights && (
             <>
-              <IconButton
-                aria-label="Open in dialog"
-                icon={<Maximize2 size={16} />}
-                size="sm"
-                ml={2}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpen();
-                }}
-                variant="ghost"
-                color={accentColor}
-                _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-              />
-              <IconButton
-                aria-label="Clear insights"
-                icon={<X size={16} />}
-                size="sm"
-                ml={1}
-                onClick={() => {
-                  setDocumentInsights('');
-                  setDocumentSummary('');
-                }}
-                variant="ghost"
-                color="gray.500"
-                _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-              />
+              <Tooltip label="Copy to clipboard">
+                <IconButton
+                  aria-label="Copy insights"
+                  icon={<Copy size={16} />}
+                  size="sm"
+                  ml={2}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    copyToClipboard(documentInsights);
+                  }}
+                  variant="ghost"
+                  color={accentColor}
+                  _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+                />
+              </Tooltip>
+              <Tooltip label="Open in dialog">
+                <IconButton
+                  aria-label="Open in dialog"
+                  icon={<Maximize2 size={16} />}
+                  size="sm"
+                  ml={1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpen();
+                  }}
+                  variant="ghost"
+                  color={accentColor}
+                  _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+                />
+              </Tooltip>
+              <Tooltip label="Clear insights">
+                <IconButton
+                  aria-label="Clear insights"
+                  icon={<X size={16} />}
+                  size="sm"
+                  ml={1}
+                  onClick={() => {
+                    setDocumentInsights('');
+                    setDocumentSummary('');
+                  }}
+                  variant="ghost"
+                  color="gray.500"
+                  _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+                />
+              </Tooltip>
             </>
           )}
         </Flex>
@@ -952,9 +1032,28 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                     whiteSpace="pre-wrap"
                     className="enhanced-scrollbar"
                     bg="transparent"
+                    userSelect="text"
+                    cursor="text"
                   >
-                  <MarkdownText>{documentInsights}</MarkdownText>
-                </Box>
+                    <Box 
+                      userSelect="text" 
+                      cursor="text"
+                      data-text-selectable="true"
+                      onContextMenu={(e) => {
+                        // Allow native context menu for text selection and copy
+                        e.stopPropagation();
+                        // Don't preventDefault - let the browser show native context menu
+                      }}
+                      sx={{
+                        '& *': {
+                          userSelect: 'text !important',
+                          cursor: 'text !important'
+                        }
+                      }}
+                    >
+                      <MarkdownText>{documentInsights}</MarkdownText>
+                    </Box>
+                  </Box>
               </Box>
             </Box>
             
@@ -1121,8 +1220,49 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                       </Text>
                     </Flex>
                   ) : documentInsights ? (
-                    <Box maxW="100%" w="100%">
-                      <MarkdownText>{documentInsights}</MarkdownText>
+                    <Box maxW="100%" w="100%" position="relative">
+                      <Tooltip label="Copy to clipboard">
+                        <IconButton
+                          aria-label="Copy insights"
+                          icon={<Copy size={16} />}
+                          size="sm"
+                          position="absolute"
+                          top={-2}
+                          right={-2}
+                          zIndex={10}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(documentInsights);
+                          }}
+                          bg={useColorModeValue('white', 'gray.700')}
+                          color={useColorModeValue('gray.600', 'gray.300')}
+                          border="1px solid"
+                          borderColor={useColorModeValue('gray.300', 'gray.600')}
+                          _hover={{ 
+                            bg: useColorModeValue('gray.50', 'gray.600'),
+                            borderColor: useColorModeValue('gray.400', 'gray.500')
+                          }}
+                          shadow="sm"
+                        />
+                      </Tooltip>
+                      <Box 
+                        userSelect="text" 
+                        cursor="text"
+                        data-text-selectable="true"
+                        onContextMenu={(e) => {
+                          // Allow native context menu for text selection and copy
+                          e.stopPropagation();
+                          // Don't preventDefault - let the browser show native context menu
+                        }}
+                        sx={{
+                          '& *': {
+                            userSelect: 'text !important',
+                            cursor: 'text !important'
+                          }
+                        }}
+                      >
+                        <MarkdownText>{documentInsights}</MarkdownText>
+                      </Box>
                     </Box>
                   ) : (
                     <Flex direction="column" align="center" justify="center" flex="1">

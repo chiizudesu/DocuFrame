@@ -6,6 +6,8 @@ import { extractZips } from './commands/extractZips';
 import { extractEml } from './commands/extractEml';
 import { gstTemplate } from './commands/gstTemplate';
 import { updateApp } from './commands/updateApp';
+import { screenshotCommand } from './commands/screenshotCommand';
+import { pdfincCommand } from './commands/pdfincCommand';
 import { getConfig } from './config';
 
 interface CommandResult {
@@ -223,6 +225,64 @@ export async function handleCommand(command: string, args: string[], currentDire
     return {
       success: result.success,
       message: result.message
+    };
+  }
+  
+  // Handle sc (screenshot) command
+  if (cmd.toLowerCase() === 'sc') {
+    console.log('[CommandHandler] Executing screenshot command');
+    const directory = currentDirectory || process.cwd();
+    
+    // Get new filename from arguments if provided
+    const newFilename = cmdArgs.length > 0 ? cmdArgs[0] : undefined;
+    
+    const result = await screenshotCommand(directory, newFilename);
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
+    };
+  }
+  
+  // Handle sc_preview (screenshot preview) command
+  if (cmd.toLowerCase() === 'sc_preview') {
+    console.log('[CommandHandler] Executing screenshot preview command');
+    const directory = currentDirectory || process.cwd();
+    
+    // Get new filename from arguments if provided
+    const newFilename = cmdArgs.length > 0 ? cmdArgs[0] : undefined;
+    
+    const result = await screenshotCommand(directory, newFilename, true); // true = preview mode
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
+    };
+  }
+  
+  // Handle pdfinc command
+  if (cmd.toLowerCase() === 'pdfinc') {
+    console.log('[CommandHandler] Executing pdfinc command');
+    const directory = currentDirectory || process.cwd();
+    
+    const result = await pdfincCommand(directory);
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
+    };
+  }
+  
+  // Handle pdfinc_preview command
+  if (cmd.toLowerCase() === 'pdfinc_preview') {
+    console.log('[CommandHandler] Executing pdfinc preview command');
+    const directory = currentDirectory || process.cwd();
+    
+    const result = await pdfincCommand(directory, true); // true = preview mode
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
     };
   }
   

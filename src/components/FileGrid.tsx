@@ -943,8 +943,18 @@ export const FileGrid: React.FC = () => {
   // Keyboard shortcuts for cut/copy/paste
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const isInputFocused = (e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
-      if (isRenaming || isInputFocused) return;
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      // Check if user has text selected (most reliable way to detect text copying intent)
+      const hasTextSelection = window.getSelection && window.getSelection()?.toString().length > 0;
+      
+      // Check if we're in a text-selectable area
+      const isInTextSelectableArea = target.closest('[data-text-selectable]') !== null;
+      
+      // Don't interfere with text copying, input fields, or when in text-selectable areas
+      if (isRenaming || isInputFocused || hasTextSelection || isInTextSelectableArea) return;
+      
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedFiles.length > 0) {
         // Cut
         setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'cut' });
@@ -1100,7 +1110,7 @@ export const FileGrid: React.FC = () => {
               <Flex
             p={4}
             alignItems="center"
-            cursor="pointer"
+            cursor="default"
             borderRadius="lg"
             borderWidth="1px"
             borderColor={selectedFiles.includes(file.name) ? 'blue.400' : useColorModeValue('gray.200', 'gray.700')}

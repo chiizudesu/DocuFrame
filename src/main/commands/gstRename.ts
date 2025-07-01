@@ -70,7 +70,7 @@ export async function gstRenameCommand(currentDirectory: string, preview: boolea
       if (!stats.isFile()) continue;
 
       let base = item.replace(/\.[^/.]+$/, '');
-      let ext = item.match(/\.[^/.]+$/) ? item.match(/\.[^/.]+$/)[0] : '';
+      let ext = item.match(/\.[^/.]+$/) ? item.match(/\.[^/.]+$/)![0] : '';
       ext = ext || '';
       base = cleanName(base);
       base = removeParenthesisNumber(base);

@@ -1,0 +1,9 @@
+name: Individual Tax Return
+description: Tax Summary for individuals
+categories:
+  - individual_tax_return
+template: |-
+  Individual Tax Return
+
+  {{individual_name}}, your total taxable income for the year was {{total_taxable_income}} which is made up of your shareholder salary from {{company_name}}, PAYE salary from {{paye_salary_source}}, interest earnings and dividend income. Tax on this amount is {{total_taxable_income}}. With PAYE already deducted, tax credits on your investment income and provisional tax already paid during the year, you are due to receive a refund of ${{refund_amount}}/have tax to pay of ${{payable_amount(if not refund)}}. This is due for payment on 7 April 2026.
+created: '2025-06-29'

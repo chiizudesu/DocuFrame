@@ -1,0 +1,20 @@
+name: Chris Griggs Payroll
+description: Payroll email for Chris Griggs
+categories:
+  - summary of payslip
+template: |-
+  Hi Chris,
+
+  Thank you for sending through this fortnight's timesheets. We have prepared the payroll for the fortnight ended Sunday {{pay_period_end_date}} on the basis that both Reza and Maya did not take leave during the pay period or that the following leave was taken:
+
+  Reza: {{reza_leave_dates}}
+  Maya: {{reza_leave_dates}} 
+  If this is incorrect, please let me know. Otherwise, the details for payment are:
+   
+  Name: Thankyou Payroll Client Trust
+  Account number: 02 0912 0311565 02
+  Reference: 7907
+  Amount: {{payment_amount}}
+
+  Please make payment by 10pm, this evening, {{payment_due_date}}. If you have any questions, please let me know. 
+created: '2025-06-22'

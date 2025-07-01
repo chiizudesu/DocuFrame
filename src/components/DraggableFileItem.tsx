@@ -75,7 +75,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     e.dataTransfer.setData('application/x-docuframe-files', '');
     if (window.electron && typeof window.electron.startDrag === 'function') {
       // Pass all files for multi-file drag - startDrag accepts string | string[]
-      window.electron.startDrag(filesToDrag);
+      window.electron.startDrag(filesToDrag as any);
       addLog(`Started native drag for ${filesToDrag.length} file(s)`);
       setIsDragging(true);
       setTimeout(() => {
@@ -298,7 +298,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     onDrop: handleDrop,
     onContextMenu: (e: React.MouseEvent) => onContextMenu(e, file),
     onClick: handleClick,
-    cursor: "pointer" as const,
+    cursor: "default" as const,
     opacity: isDragging ? 0.5 : 1,
     transition: "all 0.2s",
     borderLeft: file.type === 'folder' ? '4px solid' : undefined,

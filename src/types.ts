@@ -5,6 +5,7 @@ export interface FileItem {
   size?: string;
   modified?: string;
   originalName?: string;
+  imageData?: string;
 }
 
 export interface LogEntry {

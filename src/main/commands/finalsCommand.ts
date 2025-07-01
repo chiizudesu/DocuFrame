@@ -171,16 +171,49 @@ export async function finalsCommand(currentDirectory: string, preview: boolean =
         } else {
           // Try fuzzy matching - look for entities that contain similar words
           for (const [entityKey, entityData] of Object.entries(entities)) {
-            // Simple fuzzy matching: check if key words match
-            const normalizedWords = normalizedEntityName.toLowerCase().split(' ').filter(w => w.length > 2);
-            const entityWords = entityKey.toLowerCase().split(' ').filter(w => w.length > 2);
+            // Enhanced fuzzy matching with business entity normalization
+            const normalizeBusinessEntity = (name: string) => {
+              return name.toLowerCase()
+                .replace(/\blimited\b/g, 'ltd')
+                .replace(/\bcompany\b/g, 'co')
+                .replace(/\bcorporation\b/g, 'corp')
+                .replace(/\bincorporated\b/g, 'inc')
+                .replace(/\benterprise[s]?\b/g, 'ent')
+                .replace(/\btrading\b/g, 'trading')
+                .replace(/[^\w\s]/g, '') // Remove punctuation
+                .replace(/\s+/g, ' ')
+                .trim();
+            };
+
+            const normalizedEntity = normalizeBusinessEntity(normalizedEntityName);
+            const normalizedKey = normalizeBusinessEntity(entityKey);
+            
+            // Try direct match after normalization
+            if (normalizedEntity === normalizedKey) {
+              matchedEntityKey = entityKey;
+              matchedEntityData = entityData;
+              break;
+            }
+            
+            // Try word-based fuzzy matching as fallback
+            const normalizedWords = normalizedEntity.split(' ').filter(w => w.length > 2);
+            const entityWords = normalizedKey.split(' ').filter(w => w.length > 2);
+            
+            if (normalizedWords.length === 0 || entityWords.length === 0) continue;
             
             const matchCount = normalizedWords.filter(word => 
-              entityWords.some(entityWord => entityWord.includes(word) || word.includes(entityWord))
+              entityWords.some(entityWord => 
+                entityWord.includes(word) || 
+                word.includes(entityWord) ||
+                // Check for partial matches on longer words
+                (word.length > 3 && entityWord.length > 3 && 
+                 (word.includes(entityWord.substring(0, 4)) || entityWord.includes(word.substring(0, 4))))
+              )
             ).length;
 
-            // If most words match, consider it a match
-            if (matchCount >= Math.min(normalizedWords.length, entityWords.length) * 0.7) {
+            // Lower threshold for matching and ensure at least one significant word matches
+            const matchThreshold = Math.max(1, Math.min(normalizedWords.length, entityWords.length) * 0.6);
+            if (matchCount >= matchThreshold) {
               matchedEntityKey = entityKey;
               matchedEntityData = entityData;
               break;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, Flex } from '@chakra-ui/react';
+import { Box, Text, Flex, Image } from '@chakra-ui/react';
 import { CommandLine } from './CommandLine';
 import { useAppContext } from '../context/AppContext';
 
@@ -36,9 +36,30 @@ export const CommandPanel: React.FC = () => {
               </Text>
               <Box mt={2}>
                 {previewFiles.map((file, index) => (
-                  <Text key={index} fontSize="xs">
-                    • {file.name}
-                  </Text>
+                  <Box key={index} mb={3}>
+                    <Text fontSize="xs" mb={1}>
+                      • {file.name}
+                    </Text>
+                    {file.imageData && (
+                      <Box mt={2} p={2} bg="gray.600" borderRadius="md" maxW="200px">
+                        <Image
+                          src={file.imageData}
+                          alt={file.name}
+                          maxH="120px"
+                          maxW="100%"
+                          objectFit="contain"
+                          borderRadius="md"
+                          border="1px solid"
+                          borderColor="gray.500"
+                        />
+                        {file.size && (
+                          <Text fontSize="xs" color="gray.400" mt={1}>
+                            Size: {(parseInt(file.size) / 1024).toFixed(1)} KB
+                          </Text>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
                 ))}
               </Box>
             </Box>

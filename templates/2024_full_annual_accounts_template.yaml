@@ -1,0 +1,41 @@
+name: 2024 Full Annual Accounts
+description: Template email for 2024 annual accounts
+categories:
+  - Financial Statements
+  - Tax Return
+template: |-
+  Hi {{salutation}},
+
+  We've finished preparing the 2024 annual accounts for {{company_name}} and have attached the below for you to review when you have a moment:
+
+  Financial Statements
+  Statutory minutes
+  {{ir4_company_tax_return}} 
+  IR3 individual tax return and IR526 donation rebate return for XXX
+  IR3 individual tax return and IR526 donation rebate return for XXX
+  For the 12 months ending {{financial_year_end_date}}, revenue was {{revenue_amount}} – this is an overall increase/decrease of {{revenue_percentage_change}} from the year ending {{previous_financial_year_end_date}}. This was largely due to ….. [one particular income stream, one particular event that explains this, new customers, Covid-19 impacts, online business, price increases]
+
+  Direct costs have naturally increased/decreased alongside sales, and the gross profit margin has increased/decreased/remained consistent from the 2023 year at {{revenue_percentage_change}} to last year at {{revenue_percentage_change}}. This was largely due to ….. [efficiency within a team/developing/investment in relationships with suppliers/increased direct costs not yet passed on to customers/change in supplier] 
+
+  Overheads have seen a reasonable increase/decrease of {{overheads_amount}} or {{revenue_percentage_change}}. Key movements for the year were:
+
+  OR 
+
+  Overheads for the year totalled {{tax_refund_or_payment_amount}}. A majority of the overhead expenses were made up of: [if no comparatives]
+
+  [Check internal queries for any points to add to the final email]
+
+  Company tax return
+
+  From a tax perspective, there is taxable income in the Company of {{revenue_amount}}. Tax on this amount is {{revenue_amount}}. After accounting for tax credits on investment income and provisional tax paid during the year, the Company is due to receive a refund of {{tax_refund_or_payment_amount}}/has tax to pay of {{tax_refund_or_payment_amount}}. This is due for payment on {{tax_due_date}} and we will be in touch closer to the due date with our standard reminder letter. 
+
+  All profits in the Company have been distributed to you by way of a shareholder salary, this means there are no upcoming income tax obligations in the Company. 
+
+  OR
+
+  The most recent tax return resets the Company’s provisional tax payments for the current financial year which are summarised in the table below.
+
+  OR
+
+  The most recent tax return triggers the Company to become a provisional taxpayer which means income tax payments are required to be made throughout the year, rather than in one lump sum at the end. These payments are summarised in the table below.
+created: '2025-06-19'

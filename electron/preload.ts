@@ -36,6 +36,7 @@ interface ElectronAPI {
   readTextFile: (filePath: string) => Promise<string>;
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<{ success: boolean }>;
+  readImageAsBase64: (filePath: string) => Promise<string>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -128,6 +129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteFile: async (filePath: string) => {
     return await ipcRenderer.invoke('delete-file', filePath);
+  },
+  readImageAsBase64: async (filePath: string) => {
+    return await ipcRenderer.invoke('read-image-as-base64', filePath);
   },
 }); 
 

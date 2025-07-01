@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Box, Input, Text, Flex, Icon, useColorModeValue, List, ListItem, Divider, IconButton } from '@chakra-ui/react';
+import { Box, Input, Text, Flex, Icon, useColorModeValue, List, ListItem, Divider, IconButton, Image } from '@chakra-ui/react';
 import { File, FolderOpen, Search, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useFileSearch } from '../hooks/useFileSearch';
@@ -199,22 +199,76 @@ export const QuickNavigateOverlay: React.FC = () => {
             newName = arg;
           }
         }
-        // Always call preview API for transfer command
-        window.electronAPI.transfer({
-          numFiles,
-          newName,
-          command: 'preview',
-          currentDirectory
-        }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
+        handleTransferPreview(numFiles || 1);
+      } else if (mappingKey) {
+        handleTransferMappingPreview(command);
+      } else if (commandText === 'sc' || commandText.startsWith('sc ')) {
+        // Auto-preview for screenshot command
+        (async () => {
+          try {
+            console.log('[QuickNavigate] Auto-requesting sc preview');
+            
+            // Parse filename from command, handling quoted strings
+            let newFilename = undefined;
+            if (commandText.startsWith('sc ')) {
+              const filenameSection = commandText.substring(3).trim(); // Remove 'sc '
+              if (filenameSection) {
+                // Handle quoted filenames
+                if (filenameSection.startsWith('"') && filenameSection.endsWith('"')) {
+                  newFilename = filenameSection.slice(1, -1); // Remove quotes
+                } else if (filenameSection.startsWith("'") && filenameSection.endsWith("'")) {
+                  newFilename = filenameSection.slice(1, -1); // Remove single quotes
+                } else {
+                  newFilename = filenameSection; // Use as-is
+                }
+              }
+            }
+            
+            console.log('[QuickNavigate] Parsed newFilename:', newFilename);
+            const previewResult = await window.electronAPI.executeCommand('sc_preview', currentDirectory, { newFilename });
+            console.log('[QuickNavigate] SC preview result:', previewResult);
+            
+            if (previewResult.success && previewResult.files) {
+              console.log('[QuickNavigate] SC preview successful, updating preview pane');
+              console.log('[QuickNavigate] Preview files data:', previewResult.files);
+              // Debug log each file to see the name/originalName values
+              previewResult.files.forEach((file: any, index: number) => {
+                console.log(`[QuickNavigate] File ${index}:`, {
+                  name: file.name,
+                  originalName: file.originalName,
+                  namesDifferent: file.originalName !== file.name
+                });
+              });
+              setPreviewFiles(previewResult.files);
+            } else {
+              console.log('[QuickNavigate] SC preview failed:', previewResult.message);
+              setPreviewFiles([]);
+            }
+          } catch (error) {
+            console.error('[QuickNavigate] Error during sc preview:', error);
             setPreviewFiles([]);
           }
-        }).catch(() => setPreviewFiles([]));
-      } else if (mappingKey) {
-        // Auto-preview for mapping commands
-        handleTransferMappingPreview(command);
+        })();
+      } else if (commandText === 'pdfinc') {
+        // Auto-preview for pdfinc command
+        (async () => {
+          try {
+            console.log('[QuickNavigate] Auto-requesting pdfinc preview');
+            const previewResult = await window.electronAPI.executeCommand('pdfinc_preview', currentDirectory);
+            console.log('[QuickNavigate] PDFInc preview result:', previewResult);
+            
+            if (previewResult.success && previewResult.files) {
+              console.log('[QuickNavigate] PDFInc preview successful, updating preview pane');
+              setPreviewFiles(previewResult.files);
+            } else {
+              console.log('[QuickNavigate] PDFInc preview failed:', previewResult.message);
+              setPreviewFiles([]);
+            }
+          } catch (error) {
+            console.error('[QuickNavigate] Error during pdfinc preview:', error);
+            setPreviewFiles([]);
+          }
+        })();
       } else if (command === 'finals') {
         // Auto-preview for finals command
         window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
@@ -360,9 +414,25 @@ export const QuickNavigateOverlay: React.FC = () => {
           }, {
             name: 'extract - Extract archives'
           }, {
+            name: 'sc - Transfer latest screenshot'
+          }, {
+            name: 'pdfinc - Merge numbered PDFs for income tax'
+          }, {
             name: 'help - Show this help'
           }]
         }
+      });
+    } else if (command === 'sc') {
+      setCommandInfo({
+        title: 'Screenshot Transfer',
+        description: 'Transfer the most recent screenshot from Screenshots folder to current directory',
+        usage: '$ sc [new_filename]'
+      });
+    } else if (command === 'pdfinc') {
+      setCommandInfo({
+        title: 'PDF Income Tax Merge',
+        description: 'Merge numbered PDFs: 1-3.pdf → L - INC Transactions, 4-5.pdf → A5 - PIR Rates',
+        usage: '$ pdfinc'
       });
     } else {
       setCommandInfo({
@@ -548,6 +618,64 @@ export const QuickNavigateOverlay: React.FC = () => {
           addLog(result.message, 'error');
           setStatus('Finals failed', 'error');
         }
+      } else if (command.toLowerCase().startsWith('sc')) {
+        // Handle screenshot command with folder refresh
+        console.log('[QuickNavigate] Executing sc command');
+        
+        // Parse filename from command, handling quoted strings (same logic as preview)
+        let newFilename = undefined;
+        if (command.startsWith('sc ')) {
+          const filenameSection = command.substring(3).trim(); // Remove 'sc '
+          if (filenameSection) {
+            // Handle quoted filenames
+            if (filenameSection.startsWith('"') && filenameSection.endsWith('"')) {
+              newFilename = filenameSection.slice(1, -1); // Remove quotes
+            } else if (filenameSection.startsWith("'") && filenameSection.endsWith("'")) {
+              newFilename = filenameSection.slice(1, -1); // Remove single quotes
+            } else {
+              newFilename = filenameSection; // Use as-is
+            }
+          }
+        }
+        
+        console.log('[QuickNavigate] Executing sc with parsed newFilename:', newFilename);
+        const result = await window.electronAPI.executeCommand('sc', currentDirectory, { newFilename });
+        console.log('[QuickNavigate] SC command execution result:', result);
+        
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('Screenshot transferred', 'success');
+          // Refresh folder view to show transferred file
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          addLog(result.message, 'error');
+          setStatus('Screenshot transfer failed', 'error');
+        }
+      } else if (command.toLowerCase() === 'pdfinc') {
+        // Handle pdfinc command with folder refresh
+        console.log('[QuickNavigate] Executing pdfinc command');
+        const result = await window.electronAPI.executeCommand(command, currentDirectory);
+        console.log('[QuickNavigate] PDFInc command execution result:', result);
+        
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('PDF merge completed', 'success');
+          // Refresh folder view to show merged files
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          addLog(result.message, 'error');
+          setStatus('PDF merge failed', 'error');
+        }
       } else {
         // Handle other commands
         console.log('[QuickNavigate] Executing non-transfer command');
@@ -645,7 +773,13 @@ export const QuickNavigateOverlay: React.FC = () => {
           <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>
             <Box p={4} bg={commandBgColor}>
               <Text fontSize="sm" fontWeight="medium" mb={2}>
-                Preview of {previewFiles.length} file{previewFiles.length > 1 ? 's' : ''} to {inputValue.trim().startsWith('finals') ? 'rename' : 'transfer'}:
+                {(() => {
+                  const cmdText = inputValue.trim().toLowerCase();
+                  if (cmdText.startsWith('sc')) return `Screenshot to transfer:`;
+                  if (cmdText === 'pdfinc') return `PDF merge operations:`;
+                  if (cmdText.startsWith('finals')) return `Files to rename:`;
+                  return `Preview of ${previewFiles.length} file${previewFiles.length > 1 ? 's' : ''} to transfer:`;
+                })()}
               </Text>
               <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
                 {previewFiles.map((file, index) => (
@@ -665,12 +799,53 @@ export const QuickNavigateOverlay: React.FC = () => {
                     flexDirection="column"
                     gap={1}
                   >
-                    <Text whiteSpace="normal" wordBreak="break-all" title={file.originalName || file.name} fontWeight="medium" overflow="visible">
-                      {file.originalName && file.originalName !== file.name ? file.originalName : file.name}
-                    </Text>
-                    <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={file.name} fontWeight="medium" overflow="visible">
-                      {file.originalName && file.originalName !== file.name ? file.name : ''}
-                    </Text>
+                    {/* Show merge information for pdfinc command */}
+                    {(file as any).mergeInfo ? (
+                      <>
+                        <Text whiteSpace="normal" wordBreak="break-all" fontWeight="medium" color="green.400" overflow="visible">
+                          📄 {file.name}
+                        </Text>
+                        <Text fontSize="xs" color="gray.500" whiteSpace="normal">
+                          Will be created from: {(file as any).mergeInfo.inputFiles.join(', ')}
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text whiteSpace="normal" wordBreak="break-all" title={file.originalName || file.name} fontWeight="medium" overflow="visible">
+                          {file.originalName && file.originalName !== file.name ? 
+                            `📷 ${file.originalName}` : 
+                            file.name.includes('.png') || file.name.includes('.jpg') ? `📷 ${file.name}` : file.name
+                          }
+                        </Text>
+                        {file.originalName && file.originalName !== file.name && (
+                          <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={file.name} fontWeight="medium" overflow="visible">
+                            → {file.name}
+                          </Text>
+                        )}
+                        
+                        {/* Image preview for screenshot files */}
+                        {(file as any).imageData && (
+                          <Box mt={2} p={2} bg={useColorModeValue('gray.200', 'gray.600')} borderRadius="md" maxW="300px">
+                            <Image
+                              src={(file as any).imageData}
+                              alt={file.name}
+                              maxH="150px"
+                              maxW="100%"
+                              objectFit="contain"
+                              borderRadius="md"
+                              border="1px solid"
+                              borderColor={useColorModeValue('gray.300', 'gray.500')}
+                            />
+                          </Box>
+                        )}
+                        
+                        {file.size && file.size !== 'Will be created' && (
+                          <Text fontSize="xs" color="gray.500">
+                            Size: {parseInt(file.size) > 1024 ? `${(parseInt(file.size) / 1024).toFixed(1)} KB` : `${file.size} bytes`}
+                          </Text>
+                        )}
+                      </>
+                    )}
                   </Box>
                 ))}
               </Box>
