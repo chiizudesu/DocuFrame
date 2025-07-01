@@ -795,6 +795,6 @@ export const FunctionPanels: React.FC = () => {
       onDownloadUpdate={handleDownloadUpdate}
       onInstallUpdate={handleInstallUpdate}
       updateInfo={updateInfo}
-    />
+      />
   </>;
 };

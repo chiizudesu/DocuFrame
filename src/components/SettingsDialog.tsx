@@ -330,20 +330,20 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       </Text>
                     </CardHeader>
                     <CardBody pt={0}>
-                      <InputGroup>
-                        <Input
-                          value={rootPath}
-                          onChange={(e) => setRootPath(e.target.value)}
-                          placeholder="Enter root path"
+            <InputGroup>
+              <Input
+                value={rootPath}
+                onChange={(e) => setRootPath(e.target.value)}
+                placeholder="Enter root path"
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                        />
-                        <InputRightElement width="4.5rem">
-                          <Button h="1.75rem" size="sm" onClick={handleBrowseFolder}>
+              />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" size="sm" onClick={handleBrowseFolder}>
                             <Icon as={FolderOpen} boxSize={4} />
-                          </Button>
-                        </InputRightElement>
-                      </InputGroup>
+                </Button>
+              </InputRightElement>
+            </InputGroup>
                     </CardBody>
                   </Card>
 
@@ -361,39 +361,39 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       <VStack spacing={4}>
                         <FormControl>
                           <FormLabel fontSize="sm" color={textColor}>GST Template Path</FormLabel>
-                          <InputGroup>
-                            <Input
-                              value={gstTemplatePath}
-                              onChange={(e) => setGstTemplatePath(e.target.value)}
-                              placeholder="Enter GST template file path"
+            <InputGroup>
+              <Input
+                value={gstTemplatePath}
+                onChange={(e) => setGstTemplatePath(e.target.value)}
+                placeholder="Enter GST template file path"
                               bg="white"
                               _dark={{ bg: 'gray.600' }}
-                            />
-                            <InputRightElement width="4.5rem">
-                              <Button h="1.75rem" size="sm" onClick={handleBrowseGstTemplate}>
+              />
+              <InputRightElement width="4.5rem">
+                <Button h="1.75rem" size="sm" onClick={handleBrowseGstTemplate}>
                                 <Icon as={FolderOpen} boxSize={4} />
-                              </Button>
-                            </InputRightElement>
-                          </InputGroup>
-                        </FormControl>
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
                         
                         <FormControl>
                           <FormLabel fontSize="sm" color={textColor}>Template Folder Path</FormLabel>
-                          <InputGroup>
-                            <Input 
+            <InputGroup>
+              <Input
                               value={templateFolderPath} 
                               isReadOnly 
                               placeholder="Select template folder..." 
                               bg="white"
                               _dark={{ bg: 'gray.600' }}
-                            />
-                            <InputRightElement width="4.5rem">
+              />
+              <InputRightElement width="4.5rem">
                               <Button h="1.75rem" size="sm" onClick={handleTemplateFolderChange}>
                                 <Icon as={FolderOpen} boxSize={4} />
-                              </Button>
-                            </InputRightElement>
-                          </InputGroup>
-                        </FormControl>
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
                       </VStack>
                     </CardBody>
                   </Card>
@@ -414,17 +414,17 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       </Text>
                     </CardHeader>
                     <CardBody pt={0}>
-                      <FormControl>
+          <FormControl>
                         <FormLabel fontSize="sm" color={textColor}>OpenAI API Key</FormLabel>
-                        <Input
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          type="password"
+            <Input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              type="password"
                           placeholder="Enter your OpenAI API key"
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                        />
-                      </FormControl>
+            />
+          </FormControl>
                     </CardBody>
                   </Card>
 
@@ -441,7 +441,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                     <CardBody pt={0}>
                       <FormControl>
                         <FormLabel fontSize="sm" color={textColor}>Clientbase CSV Path</FormLabel>
-                        <InputGroup>
+            <InputGroup>
                           <Input
                             value={clientbasePath}
                             onChange={(e) => setClientbasePath(e.target.value)}
@@ -449,13 +449,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                             bg="white"
                             _dark={{ bg: 'gray.600' }}
                           />
-                          <InputRightElement width="4.5rem">
+              <InputRightElement width="4.5rem">
                             <Button h="1.75rem" size="sm" onClick={handleBrowseClientbase}>
                               <Icon as={FolderOpen} boxSize={4} />
-                            </Button>
-                          </InputRightElement>
-                        </InputGroup>
-                      </FormControl>
+                </Button>
+              </InputRightElement>
+            </InputGroup>
+          </FormControl>
                     </CardBody>
                   </Card>
                 </VStack>
@@ -531,7 +531,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
                   <Alert status="info" borderRadius="lg">
                     <AlertIcon />
-                    <Box>
+            <Box>
                       <AlertTitle fontSize="sm">Shortcut Information</AlertTitle>
                       <AlertDescription fontSize="xs">
                         The activation shortcut works globally, even when the app is minimized or in the background.
@@ -567,13 +567,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                               Toggle the visibility of the output log at the bottom
                             </Text>
                           </VStack>
-                          <Switch
-                            isChecked={showOutputLog}
-                            onChange={(e) => setShowOutputLog(e.target.checked)}
-                            colorScheme="blue"
-                          />
+              <Switch
+                isChecked={showOutputLog}
+                onChange={(e) => setShowOutputLog(e.target.checked)}
+                colorScheme="blue"
+              />
                         </HStack>
-                      </FormControl>
+          </FormControl>
                     </CardBody>
                   </Card>
                 </VStack>

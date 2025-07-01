@@ -318,21 +318,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
         _hover={getHoverStyles()}
         style={{ userSelect: 'none', borderLeft: '4px solid transparent', opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
       >
-        {/* Display system icon if available */}
-        {dragImage && file.type === 'file' && (
-          <Image
-            src={dragImage}
-            alt=""
-            position="absolute"
-            top="8px"
-            left="8px"
-            width="16px"
-            height="16px"
-            pointerEvents="none"
-            zIndex={1}
-          />
-        )}
-        {/* Removed overlay for folders in table rows to prevent light screen effect */}
+        {/* Removed system icon rendering for files to avoid overlap */}
         {children}
       </Tr>
     );
@@ -351,21 +337,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       _hover={getHoverStyles()}
       style={{ opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
     >
-      {/* Display system icon if available */}
-      {dragImage && file.type === 'file' && (
-        <Image
-          src={dragImage}
-          alt=""
-          position="absolute"
-          top="8px"
-          left="8px"
-          width="16px"
-          height="16px"
-          pointerEvents="none"
-          zIndex={1}
-        />
-      )}
-      
+      {/* Removed system icon rendering for files to avoid overlap */}
       {/* Drag overlay for folders */}
       {isHovering && file.type === 'folder' && (
         <Box
@@ -381,7 +353,6 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
           pointerEvents="none"
         />
       )}
-      
       {children}
     </Box>
   );

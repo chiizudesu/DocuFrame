@@ -1,4 +1,7 @@
 // main.ts - Updated with IPC handlers
+// Set GitHub token for auto-updates (replace with your actual token)
+process.env.GH_TOKEN = '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';
+
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, globalShortcut } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -580,17 +583,6 @@ ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
       throw new Error('Source and destination paths are identical');
     }
 
-    // Check if the source file is currently open/locked
-    try {
-      const handle = await fsPromises.open(oldPath, 'r+');
-      await handle.close();
-    } catch (error) {
-      if (error.code === 'EBUSY' || error.code === 'EPERM') {
-        throw new Error(`Cannot rename: File is currently open or in use by another application`);
-      }
-      // Other errors might not be locks, so continue
-    }
-
     // Check if target directory exists
     const targetDir = path.dirname(newPath);
     try {
@@ -639,57 +631,38 @@ ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
       throw new Error('Filename is too long (maximum 255 characters)');
     }
 
-    // Perform the rename with retry logic
-    let attempts = 0;
-    const maxAttempts = 3;
-    
-    while (attempts < maxAttempts) {
-      try {
-        await fsPromises.rename(oldPath, newPath);
-        console.log(`Successfully renamed: ${oldPath} -> ${newPath}`);
-        
-        // Emit folder contents changed event to trigger refresh
-        const parentDirectory = path.dirname(oldPath);
-        const targetDirectory = path.dirname(newPath);
-        
-        // Notify about the source directory change
-        BrowserWindow.getAllWindows().forEach(win => {
-          win.webContents.send('folderContentsChanged', { directory: parentDirectory });
-        });
-        
-        // If moving to a different directory, also notify about target directory
-        if (parentDirectory !== targetDirectory) {
-          BrowserWindow.getAllWindows().forEach(win => {
-            win.webContents.send('folderContentsChanged', { directory: targetDirectory });
-          });
-        }
-        
-        return true;
-      } catch (error) {
-        attempts++;
-        console.log(`Rename attempt ${attempts} failed:`, error.message);
-        
-        if (attempts >= maxAttempts) {
-          // Final attempt failed
-          if (error.code === 'ENOENT') {
-            throw new Error(`Source file disappeared during rename operation: ${oldPath}`);
-          } else if (error.code === 'EEXIST') {
-            throw new Error(`Target file already exists: ${newPath}`);
-          } else if (error.code === 'EBUSY' || error.code === 'EPERM') {
-            throw new Error(`File is currently open or in use. Please close it and try again.`);
-          } else if (error.code === 'EACCES') {
-            throw new Error(`Permission denied. Check file permissions and try again.`);
-          } else {
-            throw new Error(`Rename failed: ${error.message}`);
-          }
-        }
-        
-        // Wait a bit before retrying
-        await new Promise(resolve => setTimeout(resolve, 100));
+    // Check if the source file is currently open/locked
+    try {
+      const handle = await fsPromises.open(oldPath, 'r+');
+      await handle.close();
+    } catch (error) {
+      if (error.code === 'EBUSY' || error.code === 'EPERM') {
+        throw new Error(`Cannot rename: File is currently open or in use by another application`);
       }
+      // Other errors might not be locks, so continue
     }
-    
-    return true;
+
+    // Pure atomic rename only
+    try {
+      await fsPromises.rename(oldPath, newPath);
+      console.log(`Successfully renamed: ${oldPath} -> ${newPath}`);
+      // Emit folder contents changed event to trigger refresh
+      const parentDirectory = path.dirname(oldPath);
+      const targetDirectory = path.dirname(newPath);
+      BrowserWindow.getAllWindows().forEach(win => {
+        win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+      });
+      if (parentDirectory !== targetDirectory) {
+        BrowserWindow.getAllWindows().forEach(win => {
+          win.webContents.send('folderContentsChanged', { directory: targetDirectory });
+        });
+      }
+      return true;
+    } catch (error) {
+      // Just return the error, do not attempt any fallback
+      console.error('Error renaming item:', error);
+      throw error;
+    }
   } catch (error) {
     console.error('Error renaming item:', error);
     throw error;

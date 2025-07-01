@@ -1,7 +1,7 @@
 {
   "name": "docuframe",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.7",
   "author": "Edward Matias <edwardjohncpa@gmail.com>",
   "type": "commonjs",
   "main": "dist-electron/main.js",
@@ -76,7 +76,7 @@
     "appId": "com.edwardmatias.docuframe",
     "productName": "DocuFrame",
     "directories": {
-      "output": "release"
+      "output": "release-v107"
     },
     "files": [
       "dist/**/*",

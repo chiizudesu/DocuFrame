@@ -47,6 +47,8 @@ interface ElectronAPI {
   onUpdateProgress: (cb: (event: Electron.IpcRendererEvent, progress: any) => void) => void;
   // Global shortcut methods
   updateGlobalShortcut: (config: AppSettings) => Promise<{ success: boolean }>;
+  // Version method
+  getVersion: () => string;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -158,6 +160,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Global shortcut methods
   updateGlobalShortcut: async (config: AppSettings) => {
     return await ipcRenderer.invoke('update-global-shortcut', config);
+  },
+  // Version method
+  getVersion: () => {
+    // Try to get version from various sources
+    if (typeof globalThis !== 'undefined' && (globalThis as any).__APP_VERSION__) {
+      return (globalThis as any).__APP_VERSION__;
+    }
+    if (typeof window !== 'undefined' && (window as any).__APP_VERSION__) {
+      return (window as any).__APP_VERSION__;
+    }
+    // Fallback to current package.json version
+    return '1.0.7';
   }
 }); 
 

@@ -578,6 +578,7 @@ export const FileGrid: React.FC = () => {
     if (!isRenaming) return
     if (!renameValue || renameValue === isRenaming) {
       setIsRenaming(null)
+      setRenameValue('')
       return
     }
     try {
@@ -586,11 +587,14 @@ export const FileGrid: React.FC = () => {
       await (window.electronAPI as any).renameItem(oldPath, newPath)
       addLog(`Renamed ${isRenaming} to ${renameValue}`)
       setIsRenaming(null)
+      setRenameValue('')
       // Use the existing folder refresh system
       loadDirectory(currentDirectory)
     } catch (error) {
       console.error('Error renaming:', error)
       addLog(`Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      setIsRenaming(null)
+      setRenameValue('')
     }
   }
 
@@ -970,6 +974,40 @@ export const FileGrid: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedFiles, sortedFiles, clipboard, isRenaming]);
 
+  // Add arrow key navigation for file selection
+  // TEMPORARILY DISABLED FOR TESTING
+  /*
+  useEffect(() => {
+    const handleArrowNavigation = (e: KeyboardEvent) => {
+      // Don't interfere if renaming or in input fields
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      if (isRenaming || isInputFocused) return;
+      if (!sortedFiles.length) return;
+
+      let currentIndex = lastSelectedIndex;
+      if (selectedFiles.length === 0) currentIndex = -1;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        let nextIndex = currentIndex === null || currentIndex === undefined || currentIndex < 0 ? 0 : Math.min(currentIndex + 1, sortedFiles.length - 1);
+        setSelectedFiles([sortedFiles[nextIndex].name]);
+        setSelectedFile(sortedFiles[nextIndex].name);
+        setLastSelectedIndex(nextIndex);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        let nextIndex = currentIndex === null || currentIndex === undefined || currentIndex < 0 ? sortedFiles.length - 1 : Math.max(currentIndex - 1, 0);
+        setSelectedFiles([sortedFiles[nextIndex].name]);
+        setSelectedFile(sortedFiles[nextIndex].name);
+        setLastSelectedIndex(nextIndex);
+      }
+    };
+
+    window.addEventListener('keydown', handleArrowNavigation);
+    return () => window.removeEventListener('keydown', handleArrowNavigation);
+  }, [selectedFiles, sortedFiles, lastSelectedIndex, isRenaming]);
+  */
+
   // Enhanced paste handler with conflict resolution
   const handlePaste = async () => {
     if (!clipboard.files.length || !clipboard.operation) return;
@@ -1087,6 +1125,7 @@ export const FileGrid: React.FC = () => {
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     setIsRenaming(null)
+                    setRenameValue('')
                   }
                 }}
               />
@@ -1292,6 +1331,7 @@ export const FileGrid: React.FC = () => {
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') {
                           setIsRenaming(null)
+                          setRenameValue('')
                         }
                       }}
                     />

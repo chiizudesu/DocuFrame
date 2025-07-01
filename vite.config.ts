@@ -57,6 +57,8 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
+    'globalThis.__APP_VERSION__': JSON.stringify(packageJson.version),
+    'window.__APP_VERSION__': JSON.stringify(packageJson.version),
   },
   build: {
     outDir: 'dist',

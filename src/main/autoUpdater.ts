@@ -15,7 +15,8 @@ class AutoUpdaterService {
       provider: 'github',
       owner: 'chiizudesu',
       repo: 'DocuFrame',
-      private: false
+      private: true,
+      token: process.env.GH_TOKEN
     });
 
     // Configure auto-updater

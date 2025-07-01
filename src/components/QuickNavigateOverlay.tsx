@@ -531,6 +531,8 @@ export const QuickNavigateOverlay: React.FC = () => {
       } else if (command === 'finals') {
         // Handle finals command with folder refresh
         console.log('[QuickNavigate] Executing finals command');
+        console.log('[QuickNavigate] Current directory:', currentDirectory);
+        
         const result = await window.electronAPI.executeCommand(command, currentDirectory);
         console.log('[QuickNavigate] Finals command execution result:', result);
         

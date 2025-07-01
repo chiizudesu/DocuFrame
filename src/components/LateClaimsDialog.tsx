@@ -59,6 +59,9 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const textColor = useColorModeValue('gray.800', 'white');
+  const secondaryBgColor = useColorModeValue('gray.50', 'gray.700');
+  const cardBgColor = useColorModeValue('gray.100', 'gray.800');
 
   // Auto-load GST data when dialog opens
   useEffect(() => {
@@ -210,7 +213,7 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="md" isCentered>
       <ModalOverlay />
-      <ModalContent bg="gray.900" color="white" borderRadius="lg" boxShadow="lg" maxW="400px">
+      <ModalContent bg={bgColor} color={textColor} borderRadius="lg" boxShadow="lg" maxW="400px" border="1px solid" borderColor={borderColor}>
         <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
           GST Return Summary
         </ModalHeader>
@@ -236,18 +239,27 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
                 // No late claims scenario
                 return (
                   <VStack align="stretch" spacing={4}>
-                    <Box bgGradient="linear(to-r, gray.400, gray.600)" color="white" borderRadius="md" p={4} boxShadow="md" textAlign="center">
+                    <Box 
+                      bg={useColorModeValue('gray.100', 'gray.700')} 
+                      color={textColor} 
+                      borderRadius="md" 
+                      p={4} 
+                      boxShadow="md" 
+                      textAlign="center"
+                      border="1px solid"
+                      borderColor={borderColor}
+                    >
                       <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>No Late Claims</Text>
                       <Text fontSize="lg" fontWeight="bold">No adjustments required</Text>
                     </Box>
-                    <Box bg="gray.800" borderRadius="md" p={4}>
+                    <Box bg={cardBgColor} borderRadius="md" p={4} border="1px solid" borderColor={borderColor}>
                       <VStack align="stretch" spacing={1}>
                         <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
                         <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
                         <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
                         <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
                         <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
-                        <Text fontSize="sm" color="gray.400"><strong>Late Claims Amount:</strong> {formatCurrency(0)}</Text>
+                        <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.400')}><strong>Late Claims Amount:</strong> {formatCurrency(0)}</Text>
                       </VStack>
                     </Box>
                   </VStack>
@@ -263,26 +275,35 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
               
               return (
                 <VStack align="stretch" spacing={4}>
-                  <Box bgGradient="linear(to-r, teal.400, blue.400)" color="white" borderRadius="md" p={4} boxShadow="md" textAlign="center">
+                  <Box 
+                    bg={useColorModeValue('blue.50', 'blue.900')} 
+                    color={useColorModeValue('blue.800', 'blue.100')} 
+                    borderRadius="md" 
+                    p={4} 
+                    boxShadow="md" 
+                    textAlign="center"
+                    border="1px solid"
+                    borderColor={useColorModeValue('blue.200', 'blue.700')}
+                  >
                     <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>
                       {targetSection} after Late Claims
                     </Text>
                     <Text fontSize="2xl" fontWeight="extrabold">
                       {formatCurrency(adjustedAmount)}
                     </Text>
-                    <Text fontSize="xs" mt={1} opacity={0.9}>
+                    <Text fontSize="xs" mt={1} opacity={0.8}>
                       Added to {lateClaimsTarget === 'purchases' ? 'Purchases' : 'Sales'}
                     </Text>
                   </Box>
-                  <Box bg="gray.800" borderRadius="md" p={4}>
+                  <Box bg={cardBgColor} borderRadius="md" p={4} border="1px solid" borderColor={borderColor}>
                     <VStack align="stretch" spacing={1}>
                       <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
                       <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
                       <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
                       <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
                       <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
-                      <Text fontSize="sm" color="orange.400"><strong>Late Claims Amount:</strong> {formatCurrency(gstData.lateClaimsAmount)}</Text>
-                      <Text fontSize="sm" color="green.400"><strong>Grossed Up Amount:</strong> {formatCurrency(grossedUpAmount)}</Text>
+                      <Text fontSize="sm" color={useColorModeValue('orange.600', 'orange.400')}><strong>Late Claims Amount:</strong> {formatCurrency(gstData.lateClaimsAmount)}</Text>
+                      <Text fontSize="sm" color={useColorModeValue('green.600', 'green.400')}><strong>Grossed Up Amount:</strong> {formatCurrency(grossedUpAmount)}</Text>
                     </VStack>
                   </Box>
                 </VStack>

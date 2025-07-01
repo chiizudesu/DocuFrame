@@ -74,7 +74,10 @@ export async function handleCommand(command: string, args: string[], currentDire
     console.log('[CommandHandler] Executing finals command');
     
     const directory = currentDirectory || process.cwd();
+    console.log('[CommandHandler] Finals directory:', directory);
+    
     const result = await finalsCommand(directory, false); // false = not preview
+    console.log('[CommandHandler] Finals command result:', result);
     
     return {
       success: result.success,
