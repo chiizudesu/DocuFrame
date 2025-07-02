@@ -8,6 +8,7 @@ import { gstTemplate } from './commands/gstTemplate';
 import { updateApp } from './commands/updateApp';
 import { screenshotCommand } from './commands/screenshotCommand';
 import { pdfincCommand } from './commands/pdfincCommand';
+import { edsbyCommand } from './commands/edsbyCommand';
 import { getConfig } from './config';
 
 interface CommandResult {
@@ -91,6 +92,52 @@ export async function handleCommand(command: string, args: string[], currentDire
     
     const directory = currentDirectory || process.cwd();
     const result = await finalsCommand(directory, true); // true = preview
+    
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
+    };
+  }
+  
+  // Handle edsby command
+  if (cmd.toLowerCase() === 'edsby') {
+    console.log('[CommandHandler] Executing edsby command');
+    
+    const directory = currentDirectory || process.cwd();
+    const period = (options && options.period) ? options.period : cmdArgs.join(' ');
+    
+    if (!period) {
+      return {
+        success: false,
+        message: 'Edsby command requires a period parameter (e.g., "June 2025")'
+      };
+    }
+    
+    const result = await edsbyCommand(directory, period, false); // false = not preview
+    
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
+    };
+  }
+
+  // Handle edsby preview command
+  if (cmd.toLowerCase() === 'edsby_preview') {
+    console.log('[CommandHandler] Executing edsby preview command');
+    
+    const directory = currentDirectory || process.cwd();
+    const period = (options && options.period) ? options.period : cmdArgs.join(' ');
+    
+    if (!period) {
+      return {
+        success: false,
+        message: 'Edsby preview command requires a period parameter (e.g., "June 2025")'
+      };
+    }
+    
+    const result = await edsbyCommand(directory, period, true); // true = preview
     
     return {
       success: result.success,

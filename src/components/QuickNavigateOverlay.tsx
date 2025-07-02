@@ -278,6 +278,19 @@ export const QuickNavigateOverlay: React.FC = () => {
             setPreviewFiles([]);
           }
         }).catch(() => setPreviewFiles([]));
+      } else if (command === 'edsby') {
+        // Auto-preview for edsby command
+        let period = commandParts.slice(1).join(' ').trim();
+        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+          period = period.slice(1, -1);
+        }
+        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
       } else {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
@@ -365,6 +378,12 @@ export const QuickNavigateOverlay: React.FC = () => {
         title: 'Finals Processing',
         description: 'Rename tax return files and financial statements to standard format',
         usage: '$ finals'
+      });
+    } else if (command === 'edsby') {
+      setCommandInfo({
+        title: 'Edsby Batch Rename',
+        description: 'Batch rename Edsby files to standard format for a given period',
+        usage: '$ edsby "June 2025"'
       });
     } else if (command === 'rename') {
       setCommandInfo({
@@ -618,6 +637,28 @@ export const QuickNavigateOverlay: React.FC = () => {
           addLog(result.message, 'error');
           setStatus('Finals failed', 'error');
         }
+      } else if (command.startsWith('edsby')) {
+        // Handle edsby command with folder refresh
+        console.log('[QuickNavigate] Executing edsby command');
+        let period = command.split(' ').slice(1).join(' ').trim();
+        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+          period = period.slice(1, -1);
+        }
+        const result = await window.electronAPI.executeCommand('edsby', currentDirectory, { period });
+        console.log('[QuickNavigate] Edsby command execution result:', result);
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('Edsby batch rename completed', 'success');
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          addLog(result.message, 'error');
+          setStatus('Edsby batch rename failed', 'error');
+        }
       } else if (command.toLowerCase().startsWith('sc')) {
         // Handle screenshot command with folder refresh
         console.log('[QuickNavigate] Executing sc command');
@@ -778,6 +819,7 @@ export const QuickNavigateOverlay: React.FC = () => {
                   if (cmdText.startsWith('sc')) return `Screenshot to transfer:`;
                   if (cmdText === 'pdfinc') return `PDF merge operations:`;
                   if (cmdText.startsWith('finals')) return `Files to rename:`;
+                  if (cmdText.startsWith('edsby')) return `Files to rename:`;
                   return `Preview of ${previewFiles.length} file${previewFiles.length > 1 ? 's' : ''} to transfer:`;
                 })()}
               </Text>
