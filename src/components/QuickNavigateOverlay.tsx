@@ -224,6 +224,28 @@ export const QuickNavigateOverlay: React.FC = () => {
             setPreviewFiles([]);
           }
         }).catch(() => setPreviewFiles([]));
+      } else if (command === 'edsby') {
+        // Auto-preview for edsby command
+        let period = commandParts.slice(1).join(' ').trim();
+        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+          period = period.slice(1, -1);
+        }
+        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'pdfinc') {
+        // Auto-preview for pdfinc command
+        window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
       } else {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
@@ -550,6 +572,48 @@ export const QuickNavigateOverlay: React.FC = () => {
           addLog(result.message, 'error');
           setStatus('Finals failed', 'error');
         }
+      } else if (command.startsWith('edsby')) {
+        // Handle edsby command with folder refresh
+        console.log('[QuickNavigate] Executing edsby command');
+        let period = command.split(' ').slice(1).join(' ').trim();
+        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+          period = period.slice(1, -1);
+        }
+        const result = await window.electronAPI.executeCommand('edsby', currentDirectory, { period });
+        console.log('[QuickNavigate] Edsby command execution result:', result);
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('Edsby batch rename completed', 'success');
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          addLog(result.message, 'error');
+          setStatus('Edsby batch rename failed', 'error');
+        }
+      } else if (command.toLowerCase() === 'pdfinc') {
+        // Handle pdfinc command with folder refresh
+        console.log('[QuickNavigate] Executing pdfinc command');
+        const result = await window.electronAPI.executeCommand(command, currentDirectory);
+        console.log('[QuickNavigate] PDFInc command execution result:', result);
+        
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('PDF merge completed', 'success');
+          // Refresh folder view to show merged files
+          setStatus('Refreshing folder...', 'info');
+          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+            if (typeof setFolderItems === 'function') setFolderItems(contents);
+            setStatus('Folder refreshed', 'success');
+          }
+        } else {
+          addLog(result.message, 'error');
+          setStatus('PDF merge failed', 'error');
+        }
       } else {
         // Handle other commands
         console.log('[QuickNavigate] Executing non-transfer command');
@@ -647,7 +711,14 @@ export const QuickNavigateOverlay: React.FC = () => {
           <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>
             <Box p={4} bg={commandBgColor}>
               <Text fontSize="sm" fontWeight="medium" mb={2}>
-                Preview of {previewFiles.length} file{previewFiles.length > 1 ? 's' : ''} to {inputValue.trim().startsWith('finals') ? 'rename' : 'transfer'}:
+                {(() => {
+                  const cmdText = inputValue.trim().toLowerCase();
+                  if (cmdText.startsWith('sc')) return `Screenshot to transfer:`;
+                  if (cmdText === 'pdfinc') return `PDF merge operations:`;
+                  if (cmdText.startsWith('finals')) return `Files to rename:`;
+                  if (cmdText.startsWith('edsby')) return `Files to rename:`;
+                  return `Preview of ${previewFiles.length} file${previewFiles.length > 1 ? 's' : ''} to transfer:`;
+                })()}
               </Text>
               <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
                 {previewFiles.map((file, index) => (
