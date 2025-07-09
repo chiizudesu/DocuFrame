@@ -7,6 +7,7 @@ interface ElectronAPI {
   setConfig: (config: AppSettings) => Promise<AppSettings>;
   validatePath: (path: string) => Promise<boolean>;
   getDirectoryContents: (path: string) => Promise<FileItem[]>;
+  getDownloadsPath: () => Promise<string>;
   createDirectory: (path: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
@@ -87,6 +88,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getDirectoryContents: async (dirPath: string) => {
     return await ipcRenderer.invoke('get-directory-contents', dirPath);
+  },
+  getDownloadsPath: async () => {
+    return await ipcRenderer.invoke('get-downloads-path');
   },
   
   // File operations

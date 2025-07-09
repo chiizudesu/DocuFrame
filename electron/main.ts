@@ -354,6 +354,17 @@ ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
   }
 });
 
+ipcMain.handle('get-downloads-path', async () => {
+  try {
+    const downloadsPath = app.getPath('downloads');
+    console.log('[Main] Downloads path:', downloadsPath);
+    return downloadsPath;
+  } catch (error) {
+    console.error('Error getting downloads path:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('create-directory', async (_, dirPath: string) => {
   try {
     await fsPromises.mkdir(dirPath, { recursive: true });

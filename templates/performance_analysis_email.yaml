@@ -10,17 +10,17 @@ template: |
 
   Direct costs have naturally {{direct_costs_direction}} alongside sales, and the gross profit margin has {{gross_profit_direction}} from the 2024 year at {{gross_profit_2024}}% to last year at {{gross_profit_2025}}%. This was largely due to {{gross_profit_reason}}.
 
-  Overheads (excluding shareholder salaries) have seen a reasonable {{overheads_direction}} of ${{overheads_amount_less_shareholder_salaries}} or {{overheads_percent_less_shareholder_salaries}}%. Key movements for the year were:
+  Overheads have seen a reasonable {{overheads_direction}} of ${{overheads_movement}} or {{overheads_movement_percent}}%. Key movements for the year were:
 
-  - {{expenses_1}} by ${{expenses_1_amount}} or {{expenses_1_percent}}%
-  - {{expenses_2}} by ${{expenses_2_amount}} or {{expenses_2_percent}}%
-  - {{expenses_3}} by ${{expenses_3_amount}} or {{expenses_3_percent}}%
-  - {{expenses_4}} by ${{expenses_4_amount}} or {{expenses_4_percent}}%
-  - {{expenses_5}} by ${{expenses_5_amount}} or {{expenses_5_percent}}%
-  - {{expenses_6}} by ${{expenses_6_amount}} or {{expenses_6_percent}}%
-  - {{expenses_7}} by ${{expenses_7_amount}} or {{expenses_7_percent}}%
+  - {{expenses_1}} increased / decreased by ${{expenses_1_amount}} or {{expenses_1_percent}}%
+  - {{expenses_2}} increased / decreased by ${{expenses_2_amount}} or {{expenses_2_percent}}%
+  - {{expenses_3}} increased / decreased by ${{expenses_3_amount}} or {{expenses_3_percent}}%
+  - {{expenses_4}} increased / decreased by ${{expenses_4_amount}} or {{expenses_4_percent}}%
+  - {{expenses_5}} increased / decreased by ${{expenses_5_amount}} or {{expenses_5_percent}}%
+  - {{expenses_6}} increased / decreased by ${{expenses_6_amount}} or {{expenses_6_percent}}%
+  - {{expenses_7}} increased / decreased by ${{expenses_7_amount}} increased / decreased or {{expenses_7_percent}}%
     {{fill any other expense here if needed}}
-  
+
   {{OR if no comparatives
   Overheads (excluding shareholder salaries) for the year totalled ${{overheads_total_less_shareholder_salariesl}}. A majority of the overhead expenses were made up of: 
   - {{expenses_1}} by ${{expenses_1_amount}} or {{expenses_1_percent}}%

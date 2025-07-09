@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
-import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Spinner, Input, Menu, MenuButton, MenuList, MenuItem, Portal, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useDisclosure } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, Brain, Send, ChevronDown, Maximize2 } from 'lucide-react';
+import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Spinner, Input, Menu, MenuButton, MenuList, MenuItem, Portal, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useDisclosure, Icon } from '@chakra-ui/react';
+import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, Brain, Send, ChevronDown, Maximize2, Upload } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import ReactMarkdown from 'react-markdown';
+import { Heading, List, ListItem } from '@chakra-ui/react';
+import type { FileItem } from '../types';
+import { DraggableFileItem } from './DraggableFileItem';
 
 export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: () => void, isCollapsed?: boolean }> = ({ collapsed = false, onToggleCollapse }) => {
   const {
@@ -24,214 +28,6 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   
   // State for document summary
   const [documentSummary, setDocumentSummary] = useState<string>('');
-
-  // Simple markdown parser component
-  const MarkdownText: React.FC<{ children: string }> = ({ children }) => {
-    const parseMarkdown = (text: string) => {
-      const lines = text.split('\n');
-      const elements: JSX.Element[] = [];
-      let i = 0;
-      
-      while (i < lines.length) {
-        const line = lines[i];
-        
-        // Check for markdown table
-        if (line.includes('|') && lines[i + 1]?.includes('|') && lines[i + 1]?.includes('-')) {
-          // Parse table
-          const tableLines = [];
-          let j = i;
-          
-          // Collect all table lines
-          while (j < lines.length && lines[j].includes('|')) {
-            if (lines[j].trim() !== '' && !lines[j].match(/^\|[\s\-\|]*\|$/)) {
-              tableLines.push(lines[j]);
-            }
-            j++;
-          }
-          
-          if (tableLines.length >= 2) {
-            // Skip separator line if it exists
-            const headerLine = tableLines[0];
-            const dataLines = tableLines.slice(1).filter(line => !line.match(/^\|[\s\-\|]*\|$/));
-            
-            // Parse header
-            const headers = headerLine.split('|')
-              .map(cell => cell.trim())
-              .filter(cell => cell !== '');
-            
-            // Parse data rows
-            const rows = dataLines.map(line => 
-              line.split('|')
-                .map(cell => cell.trim())
-                .filter(cell => cell !== '')
-            );
-            
-            if (headers.length > 0 && rows.length > 0) {
-              elements.push(
-                <Box key={`table-${i}`} mb={4} overflowX="auto">
-                  <Box
-                    border="1px solid"
-                    borderColor={useColorModeValue('gray.300', 'gray.600')}
-                    borderRadius="md"
-                    overflow="hidden"
-                    bg={useColorModeValue('white', 'gray.700')}
-                    display="table"
-                    width="100%"
-                  >
-                    {/* Table Header */}
-                    <Box
-                      display="table-row"
-                      bg={useColorModeValue('gray.50', 'gray.600')}
-                    >
-                      {headers.map((header, headerIndex) => (
-                        <Box
-                          key={headerIndex}
-                          display="table-cell"
-                          p={3}
-                          borderRight={headerIndex < headers.length - 1 ? "1px solid" : "none"}
-                          borderColor={useColorModeValue('gray.300', 'gray.600')}
-                          borderBottom="1px solid"
-                          verticalAlign="top"
-                        >
-                          <Text fontSize="sm" fontWeight="bold" color={useColorModeValue('gray.700', 'gray.200')}>
-                            {header}
-                          </Text>
-                        </Box>
-                      ))}
-                    </Box>
-                    
-                    {/* Table Rows */}
-                    {rows.map((row, rowIndex) => (
-                      <Box
-                        key={rowIndex}
-                        display="table-row"
-                      >
-                        {row.map((cell, cellIndex) => (
-                          <Box
-                            key={cellIndex}
-                            display="table-cell"
-                            p={3}
-                            borderRight={cellIndex < row.length - 1 ? "1px solid" : "none"}
-                            borderColor={useColorModeValue('gray.200', 'gray.600')}
-                            borderBottom={rowIndex < rows.length - 1 ? "1px solid" : "none"}
-                            verticalAlign="top"
-                          >
-                            <Text 
-                              fontSize="sm" 
-                              overflowWrap="break-word"
-                              wordBreak="break-word"
-                              whiteSpace="pre-wrap"
-                              userSelect="text"
-                            >
-                              {cell}
-                            </Text>
-                          </Box>
-                        ))}
-                      </Box>
-                    ))}
-                  </Box>
-                </Box>
-              );
-            }
-            
-            i = j;
-            continue;
-          }
-        }
-        
-        // Handle other markdown elements
-        if (line.startsWith('**') && line.endsWith('**')) {
-          // Bold headings
-          const content = line.slice(2, -2);
-          elements.push(
-            <Text 
-              key={i} 
-              fontWeight="bold" 
-              fontSize="sm" 
-              color="blue.300" 
-              mb={1}
-              overflowWrap="break-word"
-              wordBreak="break-word"
-              userSelect="text"
-            >
-              {content}
-            </Text>
-          );
-        } else if (line.startsWith('- **') && line.includes('**')) {
-          // Bold bullet points
-          const match = line.match(/^- \*\*(.*?)\*\*(.*)/);
-          if (match) {
-            elements.push(
-              <Text 
-                key={i} 
-                fontSize="sm" 
-                ml={2} 
-                mb={1}
-                overflowWrap="break-word"
-                wordBreak="break-word"
-                userSelect="text"
-              >
-                • <Text as="span" fontWeight="bold" color="blue.200">{match[1]}</Text>{match[2]}
-              </Text>
-            );
-          }
-        } else if (line.startsWith('- ')) {
-          // Regular bullet points
-          elements.push(
-            <Text 
-              key={i} 
-              fontSize="sm" 
-              ml={2} 
-              mb={1}
-              overflowWrap="break-word"
-              wordBreak="break-word"
-              userSelect="text"
-            >
-              • {line.slice(2)}
-            </Text>
-          );
-        } else if (line.trim() === '') {
-          // Empty lines
-          elements.push(<Box key={i} height="8px" />);
-        } else {
-          // Regular text
-          elements.push(
-            <Text 
-              key={i} 
-              fontSize="sm" 
-              mb={1}
-              overflowWrap="break-word"
-              wordBreak="break-word"
-              userSelect="text"
-            >
-              {line}
-            </Text>
-          );
-        }
-        
-        i++;
-      }
-      
-      return elements;
-    };
-
-    return (
-      <Box 
-        overflowWrap="break-word" 
-        wordBreak="break-word" 
-        maxWidth="100%"
-        overflowX="hidden"
-        userSelect="text"
-        sx={{
-          '& *': {
-            userSelect: 'text'
-          }
-        }}
-      >
-        {parseMarkdown(children)}
-      </Box>
-    );
-  };
 
   // Generate document summary
   const generateDocumentSummary = async () => {
@@ -335,6 +131,15 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const [loadingClient, setLoadingClient] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
 
+  // Add at the top, after other useState imports
+  const [clientInfoOpen, setClientInfoOpen] = useState(false);
+  const [documentInsightsOpen, setDocumentInsightsOpen] = useState(false);
+  const [downloadsOpen, setDownloadsOpen] = useState(false);
+  const [downloadsFiles, setDownloadsFiles] = useState<FileItem[]>([]);
+  const [loadingDownloads, setLoadingDownloads] = useState(false);
+  const [selectedDownloads, setSelectedDownloads] = useState<string[]>([]);
+  const [lastSelectedDownloadIndex, setLastSelectedDownloadIndex] = useState<number | null>(null);
+
   // Extract client name and tax year from path
   const pathSegments = currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '');
   // Find the index of the root (Client) folder
@@ -354,6 +159,123 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   
   const fileExtension = getFileExtension(documentName);
   const documentDisplayName = fileExtension ? `${documentName}` : documentName;
+
+  // Utility functions for file icons and formatting
+  const getFileIcon = (type: string, name: string) => {
+    if (type === 'folder') {
+      return FileText;
+    }
+    
+    const extension = name.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return FileText;
+      case 'doc':
+      case 'docx':
+        return FileText;
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return FileText;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'svg':
+        return FileText;
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+        return FileText;
+      case 'txt':
+      case 'md':
+      case 'json':
+      case 'xml':
+      case 'html':
+      case 'css':
+      case 'js':
+      case 'ts':
+        return FileText;
+      default:
+        return FileText;
+    }
+  };
+
+  const getIconColor = (type: string, name: string) => {
+    if (type === 'folder') return 'blue.400';
+    
+    const extension = name.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return 'red.400';
+      case 'doc':
+      case 'docx':
+        return 'blue.400';
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return 'green.400';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'svg':
+        return 'purple.400';
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+        return 'orange.400';
+      case 'txt':
+      case 'md':
+      case 'json':
+      case 'xml':
+      case 'html':
+      case 'css':
+      case 'js':
+      case 'ts':
+        return 'yellow.400';
+      default:
+        return 'gray.400';
+    }
+  };
+
+  // Format file size
+  const formatFileSize = (size: string | undefined) => {
+    if (!size) return '';
+    const sizeNum = parseFloat(size);
+    if (isNaN(sizeNum)) return size;
+    return `${(sizeNum / 1024).toFixed(1)} KB`;
+  };
+
+  // Handler for loading downloads files
+  const handleLoadDownloads = async () => {
+    setLoadingDownloads(true);
+    try {
+      const downloadsPath = await window.electronAPI.getDownloadsPath();
+      const files = await window.electronAPI.getDirectoryContents(downloadsPath);
+      // Sort by modified date, newest first, and limit to 20 items
+      const sortedFiles = files
+        .filter((file: FileItem) => file.type === 'file')
+        .sort((a: FileItem, b: FileItem) => {
+          const dateA = new Date(a.modified || '');
+          const dateB = new Date(b.modified || '');
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, 20);
+      setDownloadsFiles(sortedFiles);
+    } catch (error) {
+      console.error('Failed to load downloads:', error);
+      addLog('Failed to load downloads folder', 'error');
+    } finally {
+      setLoadingDownloads(false);
+    }
+  };
 
   // Handler for loading client info
   const handleLoadClientInfo = async () => {
@@ -420,6 +342,45 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       onOpen();
       console.log('Modal should now be open');
     }
+  };
+
+  // Handler for selecting downloads (multi-select logic)
+  const handleSelectDownload = (file: FileItem, index: number, event: React.MouseEvent) => {
+    if (event.shiftKey && lastSelectedDownloadIndex !== null) {
+      // Range select
+      const start = Math.min(lastSelectedDownloadIndex, index);
+      const end = Math.max(lastSelectedDownloadIndex, index);
+      const range = downloadsFiles.slice(start, end + 1).map(f => f.name);
+      setSelectedDownloads(prev => Array.from(new Set([...prev, ...range])));
+    } else if (event.ctrlKey || event.metaKey) {
+      // Toggle select
+      setSelectedDownloads(prev =>
+        prev.includes(file.name)
+          ? prev.filter(name => name !== file.name)
+          : [...prev, file.name]
+      );
+      setLastSelectedDownloadIndex(index);
+    } else {
+      // Single select
+      setSelectedDownloads([file.name]);
+      setLastSelectedDownloadIndex(index);
+    }
+  };
+
+  // Section header style for all three sections
+  const sectionHeaderStyle = {
+    w: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    px: 2,
+    py: 2,
+    borderRadius: "md",
+    bg: "transparent",
+    _hover: { bg: useColorModeValue('gray.50', 'gray.800') },
+    transition: "background 0.2s",
+    border: "none",
+    mb: 0,
   };
 
   if (collapsed) {
@@ -772,200 +733,305 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         <IconButton aria-label="Collapse sidebar" icon={<ChevronLeft size={20} strokeWidth={2.5} />} size="sm" variant="ghost" ml={2} onClick={onToggleCollapse} />
       </Flex>
 
+      {/* Downloads Section */}
+      <Box mb={2} flexShrink={0}>
+        <Box {...sectionHeaderStyle}
+          onClick={() => {
+            setDownloadsOpen((open) => !open);
+            if (!downloadsOpen && downloadsFiles.length === 0) {
+              handleLoadDownloads();
+            }
+          }}
+        >
+          <Text fontSize="sm" fontWeight="semibold" color={textColor}>
+            Downloads
+          </Text>
+          <Flex align="center" gap={1}>
+            <IconButton
+              aria-label="Refresh downloads"
+              icon={<RefreshCw size={16} />}
+              size="xs"
+              isLoading={loadingDownloads}
+              onClick={e => { e.stopPropagation(); handleLoadDownloads(); }}
+              variant="ghost"
+              color={accentColor}
+              _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+            />
+            <IconButton
+              aria-label={downloadsOpen ? 'Collapse' : 'Expand'}
+              icon={<ChevronDown size={18} style={{ transform: downloadsOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
+              size="xs"
+              variant="ghost"
+              onClick={e => { e.stopPropagation(); setDownloadsOpen((open) => !open); }}
+              tabIndex={-1}
+            />
+          </Flex>
+        </Box>
+        {downloadsOpen && (
+          <Box w="100%" flex="1" display="flex" flexDirection="column" minHeight="0" pt={2} pb={2}>
+            <Box
+              position="relative"
+              flex="1"
+              minH="0"
+              display="flex"
+              flexDirection="column"
+              bg={useColorModeValue('#ffffff', 'gray.800')}
+              border="1px solid"
+              borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+              borderRadius="md"
+              overflow="hidden"
+            >
+              {/* Mini folder view header */}
+              <Box
+                bg={useColorModeValue('#f8fafc', 'gray.700')}
+                borderBottom="1px solid"
+                borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                px={3}
+                py={2}
+              >
+                <Flex align="center" fontSize="xs" fontWeight="medium" color={secondaryTextColor}>
+                  <Text>Name</Text>
+                </Flex>
+              </Box>
+              
+              {/* Files list */}
+              <Box
+                flex="1"
+                overflowY="auto"
+                className="enhanced-scrollbar"
+                maxH="200px"
+                minH="100px"
+              >
+                {loadingDownloads ? (
+                  <Flex justify="center" align="center" py={4}>
+                    <Spinner size="sm" color={accentColor} />
+                  </Flex>
+                ) : downloadsFiles.length > 0 ? (
+                  downloadsFiles.map((file, index) => (
+                    <DraggableFileItem
+                      key={file.path}
+                      file={file}
+                      isSelected={selectedDownloads.includes(file.name)}
+                      selectedFiles={selectedDownloads}
+                      sortedFiles={downloadsFiles}
+                      index={index}
+                      onSelect={(f, i, e) => handleSelectDownload(f, i, e)}
+                      onContextMenu={() => {}}
+                      onDragStateReset={() => {}}
+                      onFileMouseDown={() => {}}
+                      onFileClick={() => {}}
+                      as="box"
+                    >
+                      <Flex
+                        align="center"
+                        px={3}
+                        py={2}
+                        fontSize="xs"
+                        borderBottom="1px solid"
+                        borderColor={useColorModeValue('#f1f5f9', 'gray.700')}
+                        _hover={{
+                          bg: useColorModeValue('#f8fafc', 'gray.700')
+                        }}
+                        bg={selectedDownloads.includes(file.name) ? useColorModeValue('#dbeafe', 'blue.800') : 'transparent'}
+                        color={selectedDownloads.includes(file.name) ? useColorModeValue('#1e40af', 'white') : textColor}
+                        cursor="default"
+                        style={{ userSelect: 'none' }}
+                        onClick={e => handleSelectDownload(file, index, e)}
+                        borderRadius={0}
+                      >
+                        <Icon
+                          as={getFileIcon(file.type, file.name)}
+                          color={getIconColor(file.type, file.name)}
+                          boxSize={4}
+                        />
+                        <Text
+                          noOfLines={1}
+                          color="inherit"
+                          fontWeight="medium"
+                          ml={2}
+                        >
+                          {file.name}
+                        </Text>
+                      </Flex>
+                    </DraggableFileItem>
+                  ))
+                ) : (
+                  <Flex justify="center" align="center" py={4}>
+                    <Text fontSize="xs" color={secondaryTextColor}>
+                      No files in Downloads
+                    </Text>
+                  </Flex>
+                )}
+              </Box>
+            </Box>
+          </Box>
+        )}
+      </Box>
+
       {/* Client Information */}
       <Box mb={2} flexShrink={0}>
-        <Flex align="center" mb={2}>
+        <Box {...sectionHeaderStyle}
+          onClick={() => setClientInfoOpen((open) => !open)}
+        >
           <Text fontSize="sm" fontWeight="semibold" color={textColor}>
             Client Information
           </Text>
-          <Spacer />
-          <IconButton
-            aria-label="Load client info"
-            icon={<RefreshCw size={16} />}
-            size="sm"
-            ml={2}
-            isLoading={loadingClient}
-            onClick={handleLoadClientInfo}
-            variant="ghost"
-            color={accentColor}
-            _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-          />
-        </Flex>
-        {/* Client name indicator below header, revert to previous box style */}
-        <Box mb={2} px={2} py={1} borderRadius="md" bg={useColorModeValue('#e0e7ef', 'gray.700')}>
-          <Text fontSize="md" fontWeight="bold" color={clientInfo ? textColor : 'gray.500'} textAlign="left">
-            {clientInfo ? (clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']) : 'No client is loaded'}
-          </Text>
+          <Flex align="center" gap={1}>
+            <IconButton
+              aria-label="Refresh client info"
+              icon={<RefreshCw size={16} />}
+              size="xs"
+              isLoading={loadingClient}
+              onClick={e => { e.stopPropagation(); handleLoadClientInfo(); }}
+              variant="ghost"
+              color={accentColor}
+              _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+            />
+            <IconButton
+              aria-label={clientInfoOpen ? 'Collapse' : 'Expand'}
+              icon={<ChevronDown size={18} style={{ transform: clientInfoOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
+              size="xs"
+              variant="ghost"
+              onClick={e => { e.stopPropagation(); setClientInfoOpen((open) => !open); }}
+              tabIndex={-1}
+            />
+          </Flex>
         </Box>
-        <Box 
-          p={3} 
-          borderRadius="md" 
-          border="1px solid" 
-          borderColor={borderColor} 
-          bg={useColorModeValue('gray.50', 'gray.700')} 
-          boxShadow="none"
-        >
-          <VStack align="stretch" spacing={3}>
-            {/* IRD Number */}
-            <Box>
-              <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>IRD Number</Text>
-              <Text fontSize="sm" color={secondaryTextColor} fontFamily="mono">
-                {clientInfo ? (clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-') : '-'}
+        {clientInfoOpen && (
+          <Box border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%" p={3}>
+            <Box mb={2} py={1} borderRadius="md" bg="transparent">
+              <Text fontSize="md" fontWeight="bold" color={clientInfo ? textColor : 'gray.500'} textAlign="left">
+                {clientInfo ? (clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']) : 'No client is loaded'}
               </Text>
             </Box>
-            {/* Address */}
-            {clientInfo && clientInfo['Address'] && (
+            <VStack align="stretch" spacing={3}>
+              {/* IRD Number */}
               <Box>
-                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>Address</Text>
-                <Text fontSize="sm" color={secondaryTextColor}>{clientInfo['Address']}</Text>
+                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>IRD Number</Text>
+                <Text fontSize="sm" color={secondaryTextColor} fontFamily="mono">
+                  {clientInfo ? (clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-') : '-'}
+                </Text>
               </Box>
-            )}
-            {clientError && <Text color="red.500" fontSize="sm">{clientError}</Text>}
-          </VStack>
-        </Box>
+              {/* Address */}
+              {clientInfo && clientInfo['Address'] && (
+                <Box>
+                  <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>Address</Text>
+                  <Text fontSize="sm" color={secondaryTextColor}>{clientInfo['Address']}</Text>
+                </Box>
+              )}
+              {clientError && <Text color="red.500" fontSize="sm">{clientError}</Text>}
+            </VStack>
+          </Box>
+        )}
       </Box>
 
-      <Divider mb={6} borderColor={useColorModeValue('#e2e8f0', 'gray.700')} flexShrink={0} />
-
       {/* Document Insights */}
-      <Box mb={2} flex="1" display="flex" flexDirection="column" minHeight="0">
-        <Flex align="center" mb={2}>
+      <Box mb={2} flexShrink={0}>
+        <Box {...sectionHeaderStyle}
+          onClick={() => setDocumentInsightsOpen((open) => !open)}
+        >
           <Text fontSize="sm" fontWeight="semibold" color={textColor}>
             Document Insights
           </Text>
-          <Spacer />
-          {documentInsights && (
-            <>
-              <IconButton
-                aria-label="Open in dialog"
-                icon={<Maximize2 size={16} />}
-                size="sm"
-                ml={2}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpen();
-                }}
-                variant="ghost"
-                color={accentColor}
-                _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-              />
-              <IconButton
-                aria-label="Clear insights"
-                icon={<X size={16} />}
-                size="sm"
-                ml={1}
-                onClick={() => {
-                  setDocumentInsights('');
-                  setDocumentSummary('');
-                }}
-                variant="ghost"
-                color="gray.500"
-                _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-              />
-            </>
-          )}
-        </Flex>
-        
-        {isExtractingInsights ? (
-          <Box 
-            borderRadius="md" 
-            position="relative"
-            minHeight="120px"
-            _before={{
-              content: '""',
-              position: 'absolute',
-              inset: 0,
-              padding: '3px',
-              background: 'linear-gradient(45deg, #3b82f6, #8b5cf6, #ec4899, #3b82f6)',
-              borderRadius: 'md',
-              mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-              maskComposite: 'xor',
-              animation: 'ai-glow 2s ease-in-out infinite alternate',
-              zIndex: 1
-            }}
-            sx={{
-              '@keyframes ai-glow': {
-                '0%': { opacity: 0.8 },
-                '100%': { opacity: 1 }
-              }
-            }}
-          >
+          <Flex align="center" gap={1}>
+            <IconButton
+              aria-label="Expand chat"
+              icon={<Maximize2 size={16} />}
+              size="xs"
+              onClick={e => { e.stopPropagation(); onOpen(); }}
+              variant="ghost"
+              color={accentColor}
+              _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
+            />
+            <IconButton
+              aria-label={documentInsightsOpen ? 'Collapse' : 'Expand'}
+              icon={<ChevronDown size={18} style={{ transform: documentInsightsOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
+              size="xs"
+              variant="ghost"
+              onClick={e => { e.stopPropagation(); setDocumentInsightsOpen((open) => !open); }}
+              tabIndex={-1}
+            />
+          </Flex>
+        </Box>
+        {documentInsightsOpen && (
+          <Box w="100%" flex="1" display="flex" flexDirection="column" minHeight="0" pt={2} pb={2}>
             <Box 
-              position="absolute"
-              inset="3px"
-              bg={useColorModeValue(
-                'linear-gradient(135deg, rgba(254,254,254,0.7) 0%, rgba(249,250,251,0.8) 50%, rgba(243,244,246,0.9) 100%)',
-                'linear-gradient(135deg, rgba(31,41,55,0.7) 0%, rgba(55,65,81,0.8) 50%, rgba(75,85,99,0.9) 100%)'
-              )}
-              borderRadius="md"
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              zIndex={2}
-            >
-              <VStack spacing={2}>
-                <Spinner size="sm" color="blue.500" />
-                <Text fontSize="sm" color="gray.500">Analyzing document...</Text>
-              </VStack>
-            </Box>
-          </Box>
-        ) : documentInsights ? (
-          <Box flex="1" display="flex" flexDirection="column" minHeight="0">
-            <Box 
-              flex="1"
-              borderRadius="md" 
               position="relative"
-              minHeight="200px"
-              maxHeight="calc(100vh - 400px)"
+              flex="1"
+              minH="0"
+              display="flex"
+              flexDirection="column"
               _before={{
                 content: '""',
-                position: 'absolute',
-                inset: 0,
-                padding: '3px',
-                background: 'linear-gradient(45deg, #3b82f6, #8b5cf6, #ec4899, #3b82f6)',
-                borderRadius: 'md',
-                mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
-                maskComposite: 'xor',
-                animation: 'ai-glow 3s ease-in-out infinite alternate',
-                zIndex: 1
-              }}
-              sx={{
-                '@keyframes ai-glow': {
-                  '0%': { 
-                    filter: 'brightness(1) saturate(1)',
-                    opacity: 0.8
-                  },
-                  '100%': { 
-                    filter: 'brightness(1.1) saturate(1.2)',
-                    opacity: 1
-                  }
-                }
+                position: "absolute",
+                inset: "-2px",
+                padding: "2px",
+                background: "linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #10b981)",
+                borderRadius: "md",
+                mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+                maskComposite: "subtract",
+                animation: "glow 3s ease-in-out infinite alternate",
               }}
             >
-              <Box 
+              {/* Background container */}
+              <Box
                 position="absolute"
-                inset="3px"
+                inset="2px"
                 bg={useColorModeValue(
                   'linear-gradient(135deg, rgba(254,254,254,0.7) 0%, rgba(249,250,251,0.8) 50%, rgba(243,244,246,0.9) 100%)',
                   'linear-gradient(135deg, rgba(31,41,55,0.7) 0%, rgba(55,65,81,0.8) 50%, rgba(75,85,99,0.9) 100%)'
                 )}
                 borderRadius="md"
-                overflow="hidden"
-                zIndex={2}
+              />
+              
+              {/* Content container */}
+              <Box
+                position="relative"
+                flex="1"
+                display="flex"
+                flexDirection="column"
+                overflowY="auto"
+                overflowX="hidden"
+                className="enhanced-scrollbar"
+                p={{ base: 3, md: 4 }}
+                maxW="none"
+                minH="0"
               >
-                                  <Box 
-                    p={4}
-                    height="100%"
-                    overflowY="auto"
-                    overflowX="hidden"
-                    overflowWrap="break-word"
-                    wordBreak="break-word"
-                    whiteSpace="pre-wrap"
-                    className="enhanced-scrollbar"
-                    bg="transparent"
-                  >
-                  <MarkdownText>{documentInsights}</MarkdownText>
-                </Box>
+                {isExtractingInsights ? (
+                  <Flex direction="column" align="center" justify="center" flex="1">
+                    <Spinner size="lg" color={accentColor} thickness="3px" mb={4} />
+                    <Text color={textColor} textAlign="center" fontSize="sm">
+                      Analyzing documents...
+                    </Text>
+                  </Flex>
+                ) : documentInsights ? (
+                  <Box maxW="100%" w="100%" p={2}>
+                    <ReactMarkdown
+                      components={{
+                        h1: (props) => <Heading as="h1" size="sm" mb={2} {...props} />,
+                        h2: (props) => <Heading as="h2" size="xs" mb={2} {...props} />,
+                        h3: (props) => <Heading as="h3" size="xs" mb={1} {...props} />,
+                        p: (props) => <Text fontSize="sm" mb={1} {...props} />,
+                        li: (props) => <ListItem fontSize="sm" ml={4} {...props} />,
+                        ul: (props) => <List styleType="disc" pl={4} mb={1} {...props} />,
+                        ol: (props) => <List as="ol" styleType="decimal" pl={4} mb={1} {...props} />,
+                        strong: (props) => <Text as="span" fontWeight="bold" {...props} />,
+                        em: (props) => <Text as="span" fontStyle="italic" {...props} />,
+                      }}
+                    >
+                      {documentInsights}
+                    </ReactMarkdown>
+                  </Box>
+                ) : (
+                  <Flex direction="column" align="center" justify="center" flex="1">
+                    <Brain size={48} strokeWidth={1.5} style={{ opacity: 0.3, marginBottom: '16px' }} />
+                    <Text color="gray.500" textAlign="center">
+                      No document insights available.
+                      <br />
+                      Navigate to a folder with documents to generate insights.
+                    </Text>
+                  </Flex>
+                )}
               </Box>
             </Box>
             
@@ -1017,26 +1083,11 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               </Flex>
             </Box>
           </Box>
-        ) : (
-          <Box 
-            p={4} 
-            borderRadius="md" 
-            border="1px solid" 
-            borderColor={borderColor} 
-            bg={useColorModeValue('gray.100', 'gray.700')} 
-            boxShadow="none"
-            minHeight="120px"
-            textAlign="center"
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
-          >
-            <Text fontSize="sm" color="gray.500" fontStyle="italic">
-              No insights loaded. Select a document and click "Extract Insights" to analyze it.
-            </Text>
-          </Box>
         )}
       </Box>
+
+      {/* Downloads Section */}
+      {/* Removed as per user request */}
 
       {/* Recent Activity */}
       {/* Removed as per user request */}
@@ -1127,13 +1178,27 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                   {isExtractingInsights ? (
                     <Flex direction="column" align="center" justify="center" flex="1">
                       <Spinner size="lg" color={accentColor} thickness="3px" mb={4} />
-                      <Text color={textColor} textAlign="center">
+                      <Text color={textColor} textAlign="center" fontSize="sm">
                         Analyzing documents...
                       </Text>
                     </Flex>
                   ) : documentInsights ? (
                     <Box maxW="100%" w="100%">
-                      <MarkdownText>{documentInsights}</MarkdownText>
+                      <ReactMarkdown
+                        components={{
+                          h1: (props) => <Heading as="h1" size="sm" mb={2} {...props} />,
+                          h2: (props) => <Heading as="h2" size="xs" mb={2} {...props} />,
+                          h3: (props) => <Heading as="h3" size="xs" mb={1} {...props} />,
+                          p: (props) => <Text fontSize="sm" mb={1} {...props} />,
+                          li: (props) => <ListItem fontSize="sm" ml={4} {...props} />,
+                          ul: (props) => <List styleType="disc" pl={4} mb={1} {...props} />,
+                          ol: (props) => <List as="ol" styleType="decimal" pl={4} mb={1} {...props} />,
+                          strong: (props) => <Text as="span" fontWeight="bold" {...props} />,
+                          em: (props) => <Text as="span" fontStyle="italic" {...props} />,
+                        }}
+                      >
+                        {documentInsights}
+                      </ReactMarkdown>
                     </Box>
                   ) : (
                     <Flex direction="column" align="center" justify="center" flex="1">

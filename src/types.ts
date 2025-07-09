@@ -35,6 +35,7 @@ declare global {
       setConfig: (config: AppSettings) => Promise<void>;
       validatePath: (path: string) => Promise<boolean>;
       getDirectoryContents: (path: string) => Promise<FileItem[]>;
+      getDownloadsPath: () => Promise<string>;
       createDirectory: (path: string) => Promise<void>;
       deleteItem: (path: string) => Promise<void>;
       renameItem: (oldPath: string, newPath: string) => Promise<void>;

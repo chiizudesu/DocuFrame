@@ -160,7 +160,7 @@ export const Layout: React.FC = () => {
   const { showOutputLog } = useAppContext();
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [logHeight, setLogHeight] = useState(200);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [logMinimized, setLogMinimized] = useState(false);
   const borderColor = useColorModeValue('#d1d5db', 'gray.700');
   const accentBorderColor = useColorModeValue('#d1d5db', 'gray.700');
