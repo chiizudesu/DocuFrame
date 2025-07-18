@@ -872,6 +872,19 @@ ipcMain.handle('move-files', async (_, files: string[], targetDirectory: string)
       }
     }
     
+    // Emit folder refresh event for successful transfers
+    const successfulFiles = results.filter(r => r.status === 'success');
+    const mainWindow = BrowserWindow.getAllWindows()[0]; // Get the main window
+    if (successfulFiles.length > 0 && mainWindow) {
+      const transferredFilePaths = successfulFiles.map(r => r.path).filter(Boolean);
+      mainWindow.webContents.send('folderContentsChanged', { 
+        directory: targetDirectory,
+        newFiles: transferredFilePaths
+      });
+      console.log(`[Move Files] Triggered folder refresh for directory: ${targetDirectory}`);
+      console.log(`[Move Files] New files transferred: ${transferredFilePaths.join(', ')}`);
+    }
+    
     return results;
   } catch (error) {
     console.error('Error in move-files handler:', error);
@@ -925,6 +938,21 @@ ipcMain.handle('copy-files', async (_, files: string[], targetDirectory: string)
       } catch (error) {
         console.error(`Error copying file ${filePath}:`, error);
         results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+      }
+    }
+    
+    // Emit folder refresh event for successful transfers
+    const successfulFiles = results.filter(r => r.status === 'success');
+    if (successfulFiles.length > 0) {
+      const transferredFilePaths = successfulFiles.map(r => r.path).filter(Boolean);
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('folderContentsChanged', { 
+          directory: targetDirectory,
+          newFiles: transferredFilePaths
+        });
+        console.log(`[Copy Files] Triggered folder refresh for directory: ${targetDirectory}`);
+        console.log(`[Copy Files] New files transferred: ${transferredFilePaths.join(', ')}`);
       }
     }
     
@@ -1001,6 +1029,21 @@ ipcMain.handle('move-files-with-conflict-resolution', async (_, files: string[],
       }
     }
     
+    // Emit folder refresh event for successful transfers
+    const successfulFiles = results.filter(r => r.status === 'success');
+    const mainWindow = BrowserWindow.getAllWindows()[0]; // Get the main window
+    if (successfulFiles.length > 0) {
+      const transferredFilePaths = successfulFiles.map(r => r.path).filter(Boolean);
+      if (mainWindow) {
+        mainWindow.webContents.send('folderContentsChanged', { 
+          directory: targetDirectory,
+          newFiles: transferredFilePaths
+        });
+        console.log(`[Move Files with Conflict Resolution] Triggered folder refresh for directory: ${targetDirectory}`);
+        console.log(`[Move Files with Conflict Resolution] New files transferred: ${transferredFilePaths.join(', ')}`);
+      }
+    }
+    
     return results;
   } catch (error) {
     console.error('Error in move-files-with-conflict-resolution handler:', error);
@@ -1053,6 +1096,21 @@ ipcMain.handle('copy-files-with-conflict-resolution', async (_, files: string[],
       } catch (error) {
         console.error(`Error copying file ${filePath}:`, error);
         results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+      }
+    }
+    
+    // Emit folder refresh event for successful transfers
+    const successfulFiles = results.filter(r => r.status === 'success');
+    if (successfulFiles.length > 0) {
+      const transferredFilePaths = successfulFiles.map(r => r.path).filter(Boolean);
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('folderContentsChanged', { 
+          directory: targetDirectory,
+          newFiles: transferredFilePaths
+        });
+        console.log(`[Copy Files with Conflict Resolution] Triggered folder refresh for directory: ${targetDirectory}`);
+        console.log(`[Copy Files with Conflict Resolution] New files transferred: ${transferredFilePaths.join(', ')}`);
       }
     }
     

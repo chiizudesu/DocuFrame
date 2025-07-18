@@ -143,7 +143,7 @@ const formatFileSize = (size: string | undefined) => {
 
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
-  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory, setStatus, setSelectAllFiles, folderItems, setFolderItems, selectedFiles, setSelectedFiles, setDocumentInsights, setIsExtractingInsights, clipboard, setClipboard } = useAppContext()
+  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory, setStatus, setSelectAllFiles, folderItems, setFolderItems, selectedFiles, setSelectedFiles, setDocumentInsights, setIsExtractingInsights, clipboard, setClipboard, addRecentlyTransferredFiles, clearRecentlyTransferredFiles, recentlyTransferredFiles, removeRecentlyTransferredFile } = useAppContext()
   
   // All useState hooks next
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
@@ -619,10 +619,24 @@ export const FileGrid: React.FC = () => {
         }
       }
     }
-    const handleFolderContentsChanged = (event: any, data: { directory: string }) => {
+    const handleFolderContentsChanged = (event: any, data: { directory: string; newFiles?: string[] }) => {
       console.log('[FileGrid] Folder contents changed event received:', data);
       if (data && data.directory === currentDirectory) {
         console.log('[FileGrid] Refreshing current directory:', currentDirectory);
+        
+        // Add newly transferred files to the recently transferred list
+        if (data.newFiles && data.newFiles.length > 0) {
+          console.log('[FileGrid] Adding new files to recently transferred list:', data.newFiles);
+          addRecentlyTransferredFiles(data.newFiles);
+          
+          // Set individual timeouts for each file (15 seconds each)
+          data.newFiles.forEach(filePath => {
+            setTimeout(() => {
+              removeRecentlyTransferredFile(filePath);
+            }, 15000); // 15 seconds
+          });
+        }
+        
         loadDirectory(currentDirectory);
       }
     }
@@ -922,9 +936,7 @@ export const FileGrid: React.FC = () => {
         addLog(message);
         setStatus(message, failed > 0 ? 'error' : 'success');
         
-        // Refresh current directory
-        const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
-        setFolderItems(contents);
+        // Folder refresh is now handled automatically by the backend folderContentsChanged event
         
       } catch (error) {
         console.error('Upload failed:', error);
@@ -1046,9 +1058,7 @@ export const FileGrid: React.FC = () => {
       
       setStatus(message || `${op === 'cut' ? 'Move' : 'Copy'} completed`, successful > 0 ? 'success' : failed > 0 ? 'error' : 'info');
       
-      // Refresh folder contents
-      const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
-      setFolderItems(contents);
+      // Folder refresh is now handled automatically by the backend folderContentsChanged event
       
     } catch (err) {
       setStatus(`Failed to ${op === 'cut' ? 'move' : 'copy'} files: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
@@ -1058,6 +1068,11 @@ export const FileGrid: React.FC = () => {
 
   // Add this helper function before renderGridView and renderListView
   const isFileCut = (file: FileItem) => clipboard.operation === 'cut' && clipboard.files.some(f => f.path === file.path);
+
+  // Helper function to check if a file is newly transferred
+  const isFileNew = (file: FileItem) => {
+    return recentlyTransferredFiles.includes(file.path);
+  };
 
   // Grid view
   const renderGridView = () => (
@@ -1161,6 +1176,7 @@ export const FileGrid: React.FC = () => {
             }}
             transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
             style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
+            position="relative"
           >
             <Icon
               as={getFileIcon(file.type, file.name)}
@@ -1176,6 +1192,25 @@ export const FileGrid: React.FC = () => {
                 {file.size ? formatFileSize(file.size) : ''} {file.modified ? new Date(file.modified).toLocaleDateString() : ''}
               </Text>
             </Box>
+            {/* NEW indicator for recently transferred files */}
+            {isFileNew(file) && (
+              <Box
+                position="absolute"
+                top={1}
+                right={1}
+                bg="green.500"
+                color="white"
+                fontSize="xs"
+                fontWeight="bold"
+                px={2}
+                py={0.5}
+                borderRadius="full"
+                zIndex={2}
+                boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+              >
+                NEW
+              </Box>
+            )}
           </Flex>
             </DraggableFileItem>
         )
@@ -1354,7 +1389,7 @@ export const FileGrid: React.FC = () => {
                 onFileClick={handleFileItemClick}
                 as="tr"
               >
-                <Td borderColor={tableBorderColor} width="50%">
+                <Td borderColor={tableBorderColor} width="50%" position="relative">
                   <Flex align="center">
                     <Icon
                       as={getFileIcon(file.type, file.name)}
@@ -1365,6 +1400,25 @@ export const FileGrid: React.FC = () => {
                     <Text fontSize="sm" color={fileTextColor} style={{ userSelect: 'none' }}>
                       {file.name}
                     </Text>
+                    {/* NEW indicator for recently transferred files */}
+                    {isFileNew(file) && (
+                      <Box
+                        position="absolute"
+                        top={1}
+                        right={1}
+                        bg="green.500"
+                        color="white"
+                        fontSize="xs"
+                        fontWeight="bold"
+                        px={2}
+                        py={0.5}
+                        borderRadius="full"
+                        zIndex={2}
+                        boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+                      >
+                        NEW
+                      </Box>
+                    )}
                   </Flex>
                 </Td>
                 <Td borderColor={tableBorderColor} color={fileSubTextColor} width="25%">

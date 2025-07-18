@@ -197,7 +197,13 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
     if (successful.length > 0) {
       const mainWindow = BrowserWindow.getFocusedWindow();
       if (mainWindow) {
-        mainWindow.webContents.send('folderContentsChanged', { directory: targetDirectory });
+        const transferredFilePaths = successful.map(r => path.join(targetDirectory, r.file));
+        mainWindow.webContents.send('folderContentsChanged', { 
+          directory: targetDirectory,
+          newFiles: transferredFilePaths // Include info about new files
+        });
+        console.log(`[Transfer] Triggered folder refresh for directory: ${targetDirectory}`);
+        console.log(`[Transfer] New files transferred: ${transferredFilePaths.join(', ')}`);
       }
     }
 

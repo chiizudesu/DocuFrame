@@ -773,12 +773,12 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               position="relative"
               flex="1"
               minH="0"
-              display="flex"
+          display="flex"
               flexDirection="column"
               bg={useColorModeValue('#ffffff', 'gray.800')}
               border="1px solid"
               borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
-              borderRadius="md"
+          borderRadius="md"
               overflow="hidden"
             >
               {/* Mini folder view header */}

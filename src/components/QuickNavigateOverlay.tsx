@@ -246,6 +246,24 @@ export const QuickNavigateOverlay: React.FC = () => {
             setPreviewFiles([]);
           }
         }).catch(() => setPreviewFiles([]));
+      } else if (command === 'sc') {
+        // Auto-preview for sc (screenshot) command
+        let newName: string | undefined;
+        if (commandParts.length > 1) {
+          newName = commandParts.slice(1).join(' ').trim();
+          // Remove quotes if present
+          if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
+            newName = newName.slice(1, -1);
+          }
+        }
+        
+        window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
       } else {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
@@ -744,6 +762,26 @@ export const QuickNavigateOverlay: React.FC = () => {
                     <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={file.name} fontWeight="medium" overflow="visible">
                       {file.originalName && file.originalName !== file.name ? file.name : ''}
                     </Text>
+                    {/* Show image preview for image files */}
+                    {file.type === 'image' && (file as any).imageDataUrl && (
+                      <Box mt={2} display="flex" justifyContent="center">
+                        <img 
+                          src={(file as any).imageDataUrl}
+                          alt="Screenshot preview"
+                          style={{
+                            maxWidth: '200px',
+                            maxHeight: '150px',
+                            borderRadius: '4px',
+                            border: '1px solid #e2e8f0',
+                            objectFit: 'contain'
+                          }}
+                          onError={(e) => {
+                            // Hide image if it fails to load
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </Box>
+                    )}
                   </Box>
                 ))}
               </Box>

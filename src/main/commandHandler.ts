@@ -8,6 +8,7 @@ import { extractZips } from './commands/extractZips';
 import { extractEml } from './commands/extractEml';
 import { gstTemplate } from './commands/gstTemplate';
 import { updateApp } from './commands/updateApp';
+import { screenshotCommand } from './commands/screenshotCommand';
 import { getConfig } from './config';
 
 interface CommandResult {
@@ -302,6 +303,48 @@ export async function handleCommand(command: string, args: string[], currentDire
     return {
       success: result.success,
       message: result.message
+    };
+  }
+  
+  // Handle sc (screenshot) command
+  if (cmd.toLowerCase() === 'sc') {
+    console.log('[CommandHandler] Executing screenshot command');
+    const directory = currentDirectory || process.cwd();
+    
+    // Parse newName from arguments
+    let newName: string | undefined;
+    if (cmdArgs.length > 0) {
+      newName = cmdArgs.join(' ').trim();
+      // Remove quotes if present
+      if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
+        newName = newName.slice(1, -1);
+      }
+    }
+    
+    const result = await screenshotCommand(directory, false, newName); // false = not preview
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
+    };
+  }
+  
+  // Handle sc_preview (screenshot preview) command
+  if (cmd.toLowerCase() === 'sc_preview') {
+    console.log('[CommandHandler] Executing screenshot preview command');
+    const directory = currentDirectory || process.cwd();
+    
+    // Parse newName from arguments (for preview, we need to get it from options)
+    let newName: string | undefined;
+    if (options && options.newName) {
+      newName = options.newName;
+    }
+    
+    const result = await screenshotCommand(directory, true, newName); // true = preview
+    return {
+      success: result.success,
+      message: result.message,
+      files: result.files
     };
   }
   

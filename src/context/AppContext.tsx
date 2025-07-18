@@ -63,6 +63,11 @@ interface AppContextType {
   // Clipboard for cut/copy/paste operations - persists across navigation
   clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
   setClipboard: (clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null }) => void;
+  // Recently transferred files (for "new" indicator)
+  recentlyTransferredFiles: string[];
+  addRecentlyTransferredFiles: (filePaths: string[]) => void;
+  clearRecentlyTransferredFiles: () => void;
+  removeRecentlyTransferredFile: (filePath: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -98,6 +103,8 @@ export const AppProvider: React.FC<{
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   // Clipboard for cut/copy/paste operations - persists across navigation
   const [clipboard, setClipboard] = useState<{ files: FileItem[]; operation: 'cut' | 'copy' | null }>({ files: [], operation: null });
+  // Recently transferred files (for "new" indicator)
+  const [recentlyTransferredFiles, setRecentlyTransferredFiles] = useState<string[]>([]);
 
   // Load settings on mount
   useEffect(() => {
@@ -153,6 +160,18 @@ export const AppProvider: React.FC<{
     setCommandHistory(prev => [...prev, command]);
   };
 
+  const addRecentlyTransferredFiles = useCallback((filePaths: string[]) => {
+    setRecentlyTransferredFiles(prev => [...prev, ...filePaths]);
+  }, []);
+
+  const clearRecentlyTransferredFiles = useCallback(() => {
+    setRecentlyTransferredFiles([]);
+  }, []);
+
+  const removeRecentlyTransferredFile = useCallback((filePath: string) => {
+    setRecentlyTransferredFiles(prev => prev.filter(path => path !== filePath));
+  }, []);
+
   const value = {
     currentDirectory,
     setCurrentDirectory,
@@ -200,6 +219,11 @@ export const AppProvider: React.FC<{
     // Clipboard for cut/copy/paste operations
     clipboard,
     setClipboard,
+    // Recently transferred files (for "new" indicator)
+    recentlyTransferredFiles,
+    addRecentlyTransferredFiles,
+    clearRecentlyTransferredFiles,
+    removeRecentlyTransferredFile,
   };
 
   return <AppContext.Provider value={value}>
