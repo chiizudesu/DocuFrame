@@ -6,6 +6,7 @@ import { useAppContext } from './context/AppContext';
 import { SettingsDialog } from './components/SettingsDialog';
 import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
+import { Calculator } from './components/Calculator';
 
 // Separate component to use context
 const AppContent: React.FC = () => {
@@ -24,6 +25,9 @@ const AppContent: React.FC = () => {
     addLog,
     selectAllFiles
   } = useAppContext();
+  
+  // Calculator state
+  const [isCalculatorOpen, setIsCalculatorOpen] = React.useState(false);
 
   // Handle update events from main process
   useEffect(() => {
@@ -102,8 +106,15 @@ const AppContent: React.FC = () => {
         e.preventDefault();
         return;
       }
-      // If a letter key is pressed and no input is focused
-      if (!isInputFocused && !isQuickNavigating && e.key.length === 1 && e.key.match(/[a-z0-9]/i) && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      // Calculator shortcut (Alt + Q)
+      if (e.altKey && e.key.toLowerCase() === 'q') {
+        setIsCalculatorOpen(true);
+        e.preventDefault();
+        return;
+      }
+      
+      // If a letter key is pressed and no input is focused (but not when calculator is open)
+      if (!isInputFocused && !isQuickNavigating && !isCalculatorOpen && e.key.length === 1 && e.key.match(/[a-z0-9]/i) && !e.ctrlKey && !e.altKey && !e.metaKey) {
         setIsQuickNavigating(true);
         setInitialCommandMode(false);
       }
@@ -134,12 +145,13 @@ const AppContent: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, selectAllFiles]);
+  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, selectAllFiles, isCalculatorOpen]);
   return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
       <Layout />
       <QuickNavigateOverlay />
       <ClientSearchOverlay />
       <SettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
     </Box>;
 };
 

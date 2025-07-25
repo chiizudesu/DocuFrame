@@ -54,7 +54,8 @@ import {
   EyeOff,
   Save,
   X,
-  Info
+  Info,
+  Calculator as CalculatorIcon
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -73,6 +74,8 @@ interface Settings {
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
+  calculatorShortcut?: string;
+  enableCalculatorShortcut?: boolean;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
@@ -85,6 +88,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
   const [activationShortcut, setActivationShortcut] = useState('`');
   const [enableActivationShortcut, setEnableActivationShortcut] = useState(true);
+  const [calculatorShortcut, setCalculatorShortcut] = useState('Alt+Q');
+  const [enableCalculatorShortcut, setEnableCalculatorShortcut] = useState(true);
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   
   const toast = useToast();
@@ -109,6 +114,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         setClientbasePath(loadedSettings.clientbasePath || '');
         setActivationShortcut(loadedSettings.activationShortcut || '`');
         setEnableActivationShortcut(loadedSettings.enableActivationShortcut !== false);
+        setCalculatorShortcut(loadedSettings.calculatorShortcut || 'Alt+Q');
+        setEnableCalculatorShortcut(loadedSettings.enableCalculatorShortcut !== false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -138,6 +145,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         showOutputLog,
         activationShortcut,
         enableActivationShortcut,
+        calculatorShortcut,
+        enableCalculatorShortcut,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -552,13 +561,67 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                     </CardBody>
                   </Card>
 
+                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
+                    <CardHeader pb={3}>
+                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
+                        <Icon as={CalculatorIcon} boxSize={4} />
+                        Calculator Shortcut
+                      </Heading>
+                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
+                        Keyboard shortcut to open the calculator
+                      </Text>
+                    </CardHeader>
+                    <CardBody pt={0}>
+                      <VStack spacing={4} align="stretch">
+                        <FormControl>
+                          <FormLabel fontSize="sm" color={textColor}>Enable Calculator Shortcut</FormLabel>
+                          <HStack justify="space-between">
+                            <Text fontSize="sm" color={secondaryTextColor}>
+                              Allow keyboard shortcut to open calculator
+                            </Text>
+                            <Switch
+                              isChecked={enableCalculatorShortcut}
+                              onChange={(e) => setEnableCalculatorShortcut(e.target.checked)}
+                              colorScheme="blue"
+                            />
+                          </HStack>
+                        </FormControl>
+
+                        {enableCalculatorShortcut && (
+                          <FormControl>
+                            <FormLabel fontSize="sm" color={textColor}>Shortcut Combination</FormLabel>
+                            <HStack spacing={3}>
+                              <Select
+                                value={calculatorShortcut}
+                                onChange={(e) => setCalculatorShortcut(e.target.value)}
+                                bg="white"
+                                _dark={{ bg: 'gray.600' }}
+                                maxW="150px"
+                              >
+                                <option value="Alt+Q">Alt + Q</option>
+                                <option value="Alt+C">Alt + C</option>
+                                <option value="Ctrl+Alt+C">Ctrl + Alt + C</option>
+                                <option value="Ctrl+Shift+C">Ctrl + Shift + C</option>
+                                <option value="F12">F12</option>
+                                <option value="F11">F11</option>
+                              </Select>
+                              <Kbd fontSize="sm" px={2} py={1} borderRadius="md">
+                                {calculatorShortcut}
+                              </Kbd>
+                            </HStack>
+                          </FormControl>
+                        )}
+                      </VStack>
+                    </CardBody>
+                  </Card>
+
                   <Alert status="info" borderRadius="lg">
                     <AlertIcon />
             <Box>
                       <AlertTitle fontSize="sm">Shortcut Information</AlertTitle>
                       <AlertDescription fontSize="xs">
                         The activation shortcut works globally, even when the app is minimized or in the background.
-                        Press the shortcut key to bring DocuFrame to the front.
+                        Press the shortcut key to bring DocuFrame to the front. Calculator shortcut works when the app is focused.
                       </AlertDescription>
                     </Box>
                   </Alert>

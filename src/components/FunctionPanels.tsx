@@ -14,6 +14,7 @@ import { AITemplaterDialog } from './AITemplaterDialog';
 import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
+import { Calculator as CalculatorDialog } from './Calculator';
 
 import { getAppVersion } from '../utils/version';
 
@@ -96,6 +97,7 @@ export const FunctionPanels: React.FC = () => {
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+  const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
   const [updateInfo, setUpdateInfo] = useState<{
@@ -241,6 +243,12 @@ export const FunctionPanels: React.FC = () => {
     if (action === 'manage_templates') {
       setManageTemplatesOpen(true);
       setStatus('Opened Template Manager', 'info');
+      return;
+    }
+
+    if (action === 'calculator') {
+      setCalculatorOpen(true);
+      setStatus('Opened Calculator', 'info');
       return;
     }
 
@@ -670,7 +678,7 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
                   <FunctionButton icon={Brain} label="Analyze Docs" action="analyze_docs" description="AI-powered document analysis and insights" color="blue.400" />
                   <FunctionButton icon={FileEdit} label="Manage Templates" action="manage_templates" description="Create, edit, and manage template YAMLs" color="indigo.400" />
-
+                  <FunctionButton icon={Calculator} label="Calculator" action="calculator" description="Windows-style calculator with history" color="green.400" />
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
@@ -723,6 +731,7 @@ export const FunctionPanels: React.FC = () => {
       folderItems={folderItems}
     />
     <ManageTemplatesDialog isOpen={isManageTemplatesOpen} onClose={() => setManageTemplatesOpen(false)} currentDirectory={currentDirectory} />
+    <CalculatorDialog isOpen={isCalculatorOpen} onClose={() => setCalculatorOpen(false)} />
     <UpdateDialog 
       isOpen={isUpdateDialogOpen} 
       onClose={() => setIsUpdateDialogOpen(false)}
