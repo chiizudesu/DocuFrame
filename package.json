@@ -1,8 +1,8 @@
 {
   "name": "docuframe",
   "private": true,
-  "version": "1.0.7",
-  "author": "Edward Matias <edwardjohncpa@gmail.com>",
+  "version": "1.0.0",
+  "author": "Edward John Matias <edwardjohncpa@gmail.com>",
   "type": "commonjs",
   "main": "dist-electron/main.js",
   "scripts": {
