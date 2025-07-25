@@ -293,6 +293,23 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
+  const handleCreateAndEnterFolder = async () => {
+    try {
+      const fullPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, newFolderName)
+      await (window.electronAPI as any).createDirectory(fullPath)
+      addLog(`Created and entered folder: ${newFolderName}`)
+      setStatus(`Created and entered folder: ${newFolderName}`, 'success')
+      setIsCreateFolderOpen(false)
+      setNewFolderName('')
+      // Navigate into the newly created folder
+      setCurrentDirectory(fullPath)
+    } catch (error) {
+      console.error('Error creating folder:', error)
+      addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      setStatus(`Failed to create folder: ${newFolderName}`, 'error')
+    }
+  }
+
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
       // Ctrl+Shift+N: Open create folder dialog
@@ -495,7 +512,12 @@ export const FolderInfoBar: React.FC = () => {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && newFolderName.trim()) {
                     e.preventDefault();
-                    handleCreateFolder();
+                    // Ctrl+Enter for regular create, Enter for create & enter
+                    if (e.ctrlKey) {
+                      handleCreateFolder();
+                    } else {
+                      handleCreateAndEnterFolder();
+                    }
                   }
                 }}
                 placeholder="Enter folder name"
@@ -506,6 +528,9 @@ export const FolderInfoBar: React.FC = () => {
           <ModalFooter>
             <Button colorScheme="blue" mr={3} onClick={handleCreateFolder}>
               Create
+            </Button>
+            <Button colorScheme="green" mr={3} onClick={handleCreateAndEnterFolder}>
+              Create & Enter
             </Button>
             <Button variant="ghost" onClick={() => setIsCreateFolderOpen(false)}>
               Cancel

@@ -1001,16 +1001,26 @@ ipcMain.handle('move-files-with-conflict-resolution', async (_, files: string[],
           // response === 0 means replace, continue with original targetPath
         }
         
-        // Copy the file first
-        await fsPromises.copyFile(filePath, targetPath);
+        // Copy the file/directory first
+        const stats = await fsPromises.stat(filePath);
+        if (stats.isDirectory()) {
+          // For directories, copy recursively
+          await fsPromises.cp(filePath, targetPath, { recursive: true });
+        } else {
+          await fsPromises.copyFile(filePath, targetPath);
+        }
         
         // Verify the copy was successful
         if (!(await fileExists(targetPath))) {
-          throw new Error('File copy failed - destination file not found after copy');
+          throw new Error('File/directory copy failed - destination not found after copy');
         }
         
-        // Delete the original file
-        await fsPromises.unlink(filePath);
+        // Delete the original file/directory
+        if (stats.isDirectory()) {
+          await fsPromises.rm(filePath, { recursive: true, force: true });
+        } else {
+          await fsPromises.unlink(filePath);
+        }
         
         results.push({ file: path.basename(targetPath), status: 'success', path: targetPath });
       } catch (error) {

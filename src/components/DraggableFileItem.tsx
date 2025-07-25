@@ -17,6 +17,7 @@ interface DraggableFileItemProps {
   isCut?: boolean; // Add isCut prop for cut indicator
   onFileMouseDown?: (file: FileItem, index: number, event: React.MouseEvent) => void;
   onFileClick?: (file: FileItem, index: number, event: React.MouseEvent) => void;
+  onNativeIconLoaded?: (filePath: string, iconData: string) => void; // Callback to share native icon with parent
 }
 
 export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
@@ -33,6 +34,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   isCut,
   onFileMouseDown,
   onFileClick,
+  onNativeIconLoaded,
 }) => {
   const { addLog, currentDirectory, setStatus, setFolderItems } = useAppContext();
   const [isDragging, setIsDragging] = useState(false);
@@ -41,7 +43,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   const boxRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<HTMLTableRowElement>(null);
   
-  const itemBgHover = useColorModeValue('#f1f5f9', 'gray.700');
+  const itemBgHover = useColorModeValue('#f0f9ff', 'blue.700'); // Lighter than selection
   const selectedBg = useColorModeValue('#dbeafe', 'blue.800');
   const dragOverBg = useColorModeValue('#3b82f6', 'blue.600');
 
@@ -53,6 +55,10 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
           const iconData = await window.electronAPI.getFileIcon(file.path);
           if (iconData) {
             setDragImage(iconData);
+            // Notify parent component about the loaded icon
+            if (onNativeIconLoaded) {
+              onNativeIconLoaded(file.path, iconData);
+            }
           }
         } catch (error) {
           console.error('Failed to get file icon:', error);
@@ -60,7 +66,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       }
     };
     loadIcon();
-  }, [file.path, file.type]);
+  }, [file.path, file.type, onNativeIconLoaded]);
 
   const handleDragStart = (e: React.DragEvent) => {
     // Use Electron's native file drag and drop exactly as documented
@@ -121,6 +127,14 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       e.stopPropagation();
       setIsHovering(false);
     }
+  };
+
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
   };
 
   const handleDrop = async (e: React.DragEvent) => {
@@ -265,13 +279,12 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   };
 
   const getBorderColor = () => {
-    if (isHovering && file.type === 'folder') return '#3b82f6';
     if (isSelected) return selectedBg;
     return 'transparent';
   };
 
   const getBackgroundColor = () => {
-    if (isHovering && file.type === 'folder') return '#dbeafe';
+    if (isHovering) return itemBgHover; // Same light hover for both files and folders
     if (isSelected) return selectedBg;
     return isDragging ? itemBgHover : 'transparent';
   };
@@ -279,13 +292,13 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   const getHoverStyles = () => {
     if (as === 'tr') {
       return {
-        bg: isHovering && file.type === 'folder' ? '#dbeafe' : (isSelected ? selectedBg : undefined),
-        borderLeft: isHovering && file.type === 'folder' ? '4px solid #3b82f6' : '4px solid transparent',
+        bg: isHovering ? itemBgHover : (isSelected ? selectedBg : undefined),
+        borderLeft: '4px solid transparent',
         transition: 'all 0.2s ease'
       };
     }
     return {
-      bg: isHovering && file.type === 'folder' ? '#dbeafe' : (isSelected ? selectedBg : itemBgHover)
+      bg: isHovering ? itemBgHover : (isSelected ? selectedBg : itemBgHover)
     };
   };
 
@@ -298,6 +311,8 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     onDrop: handleDrop,
     onContextMenu: (e: React.MouseEvent) => onContextMenu(e, file),
     onClick: handleClick,
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: handleMouseLeave,
     cursor: "default" as const,
     opacity: isDragging ? 0.5 : 1,
     transition: "all 0.2s",
@@ -338,21 +353,6 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       style={{ opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
     >
       {/* Removed system icon rendering for files to avoid overlap */}
-      {/* Drag overlay for folders */}
-      {isHovering && file.type === 'folder' && (
-        <Box
-          position="absolute"
-          top={0}
-          left={0}
-          right={0}
-          bottom={0}
-          bg={dragOverBg}
-          opacity={0.3}
-          borderRadius="md"
-          zIndex={2}
-          pointerEvents="none"
-        />
-      )}
       {children}
     </Box>
   );

@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { mergePdfs } from './mergePdfs';
 
 interface FileItem {
   name: string;
@@ -13,7 +14,7 @@ interface FileItem {
 interface PdfincResult {
   success: boolean;
   message: string;
-  renamedCount: number;
+  renamedCount: number; // Keep this for compatibility, but now represents files processed
   files: FileItem[];
 }
 
@@ -45,7 +46,10 @@ export async function pdfincCommand(currentDirectory: string, preview: boolean =
       }
     }
 
-    // Process each file according to the patterns
+    // Find numbered PDFs and group them for merging
+    const incTransactionFiles: string[] = []; // 1.pdf, 2.pdf, 3.pdf
+    const pirRateFiles: string[] = []; // 4.pdf, 5.pdf
+    
     for (const filePath of files) {
       const filename = path.basename(filePath);
       const fileExt = path.extname(filename);
@@ -55,75 +59,147 @@ export async function pdfincCommand(currentDirectory: string, preview: boolean =
         continue;
       }
 
-      let newName: string | null = null;
-
       // Pattern: Numbered PDFs for income tax
-      // 1.pdf, 2.pdf, 3.pdf → L - INC Transactions.pdf
-      // 4.pdf, 5.pdf → A5 - PIR Rates.pdf
       const numberedPattern = /^(\d+)\.pdf$/i;
       const numberedMatch = filename.match(numberedPattern);
       
       if (numberedMatch) {
         const number = parseInt(numberedMatch[1]);
         if (number >= 1 && number <= 3) {
-          newName = 'L - INC Transactions.pdf';
+          incTransactionFiles.push(filename);
         } else if (number >= 4 && number <= 5) {
-          newName = 'A5 - PIR Rates.pdf';
+          pirRateFiles.push(filename);
         }
       }
+    }
 
-      if (newName) {
-        const newPath = path.join(currentDirectory, newName);
-        
-        if (preview) {
-          // Add to preview files
-          resultFiles.push({
-            name: newName,
-            originalName: filename,
-            type: 'file',
-            path: newPath,
-            size: 'Will be created',
-            modified: new Date().toISOString()
+    // Sort files to ensure proper order (1.pdf, 2.pdf, 3.pdf)
+    incTransactionFiles.sort();
+    pirRateFiles.sort();
+
+    // Process INC Transaction files (1.pdf, 2.pdf, 3.pdf → L - INC Transactions.pdf)
+    if (incTransactionFiles.length > 0) {
+      const outputFilename = 'L - INC Transactions.pdf';
+      
+      if (preview) {
+        resultFiles.push({
+          name: outputFilename,
+          originalName: `Will merge: ${incTransactionFiles.join(', ')}`,
+          type: 'merge',
+          path: path.join(currentDirectory, outputFilename),
+          size: `${incTransactionFiles.length} files`,
+          modified: new Date().toISOString()
+        });
+      } else {
+        try {
+          console.log(`[Pdfinc] Merging INC transaction files: ${incTransactionFiles.join(', ')}`);
+          const mergeResult = await mergePdfs(currentDirectory, {
+            files: incTransactionFiles,
+            outputFilename: outputFilename
           });
-        } else {
-          // Actually rename the file
-          try {
-            fs.renameSync(filePath, newPath);
-            renamedCount++;
+          
+          if (mergeResult.success) {
+            // Delete original files after successful merge
+            for (const filename of incTransactionFiles) {
+              try {
+                fs.unlinkSync(path.join(currentDirectory, filename));
+                console.log(`[Pdfinc] Deleted original file: ${filename}`);
+              } catch (error) {
+                console.warn(`[Pdfinc] Could not delete original file ${filename}:`, error);
+              }
+            }
+            
+            renamedCount += incTransactionFiles.length;
             resultFiles.push({
-              name: newName,
-              originalName: filename,
-              type: 'file',
-              path: newPath,
-              size: 'Renamed',
+              name: outputFilename,
+              originalName: `Merged from: ${incTransactionFiles.join(', ')}`,
+              type: 'merged',
+              path: path.join(currentDirectory, outputFilename),
+              size: `${incTransactionFiles.length} files merged`,
               modified: new Date().toISOString()
             });
-          } catch (error) {
-            console.error(`Error renaming ${filename}:`, error);
+          } else {
+            console.error(`[Pdfinc] Failed to merge INC transaction files: ${mergeResult.message}`);
           }
+        } catch (error) {
+          console.error(`[Pdfinc] Error merging INC transaction files:`, error);
         }
       }
     }
 
-    // Handle case where no files match in preview mode
-    if (preview && renamedCount === 0) {
-      // Add a placeholder item to show in preview pane
-      resultFiles.push({
-        name: "No numbered PDFs found to merge",
-        originalName: "Looking for files: 1.pdf, 2.pdf, 3.pdf → L - INC Transactions.pdf and 4.pdf, 5.pdf → A5 - PIR Rates.pdf",
-        type: "info",
-        path: currentDirectory,
-        size: "-",
-        modified: new Date().toISOString()
-      });
+    // Process PIR Rate files (4.pdf, 5.pdf → A5 - PIR Rates.pdf)
+    if (pirRateFiles.length > 0) {
+      const outputFilename = 'A5 - PIR Rates.pdf';
+      
+      if (preview) {
+        resultFiles.push({
+          name: outputFilename,
+          originalName: `Will merge: ${pirRateFiles.join(', ')}`,
+          type: 'merge',
+          path: path.join(currentDirectory, outputFilename),
+          size: `${pirRateFiles.length} files`,
+          modified: new Date().toISOString()
+        });
+      } else {
+        try {
+          console.log(`[Pdfinc] Merging PIR rate files: ${pirRateFiles.join(', ')}`);
+          const mergeResult = await mergePdfs(currentDirectory, {
+            files: pirRateFiles,
+            outputFilename: outputFilename
+          });
+          
+          if (mergeResult.success) {
+            // Delete original files after successful merge
+            for (const filename of pirRateFiles) {
+              try {
+                fs.unlinkSync(path.join(currentDirectory, filename));
+                console.log(`[Pdfinc] Deleted original file: ${filename}`);
+              } catch (error) {
+                console.warn(`[Pdfinc] Could not delete original file ${filename}:`, error);
+              }
+            }
+            
+            renamedCount += pirRateFiles.length;
+            resultFiles.push({
+              name: outputFilename,
+              originalName: `Merged from: ${pirRateFiles.join(', ')}`,
+              type: 'merged',
+              path: path.join(currentDirectory, outputFilename),
+              size: `${pirRateFiles.length} files merged`,
+              modified: new Date().toISOString()
+            });
+          } else {
+            console.error(`[Pdfinc] Failed to merge PIR rate files: ${mergeResult.message}`);
+          }
+        } catch (error) {
+          console.error(`[Pdfinc] Error merging PIR rate files:`, error);
+        }
+      }
     }
+
+    // Handle case where no files match
+    if (incTransactionFiles.length === 0 && pirRateFiles.length === 0) {
+      if (preview) {
+        resultFiles.push({
+          name: "No numbered PDFs found to merge",
+          originalName: "Looking for files: 1.pdf, 2.pdf, 3.pdf → L - INC Transactions.pdf and 4.pdf, 5.pdf → A5 - PIR Rates.pdf",
+          type: "info",
+          path: currentDirectory,
+          size: "-",
+          modified: new Date().toISOString()
+        });
+      }
+    }
+
+    const totalFilesProcessed = incTransactionFiles.length + pirRateFiles.length;
+    const mergeOperations = resultFiles.filter(f => f.type === 'merged' || f.type === 'merge').length;
 
     return {
       success: true,
       message: preview 
-        ? `Preview: ${resultFiles.length} files would be processed` 
-        : `Successfully processed ${renamedCount} files`,
-      renamedCount,
+        ? `Preview: ${totalFilesProcessed} files would be merged into ${mergeOperations} output files` 
+        : `Successfully merged ${totalFilesProcessed} files into ${mergeOperations} output files`,
+      renamedCount: totalFilesProcessed,
       files: resultFiles
     };
 

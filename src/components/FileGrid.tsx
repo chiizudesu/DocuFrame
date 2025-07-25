@@ -12,6 +12,7 @@ import {
   Th,
   Td,
   Input,
+  Image,
 } from '@chakra-ui/react'
 import {
   File,
@@ -50,7 +51,6 @@ function formatPathForLog(path: string) {
 
 const getFileIcon = (type: string, name: string) => {
   if (type === 'folder') {
-    console.log('getFileIcon: FOLDER', name);
     return FolderOpen;
   }
   
@@ -187,6 +187,7 @@ export const FileGrid: React.FC = () => {
   })
   const [isRenaming, setIsRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
@@ -203,14 +204,46 @@ export const FileGrid: React.FC = () => {
   // Add state for lastClickedFile
   const [lastClickedFile, setLastClickedFile] = useState<string | null>(null);
 
+  // State to store native icons for files
+  const [nativeIcons, setNativeIcons] = useState<Map<string, string>>(new Map());
+
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
     setIsDragOver(false);
     setDragCounter(0);
   }, []);
 
+  // Callback to handle when native icons are loaded
+  const handleNativeIconLoaded = useCallback((filePath: string, iconData: string) => {
+    setNativeIcons(prev => new Map(prev.set(filePath, iconData)));
+  }, []);
+
+  // Utility function to get filename without extension for cursor positioning
+  const getFilenameWithoutExtension = (filename: string) => {
+    const lastDotIndex = filename.lastIndexOf('.');
+    if (lastDotIndex === -1 || lastDotIndex === 0) {
+      // No extension or hidden file (starts with .)
+      return filename.length;
+    }
+    return lastDotIndex;
+  };
+
+  // Position cursor at end of filename (before extension) when rename starts
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      const input = renameInputRef.current;
+      const cursorPosition = getFilenameWithoutExtension(renameValue);
+      
+      // Use setTimeout to ensure the input is fully rendered
+      setTimeout(() => {
+        input.focus();
+        input.setSelectionRange(cursorPosition, cursorPosition);
+      }, 0);
+    }
+  }, [isRenaming, renameValue]);
+
   // All useColorModeValue hooks next
-  const itemBgHover = useColorModeValue('#f1f5f9', 'gray.700')
+  const itemBgHover = useColorModeValue('#f0f9ff', 'blue.700') // Lighter than selection
   const fileTextColor = useColorModeValue('#334155', 'white')
   const fileSubTextColor = useColorModeValue('#64748b', 'gray.400')
   const tableBgColor = useColorModeValue('#f8fafc', 'transparent')
@@ -1115,6 +1148,7 @@ export const FileGrid: React.FC = () => {
           <Box key={index} p={4}>
             <form onSubmit={handleRenameSubmit}>
               <Input
+                ref={renameInputRef}
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onBlur={handleRenameSubmit}
@@ -1143,6 +1177,7 @@ export const FileGrid: React.FC = () => {
                 isCut={isFileCut(file)}
                 onFileMouseDown={handleFileItemMouseDown}
                 onFileClick={handleFileItemClick}
+                onNativeIconLoaded={handleNativeIconLoaded}
             >
               <Flex
             p={4}
@@ -1161,12 +1196,22 @@ export const FileGrid: React.FC = () => {
             style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
             position="relative"
           >
-            <Icon
-              as={getFileIcon(file.type, file.name)}
-              boxSize={7}
-              mr={4}
-              color={getIconColor(file.type, file.name)}
-            />
+            {/* Use native icon if available for files, otherwise use Lucide icons */}
+            {file.type === 'file' && nativeIcons.has(file.path) ? (
+              <Image
+                src={nativeIcons.get(file.path)}
+                boxSize={7}
+                mr={4}
+                alt={`${file.name} icon`}
+              />
+            ) : (
+              <Icon
+                as={getFileIcon(file.type, file.name)}
+                boxSize={7}
+                mr={4}
+                color={getIconColor(file.type, file.name)}
+              />
+            )}
             <Box flex="1">
               <Text fontSize="md" color={fileTextColor} fontWeight="medium" noOfLines={2} style={{ userSelect: 'none' }}>
                 {file.name}
@@ -1341,6 +1386,7 @@ export const FileGrid: React.FC = () => {
                 <Td colSpan={3} borderColor={tableBorderColor}>
                   <form onSubmit={handleRenameSubmit}>
                     <Input
+                      ref={renameInputRef}
                       value={renameValue}
                       onChange={(e) => setRenameValue(e.target.value)}
                       onBlur={handleRenameSubmit}
@@ -1370,16 +1416,27 @@ export const FileGrid: React.FC = () => {
                 isCut={isFileCut(file)}
                 onFileMouseDown={handleFileItemMouseDown}
                 onFileClick={handleFileItemClick}
+                onNativeIconLoaded={handleNativeIconLoaded}
                 as="tr"
               >
                 <Td borderColor={tableBorderColor} width="50%" position="relative">
                   <Flex align="center">
-                    <Icon
-                      as={getFileIcon(file.type, file.name)}
-                      boxSize={4}
-                      mr={2}
-                      color={getIconColor(file.type, file.name)}
-                    />
+                    {/* Use native icon if available for files, otherwise use Lucide icons */}
+                    {file.type === 'file' && nativeIcons.has(file.path) ? (
+                      <Image
+                        src={nativeIcons.get(file.path)}
+                        boxSize={4}
+                        mr={2}
+                        alt={`${file.name} icon`}
+                      />
+                    ) : (
+                      <Icon
+                        as={getFileIcon(file.type, file.name)}
+                        boxSize={4}
+                        mr={2}
+                        color={getIconColor(file.type, file.name)}
+                      />
+                    )}
                     <Text fontSize="sm" color={fileTextColor} style={{ userSelect: 'none' }}>
                       {file.name}
                     </Text>

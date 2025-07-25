@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -13,7 +13,7 @@ import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
-import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
+
 import { getAppVersion } from '../utils/version';
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
@@ -84,8 +84,6 @@ export const FunctionPanels: React.FC = () => {
     currentDirectory,
     setFolderItems,
     folderItems,
-    setDocumentInsights,
-    setIsExtractingInsights,
     selectedFiles
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
@@ -97,7 +95,7 @@ export const FunctionPanels: React.FC = () => {
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
-  const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
+
   const [updateInfo, setUpdateInfo] = useState<{
     currentVersion: string;
     availableVersion?: string;
@@ -122,8 +120,8 @@ export const FunctionPanels: React.FC = () => {
     extractedFiles: string[];
     sourceFiles: string[];
   } | null>(null);
-  const bgColor = useColorModeValue('#f1f5f9', 'gray.900');
-  const headerBgColor = useColorModeValue('#ffffff', 'gray.900');
+  const bgColor = useColorModeValue('#f8fafc', 'gray.900');
+  const headerBgColor = useColorModeValue('#f1f5f9', 'gray.900');
   const headerTextColor = useColorModeValue('#334155', 'white');
   const buttonHoverBg = useColorModeValue('#e2e8f0', 'gray.700');
   const borderColor = useColorModeValue('#cbd5e1', 'gray.700');
@@ -238,11 +236,7 @@ export const FunctionPanels: React.FC = () => {
       return;
     }
 
-    if (action === 'analyze_docs') {
-      setDocumentAnalysisOpen(true);
-      setStatus('Opened Document Analysis', 'info');
-      return;
-    }
+
 
     // Handle extract_zips action
     if (action === 'extract_zips') {
@@ -624,7 +618,7 @@ export const FunctionPanels: React.FC = () => {
             <Flex gap={0} align="stretch">
               <Box 
                 p={2} 
-                bg={useColorModeValue('#ffffff', 'rgba(255,255,255,0.03)')} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
                 borderRadius="md" 
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
@@ -642,7 +636,7 @@ export const FunctionPanels: React.FC = () => {
               <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
               <Box 
                 p={2} 
-                bg={useColorModeValue('#ffffff', 'rgba(255,255,255,0.03)')} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
                 borderRadius="md" 
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
@@ -659,7 +653,7 @@ export const FunctionPanels: React.FC = () => {
               <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
               <Box 
                 p={2} 
-                bg={useColorModeValue('#ffffff', 'rgba(255,255,255,0.03)')} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
                 borderRadius="md" 
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
@@ -667,13 +661,7 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Star} label="AI Editor" action="ai_editor" description="Email AI editor for content generation" color="yellow.400" />
                   <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
                   <FunctionButton icon={FileEdit} label="Manage Templates" action="manage_templates" description="Create, edit, and manage template YAMLs" color="indigo.400" />
-                  <FunctionButton 
-                    icon={Brain} 
-                    label="Analyze Docs" 
-                    action="analyze_docs" 
-                    description="Analyze documents with AI and ask follow-up questions" 
-                    color="cyan.400"
-                  />
+
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
@@ -686,7 +674,7 @@ export const FunctionPanels: React.FC = () => {
             <Flex gap={0} align="stretch">
               <Box 
                 p={2} 
-                bg={useColorModeValue('#ffffff', 'rgba(255,255,255,0.03)')} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
                 borderRadius="md" 
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
@@ -727,12 +715,6 @@ export const FunctionPanels: React.FC = () => {
       onInstallUpdate={handleInstallUpdate}
       updateInfo={updateInfo}
       />
-    <DocumentAnalysisDialog 
-      isOpen={isDocumentAnalysisOpen} 
-      onClose={() => setDocumentAnalysisOpen(false)}
-      currentDirectory={currentDirectory}
-      selectedFiles={selectedFiles}
-      folderItems={folderItems}
-    />
+
   </>;
 };

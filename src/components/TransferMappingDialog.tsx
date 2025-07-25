@@ -55,6 +55,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
   const placeholderColor = useColorModeValue('gray.400', 'gray.500');
   const groupHeaderBg = useColorModeValue('gray.50', 'gray.800');
   const groupBorderColor = useColorModeValue('gray.300', 'gray.500');
+  const groupHeaderHoverBg = useColorModeValue('gray.100', 'gray.700');
 
   // Smart grouping logic
   const { groupedMappings, indexMap } = useMemo(() => {
@@ -324,7 +325,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                     p={2}
                     cursor="pointer"
                     onClick={() => toggleGroup(groupKey)}
-                    _hover={{ bg: useColorModeValue('gray.100', 'gray.700') }}
+                    _hover={{ bg: groupHeaderHoverBg }}
                     transition="background 0.2s"
                   >
                     <Flex align="center" gap={2}>
