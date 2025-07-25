@@ -33,15 +33,20 @@ release
 
 # Sensitive data files
 *.csv
-xpmdatabase.csv
-2025.csv
-2026.csv
+*.log
 config.json
-debug.log
 filegrid-lint.json
 
-# Local configuration
-config.json
+# Backup and temporary files
+*.bak
+*.tmp
+temp/
+data/
+
+# API keys and secrets (additional protection)
+*secret*
+*token*
+*key*.txt
 
 # Electron-builder output
 out/

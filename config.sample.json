@@ -1,0 +1,4 @@
+{
+  "rootPath": "/path/to/your/client/documents",
+  "note": "Copy this file to config.json and update the paths for your environment"
+} 
