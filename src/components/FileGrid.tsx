@@ -13,6 +13,7 @@ import {
   Td,
   Input,
   Image,
+  Divider,
 } from '@chakra-ui/react'
 import {
   File,
@@ -31,13 +32,16 @@ import {
   Archive,
   Mail,
   Upload,
+  Info,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, isAbsolutePath } from '../utils/path'
 import { MergePDFDialog } from './MergePDFDialog'
+import { ExtractedTextDialog } from './ExtractedTextDialog'
 import { DraggableFileItem } from './DraggableFileItem'
 import { useColorModeValue } from '@chakra-ui/react'
 import type { FileItem } from '../types'
+import { CustomPropertiesDialog, FileProperties } from './CustomPropertiesDialog';
 
 // Sort types for list view
 type SortColumn = 'name' | 'size' | 'modified'
@@ -193,6 +197,8 @@ export const FileGrid: React.FC = () => {
   const [lastClickTime, setLastClickTime] = useState<number>(0)
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
+  const [isExtractedTextOpen, setExtractedTextOpen] = useState(false)
+  const [extractedTextData, setExtractedTextData] = useState({ fileName: '', text: '' })
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
@@ -349,17 +355,46 @@ export const FileGrid: React.FC = () => {
     }
   };
 
+  // Helper function for smart context menu positioning
+  const getSmartMenuPosition = (clientX: number, clientY: number, menuHeight = 300) => {
+    const viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight
+    };
+    
+    const menuWidth = 200; // minW="200px" from the menu
+    
+    let x = clientX;
+    let y = clientY;
+    
+    // Adjust horizontal position if menu would be clipped on the right
+    if (x + menuWidth > viewport.width) {
+      x = viewport.width - menuWidth - 10; // 10px margin from edge
+    }
+    
+    // Adjust vertical position if menu would be clipped on the bottom
+    if (y + menuHeight > viewport.height) {
+      y = clientY - menuHeight; // Position above cursor
+      // If still clipped at top, position at top with margin
+      if (y < 10) {
+        y = 10;
+      }
+    }
+    
+    return { x, y };
+  };
+
   const handleContextMenu = (
     e: React.MouseEvent,
     file: FileItem,
   ) => {
     e.preventDefault()
+    
+    const position = getSmartMenuPosition(e.clientX, e.clientY, 300);
+    
     setContextMenu({
       isOpen: true,
-      position: {
-        x: e.clientX,
-        y: e.clientY,
-      },
+      position,
       fileItem: file,
     })
   }
@@ -466,7 +501,12 @@ export const FileGrid: React.FC = () => {
             addLog(`Extracting text from PDF: ${contextMenu.fileItem.name}`)
             try {
               const text = await window.electronAPI.readPdfText(contextMenu.fileItem.path)
-              addLog(`Extracted text from ${contextMenu.fileItem.name}:\n${text}`, 'response')
+              setExtractedTextData({ 
+                fileName: contextMenu.fileItem.name, 
+                text: text || 'No text could be extracted from this PDF.' 
+              })
+              setExtractedTextOpen(true)
+              addLog(`Text extracted from ${contextMenu.fileItem.name} (${text.length} characters)`, 'response')
               setStatus('Text extraction completed', 'success')
             } catch (error) {
               addLog(`Failed to extract text: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
@@ -578,6 +618,22 @@ export const FileGrid: React.FC = () => {
             }
           }
           break
+        case 'properties': {
+          // Gather file info
+          const file = contextMenu.fileItem;
+          const stats = await (window.electronAPI as any).getFileStats(file.path);
+          const isBlocked = await (window.electronAPI as any).isFileBlocked(file.path);
+          setPropertiesFile({
+            name: file.name,
+            extension: file.name.split('.').pop() || '',
+            size: stats.size,
+            modified: stats.mtime ? new Date(stats.mtime).toLocaleString() : '',
+            path: file.path,
+            isBlocked,
+          });
+          setPropertiesOpen(true);
+          break;
+        }
         default:
           addLog(`Function: ${action} on ${contextMenu.fileItem.name}`)
       }
@@ -1103,7 +1159,8 @@ export const FileGrid: React.FC = () => {
       onContextMenu={e => {
         if (e.target === e.currentTarget) {
           e.preventDefault();
-          setBlankContextMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+          const position = getSmartMenuPosition(e.clientX, e.clientY, 150); // Blank menu is smaller
+          setBlankContextMenu({ isOpen: true, position });
         }
       }}
       onClick={e => {
@@ -1265,7 +1322,8 @@ export const FileGrid: React.FC = () => {
       onContextMenu={e => {
         if (e.target === e.currentTarget) {
           e.preventDefault();
-          setBlankContextMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+          const position = getSmartMenuPosition(e.clientX, e.clientY, 150); // Blank menu is smaller
+          setBlankContextMenu({ isOpen: true, position });
         }
       }}
       onClick={e => {
@@ -1529,6 +1587,7 @@ export const FileGrid: React.FC = () => {
         borderColor={borderCol}
       >
         <Box py={1}>
+          {/* Basic Actions */}
           <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('open')}>
             <ExternalLink size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Open</Text>
@@ -1537,37 +1596,45 @@ export const FileGrid: React.FC = () => {
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
           </Flex>
-          {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
+
+          {/* File-Specific Actions */}
+          {(contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') || showMergePDFs || showExtractZips || showExtractEmls) && (
             <>
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')} color="blue.400">
-                <FileText size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Extract Text</Text>
-              </Flex>
+              <Divider />
+              {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
+                <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')}>
+                  <FileText size={16} style={{ marginRight: '8px' }} />
+                  <Text fontSize="sm">Extract Text</Text>
+                </Flex>
+              )}
+              {showMergePDFs && (
+                <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('merge_pdfs')}>
+                  <FilePlus2 size={16} style={{ marginRight: '8px' }} />
+                  <Text fontSize="sm">Merge PDFs ({selectedPDFs.length})</Text>
+                </Flex>
+              )}
+              {showExtractZips && (
+                <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_zip')}>
+                  <Archive size={16} style={{ marginRight: '8px' }} />
+                  <Text fontSize="sm">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
+                </Flex>
+              )}
+              {showExtractEmls && (
+                <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_eml')}>
+                  <Mail size={16} style={{ marginRight: '8px' }} />
+                  <Text fontSize="sm">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
+                </Flex>
+              )}
             </>
           )}
-          {showMergePDFs && (
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('merge_pdfs')} color="red.400">
-              <FilePlus2 size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Merge PDFs ({selectedPDFs.length})</Text>
-            </Flex>
-          )}
-          {showExtractZips && (
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_zip')} color="orange.400">
-              <Archive size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
-            </Flex>
-          )}
-          {showExtractEmls && (
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_eml')} color="cyan.400">
-              <Mail size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
-            </Flex>
-          )}
-          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }} color="red.500">
+
+          {/* Clipboard Actions */}
+          <Divider />
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }}>
             <Scissors size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Cut</Text>
           </Flex>
-          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }} color="blue.500">
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }}>
             <Copy size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Copy</Text>
           </Flex>
@@ -1575,9 +1642,16 @@ export const FileGrid: React.FC = () => {
             <FileSymlink size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Paste</Text>
           </Flex>
-          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('delete')} color="red.500">
+
+          {/* Destructive & Info Actions */}
+          <Divider />
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('delete')}>
             <Trash2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Delete</Text>
+          </Flex>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('properties')}>
+            <Info size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Properties</Text>
           </Flex>
         </Box>
       </Box>
@@ -1618,6 +1692,15 @@ export const FileGrid: React.FC = () => {
     );
   };
 
+  const [isPropertiesOpen, setPropertiesOpen] = useState(false);
+  const [propertiesFile, setPropertiesFile] = useState<FileProperties | null>(null);
+
+  const handleUnblockFile = async () => {
+    if (!propertiesFile) return;
+    await (window.electronAPI as any).unblockFile(propertiesFile.path);
+    setPropertiesFile({ ...propertiesFile, isBlocked: false });
+  };
+
   return (
     <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%">
       {viewMode === 'grid' ? renderGridView() : renderListView()}
@@ -1642,6 +1725,18 @@ export const FileGrid: React.FC = () => {
         onClose={() => setMergePDFOpen(false)} 
         currentDirectory={currentDirectory}
         preselectedFiles={selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'))}
+      />
+      <ExtractedTextDialog
+        isOpen={isExtractedTextOpen}
+        onClose={() => setExtractedTextOpen(false)}
+        fileName={extractedTextData.fileName}
+        extractedText={extractedTextData.text}
+      />
+      <CustomPropertiesDialog
+        isOpen={isPropertiesOpen}
+        onClose={() => setPropertiesOpen(false)}
+        file={propertiesFile}
+        onUnblock={handleUnblockFile}
       />
     </Box>
   )

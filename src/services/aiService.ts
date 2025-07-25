@@ -70,4 +70,25 @@ export async function rewriteEmailBlurb(
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }
-} 
+}
+
+// Unified function to extract document insights
+export async function extractDocumentInsights(
+  documentText: string, 
+  fileName: string, 
+  selectedAgent: AIAgent = 'openai'
+): Promise<string> {
+  console.log('=== AI SERVICE WRAPPER ===');
+  console.log('Selected agent:', selectedAgent);
+  console.log('Document text length:', documentText.length);
+  console.log('File name:', fileName);
+
+  switch (selectedAgent) {
+    case 'openai':
+      return await openaiService.extractDocumentInsights(documentText, fileName);
+    case 'claude':
+      return await claudeService.extractDocumentInsights(documentText, fileName);
+    default:
+      throw new Error(`Unknown AI agent: ${selectedAgent}`);
+  }
+}

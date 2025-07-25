@@ -77,6 +77,7 @@ interface Settings {
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
   const [rootPath, setRootPath] = useState('');
+  const [originalRootPath, setOriginalRootPath] = useState(''); // Track original root path
   const [apiKey, setApiKey] = useState('');
   const [claudeApiKey, setClaudeApiKey] = useState('');
   const [gstTemplatePath, setGstTemplatePath] = useState('');
@@ -101,6 +102,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       try {
         const loadedSettings = await settingsService.getSettings() as Settings;
         setRootPath(loadedSettings.rootPath);
+        setOriginalRootPath(loadedSettings.rootPath); // Track original root path
         setApiKey(loadedSettings.apiKey || '');
         setClaudeApiKey(loadedSettings.claudeApiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
@@ -148,8 +150,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         // Don't fail the save operation if shortcut update fails
       }
       
-      setRootDirectory(rootPath);
-      setCurrentDirectory(rootPath);
+      // Only change directories if root path has actually changed
+      if (rootPath !== originalRootPath) {
+        setRootDirectory(rootPath); // This will automatically set current directory to root path
+      }
+      
       toast({
         title: 'Settings saved',
         status: 'success',

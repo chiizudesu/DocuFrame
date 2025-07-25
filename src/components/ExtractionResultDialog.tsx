@@ -71,7 +71,7 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
       <ModalOverlay />
       <ModalContent bg={bgColor}>
         <ModalHeader>

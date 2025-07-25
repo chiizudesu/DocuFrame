@@ -220,7 +220,7 @@ export const OrgCodesDialog: React.FC<OrgCodesDialogProps> = ({ isOpen, onClose 
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="4xl" scrollBehavior="inside">
+    <Modal isOpen={isOpen} onClose={handleClose} size="4xl" scrollBehavior="inside" isCentered>
       <ModalOverlay />
       <ModalContent>
         <ModalHeader py={3}>

@@ -1339,6 +1339,49 @@ ipcMain.handle('check-for-updates', async () => {
   }
 });
 
+// Show file/folder properties
+ipcMain.handle('show-properties', async (_, filePath: string) => {
+  try {
+    if (process.platform === 'win32') {
+      // Use rundll32.exe to directly call Shell32 Properties function
+      const { spawn } = require('child_process');
+      
+      // This is the most direct way to open Windows Properties without shell/cmd/powershell
+      // rundll32.exe is a Windows built-in utility that directly calls DLL functions
+      spawn('rundll32.exe', ['shell32.dll,SHObjectProperties', filePath], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      
+    } else if (process.platform === 'darwin') {
+      // macOS: Use open command to show file info
+      const { spawn } = require('child_process');
+      spawn('open', ['-R', filePath], {
+        detached: true,
+        stdio: 'ignore'
+      });
+    } else {
+      // Linux: Use file manager properties if available
+      const { spawn } = require('child_process');
+      spawn('nautilus', ['--properties', filePath], {
+        detached: true,
+        stdio: 'ignore'
+      }).on('error', () => {
+        // Fallback to xdg-open if nautilus is not available
+        spawn('xdg-open', [filePath], {
+          detached: true,
+          stdio: 'ignore'
+        });
+      });
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error showing properties:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('quit-and-install', async () => {
   try {
     autoUpdaterService.quitAndInstall();
@@ -1346,5 +1389,44 @@ ipcMain.handle('quit-and-install', async () => {
   } catch (error) {
     console.error('Error quitting and installing update:', error);
     throw error;
+  }
+});
+
+ipcMain.handle('get-file-stats', async (_, filePath: string) => {
+  try {
+    const stats = fs.statSync(filePath);
+    return {
+      size: stats.size,
+      mtime: stats.mtime,
+      ctime: stats.ctime,
+      atime: stats.atime,
+      isFile: stats.isFile(),
+      isDirectory: stats.isDirectory(),
+    };
+  } catch (err) {
+    return { size: 0, mtime: '', ctime: '', atime: '', isFile: false, isDirectory: false };
+  }
+});
+
+ipcMain.handle('is-file-blocked', async (_, filePath: string) => {
+  if (process.platform !== 'win32') return false;
+  try {
+    // Check for Zone.Identifier ADS
+    fs.accessSync(filePath + ':Zone.Identifier');
+    return true;
+  } catch (err) {
+    return false;
+  }
+});
+
+ipcMain.handle('unblock-file', async (_, filePath: string) => {
+  if (process.platform !== 'win32') return false;
+  try {
+    fs.unlinkSync(filePath + ':Zone.Identifier');
+    return true;
+  } catch (err) {
+    // If already unblocked, that's fine
+    if (err.code === 'ENOENT') return true;
+    throw err;
   }
 });

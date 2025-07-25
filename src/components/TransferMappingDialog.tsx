@@ -283,7 +283,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="3xl">
+    <Modal isOpen={isOpen} onClose={onClose} size="3xl" isCentered>
       <ModalOverlay />
       <ModalContent maxH="85vh">
         <ModalHeader>

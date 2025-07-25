@@ -38,6 +38,11 @@ interface ElectronAPI {
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<{ success: boolean }>;
   getFileIcon: (filePath: string) => Promise<string | null>;
+  showProperties: (filePath: string) => Promise<{ success: boolean }>;
+  // File properties methods
+  getFileStats: (filePath: string) => Promise<{ size: number; mtime: Date; ctime: Date; atime: Date; isFile: boolean; isDirectory: boolean }>;
+  isFileBlocked: (filePath: string) => Promise<boolean>;
+  unblockFile: (filePath: string) => Promise<boolean>;
   // Update-related methods
   checkForUpdates: () => Promise<{ success: boolean; message: string }>;
   quitAndInstall: () => Promise<{ success: boolean }>;
@@ -149,6 +154,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFileIcon: async (filePath: string) => {
     return await ipcRenderer.invoke('get-file-icon', filePath);
   },
+  showProperties: async (filePath: string) => {
+    return await ipcRenderer.invoke('show-properties', filePath);
+  },
   // Update-related methods
   checkForUpdates: async () => {
     return await ipcRenderer.invoke('check-for-updates');
@@ -176,6 +184,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     // Fallback to current package.json version
     return '1.0.7';
+  },
+  // File properties methods
+  getFileStats: async (filePath: string) => {
+    return await ipcRenderer.invoke('get-file-stats', filePath);
+  },
+  isFileBlocked: async (filePath: string) => {
+    return await ipcRenderer.invoke('is-file-blocked', filePath);
+  },
+  unblockFile: async (filePath: string) => {
+    return await ipcRenderer.invoke('unblock-file', filePath);
   }
 }); 
 

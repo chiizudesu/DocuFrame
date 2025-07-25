@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -11,6 +11,7 @@ import { ExtractionResultDialog } from './ExtractionResultDialog';
 import { LateClaimsDialog } from './LateClaimsDialog';
 import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
+import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
 
@@ -93,6 +94,7 @@ export const FunctionPanels: React.FC = () => {
   const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
   const [isAIEditorOpen, setAIEditorOpen] = useState(false);
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
+  const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
 
@@ -227,6 +229,12 @@ export const FunctionPanels: React.FC = () => {
     if (action === 'ai_templater') {
       setAITemplaterOpen(true);
       setStatus('Opened AI Templater', 'info');
+      return;
+    }
+
+    if (action === 'analyze_docs') {
+      setDocumentAnalysisOpen(true);
+      setStatus('Opened Document Analysis', 'info');
       return;
     }
 
@@ -660,6 +668,7 @@ export const FunctionPanels: React.FC = () => {
                 <Flex gap={1}>
                   <FunctionButton icon={Star} label="AI Editor" action="ai_editor" description="Email AI editor for content generation" color="yellow.400" />
                   <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
+                  <FunctionButton icon={Brain} label="Analyze Docs" action="analyze_docs" description="AI-powered document analysis and insights" color="blue.400" />
                   <FunctionButton icon={FileEdit} label="Manage Templates" action="manage_templates" description="Create, edit, and manage template YAMLs" color="indigo.400" />
 
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
@@ -706,6 +715,13 @@ export const FunctionPanels: React.FC = () => {
     <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
     <AIEditorDialog isOpen={isAIEditorOpen} onClose={() => setAIEditorOpen(false)} />
     <AITemplaterDialog isOpen={isAITemplaterOpen} onClose={() => setAITemplaterOpen(false)} currentDirectory={currentDirectory} />
+    <DocumentAnalysisDialog 
+      isOpen={isDocumentAnalysisOpen} 
+      onClose={() => setDocumentAnalysisOpen(false)} 
+      currentDirectory={currentDirectory}
+      selectedFiles={selectedFiles}
+      folderItems={folderItems}
+    />
     <ManageTemplatesDialog isOpen={isManageTemplatesOpen} onClose={() => setManageTemplatesOpen(false)} currentDirectory={currentDirectory} />
     <UpdateDialog 
       isOpen={isUpdateDialogOpen} 
