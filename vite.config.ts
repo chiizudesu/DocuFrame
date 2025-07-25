@@ -63,6 +63,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        calculator: resolve(__dirname, 'calculator.html'),
+      },
+    },
   },
   server: {
     proxy: {

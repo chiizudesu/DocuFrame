@@ -1430,3 +1430,72 @@ ipcMain.handle('unblock-file', async (_, filePath: string) => {
     throw err;
   }
 });
+
+// Calculator window management
+let calculatorWindow: BrowserWindow | null = null;
+
+const createCalculatorWindow = () => {
+  // If calculator window already exists, focus it instead of creating a new one
+  if (calculatorWindow && !calculatorWindow.isDestroyed()) {
+    calculatorWindow.focus();
+    return;
+  }
+
+  calculatorWindow = new BrowserWindow({
+    width: 320,
+    height: 480,
+    resizable: false,
+    frame: false,
+    titleBarStyle: 'hidden',
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    minimizable: false,
+    maximizable: false,
+    closable: true,
+    focusable: true,
+    movable: true,
+    title: 'Calculator',
+    icon: process.env.NODE_ENV === 'development' 
+      ? path.join(__dirname, '../public/256.ico')
+      : path.join(__dirname, '../public/256.ico'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  // Set window position to center of screen
+  calculatorWindow.center();
+
+  // Load the calculator HTML
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    calculatorWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}/calculator.html`);
+  } else {
+    calculatorWindow.loadFile(path.join(__dirname, '../dist/calculator.html'));
+  }
+
+  // Handle window closed
+  calculatorWindow.on('closed', () => {
+    calculatorWindow = null;
+  });
+
+  // Open DevTools in development
+  if (process.env.NODE_ENV === 'development') {
+    // calculatorWindow.webContents.openDevTools();
+  }
+};
+
+// IPC handlers for calculator
+ipcMain.handle('open-calculator', async () => {
+  createCalculatorWindow();
+  return { success: true };
+});
+
+ipcMain.handle('close-calculator', async () => {
+  if (calculatorWindow && !calculatorWindow.isDestroyed()) {
+    calculatorWindow.close();
+  }
+  return { success: true };
+});

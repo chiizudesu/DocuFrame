@@ -53,6 +53,9 @@ interface ElectronAPI {
   onUpdateProgress: (cb: (event: Electron.IpcRendererEvent, progress: any) => void) => void;
   // Global shortcut methods
   updateGlobalShortcut: (config: AppSettings) => Promise<{ success: boolean }>;
+  // Calculator methods
+  openCalculator: () => Promise<{ success: boolean }>;
+  closeCalculator: () => Promise<{ success: boolean }>;
   // Version method
   getVersion: () => string;
 }
@@ -194,6 +197,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   unblockFile: async (filePath: string) => {
     return await ipcRenderer.invoke('unblock-file', filePath);
+  },
+  // Calculator methods
+  openCalculator: async () => {
+    return await ipcRenderer.invoke('open-calculator');
+  },
+  closeCalculator: async () => {
+    return await ipcRenderer.invoke('close-calculator');
   }
 }); 
 

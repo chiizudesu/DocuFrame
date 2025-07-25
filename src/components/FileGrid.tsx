@@ -192,6 +192,7 @@ export const FileGrid: React.FC = () => {
   const [isRenaming, setIsRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const hasPositionedCursor = useRef<boolean>(false)
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
@@ -236,7 +237,7 @@ export const FileGrid: React.FC = () => {
 
   // Position cursor at end of filename (before extension) when rename starts
   useEffect(() => {
-    if (isRenaming && renameInputRef.current) {
+    if (isRenaming && renameInputRef.current && !hasPositionedCursor.current) {
       const input = renameInputRef.current;
       const cursorPosition = getFilenameWithoutExtension(renameValue);
       
@@ -244,9 +245,13 @@ export const FileGrid: React.FC = () => {
       setTimeout(() => {
         input.focus();
         input.setSelectionRange(cursorPosition, cursorPosition);
+        hasPositionedCursor.current = true;
       }, 0);
+    } else if (!isRenaming) {
+      // Reset the flag when not renaming
+      hasPositionedCursor.current = false;
     }
-  }, [isRenaming, renameValue]);
+  }, [isRenaming]);
 
   // All useColorModeValue hooks next
   const itemBgHover = useColorModeValue('#f0f9ff', 'blue.700') // Lighter than selection

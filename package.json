@@ -7,8 +7,8 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "build-safe": "tsc --noEmit false --skipLibCheck && vite build",
+    "build": "tsc --noEmit && vite build",
+    "build-safe": "tsc --noEmit --skipLibCheck && vite build",
     "build-no-check": "vite build",
     "preview": "vite preview",
     "start": "vite",
