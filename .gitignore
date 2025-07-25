@@ -31,6 +31,18 @@ release
 .env.test.local
 .env.production.local
 
+# Sensitive data files
+*.csv
+xpmdatabase.csv
+2025.csv
+2026.csv
+config.json
+debug.log
+filegrid-lint.json
+
+# Local configuration
+config.json
+
 # Electron-builder output
 out/
 release-v105/builder-debug.yml

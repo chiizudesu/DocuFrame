@@ -1,6 +1,6 @@
 // main.ts - Updated with IPC handlers
 // Set GitHub token for auto-updates (replace with your actual token)
-process.env.GH_TOKEN = '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';
+// GH_TOKEN should be set via environment variable or .env file
 
 import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, globalShortcut } from 'electron';
 import * as path from 'path';
