@@ -1,47 +1,46 @@
 import { settingsService } from './settings';
-import yaml from 'js-yaml';
+import Anthropic from '@anthropic-ai/sdk';
 
 const AI_EDITOR_PROMPT = `You are an expert writing assistant. When I input a raw email blurb, your task is to rewrite it using clearer, more professional, and polished language — but without making it sound robotic or overly formal. Favor a direct, confident, and forward tone over excessive politeness.\n\nMaintain the following:\n- My original tone, length, and style\n- A human and personable vibe\n- The intent and overall message of the email\n\nAvoid:\n- Adding or removing content unless needed for clarity\n- Over-sanitizing the language\n- Changing the personal feel or casual-professional balance\n\nRewrite the email blurb below accordingly.`;
 
 export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
   const settings = await settingsService.getSettings();
-  const apiKey = settings.apiKey;
-  if (!apiKey) throw new Error('OpenAI API key not set.');
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
 
-  const body = {
-    model: 'gpt-3.5-turbo',
-    messages: [
-      { role: 'system', content: AI_EDITOR_PROMPT },
-      { role: 'user', content: rawBlurb }
-    ],
-    max_tokens: 800,
-    temperature: 0.7
-  };
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(body)
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || 'Failed to get response from OpenAI');
-  }
+  const response = await client.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 800,
+    messages: [
+      { role: 'user', content: `${AI_EDITOR_PROMPT}\n\n${rawBlurb}` }
+    ],
+    temperature: 0.7
+  });
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  const content = response.content[0];
+  if (content.type === 'text') {
+    return content.text.trim();
+  }
+  
+  throw new Error('Unexpected response format from Claude');
 }
 
 export async function extractDocumentInsights(documentText: string, fileName: string): Promise<string> {
   const settings = await settingsService.getSettings();
-  const apiKey = settings.apiKey;
-  if (!apiKey) throw new Error('OpenAI API key not set.');
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
 
-  console.log('=== OPENAI SERVICE ===');
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  console.log('=== CLAUDE SERVICE ===');
   console.log('Input documentText length:', documentText.length);
   console.log('Input documentText preview:', documentText.substring(0, 300));
 
@@ -55,7 +54,7 @@ export async function extractDocumentInsights(documentText: string, fileName: st
 
   console.log('Is custom prompt:', isCustomPrompt);
 
-  let body: any;
+  let messageContent: string;
 
   if (isCustomPrompt) {
     // This is already a formatted prompt with custom instructions, use it directly
@@ -67,25 +66,17 @@ export async function extractDocumentInsights(documentText: string, fileName: st
                           documentText.toLowerCase().includes('extract data') ||
                           documentText.toLowerCase().includes('convert');
                           
-    let finalContent = documentText;
     if (isTableRequest && !documentText.includes('IMPORTANT: When presenting tabular data')) {
       // Add table formatting instructions if not already present
-      finalContent = documentText + `
+      messageContent = documentText + `
 
 ADDITIONAL INSTRUCTION: If your response contains structured data, present it as a proper markdown table using | symbols for columns and --- for separators. Example:
 | Column 1 | Column 2 | Column 3 |
 |----------|----------|----------|
 | Data 1   | Data 2   | Data 3   |`;
+    } else {
+      messageContent = documentText;
     }
-    
-    body = {
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'user', content: finalContent }
-      ],
-      max_tokens: 1200,
-      temperature: 0.3
-    };
   } else {
     // This is raw document content, use the default insights prompt
     console.log('Using default insights prompt');
@@ -119,47 +110,40 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
 
 Document to analyze:`;
 
-    body = {
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: INSIGHTS_PROMPT },
-        { role: 'user', content: `Document: ${fileName}\n\nContent:\n${documentText}` }
-      ],
-      max_tokens: 1200,
-      temperature: 0.3
-    };
+    messageContent = `${INSIGHTS_PROMPT}\n\nDocument: ${fileName}\n\nContent:\n${documentText}`;
   }
 
-  console.log('Request body messages length:', body.messages.length);
-  console.log('Request body preview:', JSON.stringify(body.messages[0]).substring(0, 200));
+  console.log('Final message content length:', messageContent.length);
+  console.log('Final message preview:', messageContent.substring(0, 300));
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(body)
+  const response = await client.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 1200,
+    messages: [
+      { role: 'user', content: messageContent }
+    ],
+    temperature: 0.3
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || 'Failed to get response from OpenAI');
+  const content = response.content[0];
+  if (content.type === 'text') {
+    console.log('Claude response length:', content.text.length);
+    console.log('Claude response preview:', content.text.substring(0, 200));
+    return content.text.trim();
   }
-
-  const data = await response.json();
-  const result = data.choices?.[0]?.message?.content?.trim() || '';
   
-  console.log('OpenAI response length:', result.length);
-  console.log('OpenAI response preview:', result.substring(0, 200));
-  
-  return result;
+  throw new Error('Unexpected response format from Claude');
 }
 
 export async function analyzeTemplateForPlaceholders(templateText: string, templateName: string): Promise<Array<{original: string, suggested: string, accepted: boolean}>> {
   const settings = await settingsService.getSettings();
-  const apiKey = settings.apiKey;
-  if (!apiKey) throw new Error('OpenAI API key not set.');
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
 
   const PLACEHOLDER_ANALYSIS_PROMPT = `You are an expert template analyzer. Analyze the following document text and identify potential placeholders that should be made dynamic/variable.
 
@@ -187,68 +171,67 @@ Only return the JSON array, no other text or explanation.
 Template Name: ${templateName}
 Document Text to Analyze:`;
 
-  const body = {
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: PLACEHOLDER_ANALYSIS_PROMPT },
-      { role: 'user', content: templateText }
-    ],
+  const response = await client.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
     max_tokens: 1500,
+    messages: [
+      { role: 'user', content: `${PLACEHOLDER_ANALYSIS_PROMPT}\n\n${templateText}` }
+    ],
     temperature: 0.3
-  };
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(body)
   });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message || 'Failed to get response from OpenAI');
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    throw new Error('Unexpected response format from Claude');
   }
-
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content?.trim() || '';
   
   try {
     // Parse the JSON response
-    const placeholders = JSON.parse(content);
+    const placeholders = JSON.parse(content.text.trim());
     
     // Validate the response format
     if (!Array.isArray(placeholders)) {
-      throw new Error('AI response is not an array');
+      throw new Error('Claude response is not an array');
     }
     
     return placeholders.filter((p: any) => 
       p.original && p.suggested && typeof p.accepted === 'boolean'
     );
   } catch (parseError) {
-    console.error('Failed to parse AI placeholder analysis:', content);
-    throw new Error('AI returned invalid format for placeholder analysis');
+    console.error('Failed to parse Claude placeholder analysis:', content.text);
+    throw new Error('Claude returned invalid format for placeholder analysis');
   }
 }
 
-export async function loadEmailTemplates(): Promise<Array<{ name: string; description: string; categories: string[]; template: string; filename: string }>> {
-  const folder = await settingsService.getTemplateFolderPath();
-  if (!folder) throw new Error('Template folder path not set.');
-  const files = await (window.electronAPI as any).getDirectoryContents(folder);
-  const yamlFiles = files.filter((f: any) => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
-  const templates = [];
-  for (const file of yamlFiles) {
-    const data = await (window.electronAPI as any).loadYamlTemplate(`${folder}/${file.name}`);
-    if (data && data.name && data.template) {
-      templates.push({
-        name: data.name,
-        description: data.description || '',
-        categories: data.categories || [],
-        template: data.template,
-        filename: file.name
-      });
-    }
+export async function generateEmailFromTemplate(
+  template: any,
+  extractedData: { [key: string]: string }
+): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  // Prepare prompt for Claude
+  const prompt = `You are an expert accountant. Given the following extracted text from PDFs, fill in the placeholders in the provided email template. Only use information found in the PDFs.\n\nExtracted Data:\n${Object.entries(extractedData).map(([cat, text]) => `--- ${cat} ---\n${text || ''}`).join('\n')}\n\nTemplate:\n${template.template}`;
+
+  const response = await client.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 800,
+    messages: [
+      { role: 'user', content: `${prompt}\n\nFill in the template with the extracted data.` }
+    ],
+    temperature: 0.7
+  });
+
+  const content = response.content[0];
+  if (content.type === 'text') {
+    return content.text.trim();
   }
-  return templates;
+  
+  throw new Error('Unexpected response format from Claude');
 } 

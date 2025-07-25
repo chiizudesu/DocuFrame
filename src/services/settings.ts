@@ -2,6 +2,7 @@
 export interface AppSettings {
   rootPath: string;
   apiKey?: string;
+  claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
   templateFolderPath?: string;

@@ -143,7 +143,24 @@ const formatFileSize = (size: string | undefined) => {
 
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
-  const { addLog, currentDirectory, setCurrentDirectory, rootDirectory, setStatus, setSelectAllFiles, folderItems, setFolderItems, selectedFiles, setSelectedFiles, setDocumentInsights, setIsExtractingInsights, clipboard, setClipboard, addRecentlyTransferredFiles, clearRecentlyTransferredFiles, recentlyTransferredFiles, removeRecentlyTransferredFile } = useAppContext()
+  const { 
+    currentDirectory, 
+    setCurrentDirectory, 
+    addLog, 
+    setStatus,
+    rootDirectory,
+    setSelectAllFiles,
+    folderItems,
+    setFolderItems, 
+    selectedFiles, 
+    setSelectedFiles, 
+    clipboard, 
+    setClipboard, 
+    addRecentlyTransferredFiles, 
+    clearRecentlyTransferredFiles, 
+    recentlyTransferredFiles, 
+    removeRecentlyTransferredFile 
+  } = useAppContext()
   
   // All useState hooks next
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
@@ -421,40 +438,6 @@ export const FileGrid: React.FC = () => {
             } catch (error) {
               addLog(`Failed to extract text: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
               setStatus('Text extraction failed', 'error')
-            }
-          }
-          break
-        case 'extract_insights':
-          if (contextMenu.fileItem.name.toLowerCase().endsWith('.pdf')) {
-            // Set this file as the selected file for the Extract Insights function
-            setSelectedFiles([contextMenu.fileItem.name])
-            setIsExtractingInsights(true)
-            setStatus(`Extracting insights from: ${contextMenu.fileItem.name}`, 'info')
-            addLog(`Extracting insights from: ${contextMenu.fileItem.name}`)
-            
-            try {
-              // Read PDF content
-              const pdfText = await window.electronAPI.readPdfText(contextMenu.fileItem.path)
-              
-              if (!pdfText || pdfText.trim().length === 0) {
-                throw new Error('Failed to extract text from PDF or PDF is empty')
-              }
-
-              // Import the extract insights function dynamically
-              const { extractDocumentInsights } = await import('../services/openai')
-              const insights = await extractDocumentInsights(pdfText, contextMenu.fileItem.name)
-              
-              // Set document insights in the context
-              setDocumentInsights(insights)
-              setStatus('Document insights extracted successfully', 'success')
-              addLog(`Successfully extracted insights from ${contextMenu.fileItem.name}`, 'response')
-            } catch (error) {
-              const errorMsg = `Failed to extract insights: ${error instanceof Error ? error.message : 'Unknown error'}`
-              addLog(errorMsg, 'error')
-              setStatus('Failed to extract insights', 'error')
-              setDocumentInsights('')
-            } finally {
-              setIsExtractingInsights(false)
             }
           }
           break
@@ -1502,10 +1485,6 @@ export const FileGrid: React.FC = () => {
               <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')} color="blue.400">
                 <FileText size={16} style={{ marginRight: '8px' }} />
                 <Text fontSize="sm">Extract Text</Text>
-              </Flex>
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_insights')} color="cyan.400">
-                <FileText size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Extract Insights</Text>
               </Flex>
             </>
           )}

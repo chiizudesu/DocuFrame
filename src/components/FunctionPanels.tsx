@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -13,6 +13,7 @@ import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
+import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
 import { getAppVersion } from '../utils/version';
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
@@ -96,6 +97,7 @@ export const FunctionPanels: React.FC = () => {
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+  const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{
     currentVersion: string;
     availableVersion?: string;
@@ -236,65 +238,9 @@ export const FunctionPanels: React.FC = () => {
       return;
     }
 
-    if (action === 'extract_insights') {
-      // Get selected PDF files from the shared state
-      console.log('[Extract Insights] Selected files:', selectedFiles);
-      console.log('[Extract Insights] Folder items:', folderItems);
-      
-      const selectedPDFs = selectedFiles
-        .map(filename => folderItems.find(item => item.name === filename))
-        .filter(item => item && item.type === 'file' && item.name.toLowerCase().endsWith('.pdf'));
-      
-      console.log('[Extract Insights] Selected PDFs:', selectedPDFs);
-      
-      if (selectedFiles.length === 0) {
-        console.log('[Extract Insights] No files selected');
-        setStatus('Please select a file first', 'error');
-        return;
-      }
-      
-      if (selectedFiles.length > 1) {
-        console.log('[Extract Insights] Multiple files selected:', selectedFiles.length);
-        setStatus('Please select only one file for insights extraction', 'error');
-        return;
-      }
-      
-      if (selectedPDFs.length === 0) {
-        console.log('[Extract Insights] No PDF files found in selection');
-        setStatus('Please select a PDF document for insights extraction', 'error');
-        setDocumentInsights(''); // Clear previous insights for invalid files
-        return;
-      }
-
-      const targetFile = selectedPDFs[0]!; // We know this exists due to the check above
-      
-      setIsExtractingInsights(true);
-      setStatus('Extracting document insights...', 'info');
-      addLog(`Extracting insights from: ${targetFile.name}`);
-
-      try {
-        // Read PDF content
-        const pdfText = await window.electronAPI.readPdfText(targetFile.path);
-        
-        if (!pdfText || pdfText.trim().length === 0) {
-          throw new Error('Failed to extract text from PDF or PDF is empty');
-        }
-
-        // Import the extract insights function dynamically
-        const { extractDocumentInsights } = await import('../services/openai');
-        const insights = await extractDocumentInsights(pdfText, targetFile.name);
-        
-        setDocumentInsights(insights);
-        setStatus('Document insights extracted successfully', 'success');
-        addLog(`Successfully extracted insights from ${targetFile.name}`, 'response');
-      } catch (error) {
-        const errorMsg = `Failed to extract insights: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        addLog(errorMsg, 'error');
-        setStatus('Failed to extract insights', 'error');
-        setDocumentInsights('');
-      } finally {
-        setIsExtractingInsights(false);
-      }
+    if (action === 'analyze_docs') {
+      setDocumentAnalysisOpen(true);
+      setStatus('Opened Document Analysis', 'info');
       return;
     }
 
@@ -722,26 +668,11 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
                   <FunctionButton icon={FileEdit} label="Manage Templates" action="manage_templates" description="Create, edit, and manage template YAMLs" color="indigo.400" />
                   <FunctionButton 
-                    icon={FileSearch} 
-                    label="Extract Insights" 
-                    action="extract_insights" 
-                    description="Extract insights from selected document using AI" 
+                    icon={Brain} 
+                    label="Analyze Docs" 
+                    action="analyze_docs" 
+                    description="Analyze documents with AI and ask follow-up questions" 
                     color="cyan.400"
-                    isDisabled={(() => {
-                      console.log('[Extract Insights Button] selectedFiles:', selectedFiles);
-                      console.log('[Extract Insights Button] folderItems:', folderItems);
-                      if (selectedFiles.length === 0 || selectedFiles.length > 1) {
-                        console.log('[Extract Insights Button] Disabled: incorrect file count');
-                        return true;
-                      }
-                      const selectedPDFs = selectedFiles
-                        .map(filename => folderItems.find(item => item.name === filename))
-                        .filter(item => item && item.type === 'file' && item.name.toLowerCase().endsWith('.pdf'));
-                      console.log('[Extract Insights Button] selectedPDFs:', selectedPDFs);
-                      const isDisabled = selectedPDFs.length === 0;
-                      console.log('[Extract Insights Button] isDisabled:', isDisabled);
-                      return isDisabled;
-                    })()}
                   />
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
@@ -796,5 +727,12 @@ export const FunctionPanels: React.FC = () => {
       onInstallUpdate={handleInstallUpdate}
       updateInfo={updateInfo}
       />
+    <DocumentAnalysisDialog 
+      isOpen={isDocumentAnalysisOpen} 
+      onClose={() => setDocumentAnalysisOpen(false)}
+      currentDirectory={currentDirectory}
+      selectedFiles={selectedFiles}
+      folderItems={folderItems}
+    />
   </>;
 };

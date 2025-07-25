@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Spinner, Input, Menu, MenuButton, MenuList, MenuItem, Portal, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useDisclosure, Icon } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, Brain, Send, ChevronDown, Maximize2, Upload } from 'lucide-react';
+import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner } from '@chakra-ui/react';
+import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import ReactMarkdown from 'react-markdown';
-import { Heading, List, ListItem } from '@chakra-ui/react';
+// Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
 import type { FileItem } from '../types';
 import { DraggableFileItem } from './DraggableFileItem';
 
@@ -12,112 +11,12 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     currentDirectory,
     addLog,
     rootDirectory,
-    documentInsights,
-    setDocumentInsights,
-    isExtractingInsights,
     setStatus
   } = useAppContext();
 
-  // Chat functionality state
-  const [chatInput, setChatInput] = useState('');
-  const [modalChatInput, setModalChatInput] = useState('');
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-  
-  // Modal state
-  const { isOpen, onOpen, onClose } = useDisclosure();
-  
-  // State for document summary
-  const [documentSummary, setDocumentSummary] = useState<string>('');
+  // Removed modal state - document insights moved to dedicated dialog
 
-  // Generate document summary
-  const generateDocumentSummary = async () => {
-    if (!documentInsights || documentSummary) return;
-    
-    try {
-      const { extractDocumentInsights } = await import('../services/openai');
-      const prompt = `Please provide a very brief 1-line summary (max 100 characters) of this document analysis:\n\n${documentInsights.substring(0, 500)}`;
-      const summary = await extractDocumentInsights(prompt, 'Document Summary');
-      setDocumentSummary(summary.substring(0, 100)); // Ensure it's short
-    } catch (error) {
-      console.log('Failed to generate summary:', error);
-      setDocumentSummary('Document analysis available');
-    }
-  };
-
-  // Generate summary when insights change
-  React.useEffect(() => {
-    if (documentInsights && !documentSummary) {
-      generateDocumentSummary();
-    }
-  }, [documentInsights]);
-
-  // Handle follow-up questions
-  const handleSendMessage = async () => {
-    if (!chatInput.trim() || !documentInsights) return;
-
-    setIsSendingMessage(true);
-    const userMessage = chatInput.trim();
-    setChatInput('');
-
-    try {
-      // Add user message to insights
-      const userQuestion = `\n\n---\n**Follow-up Question:** ${userMessage}\n`;
-      setDocumentInsights((documentInsights || '') + userQuestion);
-
-      // Import and call OpenAI service
-      const { extractDocumentInsights } = await import('../services/openai');
-      const context = `Previous analysis:\n${documentInsights}\n\nUser's follow-up question: ${userMessage}\n\nPlease provide a focused answer to the user's question based on the document analysis.`;
-      
-      const response = await extractDocumentInsights(context, 'Follow-up Analysis');
-      
-      // Add response to insights
-      const aiResponse = `\n**AI Response:**\n${response}\n`;
-      setDocumentInsights((documentInsights || '') + userQuestion + aiResponse);
-      
-      addLog(`Follow-up question answered: ${userMessage}`, 'response');
-      setStatus('Follow-up question answered', 'success');
-    } catch (error) {
-      const errorMsg = `Failed to answer follow-up question: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      addLog(errorMsg, 'error');
-      setStatus('Failed to answer question', 'error');
-    } finally {
-      setIsSendingMessage(false);
-    }
-  };
-
-  // Handle follow-up questions for modal
-  const handleSendMessageModal = async () => {
-    if (!modalChatInput.trim() || !documentInsights) return;
-
-    setIsSendingMessage(true);
-    const userMessage = modalChatInput.trim();
-    setModalChatInput('');
-
-    try {
-      // Add user message to insights
-      const userQuestion = `\n\n---\n**Follow-up Question:** ${userMessage}\n`;
-      setDocumentInsights((documentInsights || '') + userQuestion);
-
-      // Import and call OpenAI service
-      const { extractDocumentInsights } = await import('../services/openai');
-      const context = `Previous analysis:\n${documentInsights}\n\nUser's follow-up question: ${userMessage}\n\nPlease provide a focused answer to the user's question based on the document analysis.`;
-      
-      const response = await extractDocumentInsights(context, 'Follow-up Analysis');
-      
-      // Add response to insights
-      const aiResponse = `\n**AI Response:**\n${response}\n`;
-      setDocumentInsights((documentInsights || '') + userQuestion + aiResponse);
-      
-      addLog(`Follow-up question answered: ${userMessage}`, 'response');
-      setStatus('Follow-up question answered', 'success');
-    } catch (error) {
-      const errorMsg = `Failed to answer follow-up question: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      addLog(errorMsg, 'error');
-      setStatus('Failed to answer question', 'error');
-    } finally {
-      setIsSendingMessage(false);
-    }
-  };
+  // Removed document insights functionality - now available as a dedicated dialog
 
   const bgColor = useColorModeValue('#f8fafc', 'gray.800');
   const borderColor = useColorModeValue('#d1d5db', 'gray.700');
@@ -133,7 +32,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
   // Add at the top, after other useState imports
   const [clientInfoOpen, setClientInfoOpen] = useState(false);
-  const [documentInsightsOpen, setDocumentInsightsOpen] = useState(false);
+  // Removed document insights state
   const [downloadsOpen, setDownloadsOpen] = useState(false);
   const [downloadsFiles, setDownloadsFiles] = useState<FileItem[]>([]);
   const [loadingDownloads, setLoadingDownloads] = useState(false);
@@ -331,18 +230,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     setLoadingClient(false);
   };
 
-  // Force immediate modal opening for collapsed sidebar
-  const handleBrainIconClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log('Brain icon clicked, current isOpen state:', isOpen);
-    
-    // Ensure the modal opens immediately
-    if (!isOpen) {
-      onOpen();
-      console.log('Modal should now be open');
-    }
-  };
+  // Removed handleBrainIconClick - document analysis moved to dedicated dialog
 
   // Handler for selecting downloads (multi-select logic)
   const handleSelectDownload = (file: FileItem, index: number, event: React.MouseEvent) => {
@@ -516,28 +404,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             }
           })()
         )}
-        <Tooltip 
-          label={
-            documentInsights 
-              ? `Document insights loaded` 
-              : "No document loaded"
-          } 
-          placement="right" 
-          hasArrow
-        >
-          <IconButton 
-            aria-label="Document Insights" 
-            icon={<Brain size={20} strokeWidth={2.5} />} 
-            size="md" 
-            variant="solid" 
-            bgGradient="linear(to-r, #3b82f6, #8b5cf6)" 
-            color="white" 
-            borderRadius="lg" 
-            _hover={{ bgGradient: "linear(to-r, #2563eb, #7c3aed)" }} 
-            mb={2}
-            onClick={handleBrainIconClick}
-          />
-        </Tooltip>
+        {/* Document insights button removed - functionality moved to Utilities → Analyze Docs */}
       </Box>
     );
   }
@@ -925,166 +792,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         )}
       </Box>
 
-      {/* Document Insights */}
-      <Box mb={2} flexShrink={0}>
-        <Box {...sectionHeaderStyle}
-          onClick={() => setDocumentInsightsOpen((open) => !open)}
-        >
-          <Text fontSize="sm" fontWeight="semibold" color={textColor}>
-            Document Insights
-          </Text>
-          <Flex align="center" gap={1}>
-            <IconButton
-              aria-label="Expand chat"
-              icon={<Maximize2 size={16} />}
-              size="xs"
-              onClick={e => { e.stopPropagation(); onOpen(); }}
-              variant="ghost"
-              color={accentColor}
-              _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-            />
-            <IconButton
-              aria-label={documentInsightsOpen ? 'Collapse' : 'Expand'}
-              icon={<ChevronDown size={18} style={{ transform: documentInsightsOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
-              size="xs"
-              variant="ghost"
-              onClick={e => { e.stopPropagation(); setDocumentInsightsOpen((open) => !open); }}
-              tabIndex={-1}
-            />
-          </Flex>
-        </Box>
-        {documentInsightsOpen && (
-          <Box w="100%" flex="1" display="flex" flexDirection="column" minHeight="0" pt={2} pb={2}>
-            <Box 
-              position="relative"
-              flex="1"
-              minH="0"
-              display="flex"
-              flexDirection="column"
-              _before={{
-                content: '""',
-                position: "absolute",
-                inset: "-2px",
-                padding: "2px",
-                background: "linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #10b981)",
-                borderRadius: "md",
-                mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-                maskComposite: "subtract",
-                animation: "glow 3s ease-in-out infinite alternate",
-              }}
-            >
-              {/* Background container */}
-              <Box
-                position="absolute"
-                inset="2px"
-                bg={useColorModeValue(
-                  'linear-gradient(135deg, rgba(254,254,254,0.7) 0%, rgba(249,250,251,0.8) 50%, rgba(243,244,246,0.9) 100%)',
-                  'linear-gradient(135deg, rgba(31,41,55,0.7) 0%, rgba(55,65,81,0.8) 50%, rgba(75,85,99,0.9) 100%)'
-                )}
-                borderRadius="md"
-              />
-              
-              {/* Content container */}
-              <Box
-                position="relative"
-                flex="1"
-                display="flex"
-                flexDirection="column"
-                overflowY="auto"
-                overflowX="hidden"
-                className="enhanced-scrollbar"
-                p={{ base: 3, md: 4 }}
-                maxW="none"
-                minH="0"
-              >
-                {isExtractingInsights ? (
-                  <Flex direction="column" align="center" justify="center" flex="1">
-                    <Spinner size="lg" color={accentColor} thickness="3px" mb={4} />
-                    <Text color={textColor} textAlign="center" fontSize="sm">
-                      Analyzing documents...
-                    </Text>
-                  </Flex>
-                ) : documentInsights ? (
-                  <Box maxW="100%" w="100%" p={2}>
-                    <ReactMarkdown
-                      components={{
-                        h1: (props) => <Heading as="h1" size="sm" mb={2} {...props} />,
-                        h2: (props) => <Heading as="h2" size="xs" mb={2} {...props} />,
-                        h3: (props) => <Heading as="h3" size="xs" mb={1} {...props} />,
-                        p: (props) => <Text fontSize="sm" mb={1} {...props} />,
-                        li: (props) => <ListItem fontSize="sm" ml={4} {...props} />,
-                        ul: (props) => <List styleType="disc" pl={4} mb={1} {...props} />,
-                        ol: (props) => <List as="ol" styleType="decimal" pl={4} mb={1} {...props} />,
-                        strong: (props) => <Text as="span" fontWeight="bold" {...props} />,
-                        em: (props) => <Text as="span" fontStyle="italic" {...props} />,
-                      }}
-                    >
-                      {documentInsights}
-                    </ReactMarkdown>
-                  </Box>
-                ) : (
-                  <Flex direction="column" align="center" justify="center" flex="1">
-                    <Brain size={48} strokeWidth={1.5} style={{ opacity: 0.3, marginBottom: '16px' }} />
-                    <Text color="gray.500" textAlign="center">
-                      No document insights available.
-                      <br />
-                      Navigate to a folder with documents to generate insights.
-                    </Text>
-                  </Flex>
-                )}
-              </Box>
-            </Box>
-            
-            {/* Chat Input */}
-            <Box mt={3}>
-              <Flex gap={2}>
-                                  <Input
-                    placeholder="Ask a follow-up question..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    size="sm"
-                    fontSize="sm"
-                    disabled={isSendingMessage}
-                    bg={useColorModeValue('#f8fafc', 'gray.700')}
-                    border="2px solid"
-                    borderColor={useColorModeValue('gray.300', 'gray.600')}
-                    borderRadius="md"
-                    _focus={{
-                      borderColor: "blue.500",
-                      boxShadow: "0 0 0 1px #3b82f6",
-                      bg: useColorModeValue('#ffffff', 'gray.600')
-                    }}
-                    _hover={{
-                      borderColor: "blue.400"
-                    }}
-                  />
-                <IconButton
-                  aria-label="Send message"
-                  icon={<Send size={16} />}
-                  size="sm"
-                  onClick={handleSendMessage}
-                  isLoading={isSendingMessage}
-                  disabled={!chatInput.trim() || isSendingMessage}
-                  bgGradient="linear(to-r, #3b82f6, #8b5cf6)"
-                  color="white"
-                  _hover={{
-                    bgGradient: "linear(to-r, #2563eb, #7c3aed)"
-                  }}
-                  _active={{
-                    bgGradient: "linear(to-r, #1d4ed8, #6d28d9)"
-                  }}
-                />
-              </Flex>
-            </Box>
-          </Box>
-        )}
-      </Box>
+      {/* Document Insights functionality moved to dedicated dialog */}
 
       {/* Downloads Section */}
       {/* Removed as per user request */}
@@ -1092,177 +800,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       {/* Recent Activity */}
       {/* Removed as per user request */}
 
-      {/* Document Insights Modal */}
-      <Portal>
-        <Modal isOpen={isOpen} onClose={onClose} size={{ base: "full", md: "2xl" }} isCentered blockScrollOnMount={false}>
-          <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-          <ModalContent 
-            maxH={{ base: "100vh", md: "80vh" }}
-            h={{ base: "100vh", md: "auto" }}
-            maxW={{ base: "100vw", sm: "95vw", md: "700px", lg: "800px", xl: "900px" }}
-            w={{ base: "100%", md: "90%" }}
-            mx={{ base: 0, md: "auto" }}
-            my={{ base: 0, md: 6 }}
-            bg={useColorModeValue('white', 'gray.800')}
-            borderRadius={{ base: 0, md: "xl" }}
-            boxShadow="2xl"
-            display="flex"
-            flexDirection="column"
-          >
-            <ModalHeader 
-              bg={useColorModeValue('gray.50', 'gray.700')} 
-              borderBottom="1px solid" 
-              borderColor={useColorModeValue('gray.200', 'gray.600')}
-              borderTopRadius={{ base: 0, md: "xl" }}
-              py={4}
-            >
-              <Flex align="center">
-                <Brain size={20} strokeWidth={2.5} style={{ marginRight: '8px' }} />
-                <Text fontSize="lg" fontWeight="semibold">Document Insights</Text>
-                <Text fontSize="sm" color="gray.500" ml={3} fontWeight="normal">
-                  📄 {documentName}
-                </Text>
-              </Flex>
-            </ModalHeader>
-            <ModalCloseButton top={4} right={4} />
-            <ModalBody 
-              p={0} 
-              display="flex" 
-              flexDirection="column" 
-              overflow="hidden"
-            >
-              {/* Border container for gradient effect */}
-              <Box
-                position="relative"
-                flex="1"
-                m={{ base: 3, md: 4 }}
-                minH="0"
-                display="flex"
-                flexDirection="column"
-                _before={{
-                  content: '""',
-                  position: "absolute",
-                  inset: "-2px",
-                  padding: "2px",
-                  background: "linear-gradient(45deg, #3b82f6, #8b5cf6, #06b6d4, #10b981)",
-                  borderRadius: "md",
-                  mask: "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
-                  maskComposite: "subtract",
-                  animation: "glow 3s ease-in-out infinite alternate",
-                }}
-              >
-                {/* Background container */}
-                <Box
-                  position="absolute"
-                  inset="2px"
-                  bg={useColorModeValue(
-                    'linear-gradient(135deg, rgba(254,254,254,0.7) 0%, rgba(249,250,251,0.8) 50%, rgba(243,244,246,0.9) 100%)',
-                    'linear-gradient(135deg, rgba(31,41,55,0.7) 0%, rgba(55,65,81,0.8) 50%, rgba(75,85,99,0.9) 100%)'
-                  )}
-                  borderRadius="md"
-                />
-                
-                {/* Content container */}
-                <Box
-                  position="relative"
-                  flex="1"
-                  display="flex"
-                  flexDirection="column"
-                  overflowY="auto"
-                  overflowX="hidden"
-                  className="enhanced-scrollbar"
-                  p={{ base: 3, md: 4 }}
-                  maxW="none"
-                  minH="0"
-                >
-                  {isExtractingInsights ? (
-                    <Flex direction="column" align="center" justify="center" flex="1">
-                      <Spinner size="lg" color={accentColor} thickness="3px" mb={4} />
-                      <Text color={textColor} textAlign="center" fontSize="sm">
-                        Analyzing documents...
-                      </Text>
-                    </Flex>
-                  ) : documentInsights ? (
-                    <Box maxW="100%" w="100%">
-                      <ReactMarkdown
-                        components={{
-                          h1: (props) => <Heading as="h1" size="sm" mb={2} {...props} />,
-                          h2: (props) => <Heading as="h2" size="xs" mb={2} {...props} />,
-                          h3: (props) => <Heading as="h3" size="xs" mb={1} {...props} />,
-                          p: (props) => <Text fontSize="sm" mb={1} {...props} />,
-                          li: (props) => <ListItem fontSize="sm" ml={4} {...props} />,
-                          ul: (props) => <List styleType="disc" pl={4} mb={1} {...props} />,
-                          ol: (props) => <List as="ol" styleType="decimal" pl={4} mb={1} {...props} />,
-                          strong: (props) => <Text as="span" fontWeight="bold" {...props} />,
-                          em: (props) => <Text as="span" fontStyle="italic" {...props} />,
-                        }}
-                      >
-                        {documentInsights}
-                      </ReactMarkdown>
-                    </Box>
-                  ) : (
-                    <Flex direction="column" align="center" justify="center" flex="1">
-                      <Brain size={48} strokeWidth={1.5} style={{ opacity: 0.3, marginBottom: '16px' }} />
-                      <Text color="gray.500" textAlign="center">
-                        No document insights available.
-                        <br />
-                        Navigate to a folder with documents to generate insights.
-                      </Text>
-                    </Flex>
-                  )}
-                </Box>
-              </Box>
-              
-              {/* Chat input fixed at bottom */}
-              {documentInsights && (
-                <Box 
-                  p={{ base: 3, md: 4 }} 
-                  borderTop="1px solid" 
-                  borderColor={useColorModeValue('gray.200', 'gray.600')}
-                  bg={useColorModeValue('gray.50', 'gray.700')}
-                  borderBottomRadius={{ base: 0, md: "xl" }}
-                >
-                  <Flex gap={2}>
-                    <Input
-                      placeholder="Ask a follow-up question..."
-                      value={modalChatInput}
-                      onChange={(e) => setModalChatInput(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendMessageModal();
-                        }
-                      }}
-                      size="sm"
-                      borderRadius="md"
-                      bg={useColorModeValue('white', 'gray.800')}
-                      borderColor={useColorModeValue('gray.300', 'gray.600')}
-                      _focus={{ 
-                        borderColor: accentColor, 
-                        boxShadow: `0 0 0 1px ${accentColor}`,
-                        bg: useColorModeValue('#f8fafc', 'gray.600')
-                      }}
-                      _hover={{
-                        borderColor: useColorModeValue('gray.400', 'gray.500')
-                      }}
-                      isDisabled={isSendingMessage}
-                    />
-                    <IconButton
-                      aria-label="Send message"
-                      icon={<Send size={16} />}
-                      size="sm"
-                      onClick={handleSendMessageModal}
-                      isLoading={isSendingMessage}
-                      colorScheme="blue"
-                      isDisabled={!modalChatInput.trim() || isSendingMessage}
-                    />
-                  </Flex>
-                </Box>
-              )}
-            </ModalBody>
-          </ModalContent>
-        </Modal>
-      </Portal>
+      {/* Document Insights Modal removed - functionality moved to dedicated dialog */}
     </Box>
   );
 };

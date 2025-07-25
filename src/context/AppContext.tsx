@@ -49,17 +49,11 @@ interface AppContextType {
   setPreviewFiles: (files: FileItem[]) => void;
   selectAllFiles: () => void;
   setSelectAllFiles: (callback: () => void) => void;
-  // Folder items
   folderItems: FileItem[];
-  setFolderItems: (files: FileItem[]) => void;
-  // Document insights
-  documentInsights: string;
-  setDocumentInsights: (insights: string) => void;
-  isExtractingInsights: boolean;
-  setIsExtractingInsights: (isExtracting: boolean) => void;
-  // Selected files for function buttons
+  setFolderItems: (items: FileItem[]) => void;
   selectedFiles: string[];
   setSelectedFiles: (files: string[]) => void;
+  // Document insights functionality removed - now available as dedicated dialog
   // Clipboard for cut/copy/paste operations - persists across navigation
   clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
   setClipboard: (clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null }) => void;
@@ -94,11 +88,8 @@ export const AppProvider: React.FC<{
   const [showOutputLog, setShowOutputLog] = useState(true);
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
-  const [selectAllFiles, setSelectAllFiles] = useState<() => void>(() => () => {});
+  const [selectAllFilesCallback, setSelectAllFilesCallback] = useState<() => void>(() => () => {});
   const [folderItems, setFolderItems] = useState<FileItem[]>([]);
-  // Document insights state
-  const [documentInsights, setDocumentInsights] = useState<string>('');
-  const [isExtractingInsights, setIsExtractingInsights] = useState<boolean>(false);
   // Selected files for function buttons
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   // Clipboard for cut/copy/paste operations - persists across navigation
@@ -160,6 +151,14 @@ export const AppProvider: React.FC<{
     setCommandHistory(prev => [...prev, command]);
   };
 
+  const selectAllFiles = useCallback(() => {
+    selectAllFilesCallback();
+  }, [selectAllFilesCallback]);
+
+  const setSelectAllFiles = useCallback((callback: () => void) => {
+    setSelectAllFilesCallback(() => callback);
+  }, []);
+
   const addRecentlyTransferredFiles = useCallback((filePaths: string[]) => {
     setRecentlyTransferredFiles(prev => [...prev, ...filePaths]);
   }, []);
@@ -172,63 +171,51 @@ export const AppProvider: React.FC<{
     setRecentlyTransferredFiles(prev => prev.filter(path => path !== filePath));
   }, []);
 
-  const value = {
-    currentDirectory,
-    setCurrentDirectory,
-    outputLogs,
-    addLog,
-    clearLogs,
-    // Footer status system
-    statusMessage,
-    statusType,
-    setStatus,
-    commandHistory,
-    addCommand,
-    isQuickNavigating,
-    setIsQuickNavigating,
-    initialCommandMode,
-    setInitialCommandMode,
-    // File search system - replaced allFiles mock data
-    searchResults,
-    setSearchResults,
-    // Settings
-    rootDirectory,
-    setRootDirectory,
-    apiKey,
-    setApiKey,
-    isSettingsOpen,
-    setIsSettingsOpen: setIsSettingsOpenWithStatus,
-    showOutputLog,
-    setShowOutputLog,
-    // Preview
-    previewFiles,
-    setPreviewFiles,
-    selectAllFiles,
-    setSelectAllFiles,
-    // Folder items
-    folderItems,
-    setFolderItems,
-    // Document insights
-    documentInsights,
-    setDocumentInsights,
-    isExtractingInsights,
-    setIsExtractingInsights,
-    // Selected files for function buttons
-    selectedFiles,
-    setSelectedFiles,
-    // Clipboard for cut/copy/paste operations
-    clipboard,
-    setClipboard,
-    // Recently transferred files (for "new" indicator)
-    recentlyTransferredFiles,
-    addRecentlyTransferredFiles,
-    clearRecentlyTransferredFiles,
-    removeRecentlyTransferredFile,
-  };
-
-  return <AppContext.Provider value={value}>
-    {children}
-  </AppContext.Provider>;
+  return (
+    <AppContext.Provider value={{
+      currentDirectory,
+      setCurrentDirectory,
+      outputLogs,
+      addLog,
+      clearLogs,
+      statusMessage,
+      statusType,
+      setStatus,
+      commandHistory,
+      addCommand,
+      isQuickNavigating,
+      setIsQuickNavigating,
+      initialCommandMode,
+      setInitialCommandMode,
+      searchResults,
+      setSearchResults,
+      rootDirectory,
+      setRootDirectory,
+      apiKey,
+      setApiKey,
+      isSettingsOpen,
+      setIsSettingsOpen: setIsSettingsOpenWithStatus,
+      showOutputLog,
+      setShowOutputLog,
+      previewFiles,
+      setPreviewFiles,
+      selectAllFiles,
+      setSelectAllFiles,
+      folderItems,
+      setFolderItems,
+      selectedFiles,
+      setSelectedFiles,
+      clipboard,
+      setClipboard,
+      recentlyTransferredFiles,
+      addRecentlyTransferredFiles,
+      clearRecentlyTransferredFiles,
+      removeRecentlyTransferredFile,
+      // Document insights properties removed
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
 };
 
 export const useAppContext = (): AppContextType => {

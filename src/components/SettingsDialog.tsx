@@ -67,6 +67,7 @@ interface SettingsDialogProps {
 interface Settings {
   rootPath: string;
   apiKey?: string;
+  claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
   showOutputLog?: boolean;
@@ -77,6 +78,7 @@ interface Settings {
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
   const [rootPath, setRootPath] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [claudeApiKey, setClaudeApiKey] = useState('');
   const [gstTemplatePath, setGstTemplatePath] = useState('');
   const [clientbasePath, setClientbasePath] = useState('');
   const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
@@ -100,6 +102,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         const loadedSettings = await settingsService.getSettings() as Settings;
         setRootPath(loadedSettings.rootPath);
         setApiKey(loadedSettings.apiKey || '');
+        setClaudeApiKey(loadedSettings.claudeApiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
         setClientbasePath(loadedSettings.clientbasePath || '');
         setActivationShortcut(loadedSettings.activationShortcut || '`');
@@ -127,6 +130,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       const newSettings: Settings = {
         rootPath,
         apiKey: apiKey || undefined,
+        claudeApiKey: claudeApiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
         showOutputLog,
@@ -410,21 +414,35 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                         API Configuration
                       </Heading>
                       <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        OpenAI API key for AI features
+                        API keys for AI features
                       </Text>
                     </CardHeader>
                     <CardBody pt={0}>
-          <FormControl>
-                        <FormLabel fontSize="sm" color={textColor}>OpenAI API Key</FormLabel>
-            <Input
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              type="password"
-                          placeholder="Enter your OpenAI API key"
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-            />
-          </FormControl>
+                      <VStack spacing={4} align="stretch">
+                        <FormControl>
+                          <FormLabel fontSize="sm" color={textColor}>OpenAI API Key</FormLabel>
+                          <Input
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            type="password"
+                            placeholder="Enter your OpenAI API key"
+                            bg="white"
+                            _dark={{ bg: 'gray.600' }}
+                          />
+                        </FormControl>
+                        
+                        <FormControl>
+                          <FormLabel fontSize="sm" color={textColor}>Claude API Key</FormLabel>
+                          <Input
+                            value={claudeApiKey}
+                            onChange={(e) => setClaudeApiKey(e.target.value)}
+                            type="password"
+                            placeholder="Enter your Claude (Anthropic) API key"
+                            bg="white"
+                            _dark={{ bg: 'gray.600' }}
+                          />
+                        </FormControl>
+                      </VStack>
                     </CardBody>
                   </Card>
 
