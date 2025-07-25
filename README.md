@@ -1,77 +1,23 @@
 # DocuFrame
 
-A modern desktop application built with Electron, React, and Chakra UI.
+DocuFrame is a modern file explorer built in Electron, designed specifically for accountants and professionals working with Xero.
 
 ## Features
+- **Xero-centric file management**: Organize, rename, and manage client files for Xero workflows
+- **Bulk file renaming**: Smart, accountant-friendly renaming tools
+- **Drag-and-drop**: Move and organize files and folders with ease
+- **Native Windows icons**: See real file type icons for a familiar experience
+- **AI-powered tools**: (Optional) Integrate with OpenAI/Claude for document analysis and automation
+- **Customizable templates**: YAML-based templates for common accounting documents
+- **Secure**: Designed to keep sensitive data out of your repository
 
-- Modern UI with Chakra UI components
-- Cross-platform desktop application
-- Hot reloading in development
-- TypeScript support
-- Vite for fast development and building
+## Getting Started
+1. Clone the repository
+2. Copy `config.sample.json` to `config.json` and update your paths
+3. Run `npm install` and `npm run dev`
 
-## Prerequisites
-
-- Node.js (v16 or higher)
-- npm (v7 or higher)
-
-## Development Setup
-
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/DocuFrame.git
-cd DocuFrame
-```
-
-2. Install dependencies:
-```bash
-npm install
-```
-
-3. Start the development server:
-```bash
-npm run electron:dev
-```
-
-## Building for Production
-
-To create a production build:
-
-```bash
-npm run electron:build
-```
-
-The built application will be available in the `release` directory.
-
-## Project Structure
-
-```
-DocuFrame/
-├── electron/           # Electron main process files
-├── src/               # React application source
-├── public/            # Static assets
-├── dist/              # Built application files
-├── dist-electron/     # Built Electron files
-└── release/           # Production builds
-```
-
-## Scripts
-
-- `npm run dev` - Start Vite dev server
-- `npm run electron:dev` - Start Electron in development mode
-- `npm run build` - Build the application
-- `npm run electron:build` - Build the Electron application
-- `npm run lint` - Run ESLint
-- `npm run preview` - Preview the production build
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+## Security
+Sensitive files and API keys are excluded from the repository. See `.gitignore` for details.
 
 ## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT
