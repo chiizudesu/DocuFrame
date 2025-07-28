@@ -315,16 +315,16 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                    <Tooltip label="Open Job (2025/2026)" placement="right" hasArrow>
                      <PopoverTrigger>
                        <IconButton
-                         aria-label="Job Links"
-                         icon={<FileText size={20} strokeWidth={2.5} />}
-                         size="md"
-                         variant="solid"
-                         bg="#388e3c"
-                         color="#e3fae3"
-                         borderRadius="lg"
-                         _hover={{ bg: '#388e3c', color: '#c8f7cb' }}
-                         mb={2}
-                       />
+                       aria-label="Job Links"
+                       icon={<FileText size={20} strokeWidth={2.5} />}
+                       size="md"
+                       variant="solid"
+                       bg="#388e3c"
+                       color="#e3fae3"
+                       borderRadius="lg"
+                       _hover={{ bg: '#388e3c', color: '#c8f7cb' }}
+                       mb={2}
+                     />
                      </PopoverTrigger>
                    </Tooltip>
                    <Portal>
@@ -345,49 +345,49 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                        <PopoverBody p={3}>
                          <VStack spacing={2}>
                            <Button
-                             onClick={() => window.open(clientInfo['2025 Job Link'], '_blank')}
+                         onClick={() => window.open(clientInfo['2025 Job Link'], '_blank')}
                              bg="green.500"
                              color="white"
                              fontWeight="bold"
-                             fontSize="sm"
+                         fontSize="sm"
                              borderRadius="md"
                              px={4}
                              py={2}
                              w="100%"
                              h="auto"
-                             _hover={{ 
+                         _hover={{ 
                                bg: "green.600"
-                             }}
-                             _focus={{ 
+                         }}
+                         _focus={{ 
                                bg: "green.600"
-                             }}
-                             _active={{
+                         }}
+                         _active={{
                                bg: "green.700"
-                             }}
-                           >
+                         }}
+                       >
                              2025
                            </Button>
                            <Button
-                             onClick={() => window.open(clientInfo['2026 Job Link'], '_blank')}
+                         onClick={() => window.open(clientInfo['2026 Job Link'], '_blank')}
                              bg="green.500"
                              color="white"
                              fontWeight="bold"
-                             fontSize="sm"
+                         fontSize="sm"
                              borderRadius="md"
                              px={4}
                              py={2}
                              w="100%"
                              h="auto"
-                             _hover={{ 
+                         _hover={{ 
                                bg: "green.600"
-                             }}
-                             _focus={{ 
+                         }}
+                         _focus={{ 
                                bg: "green.600"
-                             }}
-                             _active={{
+                         }}
+                         _active={{
                                bg: "green.700"
-                             }}
-                           >
+                         }}
+                       >
                              2026
                            </Button>
                          </VStack>
@@ -502,33 +502,33 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             const has2026 = clientInfo['2026 Job Link'];
             const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
 
-                        if (has2025 && has2026) {
+            if (has2025 && has2026) {
               // Both years available - show popover
               return (
                                  <Box flex="1">
                    <Popover placement="right-start">
                      <PopoverTrigger>
                        <Button
-                         leftIcon={<FileText size={16} />}
-                         rightIcon={<ChevronDown size={16} />}
-                         variant="outline"
-                         size="sm"
-                         w="100%"
-                         borderColor="green.500"
-                         color="green.600"
-                         fontWeight="medium"
-                         _hover={{
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           borderColor: "green.500"
-                         }}
-                       >
-                         Job
+                       leftIcon={<FileText size={16} />}
+                       rightIcon={<ChevronDown size={16} />}
+                       variant="outline"
+                       size="sm"
+                       w="100%"
+                       borderColor="green.500"
+                       color="green.600"
+                       fontWeight="medium"
+                       _hover={{
+                         bg: useColorModeValue('#f0fdf4', 'gray.700'),
+                         borderColor: "green.500"
+                       }}
+                     >
+                       Job
                        </Button>
                      </PopoverTrigger>
                      <Portal>
                        <PopoverContent
-                         bg={useColorModeValue('white', 'gray.800')}
-                         border="1px solid"
+                       bg={useColorModeValue('white', 'gray.800')}
+                       border="1px solid"
                          borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
                          boxShadow="lg"
                          w="auto"
@@ -543,49 +543,49 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                          <PopoverBody p={3}>
                            <VStack spacing={2}>
                              <Button
-                               onClick={() => handleOpenJobLink('2025')}
+                         onClick={() => handleOpenJobLink('2025')}
                                bg="green.500"
                                color="white"
                                fontWeight="bold"
-                               fontSize="sm"
+                         fontSize="sm"
                                borderRadius="md"
                                px={4}
                                py={2}
                                w="100%"
                                h="auto"
-                               _hover={{ 
+                         _hover={{ 
                                  bg: "green.600"
-                               }}
-                               _focus={{ 
+                         }}
+                         _focus={{ 
                                  bg: "green.600"
-                               }}
-                               _active={{
+                         }}
+                         _active={{
                                  bg: "green.700"
-                               }}
-                             >
+                         }}
+                       >
                                2025
                              </Button>
                              <Button
-                               onClick={() => handleOpenJobLink('2026')}
+                         onClick={() => handleOpenJobLink('2026')}
                                bg="green.500"
                                color="white"
                                fontWeight="bold"
-                               fontSize="sm"
+                         fontSize="sm"
                                borderRadius="md"
                                px={4}
                                py={2}
                                w="100%"
                                h="auto"
-                               _hover={{ 
+                         _hover={{ 
                                  bg: "green.600"
-                               }}
-                               _focus={{ 
+                         }}
+                         _focus={{ 
                                  bg: "green.600"
-                               }}
-                               _active={{
+                         }}
+                         _active={{
                                  bg: "green.700"
-                               }}
-                             >
+                         }}
+                       >
                                2026
                              </Button>
                            </VStack>

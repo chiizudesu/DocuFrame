@@ -794,14 +794,9 @@ export const FileGrid: React.FC = () => {
         setSelectedFile(file.name);
         setLastSelectedIndex(index);
       }
-    } else if (selectedFiles.includes(file.name) && selectedFiles.length > 1) {
-      // File is already selected and we have multiple selections
-      // Don't change selection - this could be the start of a drag operation
-      // Just update the primary selected file
-      setSelectedFile(file.name);
-      setLastSelectedIndex(index);
     } else {
       // Regular click: Select only this file (clear others)
+      // This handles both new selections and clicking on already-selected files
       setSelectedFiles([file.name]);
       setLastSelectedIndex(index);
       setSelectedFile(file.name);
@@ -880,7 +875,8 @@ export const FileGrid: React.FC = () => {
   useEffect(() => {
     // Register selectAllFiles callback
     setSelectAllFiles(() => () => {
-      setSelectedFiles(sortedFiles.map(f => f.name));
+      const allFileNames = sortedFiles.map(f => f.name);
+      setSelectedFiles(allFileNames);
       setStatus(`Selected all files in ${currentDirectory.split(/[\\/]/).pop() || currentDirectory}`, 'info');
       addLog(`Selected all files in ${currentDirectory}`);
     });
@@ -1045,7 +1041,14 @@ export const FileGrid: React.FC = () => {
       // Don't interfere with copy/paste if user is in input fields, renaming, or has text selected
       if (isRenaming || isInputFocused || hasTextSelection) return;
       
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedFiles.length > 0) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        // Select all files
+        e.preventDefault();
+        const allFileNames = sortedFiles.map(f => f.name);
+        setSelectedFiles(allFileNames);
+        setStatus(`Selected all files in ${currentDirectory.split(/[\\/]/).pop() || currentDirectory}`, 'info');
+        addLog(`Selected all files in ${currentDirectory}`);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && selectedFiles.length > 0) {
         // Cut files
         e.preventDefault();
         setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'cut' });
@@ -1169,8 +1172,8 @@ export const FileGrid: React.FC = () => {
         }
       }}
       onClick={e => {
-        // Clear multi-selection when clicking on empty space within the grid
-        if (e.target === e.currentTarget && selectedFiles.length > 1) {
+        // Clear selection when clicking on empty space within the grid
+        if (e.target === e.currentTarget && selectedFiles.length > 0) {
           setSelectedFiles([]);
           setSelectedFile(null);
         }
@@ -1332,8 +1335,8 @@ export const FileGrid: React.FC = () => {
         }
       }}
       onClick={e => {
-        // Clear multi-selection when clicking on empty space within the list
-        if (e.target === e.currentTarget && selectedFiles.length > 1) {
+        // Clear selection when clicking on empty space within the list
+        if (e.target === e.currentTarget && selectedFiles.length > 0) {
           setSelectedFiles([]);
           setSelectedFile(null);
         }

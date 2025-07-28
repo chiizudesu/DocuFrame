@@ -23,7 +23,7 @@ const AppContent: React.FC = () => {
     setCurrentDirectory,
     setStatus,
     addLog,
-    selectAllFiles
+
   } = useAppContext();
   
   // Calculator state
@@ -79,12 +79,7 @@ const AppContent: React.FC = () => {
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       
-      // Ctrl+A to select all files in current directory
-      if (!isInputFocused && e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
-        e.preventDefault();
-        selectAllFiles();
-        return;
-      }
+
       // Backspace to go up one directory level
       if (!isInputFocused && !isQuickNavigating && e.key === 'Backspace') {
         e.preventDefault();
@@ -145,7 +140,7 @@ const AppContent: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, selectAllFiles, isCalculatorOpen]);
+  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen]);
   return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
       <Layout />
       <QuickNavigateOverlay />
