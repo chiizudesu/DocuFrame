@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner } from '@chakra-ui/react';
+import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
 import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 // Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
@@ -309,81 +309,92 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
             
             if (has2025 && has2026) {
-              // Both years available - show dropdown menu
+              // Both years available - show popover
               return (
-                                 <Menu>
+                                 <Popover placement="right-start">
                    <Tooltip label="Open Job (2025/2026)" placement="right" hasArrow>
-                     <MenuButton
-                       as={IconButton}
-                       aria-label="Job Links"
-                       icon={<FileText size={20} strokeWidth={2.5} />}
-                       size="md"
-                       variant="solid"
-                       bg="#388e3c"
-                       color="#e3fae3"
-                       borderRadius="lg"
-                       _hover={{ bg: '#388e3c', color: '#c8f7cb' }}
-                       mb={2}
-                     />
+                     <PopoverTrigger>
+                       <IconButton
+                         aria-label="Job Links"
+                         icon={<FileText size={20} strokeWidth={2.5} />}
+                         size="md"
+                         variant="solid"
+                         bg="#388e3c"
+                         color="#e3fae3"
+                         borderRadius="lg"
+                         _hover={{ bg: '#388e3c', color: '#c8f7cb' }}
+                         mb={2}
+                       />
+                     </PopoverTrigger>
                    </Tooltip>
                    <Portal>
-                     <MenuList 
+                     <PopoverContent
                        zIndex={9999}
                        bg={useColorModeValue('white', 'gray.800')}
                        border="1px solid"
-                       borderColor="green.500"
-                       color={useColorModeValue("green.600", "green.400")}
-                       fontWeight="medium"
+                       borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
                        boxShadow="lg"
-                       minW="160px"
-                       borderRadius="md"
-                       p={1}
+                       w="auto"
+                       minW="120px"
+                       maxW="150px"
                      >
-                       <MenuItem 
-                         onClick={() => window.open(clientInfo['2025 Job Link'], '_blank')}
-                         bg="transparent"
-                         color={useColorModeValue("green.600", "green.400")}
-                         fontWeight="medium"
-                         fontSize="sm"
-                         borderRadius="sm"
-                         _hover={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _focus={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _active={{
-                           bg: "transparent"
-                         }}
-                       >
-                         Open 2025 Job
-                       </MenuItem>
-                       <MenuItem 
-                         onClick={() => window.open(clientInfo['2026 Job Link'], '_blank')}
-                         bg="transparent"
-                         color={useColorModeValue("green.600", "green.400")}
-                         fontWeight="medium"
-                         fontSize="sm"
-                         borderRadius="sm"
-                         _hover={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _focus={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _active={{
-                           bg: "transparent"
-                         }}
-                       >
-                         Open 2026 Job
-                       </MenuItem>
-                     </MenuList>
+                       <PopoverArrow 
+                         bg={useColorModeValue('white', 'gray.800')}
+                         borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                       />
+                       <PopoverBody p={3}>
+                         <VStack spacing={2}>
+                           <Button
+                             onClick={() => window.open(clientInfo['2025 Job Link'], '_blank')}
+                             bg="green.500"
+                             color="white"
+                             fontWeight="bold"
+                             fontSize="sm"
+                             borderRadius="md"
+                             px={4}
+                             py={2}
+                             w="100%"
+                             h="auto"
+                             _hover={{ 
+                               bg: "green.600"
+                             }}
+                             _focus={{ 
+                               bg: "green.600"
+                             }}
+                             _active={{
+                               bg: "green.700"
+                             }}
+                           >
+                             2025
+                           </Button>
+                           <Button
+                             onClick={() => window.open(clientInfo['2026 Job Link'], '_blank')}
+                             bg="green.500"
+                             color="white"
+                             fontWeight="bold"
+                             fontSize="sm"
+                             borderRadius="md"
+                             px={4}
+                             py={2}
+                             w="100%"
+                             h="auto"
+                             _hover={{ 
+                               bg: "green.600"
+                             }}
+                             _focus={{ 
+                               bg: "green.600"
+                             }}
+                             _active={{
+                               bg: "green.700"
+                             }}
+                           >
+                             2026
+                           </Button>
+                         </VStack>
+                       </PopoverBody>
+                     </PopoverContent>
                    </Portal>
-                 </Menu>
+                 </Popover>
               );
             } else if (currentYearLink) {
               // Only current year available
@@ -491,84 +502,97 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             const has2026 = clientInfo['2026 Job Link'];
             const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
 
-            if (has2025 && has2026) {
-              // Both years available - show dropdown
+                        if (has2025 && has2026) {
+              // Both years available - show popover
               return (
                                  <Box flex="1">
-                   <Menu placement="bottom-start" strategy="absolute">
-                     <MenuButton
-                       as={Button}
-                       leftIcon={<FileText size={16} />}
-                       rightIcon={<ChevronDown size={16} />}
-                       variant="outline"
-                       size="sm"
-                       w="100%"
-                       borderColor="green.500"
-                       color="green.600"
-                       fontWeight="medium"
-                       _hover={{
-                         bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                         borderColor: "green.500"
-                       }}
-                     >
-                       Job
-                     </MenuButton>
-                     <MenuList
-                       bg={useColorModeValue('white', 'gray.800')}
-                       border="1px solid"
-                       borderColor="green.500"
-                       color={useColorModeValue("green.600", "green.400")}
-                       fontWeight="medium"
-                       w="100%"
-                       minW="auto"
-                       borderRadius="md"
-                       p={1}
-                       mt={1}
-                     >
-                       <MenuItem 
-                         onClick={() => handleOpenJobLink('2025')}
-                         bg="transparent"
-                         color={useColorModeValue("green.600", "green.400")}
+                   <Popover placement="right-start">
+                     <PopoverTrigger>
+                       <Button
+                         leftIcon={<FileText size={16} />}
+                         rightIcon={<ChevronDown size={16} />}
+                         variant="outline"
+                         size="sm"
+                         w="100%"
+                         borderColor="green.500"
+                         color="green.600"
                          fontWeight="medium"
-                         fontSize="sm"
-                         borderRadius="sm"
-                         _hover={{ 
+                         _hover={{
                            bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _focus={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _active={{
-                           bg: "transparent"
+                           borderColor: "green.500"
                          }}
                        >
-                         Open 2025 Job
-                       </MenuItem>
-                       <MenuItem 
-                         onClick={() => handleOpenJobLink('2026')}
-                         bg="transparent"
-                         color={useColorModeValue("green.600", "green.400")}
-                         fontWeight="medium"
-                         fontSize="sm"
-                         borderRadius="sm"
-                         _hover={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _focus={{ 
-                           bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                           color: useColorModeValue("green.600", "green.400")
-                         }}
-                         _active={{
-                           bg: "transparent"
-                         }}
+                         Job
+                       </Button>
+                     </PopoverTrigger>
+                     <Portal>
+                       <PopoverContent
+                         bg={useColorModeValue('white', 'gray.800')}
+                         border="1px solid"
+                         borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                         boxShadow="lg"
+                         w="auto"
+                         minW="120px"
+                         maxW="150px"
+                         zIndex={9999}
                        >
-                         Open 2026 Job
-                       </MenuItem>
-                     </MenuList>
-                   </Menu>
+                         <PopoverArrow 
+                           bg={useColorModeValue('white', 'gray.800')}
+                           borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                         />
+                         <PopoverBody p={3}>
+                           <VStack spacing={2}>
+                             <Button
+                               onClick={() => handleOpenJobLink('2025')}
+                               bg="green.500"
+                               color="white"
+                               fontWeight="bold"
+                               fontSize="sm"
+                               borderRadius="md"
+                               px={4}
+                               py={2}
+                               w="100%"
+                               h="auto"
+                               _hover={{ 
+                                 bg: "green.600"
+                               }}
+                               _focus={{ 
+                                 bg: "green.600"
+                               }}
+                               _active={{
+                                 bg: "green.700"
+                               }}
+                             >
+                               2025
+                             </Button>
+                             <Button
+                               onClick={() => handleOpenJobLink('2026')}
+                               bg="green.500"
+                               color="white"
+                               fontWeight="bold"
+                               fontSize="sm"
+                               borderRadius="md"
+                               px={4}
+                               py={2}
+                               w="100%"
+                               h="auto"
+                               _hover={{ 
+                                 bg: "green.600"
+                               }}
+                               _focus={{ 
+                                 bg: "green.600"
+                               }}
+                               _active={{
+                                 bg: "green.700"
+                               }}
+                             >
+                               2026
+                             </Button>
+                           </VStack>
+                         </PopoverBody>
+                       </PopoverContent>
+                     </Portal>
+                   </Popover>
                  </Box>
               );
             } else {
