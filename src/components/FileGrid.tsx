@@ -213,6 +213,10 @@ export const FileGrid: React.FC = () => {
 
   // State to store native icons for files
   const [nativeIcons, setNativeIcons] = useState<Map<string, string>>(new Map());
+  
+  // Smart selection states for handling drag vs click on multi-selected files
+  const [pendingSelectionChange, setPendingSelectionChange] = useState<{ fileName: string; index: number } | null>(null);
+  const [isDragStarted, setIsDragStarted] = useState(false);
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
@@ -759,7 +763,7 @@ export const FileGrid: React.FC = () => {
     }
   };
 
-  // Add this function for selection on mouse down
+  // Add this function for selection on mouse down  
   const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
     if (!event) {
       // Fallback for no event - simple selection
@@ -768,6 +772,10 @@ export const FileGrid: React.FC = () => {
       setSelectedFile(file.name);
       return;
     }
+
+    // Reset drag state
+    setIsDragStarted(false);
+    setPendingSelectionChange(null);
 
     if (event.shiftKey && lastSelectedIndex !== null) {
       // Shift+click: Select range from last selected to current
@@ -794,13 +802,36 @@ export const FileGrid: React.FC = () => {
         setSelectedFile(file.name);
         setLastSelectedIndex(index);
       }
+    } else if (selectedFiles.includes(file.name) && selectedFiles.length > 1) {
+      // Smart behavior: File is already selected in a multi-selection
+      // Don't change selection yet - wait to see if this is a drag or a click
+      setSelectedFile(file.name);
+      setLastSelectedIndex(index);
+      setPendingSelectionChange({ fileName: file.name, index });
     } else {
       // Regular click: Select only this file (clear others)
-      // This handles both new selections and clicking on already-selected files
       setSelectedFiles([file.name]);
       setLastSelectedIndex(index);
       setSelectedFile(file.name);
     }
+  };
+
+  // Add this function for handling mouse up - completes smart selection logic
+  const handleFileItemMouseUp = (file: FileItem, index: number, event?: React.MouseEvent) => {
+    // If we have a pending selection change and no drag started, complete the selection
+    if (pendingSelectionChange && !isDragStarted && pendingSelectionChange.fileName === file.name) {
+      setSelectedFiles([file.name]);
+      setLastSelectedIndex(index);
+      setSelectedFile(file.name);
+    }
+    // Clear pending state
+    setPendingSelectionChange(null);
+  };
+
+  // Add this function for handling drag start - prevents selection change on drag
+  const handleFileItemDragStart = (file: FileItem, index: number, event?: React.DragEvent) => {
+    setIsDragStarted(true);
+    setPendingSelectionChange(null);
   };
 
   // Add this function for selection on click
@@ -1242,6 +1273,8 @@ export const FileGrid: React.FC = () => {
                 isCut={isFileCut(file)}
                 onFileMouseDown={handleFileItemMouseDown}
                 onFileClick={handleFileItemClick}
+                onFileMouseUp={handleFileItemMouseUp}
+                onFileDragStart={handleFileItemDragStart}
                 onNativeIconLoaded={handleNativeIconLoaded}
             >
               <Flex
@@ -1482,6 +1515,8 @@ export const FileGrid: React.FC = () => {
                 isCut={isFileCut(file)}
                 onFileMouseDown={handleFileItemMouseDown}
                 onFileClick={handleFileItemClick}
+                onFileMouseUp={handleFileItemMouseUp}
+                onFileDragStart={handleFileItemDragStart}
                 onNativeIconLoaded={handleNativeIconLoaded}
                 as="tr"
               >

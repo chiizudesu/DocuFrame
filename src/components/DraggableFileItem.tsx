@@ -17,6 +17,8 @@ interface DraggableFileItemProps {
   isCut?: boolean; // Add isCut prop for cut indicator
   onFileMouseDown?: (file: FileItem, index: number, event: React.MouseEvent) => void;
   onFileClick?: (file: FileItem, index: number, event: React.MouseEvent) => void;
+  onFileMouseUp?: (file: FileItem, index: number, event: React.MouseEvent) => void;
+  onFileDragStart?: (file: FileItem, index: number, event: React.DragEvent) => void;
   onNativeIconLoaded?: (filePath: string, iconData: string) => void; // Callback to share native icon with parent
 }
 
@@ -34,6 +36,8 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   isCut,
   onFileMouseDown,
   onFileClick,
+  onFileMouseUp,
+  onFileDragStart,
   onNativeIconLoaded,
 }) => {
   const { addLog, currentDirectory, setStatus, setFolderItems } = useAppContext();
@@ -69,6 +73,9 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   }, [file.path, file.type, onNativeIconLoaded]);
 
   const handleDragStart = (e: React.DragEvent) => {
+    // Notify parent that drag has started
+    if (onFileDragStart) onFileDragStart(file, index, e);
+    
     // Use Electron's native file drag and drop exactly as documented
     e.preventDefault();
     const filesToDrag: string[] = Array.isArray(selectedFiles) && selectedFiles.length > 0 && sortedFiles
@@ -278,6 +285,10 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     if (onFileClick) onFileClick(file, index, e);
   };
 
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (onFileMouseUp) onFileMouseUp(file, index, e);
+  };
+
   const getBorderColor = () => {
     if (isSelected) return selectedBg;
     return 'transparent';
@@ -320,7 +331,8 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     borderLeftColor: getBorderColor(),
     bg: getBackgroundColor(),
     _hover: getHoverStyles(),
-    onMouseDown: handleMouseDown
+    onMouseDown: handleMouseDown,
+    onMouseUp: handleMouseUp
   };
 
   // For table rows, we need different styling approach
