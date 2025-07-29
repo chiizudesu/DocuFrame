@@ -24,6 +24,7 @@ export const StandaloneCalculator: React.FC = () => {
   const [waitingForNewValue, setWaitingForNewValue] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [equation, setEquation] = useState('');
+  const [inputTrail, setInputTrail] = useState<string>(''); // New state for trailing inputs
 
   // Windows calculator-like colors
   const bgColor = useColorModeValue('#f3f3f3', '#202020');
@@ -42,8 +43,10 @@ export const StandaloneCalculator: React.FC = () => {
     if (waitingForNewValue) {
       setDisplay(num);
       setWaitingForNewValue(false);
+      setInputTrail(prev => prev + num);
     } else {
       setDisplay(display === '0' ? num : display + num);
+      setInputTrail(prev => display === '0' && prev === '' ? num : prev + num);
     }
   }, [display, waitingForNewValue]);
 
@@ -51,10 +54,12 @@ export const StandaloneCalculator: React.FC = () => {
     if (waitingForNewValue) {
       setDisplay('0.');
       setWaitingForNewValue(false);
+      setInputTrail(prev => prev + '0.');
     } else if (display.indexOf('.') === -1) {
       setDisplay(display + '.');
+      setInputTrail(prev => inputTrail === '' && display === '0' ? '0.' : prev + '.');
     }
-  }, [display, waitingForNewValue]);
+  }, [display, waitingForNewValue, inputTrail]);
 
   const clear = useCallback(() => {
     setDisplay('0');
@@ -62,13 +67,16 @@ export const StandaloneCalculator: React.FC = () => {
     setOperation(null);
     setWaitingForNewValue(false);
     setEquation('');
+    setInputTrail(''); // Clear trail
   }, []);
 
   const backspace = useCallback(() => {
     if (display.length > 1) {
       setDisplay(display.slice(0, -1));
+      setInputTrail(prev => prev.slice(0, -1));
     } else {
       setDisplay('0');
+      setInputTrail(prev => prev.slice(0, -1));
     }
   }, [display]);
 
@@ -78,6 +86,7 @@ export const StandaloneCalculator: React.FC = () => {
     if (previousValue === null) {
       setPreviousValue(display);
       setEquation(`${display} ${nextOperation} `);
+      setInputTrail(prev => prev + ` ${nextOperation} `);
     } else if (operation) {
       const currentValue = parseFloat(previousValue);
       let result = 0;
@@ -108,6 +117,7 @@ export const StandaloneCalculator: React.FC = () => {
       setDisplay(resultString);
       setPreviousValue(resultString);
       setEquation(`${resultString} ${nextOperation} `);
+      setInputTrail(prev => prev + ` = ${resultString} ${nextOperation} `);
     }
 
     setWaitingForNewValue(true);
@@ -149,12 +159,42 @@ export const StandaloneCalculator: React.FC = () => {
       setOperation(null);
       setWaitingForNewValue(true);
       setEquation('');
+      setInputTrail(prev => prev + ` = ${resultString}`);
     }
   }, [display, previousValue, operation]);
+
+  // Paste handler
+  const handlePaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const sanitized = text.trim();
+      
+      // Check if it's a valid number
+      if (/^-?\d*\.?\d+$/.test(sanitized)) {
+        setDisplay(sanitized);
+        setInputTrail(prev => prev + sanitized);
+        setWaitingForNewValue(false);
+      }
+    } catch (err) {
+      console.log('Paste failed or not supported');
+    }
+  }, []);
 
   // Keyboard support
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
+      // Handle paste specifically
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        handlePaste();
+        return;
+      }
+      
+      // Allow other system shortcuts to pass through
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        return; // Don't prevent default for other modifier key combinations
+      }
+      
       e.preventDefault();
       
       if (e.key >= '0' && e.key <= '9') {
@@ -182,7 +222,7 @@ export const StandaloneCalculator: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [inputNumber, inputDecimal, performOperation, calculate, clear, backspace]);
+  }, [inputNumber, inputDecimal, performOperation, calculate, clear, backspace, handlePaste]);
 
   const clearHistory = () => {
     setHistory([]);
@@ -241,7 +281,7 @@ export const StandaloneCalculator: React.FC = () => {
     <Flex
       bg={bgColor}
       w="480px" // More compact, refined width
-      h="420px" // Better height proportion
+      h="448px" // Increased height to accommodate footer
       overflow="hidden"
       border="1px solid"
       borderColor={borderColor}
@@ -384,6 +424,8 @@ export const StandaloneCalculator: React.FC = () => {
               wordBreak="break-all"
               lineHeight="1"
               textAlign="right"
+              userSelect="text"
+              cursor="text"
             >
               {display}
             </Text>
@@ -424,6 +466,38 @@ export const StandaloneCalculator: React.FC = () => {
           </Box>
         </VStack>
       </Flex>
+
+      {/* Footer with Trailing Input Display */}
+      <Box
+        h="28px"
+        bg={useColorModeValue('#f8f8f8', '#1a1a1a')}
+        borderTop="1px solid"
+        borderColor={borderColor}
+        px={3}
+        py={1}
+        borderBottomRadius="8px"
+        overflow="hidden"
+        flexShrink={0}
+      >
+        <Box
+          w="100%"
+          h="100%"
+          display="flex"
+          alignItems="center"
+          justifyContent="flex-end"
+          overflow="hidden"
+        >
+          <Text
+            fontSize="11px"
+            color={useColorModeValue('gray.600', 'gray.400')}
+            fontFamily="monospace"
+            whiteSpace="nowrap"
+            textAlign="right"
+          >
+            {inputTrail || 'Ready'}
+          </Text>
+        </Box>
+      </Box>
     </Flex>
   );
 }; 

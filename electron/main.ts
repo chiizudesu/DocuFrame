@@ -1443,7 +1443,7 @@ const createCalculatorWindow = () => {
 
   calculatorWindow = new BrowserWindow({
     width: 480,
-    height: 420,
+    height: 448,
     resizable: false,
     frame: false,
     titleBarStyle: 'hidden',
