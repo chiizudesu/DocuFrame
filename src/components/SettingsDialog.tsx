@@ -40,9 +40,9 @@ import {
   Spacer,
   Tooltip,
   Kbd,
-  Select,
-} from '@chakra-ui/react';
-import { 
+      Select,
+  } from '@chakra-ui/react';
+  import { 
   Folder, 
   FolderOpen, 
   FileText, 
@@ -55,7 +55,8 @@ import {
   Save,
   X,
   Info,
-  Calculator as CalculatorIcon
+  Calculator as CalculatorIcon,
+  Plus
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -76,6 +77,10 @@ interface Settings {
   enableActivationShortcut?: boolean;
   calculatorShortcut?: string;
   enableCalculatorShortcut?: boolean;
+  newTabShortcut?: string;
+  enableNewTabShortcut?: boolean;
+  closeTabShortcut?: string;
+  enableCloseTabShortcut?: boolean;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
@@ -90,6 +95,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [enableActivationShortcut, setEnableActivationShortcut] = useState(true);
   const [calculatorShortcut, setCalculatorShortcut] = useState('Alt+Q');
   const [enableCalculatorShortcut, setEnableCalculatorShortcut] = useState(true);
+  const [newTabShortcut, setNewTabShortcut] = useState('Ctrl+T');
+  const [enableNewTabShortcut, setEnableNewTabShortcut] = useState(true);
+  const [closeTabShortcut, setCloseTabShortcut] = useState('Ctrl+W');
+  const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   
   const toast = useToast();
@@ -116,6 +125,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         setEnableActivationShortcut(loadedSettings.enableActivationShortcut !== false);
         setCalculatorShortcut(loadedSettings.calculatorShortcut || 'Alt+Q');
         setEnableCalculatorShortcut(loadedSettings.enableCalculatorShortcut !== false);
+        setNewTabShortcut(loadedSettings.newTabShortcut || 'Ctrl+T');
+        setEnableNewTabShortcut(loadedSettings.enableNewTabShortcut !== false);
+        setCloseTabShortcut(loadedSettings.closeTabShortcut || 'Ctrl+W');
+        setEnableCloseTabShortcut(loadedSettings.enableCloseTabShortcut !== false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -147,6 +160,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         enableActivationShortcut,
         calculatorShortcut,
         enableCalculatorShortcut,
+        newTabShortcut,
+        enableNewTabShortcut,
+        closeTabShortcut,
+        enableCloseTabShortcut,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -495,133 +512,171 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {/* Shortcuts Tab */}
               <TabPanel p={0} h="full">
-                <VStack spacing={6} align="stretch" minH="400px">
+                <VStack spacing={4} align="stretch" minH="400px">
                   <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
                     <CardHeader pb={3}>
                       <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
                         <Icon as={Keyboard} boxSize={4} />
-                        Activation Shortcut
+                        Keyboard Shortcuts
                       </Heading>
                       <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        Global shortcut to activate the application
+                        Configure keyboard shortcuts for quick access
                       </Text>
                     </CardHeader>
                     <CardBody pt={0}>
                       <VStack spacing={4} align="stretch">
-                        <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>Enable Activation Shortcut</FormLabel>
-                          <HStack justify="space-between">
-                            <Text fontSize="sm" color={secondaryTextColor}>
-                              Allow global shortcut to bring app to front
-                            </Text>
+                        
+                        {/* Activation Shortcut */}
+                        <Box borderBottom="1px solid" borderColor={borderColor} pb={3}>
+                          <HStack justify="space-between" mb={2}>
+                            <Box>
+                              <Text fontSize="sm" fontWeight="500" color={textColor}>Global Activation</Text>
+                              <Text fontSize="xs" color={secondaryTextColor}>Bring app to front from anywhere</Text>
+                            </Box>
                             <Switch
                               isChecked={enableActivationShortcut}
                               onChange={(e) => setEnableActivationShortcut(e.target.checked)}
                               colorScheme="blue"
                             />
                           </HStack>
-                        </FormControl>
-
-                        {enableActivationShortcut && (
-                          <FormControl>
-                            <FormLabel fontSize="sm" color={textColor}>Shortcut Key</FormLabel>
-                            <HStack spacing={3}>
+                          {enableActivationShortcut && (
+                            <HStack spacing={2}>
                               <Select
                                 value={activationShortcut}
                                 onChange={handleShortcutChange}
                                 bg="white"
                                 _dark={{ bg: 'gray.600' }}
                                 maxW="120px"
+                                size="sm"
                               >
                                 <option value="`">` (Backtick)</option>
                                 <option value="F12">F12</option>
                                 <option value="F11">F11</option>
                                 <option value="F10">F10</option>
                                 <option value="F9">F9</option>
-                                <option value="F8">F8</option>
-                                <option value="F7">F7</option>
-                                <option value="F6">F6</option>
                               </Select>
-                              <Kbd fontSize="sm" px={2} py={1} borderRadius="md">
+                              <Kbd fontSize="xs" px={2} py={1}>
                                 {activationShortcut}
                               </Kbd>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleShortcutRecording}
-                                isLoading={isRecordingShortcut}
-                                loadingText="Recording..."
-                              >
-                                Record Custom
-                              </Button>
                             </HStack>
-                          </FormControl>
-                        )}
-                      </VStack>
-                    </CardBody>
-                  </Card>
+                          )}
+                        </Box>
 
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
-                        <Icon as={CalculatorIcon} boxSize={4} />
-                        Calculator Shortcut
-                      </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        Keyboard shortcut to open the calculator
-                      </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
-                      <VStack spacing={4} align="stretch">
-                        <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>Enable Calculator Shortcut</FormLabel>
-                          <HStack justify="space-between">
-                            <Text fontSize="sm" color={secondaryTextColor}>
-                              Allow keyboard shortcut to open calculator
-                            </Text>
+                        {/* Calculator Shortcut */}
+                        <Box borderBottom="1px solid" borderColor={borderColor} pb={3}>
+                          <HStack justify="space-between" mb={2}>
+                            <Box>
+                              <Text fontSize="sm" fontWeight="500" color={textColor}>Open Calculator</Text>
+                              <Text fontSize="xs" color={secondaryTextColor}>Quick calculator access</Text>
+                            </Box>
                             <Switch
                               isChecked={enableCalculatorShortcut}
                               onChange={(e) => setEnableCalculatorShortcut(e.target.checked)}
                               colorScheme="blue"
                             />
                           </HStack>
-                        </FormControl>
-
-                        {enableCalculatorShortcut && (
-                          <FormControl>
-                            <FormLabel fontSize="sm" color={textColor}>Shortcut Combination</FormLabel>
-                            <HStack spacing={3}>
+                          {enableCalculatorShortcut && (
+                            <HStack spacing={2}>
                               <Select
                                 value={calculatorShortcut}
                                 onChange={(e) => setCalculatorShortcut(e.target.value)}
                                 bg="white"
                                 _dark={{ bg: 'gray.600' }}
-                                maxW="150px"
+                                maxW="140px"
+                                size="sm"
                               >
                                 <option value="Alt+Q">Alt + Q</option>
                                 <option value="Alt+C">Alt + C</option>
                                 <option value="Ctrl+Alt+C">Ctrl + Alt + C</option>
                                 <option value="Ctrl+Shift+C">Ctrl + Shift + C</option>
-                                <option value="F12">F12</option>
-                                <option value="F11">F11</option>
                               </Select>
-                              <Kbd fontSize="sm" px={2} py={1} borderRadius="md">
+                              <Kbd fontSize="xs" px={2} py={1}>
                                 {calculatorShortcut}
                               </Kbd>
                             </HStack>
-                          </FormControl>
-                        )}
+                          )}
+                        </Box>
+
+                        {/* New Tab Shortcut */}
+                        <Box borderBottom="1px solid" borderColor={borderColor} pb={3}>
+                          <HStack justify="space-between" mb={2}>
+                            <Box>
+                              <Text fontSize="sm" fontWeight="500" color={textColor}>New Tab</Text>
+                              <Text fontSize="xs" color={secondaryTextColor}>Create new folder tab</Text>
+                            </Box>
+                            <Switch
+                              isChecked={enableNewTabShortcut}
+                              onChange={(e) => setEnableNewTabShortcut(e.target.checked)}
+                              colorScheme="blue"
+                            />
+                          </HStack>
+                          {enableNewTabShortcut && (
+                            <HStack spacing={2}>
+                              <Select
+                                value={newTabShortcut}
+                                onChange={(e) => setNewTabShortcut(e.target.value)}
+                                bg="white"
+                                _dark={{ bg: 'gray.600' }}
+                                maxW="140px"
+                                size="sm"
+                              >
+                                <option value="Ctrl+T">Ctrl + T</option>
+                                <option value="Ctrl+Shift+T">Ctrl + Shift + T</option>
+                                <option value="Alt+T">Alt + T</option>
+                                <option value="Ctrl+N">Ctrl + N</option>
+                              </Select>
+                              <Kbd fontSize="xs" px={2} py={1}>
+                                {newTabShortcut}
+                              </Kbd>
+                            </HStack>
+                          )}
+                        </Box>
+
+                        {/* Close Tab Shortcut */}
+                        <Box pb={3}>
+                          <HStack justify="space-between" mb={2}>
+                            <Box>
+                              <Text fontSize="sm" fontWeight="500" color={textColor}>Close Tab</Text>
+                              <Text fontSize="xs" color={secondaryTextColor}>Close current tab</Text>
+                            </Box>
+                            <Switch
+                              isChecked={enableCloseTabShortcut}
+                              onChange={(e) => setEnableCloseTabShortcut(e.target.checked)}
+                              colorScheme="blue"
+                            />
+                          </HStack>
+                          {enableCloseTabShortcut && (
+                            <HStack spacing={2}>
+                              <Select
+                                value={closeTabShortcut}
+                                onChange={(e) => setCloseTabShortcut(e.target.value)}
+                                bg="white"
+                                _dark={{ bg: 'gray.600' }}
+                                maxW="140px"
+                                size="sm"
+                              >
+                                <option value="Ctrl+W">Ctrl + W</option>
+                                <option value="Ctrl+F4">Ctrl + F4</option>
+                                <option value="Alt+F4">Alt + F4</option>
+                                <option value="Ctrl+Shift+W">Ctrl + Shift + W</option>
+                              </Select>
+                              <Kbd fontSize="xs" px={2} py={1}>
+                                {closeTabShortcut}
+                              </Kbd>
+                            </HStack>
+                          )}
+                        </Box>
+
                       </VStack>
                     </CardBody>
                   </Card>
 
-                  <Alert status="info" borderRadius="lg">
+                  <Alert status="info" borderRadius="lg" size="sm">
                     <AlertIcon />
-            <Box>
-                      <AlertTitle fontSize="sm">Shortcut Information</AlertTitle>
+                    <Box>
+                      <AlertTitle fontSize="xs">Shortcut Information</AlertTitle>
                       <AlertDescription fontSize="xs">
-                        The activation shortcut works globally, even when the app is minimized or in the background.
-                        Press the shortcut key to bring DocuFrame to the front. Calculator shortcut works when the app is focused.
+                        Global shortcuts work anywhere. Tab shortcuts work when the app is focused.
                       </AlertDescription>
                     </Box>
                   </Alert>

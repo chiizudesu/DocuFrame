@@ -1499,3 +1499,79 @@ ipcMain.handle('close-calculator', async () => {
   }
   return { success: true };
 });
+
+// New window creation for tab drag-out functionality
+ipcMain.handle('open-new-window', async (_, initialPath?: string) => {
+  try {
+    console.log('[Main] Creating new window with initial path:', initialPath);
+    
+    // Create a new window using the same configuration as the main window
+    const newWindow = new BrowserWindow({
+      width: 1200,
+      height: 800,
+      frame: false,
+      titleBarStyle: 'hidden',
+      icon: process.env.NODE_ENV === 'development' 
+        ? path.join(__dirname, '../public/256.ico')
+        : path.join(__dirname, '../public/256.ico'),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+      },
+    });
+
+    // Enable drag and drop for files
+    newWindow.webContents.on('will-navigate', (event, url) => {
+      if (url.startsWith('file://')) {
+        event.preventDefault();
+      }
+    });
+
+    // Intercept window.open and open external URLs in the default browser
+    newWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('file://')) {
+        return { action: 'allow' };
+      }
+      // Allow OAuth popup windows for authentication (Xero, etc.)
+      if (url.includes('login.xero.com') || url.includes('oauth') || url.includes('auth')) {
+        return { action: 'allow' };
+      }
+      // Open all other external URLs in the default browser
+      shell.openExternal(url);
+      return { action: 'deny' };
+    });
+
+    // Load the index.html of the app
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      let url = MAIN_WINDOW_VITE_DEV_SERVER_URL;
+      if (initialPath) {
+        // Pass the initial path as a URL parameter
+        url += `?initialPath=${encodeURIComponent(initialPath)}`;
+      }
+      newWindow.loadURL(url);
+    } else {
+      const indexPath = path.join(__dirname, '../dist/index.html');
+      if (initialPath) {
+        // For production, we'll need to send the initial path after the window loads
+        newWindow.loadFile(indexPath);
+        newWindow.webContents.once('did-finish-load', () => {
+          newWindow.webContents.send('set-initial-path', initialPath);
+        });
+      } else {
+        newWindow.loadFile(indexPath);
+      }
+    }
+
+    // Position the new window slightly offset from the main window
+    const [x, y] = newWindow.getPosition();
+    newWindow.setPosition(x + 30, y + 30);
+
+    console.log('[Main] New window created successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error creating new window:', error);
+    throw error;
+  }
+});

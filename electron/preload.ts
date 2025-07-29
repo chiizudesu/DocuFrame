@@ -204,6 +204,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   closeCalculator: async () => {
     return await ipcRenderer.invoke('close-calculator');
+  },
+  // Window management methods
+  openNewWindow: async (initialPath?: string) => {
+    return await ipcRenderer.invoke('open-new-window', initialPath);
+  },
+  // Message handling for new windows
+  onMessage: (channel: string, callback: (event: any, ...args: any[]) => void) => {
+    ipcRenderer.on(channel, callback);
+  },
+  removeListener: (channel: string, callback: (event: any, ...args: any[]) => void) => {
+    ipcRenderer.removeListener(channel, callback);
   }
 }); 
 

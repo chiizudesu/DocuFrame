@@ -29,6 +29,35 @@ const AppContent: React.FC = () => {
   // Calculator state
   const [isCalculatorOpen, setIsCalculatorOpen] = React.useState(false);
 
+  // Handle initial path for new windows
+  useEffect(() => {
+    // Check URL parameters for initial path (development mode)
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialPath = urlParams.get('initialPath');
+    if (initialPath) {
+      console.log('[App] Setting initial path from URL:', initialPath);
+      setCurrentDirectory(initialPath);
+      setStatus(`Opened new window at: ${initialPath}`, 'info');
+    }
+
+    // Listen for initial path from main process (production mode)
+    const handleSetInitialPath = (_event: any, path: string) => {
+      console.log('[App] Setting initial path from main process:', path);
+      setCurrentDirectory(path);
+      setStatus(`Opened new window at: ${path}`, 'info');
+    };
+
+    if (window.electronAPI?.onMessage) {
+      window.electronAPI.onMessage('set-initial-path', handleSetInitialPath);
+    }
+
+    return () => {
+      if (window.electronAPI?.removeListener) {
+        window.electronAPI.removeListener('set-initial-path', handleSetInitialPath);
+      }
+    };
+  }, [setCurrentDirectory, setStatus]);
+
   // Handle update events from main process
   useEffect(() => {
     // Update available

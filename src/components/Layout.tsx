@@ -6,6 +6,7 @@ import { FunctionPanels } from './FunctionPanels';
 import { OutputLog } from './OutputLog';
 import { ThemeToggle } from './ThemeToggle';
 import { FileGrid } from './FileGrid';
+import { FolderTabSystem } from './FolderTabSystem';
 import { Footer } from './Footer';
 import { ChevronLeft, ChevronRight, Minimize2, Maximize2, X, Square } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -260,14 +261,20 @@ export const Layout: React.FC = () => {
     };
   }, [logHeight, sidebarWidth, sidebarCollapsed]);
 
+  const handleActiveTabChange = useCallback((path: string) => {
+    // This ensures all path-related functions work with the active tab
+    // The currentDirectory is already updated by the tab system
+  }, []);
+
   return <Grid templateAreas={`
         "titlebar titlebar titlebar"
         "ribbon ribbon ribbon"
+        "sidebar tabs tabs"
         "sidebar header header"
         "sidebar main main"
         ${showOutputLog ? '"sidebar footer footer"' : ''}
         "status status status"
-      `} gridTemplateRows={`auto auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr 1fr`} h="100%" gap="0" bg={mainBgColor}>
+      `} gridTemplateRows={`auto auto auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr 1fr`} h="100%" gap="0" bg={mainBgColor}>
     {/* Custom Title Bar */}
     <GridItem area="titlebar" bg={bgColor} zIndex={100}>
       <CustomTitleBar />
@@ -316,6 +323,10 @@ export const Layout: React.FC = () => {
     {/* Folder Info Bar */}
     <GridItem area="header" bg={bgColor} p={2} borderBottom="1px" borderColor={borderColor}>
       <FolderInfoBar />
+    </GridItem>
+    {/* Folder Tab System */}
+    <GridItem area="tabs" bg={bgColor}>
+      <FolderTabSystem onActiveTabChange={handleActiveTabChange} />
     </GridItem>
     {/* Main Content Area */}
     <GridItem area="main" bg={mainBgColor} overflow="auto" className="enhanced-scrollbar" display="flex" flexDirection="column" minHeight="0">

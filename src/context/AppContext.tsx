@@ -62,6 +62,12 @@ interface AppContextType {
   addRecentlyTransferredFiles: (filePaths: string[]) => void;
   clearRecentlyTransferredFiles: () => void;
   removeRecentlyTransferredFile: (filePath: string) => void;
+  // New Tab Shortcut
+  newTabShortcut: string;
+  setNewTabShortcut: (shortcut: string) => void;
+  // Close Tab Shortcut
+  closeTabShortcut: string;
+  setCloseTabShortcut: (shortcut: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -96,6 +102,10 @@ export const AppProvider: React.FC<{
   const [clipboard, setClipboard] = useState<{ files: FileItem[]; operation: 'cut' | 'copy' | null }>({ files: [], operation: null });
   // Recently transferred files (for "new" indicator)
   const [recentlyTransferredFiles, setRecentlyTransferredFiles] = useState<string[]>([]);
+  // New Tab Shortcut
+  const [newTabShortcut, setNewTabShortcut] = useState<string>('Ctrl+T');
+  // Close Tab Shortcut
+  const [closeTabShortcut, setCloseTabShortcut] = useState<string>('Ctrl+W');
 
   // Load settings on mount
   useEffect(() => {
@@ -211,6 +221,10 @@ export const AppProvider: React.FC<{
       addRecentlyTransferredFiles,
       clearRecentlyTransferredFiles,
       removeRecentlyTransferredFile,
+      newTabShortcut,
+      setNewTabShortcut,
+      closeTabShortcut,
+      setCloseTabShortcut,
       // Document insights properties removed
     }}>
       {children}
