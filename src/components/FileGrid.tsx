@@ -163,7 +163,8 @@ export const FileGrid: React.FC = () => {
     addRecentlyTransferredFiles, 
     clearRecentlyTransferredFiles, 
     recentlyTransferredFiles, 
-    removeRecentlyTransferredFile 
+    removeRecentlyTransferredFile,
+    addTabToCurrentWindow
   } = useAppContext()
   
   // All useState hooks next
@@ -489,6 +490,14 @@ export const FileGrid: React.FC = () => {
       switch (action) {
         case 'open':
           await handleOpenOrNavigate(contextMenu.fileItem)
+          break
+        case 'open_new_tab':
+          if (contextMenu.fileItem.type === 'folder') {
+            addTabToCurrentWindow(contextMenu.fileItem.path);
+            addLog(`Opened new tab for folder: ${contextMenu.fileItem.name}`);
+            setStatus(`Opened new tab for ${contextMenu.fileItem.name}`, 'info');
+          }
+          handleCloseContextMenu();
           break
         case 'rename':
           setIsRenaming(contextMenu.fileItem.name)
@@ -1639,6 +1648,12 @@ export const FileGrid: React.FC = () => {
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
           </Flex>
+          {contextMenu.fileItem.type === 'folder' && (
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('open_new_tab')}>
+              <ExternalLink size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Open folder in new tab</Text>
+            </Flex>
+          )}
 
           {/* File-Specific Actions */}
           {(contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') || showMergePDFs || showExtractZips || showExtractEmls) && (

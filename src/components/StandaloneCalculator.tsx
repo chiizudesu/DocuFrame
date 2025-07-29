@@ -322,149 +322,149 @@ export const StandaloneCalculator: React.FC = () => {
       {/* Main Content - History Panel + Calculator */}
       <Flex flex={1} overflow="hidden">
         {/* History Panel - Always visible on the left */}
-        <Box
+          <Box
           w="160px" // Refined history panel width
-          bg={historyBg}
+            bg={historyBg}
           borderRight="1px solid"
-          borderColor={borderColor}
-          p={2}
+            borderColor={borderColor}
+            p={2}
           display="flex"
           flexDirection="column"
           flexShrink={0}
-        >
-          <HStack justify="space-between" mb={2}>
+          >
+            <HStack justify="space-between" mb={2}>
             <Text fontSize="11px" color={textColor} fontWeight="500">
-              History
-            </Text>
-            <IconButton
-              aria-label="Clear history"
+                History
+              </Text>
+              <IconButton
+                aria-label="Clear history"
               icon={<Delete size={10} />}
-              size="xs"
-              variant="ghost"
-              color={textColor}
-              onClick={clearHistory}
-            />
-          </HStack>
+                size="xs"
+                variant="ghost"
+                color={textColor}
+                onClick={clearHistory}
+              />
+            </HStack>
           
           {/* Scrollable History Content */}
           <Box flex={1} overflowY="auto" overflowX="hidden">
-            {history.length === 0 ? (
+              {history.length === 0 ? (
               <Text fontSize="10px" color="gray.500" textAlign="center" mt={3}>
-                No history yet
-              </Text>
-            ) : (
-              <VStack spacing={1} align="stretch">
+                  No history yet
+                </Text>
+              ) : (
+                <VStack spacing={1} align="stretch">
                 {history.map((entry, index) => (
-                  <Box
-                    key={index}
-                    cursor="pointer"
-                    onClick={() => setDisplay(entry.result)}
-                    _hover={{ bg: useColorModeValue('gray.100', 'gray.600') }}
-                    p={1}
+                    <Box
+                      key={index}
+                      cursor="pointer"
+                      onClick={() => setDisplay(entry.result)}
+                      _hover={{ bg: useColorModeValue('gray.100', 'gray.600') }}
+                      p={1}
                     borderRadius="3px"
                     transition="background-color 0.2s"
-                  >
+                    >
                     <Text 
                       fontSize="9px" 
                       color="gray.500"
                       wordBreak="break-all"
                       mb={0.5}
                     >
-                      {entry.expression}
-                    </Text>
+                        {entry.expression}
+                      </Text>
                     <Text 
                       fontSize="10px" 
                       color={textColor} 
                       fontWeight="500"
                       wordBreak="break-all"
                     >
-                      {entry.result}
-                    </Text>
-                  </Box>
-                ))}
-              </VStack>
-            )}
+                        {entry.result}
+                      </Text>
+                    </Box>
+                  ))}
+                </VStack>
+              )}
+            </Box>
           </Box>
-        </Box>
 
         {/* Calculator Panel */}
         <VStack spacing={0} flex={1} minW={0}> {/* Calculator panel - fills remaining space */}
-          {/* Display */}
-          <Box
-            w="100%"
-            bg={displayBg}
+        {/* Display */}
+        <Box
+          w="100%"
+          bg={displayBg}
             border="none"
-            borderColor={borderColor}
-            px={4}
+          borderColor={borderColor}
+          px={4}
             py={3}
             h="120px" // Fixed display height for better proportion
             display="flex"
             flexDirection="column"
             justifyContent="flex-end"
             flexShrink={0}
-          >
-            {/* Equation Display */}
+        >
+          {/* Equation Display */}
             <Box h="18px" textAlign="right" mb={2}>
-              <Text
-                fontSize="12px"
-                color={useColorModeValue('gray.600', 'gray.400')}
-                fontFamily="Segoe UI, system-ui, sans-serif"
-                wordBreak="break-all"
-              >
-                {equation}
-              </Text>
-            </Box>
-            
-            {/* Main Display */}
             <Text
-              fontSize="36px"
-              fontWeight="300"
-              color={textColor}
+              fontSize="12px"
+              color={useColorModeValue('gray.600', 'gray.400')}
               fontFamily="Segoe UI, system-ui, sans-serif"
               wordBreak="break-all"
-              lineHeight="1"
-              textAlign="right"
-              userSelect="text"
-              cursor="text"
             >
-              {display}
+              {equation}
             </Text>
           </Box>
+          
+          {/* Main Display */}
+          <Text
+              fontSize="36px"
+            fontWeight="300"
+            color={textColor}
+            fontFamily="Segoe UI, system-ui, sans-serif"
+            wordBreak="break-all"
+              lineHeight="1"
+            textAlign="right"
+              userSelect="text"
+              cursor="text"
+          >
+            {display}
+          </Text>
+        </Box>
 
-          {/* Button Grid */}
+        {/* Button Grid */}
           <Box p="6px" w="100%">
             <Grid templateColumns="repeat(4, 1fr)" gap="2px"> {/* Slightly larger gap for cleaner look */}
-              {/* Row 1 */}
-              <CalcButton onClick={clear} variant="operator">C</CalcButton>
-              <CalcButton onClick={backspace} variant="operator">⌫</CalcButton>
-              <CalcButton onClick={() => {}} variant="operator">%</CalcButton>
-              <CalcButton onClick={() => performOperation('÷')} variant="operator">÷</CalcButton>
+            {/* Row 1 */}
+            <CalcButton onClick={clear} variant="operator">C</CalcButton>
+            <CalcButton onClick={backspace} variant="operator">⌫</CalcButton>
+            <CalcButton onClick={() => {}} variant="operator">%</CalcButton>
+            <CalcButton onClick={() => performOperation('÷')} variant="operator">÷</CalcButton>
 
-              {/* Row 2 */}
-              <CalcButton onClick={() => inputNumber('7')}>7</CalcButton>
-              <CalcButton onClick={() => inputNumber('8')}>8</CalcButton>
-              <CalcButton onClick={() => inputNumber('9')}>9</CalcButton>
-              <CalcButton onClick={() => performOperation('×')} variant="operator">×</CalcButton>
+            {/* Row 2 */}
+            <CalcButton onClick={() => inputNumber('7')}>7</CalcButton>
+            <CalcButton onClick={() => inputNumber('8')}>8</CalcButton>
+            <CalcButton onClick={() => inputNumber('9')}>9</CalcButton>
+            <CalcButton onClick={() => performOperation('×')} variant="operator">×</CalcButton>
 
-              {/* Row 3 */}
-              <CalcButton onClick={() => inputNumber('4')}>4</CalcButton>
-              <CalcButton onClick={() => inputNumber('5')}>5</CalcButton>
-              <CalcButton onClick={() => inputNumber('6')}>6</CalcButton>
-              <CalcButton onClick={() => performOperation('-')} variant="operator">−</CalcButton>
+            {/* Row 3 */}
+            <CalcButton onClick={() => inputNumber('4')}>4</CalcButton>
+            <CalcButton onClick={() => inputNumber('5')}>5</CalcButton>
+            <CalcButton onClick={() => inputNumber('6')}>6</CalcButton>
+            <CalcButton onClick={() => performOperation('-')} variant="operator">−</CalcButton>
 
-              {/* Row 4 */}
-              <CalcButton onClick={() => inputNumber('1')}>1</CalcButton>
-              <CalcButton onClick={() => inputNumber('2')}>2</CalcButton>
-              <CalcButton onClick={() => inputNumber('3')}>3</CalcButton>
-              <CalcButton onClick={() => performOperation('+')} variant="operator">+</CalcButton>
+            {/* Row 4 */}
+            <CalcButton onClick={() => inputNumber('1')}>1</CalcButton>
+            <CalcButton onClick={() => inputNumber('2')}>2</CalcButton>
+            <CalcButton onClick={() => inputNumber('3')}>3</CalcButton>
+            <CalcButton onClick={() => performOperation('+')} variant="operator">+</CalcButton>
 
-              {/* Row 5 */}
-              <CalcButton onClick={() => inputNumber('0')} span={2}>0</CalcButton>
-              <CalcButton onClick={inputDecimal}>.</CalcButton>
-              <CalcButton onClick={calculate} variant="equals">=</CalcButton>
-            </Grid>
-          </Box>
-        </VStack>
+            {/* Row 5 */}
+            <CalcButton onClick={() => inputNumber('0')} span={2}>0</CalcButton>
+            <CalcButton onClick={inputDecimal}>.</CalcButton>
+            <CalcButton onClick={calculate} variant="equals">=</CalcButton>
+          </Grid>
+        </Box>
+      </VStack>
       </Flex>
 
       {/* Footer with Trailing Input Display */}
@@ -497,7 +497,7 @@ export const StandaloneCalculator: React.FC = () => {
             {inputTrail || 'Ready'}
           </Text>
         </Box>
-      </Box>
+    </Box>
     </Flex>
   );
 }; 

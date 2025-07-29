@@ -21,7 +21,7 @@ interface FolderTabSystemProps {
 }
 
 export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabChange }) => {
-  const { currentDirectory, setCurrentDirectory, rootDirectory, newTabShortcut, closeTabShortcut } = useAppContext();
+  const { currentDirectory, setCurrentDirectory, rootDirectory, newTabShortcut, closeTabShortcut, addTabToCurrentWindow, closeCurrentTab } = useAppContext();
   const [tabs, setTabs] = useState<FolderTab[]>([
     {
       id: '1',
@@ -74,18 +74,22 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
   }, [tabs, setCurrentDirectory, onActiveTabChange]);
 
   // Add new tab - defaults to root directory
-  const addNewTab = useCallback(() => {
+  const addNewTab = useCallback((path?: string) => {
     const newTabId = Date.now().toString();
+    const targetPath = path || rootDirectory || currentDirectory;
     const newTab: FolderTab = {
       id: newTabId,
-      path: rootDirectory || currentDirectory, // Use root directory or fallback to current
-      name: getDirectoryName(rootDirectory || currentDirectory),
+      path: targetPath,
+      name: getDirectoryName(targetPath),
     };
     setTabs(prev => [...prev, newTab]);
-    setActiveTabId(newTabId);
-    setCurrentDirectory(newTab.path);
-         onActiveTabChange(newTab.path);
-   }, [rootDirectory, currentDirectory, setCurrentDirectory, onActiveTabChange]);
+    // Don't switch to the new tab - keep the current active tab
+    // setActiveTabId(newTabId);
+    // setCurrentDirectory(newTab.path);
+    // onActiveTabChange(newTab.path);
+  }, [rootDirectory, currentDirectory]);
+
+
 
    // Keyboard shortcut for new tab (configurable)
    useEffect(() => {
@@ -165,6 +169,62 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [closeTabShortcut, tabs.length, activeTabId, closeTab]);
+
+  // Register tab functions with AppContext
+  useEffect(() => {
+    // Store the functions in a global object that AppContext can access
+    (window as any).__tabFunctions = {
+      addNewTab,
+      closeCurrentTab: () => closeTab(activeTabId)
+    };
+  }, [addNewTab, activeTabId, closeTab]);
+
+  // Tab switching shortcuts (Ctrl+1, Ctrl+2, etc. and Ctrl+Tab)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+1, Ctrl+2, etc. for direct tab switching
+      if (e.ctrlKey && !e.shiftKey && !e.altKey) {
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 9) {
+          e.preventDefault();
+          const tabIndex = num - 1;
+          if (tabIndex < tabs.length) {
+            const targetTab = tabs[tabIndex];
+            setActiveTabId(targetTab.id);
+            setCurrentDirectory(targetTab.path);
+            onActiveTabChange(targetTab.path);
+          }
+        }
+      }
+      
+      // Ctrl+Tab for next tab
+      if (e.ctrlKey && e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        const currentIndex = tabs.findIndex(tab => tab.id === activeTabId);
+        const nextIndex = (currentIndex + 1) % tabs.length;
+        const nextTab = tabs[nextIndex];
+        setActiveTabId(nextTab.id);
+        setCurrentDirectory(nextTab.path);
+        onActiveTabChange(nextTab.path);
+      }
+      
+      // Ctrl+Shift+Tab for previous tab
+      if (e.ctrlKey && e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault();
+        const currentIndex = tabs.findIndex(tab => tab.id === activeTabId);
+        const prevIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
+        const prevTab = tabs[prevIndex];
+        setActiveTabId(prevTab.id);
+        setCurrentDirectory(prevTab.path);
+        onActiveTabChange(prevTab.path);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [tabs, activeTabId, setCurrentDirectory, onActiveTabChange]);
 
   // Drag handlers for tab reordering
   const handleDragStart = useCallback((e: React.DragEvent, tabId: string) => {
@@ -462,7 +522,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
             opacity: 1,
             bg: useColorModeValue('gray.100', 'gray.700')
           }}
-          onClick={addNewTab}
+                      onClick={() => addNewTab()}
           display="flex"
           alignItems="center"
           justifyContent="center"

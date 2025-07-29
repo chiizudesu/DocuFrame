@@ -40,9 +40,9 @@ import {
   Spacer,
   Tooltip,
   Kbd,
-      Select,
-  } from '@chakra-ui/react';
-  import { 
+  Select,
+} from '@chakra-ui/react';
+import { 
   Folder, 
   FolderOpen, 
   FileText, 
@@ -539,7 +539,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                               colorScheme="blue"
                             />
                           </HStack>
-                          {enableActivationShortcut && (
+                        {enableActivationShortcut && (
                             <HStack spacing={2}>
                               <Select
                                 value={activationShortcut}
@@ -559,7 +559,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                                 {activationShortcut}
                               </Kbd>
                             </HStack>
-                          )}
+                        )}
                         </Box>
 
                         {/* Calculator Shortcut */}
@@ -575,7 +575,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                               colorScheme="blue"
                             />
                           </HStack>
-                          {enableCalculatorShortcut && (
+                        {enableCalculatorShortcut && (
                             <HStack spacing={2}>
                               <Select
                                 value={calculatorShortcut}
@@ -673,7 +673,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
                   <Alert status="info" borderRadius="lg" size="sm">
                     <AlertIcon />
-                    <Box>
+            <Box>
                       <AlertTitle fontSize="xs">Shortcut Information</AlertTitle>
                       <AlertDescription fontSize="xs">
                         Global shortcuts work anywhere. Tab shortcuts work when the app is focused.

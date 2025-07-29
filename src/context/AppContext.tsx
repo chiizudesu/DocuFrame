@@ -68,6 +68,9 @@ interface AppContextType {
   // Close Tab Shortcut
   closeTabShortcut: string;
   setCloseTabShortcut: (shortcut: string) => void;
+  // Tab Management Functions
+  addTabToCurrentWindow: (path?: string) => void;
+  closeCurrentTab: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -181,6 +184,20 @@ export const AppProvider: React.FC<{
     setRecentlyTransferredFiles(prev => prev.filter(path => path !== filePath));
   }, []);
 
+
+
+  const addTabToCurrentWindow = useCallback((path?: string) => {
+    if ((window as any).__tabFunctions?.addNewTab) {
+      (window as any).__tabFunctions.addNewTab(path);
+    }
+  }, []);
+
+  const closeCurrentTab = useCallback(() => {
+    if ((window as any).__tabFunctions?.closeCurrentTab) {
+      (window as any).__tabFunctions.closeCurrentTab();
+    }
+  }, []);
+
   return (
     <AppContext.Provider value={{
       currentDirectory,
@@ -225,6 +242,8 @@ export const AppProvider: React.FC<{
       setNewTabShortcut,
       closeTabShortcut,
       setCloseTabShortcut,
+      addTabToCurrentWindow,
+      closeCurrentTab,
       // Document insights properties removed
     }}>
       {children}

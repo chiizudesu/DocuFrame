@@ -36,6 +36,7 @@ import {
   Maximize2,
   X,
   Square,
+  Download,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
@@ -56,7 +57,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -178,10 +179,37 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
-  const handleHomeClick = () => {
-    setCurrentDirectory(rootDirectory)
-    addLog('Navigated to root directory')
-    setStatus('Navigated to home', 'info')
+  const handleHomeClick = async (e: React.MouseEvent) => {
+    if (e.ctrlKey) {
+      // Ctrl+click opens new tab
+      addTabToCurrentWindow(rootDirectory);
+      addLog(`Opened new tab for root directory: ${rootDirectory}`);
+      setStatus('Opened new tab for home', 'info');
+    } else {
+      setCurrentDirectory(rootDirectory)
+      addLog('Navigated to root directory')
+      setStatus('Navigated to home', 'info')
+    }
+  }
+
+  const handleDownloadsClick = async (e: React.MouseEvent) => {
+    try {
+      const downloadsPath = await window.electronAPI.getDownloadsPath();
+      
+      if (e.ctrlKey) {
+        // Ctrl+click opens new tab
+        addTabToCurrentWindow(downloadsPath);
+        addLog(`Opened new tab for downloads: ${downloadsPath}`);
+        setStatus('Opened new tab for downloads', 'info');
+      } else {
+        setCurrentDirectory(downloadsPath);
+        addLog(`Navigated to downloads: ${downloadsPath}`);
+        setStatus('Navigated to downloads', 'info');
+      }
+    } catch (error) {
+      addLog(`Failed to access downloads folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to access downloads folder', 'error');
+    }
   }
 
   const handleRefresh = async () => {
@@ -358,6 +386,15 @@ export const FolderInfoBar: React.FC = () => {
             mr={1}
             color={useColorModeValue('#3b82f6', 'blue.200')}
             onClick={handleHomeClick}
+          />
+          <IconButton
+            icon={<Download size={16} />}
+            aria-label="Downloads folder"
+            variant="ghost"
+            size="sm"
+            mr={1}
+            color={useColorModeValue('#10b981', 'green.200')}
+            onClick={handleDownloadsClick}
           />
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
