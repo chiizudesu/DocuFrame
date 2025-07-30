@@ -357,7 +357,7 @@ export const FolderInfoBar: React.FC = () => {
 
   return (
     <>
-      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="35px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
+      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="33px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
         {/* Back/Forward to the left of Home */}
         <Box style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
@@ -398,7 +398,7 @@ export const FolderInfoBar: React.FC = () => {
           />
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Flex flex={1} mx={2} align="center" h="35px" gap={1} onClick={handleClick} cursor="text" border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')} borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <Flex flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')} borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag' } as any}>
           {isRefreshing && (
             <Box
               position="absolute"

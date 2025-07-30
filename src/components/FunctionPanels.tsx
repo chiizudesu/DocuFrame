@@ -624,7 +624,7 @@ export const FunctionPanels: React.FC = () => {
             borderColor: '#3b82f6',
             fontWeight: 'semibold'
           }}>
-              Xero
+              Deprecated
             </Tab>
           </TabList>
           <ThemeToggle />
@@ -639,28 +639,11 @@ export const FunctionPanels: React.FC = () => {
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
                 <Flex gap={1}>
-                  <FunctionButton icon={Download} label="GST Transfer" action="gst_transfer" description="Transfer 3 files from DL to current path" color="blue.600" />
-                  <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
-                  <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
-                  <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
-                  <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
-                </Flex>
-                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
-                  GST Functions
-                </Text>
-              </Box>
-              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
-              <Box 
-                p={2} 
-                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
-                borderRadius="md" 
-                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
-              >
-                <Flex gap={1}>
                   <FunctionButton icon={FilePlus2} label="Merge PDFs" action="merge_pdfs" description="Combine multiple PDF files into one document" color="red.400" />
                   <FunctionButton icon={Archive} label="Extract Zips" action="extract_zips" description="Extract all ZIP files in current directory" color="orange.400" />
                   <FunctionButton icon={Mail} label="Extract EML" action="extract_eml" description="Extract attachments from EML files" color="cyan.400" />
                   <FunctionButton icon={Settings} label="Transfer Map" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
+                  <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   File Management
@@ -689,6 +672,23 @@ export const FunctionPanels: React.FC = () => {
           </TabPanel>
           <TabPanel p={2} bg={bgColor}>
             <Flex gap={0} align="stretch">
+              <Box 
+                p={2} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
+                borderRadius="md" 
+                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
+              >
+                <Flex gap={1}>
+                  <FunctionButton icon={Download} label="GST Transfer" action="gst_transfer" description="Transfer 3 files from DL to current path" color="blue.600" />
+                  <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
+                  <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
+                  <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
+                </Flex>
+                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
+                  GST Functions
+                </Text>
+              </Box>
+              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
               <Box 
                 p={2} 
                 bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 

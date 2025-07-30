@@ -220,11 +220,13 @@ export const FileGrid: React.FC = () => {
   // Smart selection states for handling drag vs click on multi-selected files
   const [pendingSelectionChange, setPendingSelectionChange] = useState<{ fileName: string; index: number } | null>(null);
   const [isDragStarted, setIsDragStarted] = useState(false);
+  const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
     setIsDragOver(false);
     setDragCounter(0);
+    setDraggedFiles(new Set());
   }, []);
 
   // Callback to handle when native icons are loaded
@@ -890,6 +892,13 @@ export const FileGrid: React.FC = () => {
   const handleFileItemDragStart = (file: FileItem, index: number, event?: React.DragEvent) => {
     setIsDragStarted(true);
     setPendingSelectionChange(null);
+    
+    // Immediately hide the dragged files for snappy UX
+    const filesToHide = selectedFiles.length > 0 && selectedFiles.includes(file.name)
+      ? selectedFiles
+      : [file.name];
+    
+    setDraggedFiles(new Set(filesToHide));
   };
 
   // Add this function for selection on click
@@ -1305,6 +1314,9 @@ export const FileGrid: React.FC = () => {
 
   // Add this helper function before renderGridView and renderListView
   const isFileCut = (file: FileItem) => clipboard.operation === 'cut' && clipboard.files.some(f => f.path === file.path);
+
+  // Helper function to check if a file is being dragged (for immediate visual feedback)
+  const isFileDragged = (file: FileItem) => draggedFiles.has(file.name);
 
   // Helper function to check if a file is newly transferred
   const isFileNew = (file: FileItem) => {

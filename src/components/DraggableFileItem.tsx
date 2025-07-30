@@ -44,6 +44,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragImage, setDragImage] = useState<string | null>(null);
   const [isHovering, setIsHovering] = useState(false);
+  const [dragCounter, setDragCounter] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<HTMLTableRowElement>(null);
   
@@ -137,6 +138,52 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     };
   }, [onDragStateReset]);
 
+  // Add global listeners to handle edge cases
+  useEffect(() => {
+    let globalDragEndTimer: NodeJS.Timeout;
+    
+    const handleGlobalDragEnd = () => {
+      // Use a small delay to ensure all drag events have completed
+      globalDragEndTimer = setTimeout(() => {
+        setIsHovering(false);
+        setDragCounter(0);
+      }, 50);
+    };
+
+    const handleGlobalDrop = (e: DragEvent) => {
+      // If drop happened anywhere, reset states
+      setIsHovering(false);
+      setDragCounter(0);
+    };
+    
+    const handleWindowBlur = () => {
+      // If window loses focus during drag, reset states
+      setIsHovering(false);
+      setDragCounter(0);
+    };
+
+    // Listen for various events that should clear the hover state
+    document.addEventListener('dragend', handleGlobalDragEnd);
+    document.addEventListener('drop', handleGlobalDrop);
+    window.addEventListener('blur', handleWindowBlur);
+    
+    return () => {
+      clearTimeout(globalDragEndTimer);
+      document.removeEventListener('dragend', handleGlobalDragEnd);
+      document.removeEventListener('drop', handleGlobalDrop);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, []);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (file.type === 'folder') {
+      e.preventDefault();
+      e.stopPropagation();
+      setDragCounter(prev => prev + 1);
+      setIsHovering(true);
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     if (file.type === 'folder') {
       e.preventDefault();
@@ -153,8 +200,10 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
         e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
       }
       
-      // Show hover effect for both grid and table views
-      setIsHovering(true);
+      // Ensure hover state is active
+      if (!isHovering) {
+        setIsHovering(true);
+      }
     }
   };
 
@@ -162,7 +211,14 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     if (file.type === 'folder') {
       e.preventDefault();
       e.stopPropagation();
-      setIsHovering(false);
+      
+      setDragCounter(prev => {
+        const newCount = prev - 1;
+        if (newCount === 0) {
+          setIsHovering(false);
+        }
+        return newCount;
+      });
     }
   };
 
@@ -179,7 +235,10 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     
     e.preventDefault();
     e.stopPropagation();
+    
+    // Reset all drag states
     setIsHovering(false);
+    setDragCounter(0);
     
     // Debug: Log all available data transfer info
     console.log('=== DraggableFileItem DROP EVENT DEBUG ===');
@@ -347,6 +406,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     draggable: true,
     onDragStart: handleDragStart,
     onDragEnd: handleDragEnd,
+    onDragEnter: handleDragEnter, // Add this
     onDragOver: handleDragOver,
     onDragLeave: handleDragLeave,
     onDrop: handleDrop,

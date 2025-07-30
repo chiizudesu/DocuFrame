@@ -228,6 +228,11 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
 
   // Drag handlers for tab reordering
   const handleDragStart = useCallback((e: React.DragEvent, tabId: string) => {
+    // Only handle tab drag start if this is actually a tab being dragged
+    // (not a file being dragged over a tab)
+    if (e.dataTransfer.types.includes('Files')) {
+      return; // Don't start tab drag for file drags
+    }
     setDraggedTab(tabId);
     setIsDraggingOut(false);
     e.dataTransfer.effectAllowed = 'move';
@@ -235,6 +240,10 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent, tabId: string) => {
+    // Only handle tab drag over if this is actually a tab being dragged
+    if (e.dataTransfer.types.includes('Files')) {
+      return; // Don't handle tab drag over for file drags
+    }
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverTab(tabId);
@@ -245,6 +254,10 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent, targetTabId: string) => {
+    // Only handle tab drop if this is actually a tab being dragged
+    if (e.dataTransfer.types.includes('Files')) {
+      return; // Don't handle tab drop for file drags
+    }
     e.preventDefault();
     const sourceTabId = draggedTab;
     
@@ -269,6 +282,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
 
   // Handle dragging tab out of the application
   const handleDragEnd = useCallback((e: React.DragEvent) => {
+    console.log('=== DRAG END DEBUG ===');
+    console.log('Dragged tab:', draggedTab);
+    console.log('File drop target:', fileDropTarget);
+    console.log('DataTransfer types:', e.dataTransfer.types);
+    console.log('DataTransfer files length:', e.dataTransfer.files.length);
+
     const rect = tabsRef.current?.getBoundingClientRect();
     if (rect && (e.clientY < rect.top || e.clientY > rect.bottom || 
                  e.clientX < rect.left || e.clientX > rect.right)) {
@@ -288,12 +307,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
     setDragOverTab(null);
     setIsDraggingOut(false);
     setFileDropTarget(null); // Also clear file drop target
-  }, [draggedTab, tabs, closeTab]);
+  }, [draggedTab, tabs, closeTab, fileDropTarget]);
 
   // File drag/drop handlers for tabs acting as folder drop targets
   const handleFileDragOver = useCallback((e: React.DragEvent, tabId: string) => {
     // Only handle if this is a file drag operation (not tab reordering)
-    if (!draggedTab && e.dataTransfer.types.includes('text/plain')) {
+    if (!draggedTab && (e.dataTransfer.types.includes('text/plain') || e.dataTransfer.types.includes('Files'))) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       setFileDropTarget(tabId);
@@ -312,27 +331,53 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
   }, []);
 
   const handleFileDrop = useCallback(async (e: React.DragEvent, tabId: string) => {
+    console.log('=== FILE DROP DEBUG ===');
+    console.log('Tab ID:', tabId);
+    console.log('Dragged tab:', draggedTab);
+    console.log('DataTransfer types:', e.dataTransfer.types);
+    console.log('DataTransfer files length:', e.dataTransfer.files.length);
+    console.log('DataTransfer items length:', e.dataTransfer.items.length);
+
     e.preventDefault();
     setFileDropTarget(null);
-    
-    if (draggedTab) return; // Ignore if this is tab reordering
-    
+
+    // If this is a tab reordering drag, ignore
+    if (draggedTab) {
+      console.log('Ignoring - this is a tab reordering drag');
+      return;
+    }
+
+    // External file drop (from OS)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      console.log('Processing external file drop');
+      const filePaths = Array.from(e.dataTransfer.files).map(f => f.path);
+      console.log('File paths:', filePaths);
+      const targetTab = tabs.find(tab => tab.id === tabId);
+      if (targetTab && filePaths.length > 0 && window.electronAPI?.moveFiles) {
+        console.log('Moving files to:', targetTab.path);
+        await window.electronAPI.moveFiles(filePaths, targetTab.path);
+        console.log('Files moved successfully');
+      }
+      return;
+    }
+
+    // Internal drag (from app)
+    console.log('Processing internal drag');
     try {
       const dragData = e.dataTransfer.getData('text/plain');
+      console.log('Drag data:', dragData);
       if (dragData) {
         const files = JSON.parse(dragData);
         const targetTab = tabs.find(tab => tab.id === tabId);
-        
         if (targetTab && Array.isArray(files) && files.length > 0) {
-          // Use the existing moveFiles API to move files to the target folder
           if (window.electronAPI?.moveFiles) {
             await window.electronAPI.moveFiles(files, targetTab.path);
-            console.log(`Moved ${files.length} files to ${targetTab.path}`);
           }
         }
       }
     } catch (error) {
-      console.error('Error handling file drop on tab:', error);
+      console.log('Error processing internal drag:', error);
+      // Ignore
     }
   }, [draggedTab, tabs]);
 
@@ -360,75 +405,174 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
         {tabs.map((tab, index) => (
           <React.Fragment key={tab.id}>
             <Box
-              draggable
-              onDragStart={(e) => handleDragStart(e, tab.id)}
+              draggable={true}
+              onDragStart={(e) => {
+                // Only start tab drag if not dragging files
+                if (!e.dataTransfer.types.includes('Files')) {
+                  handleDragStart(e, tab.id);
+                }
+              }}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                // Visual feedback for file drops
+                if (e.dataTransfer.types.includes('Files') || 
+                    e.dataTransfer.types.includes('application/x-docuframe-files')) {
+                  setFileDropTarget(tab.id);
+                }
+              }}
               onDragOver={(e) => {
-                handleDragOver(e, tab.id);
-                handleFileDragOver(e, tab.id);
+                // MUST prevent default for ALL drag overs
+                e.preventDefault();
+                e.stopPropagation();
+                // Set the appropriate drop effect
+                if (e.dataTransfer.types.includes('Files') || 
+                    e.dataTransfer.types.includes('application/x-docuframe-files')) {
+                  e.dataTransfer.dropEffect = 'copy';
+                  setFileDropTarget(tab.id);
+                } else if (draggedTab) {
+                  e.dataTransfer.dropEffect = 'move';
+                  setDragOverTab(tab.id);
+                }
               }}
               onDragLeave={(e) => {
-                handleDragLeave();
-                handleFileDragLeave(e, tab.id);
+                // Only clear if actually leaving the element
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (e.clientX < rect.left || e.clientX > rect.right || 
+                    e.clientY < rect.top || e.clientY > rect.bottom) {
+                  setFileDropTarget(null);
+                  setDragOverTab(null);
+                }
               }}
-              onDrop={(e) => {
-                handleDrop(e, tab.id);
-                handleFileDrop(e, tab.id);
-              }}
+                              onDrop={async (e) => {
+                  // CRITICAL: Must prevent default
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('=== TAB DROP EVENT ===');
+                  console.log('Tab:', tab.name);
+                  console.log('Types:', Array.from(e.dataTransfer.types));
+                  console.log('Files:', e.dataTransfer.files.length);
+                  // Clear visual states
+                  setFileDropTarget(null);
+                  setDragOverTab(null);
+                  
+                  let filesMoved = false;
+                  
+                  // Handle file drops
+                  if (e.dataTransfer.files.length > 0) {
+                    // External files from OS
+                    const filePaths = Array.from(e.dataTransfer.files)
+                      .map(f => (f as any).path)
+                      .filter(Boolean);
+                    if (filePaths.length > 0) {
+                      console.log('Moving external files:', filePaths);
+                      try {
+                        await window.electronAPI.moveFiles(filePaths, tab.path);
+                        filesMoved = true;
+                      } catch (error) {
+                        console.error('Failed to move files:', error);
+                      }
+                    }
+                  } else if (e.dataTransfer.types.includes('application/x-docuframe-files')) {
+                    // Internal drag from file list
+                    try {
+                      const data = e.dataTransfer.getData('application/x-docuframe-files');
+                      if (data) {
+                        const filePaths = JSON.parse(data);
+                        console.log('Moving internal files:', filePaths);
+                        await window.electronAPI.moveFiles(filePaths, tab.path);
+                        filesMoved = true;
+                      }
+                    } catch (error) {
+                      console.error('Failed to parse internal drag data:', error);
+                    }
+                  } else if (draggedTab) {
+                    // Tab reordering
+                    handleDrop(e, tab.id);
+                  }
+                  
+                  // Refresh folder view if files were moved to the active tab
+                  if (filesMoved && tab.id === activeTabId) {
+                    console.log('Refreshing folder view after file transfer to active tab');
+                    setCurrentDirectory(tab.path);
+                    
+                    // Emit folderContentsChanged event for FileGrid refresh
+                    window.dispatchEvent(new CustomEvent('folderContentsChanged', {
+                      detail: {
+                        directory: tab.path,
+                        newFiles: [] // FileGrid will refresh the entire directory
+                      }
+                    }));
+                  }
+                  
+                  // If files were moved to a different tab, refresh the current active tab to show files disappeared
+                  if (filesMoved && tab.id !== activeTabId) {
+                    console.log('Refreshing current tab view to show files disappeared');
+                    setCurrentDirectory(currentDirectory);
+                    
+                    // Emit folderContentsChanged event for FileGrid refresh
+                    window.dispatchEvent(new CustomEvent('folderContentsChanged', {
+                      detail: {
+                        directory: currentDirectory,
+                        newFiles: [] // FileGrid will refresh the entire directory
+                      }
+                    }));
+                  }
+                }}
               onDragEnd={handleDragEnd}
               position="relative"
             >
-                              <Flex
-                  align="center"
-                  bg={
-                    fileDropTarget === tab.id 
-                      ? useColorModeValue('blue.50', 'blue.900')
-                      : activeTabId === tab.id 
-                        ? activeBg 
-                        : inactiveBg
-                  }
-                  border="1px solid"
-                  borderColor={
-                    fileDropTarget === tab.id 
-                      ? useColorModeValue('blue.300', 'blue.600')
-                      : borderColor
-                  }
-                  borderBottom={activeTabId === tab.id ? 'none' : `1px solid ${borderColor}`}
-                  borderTopRadius="8px"
-                  px={3}
-                  py={1}
-                  cursor="pointer"
-                  _hover={{ 
-                    bg: fileDropTarget === tab.id 
-                      ? useColorModeValue('blue.100', 'blue.800')
-                      : activeTabId === tab.id 
-                        ? activeBg 
-                        : hoverBg 
-                  }}
-                  onClick={() => handleTabClick(tab.id)}
-                  minW="159px"
-                  maxW="200px"
-                  h={activeTabId === tab.id ? "35px" : "34px"}
-                  position="relative"
-                  opacity={draggedTab === tab.id ? 0.5 : 1}
-                  zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
-                  mb={activeTabId === tab.id ? "-1px" : "0"}
-                  transform={
-                    dragOverTab === tab.id && draggedTab !== tab.id 
-                      ? 'translateX(2px)' 
-                      : fileDropTarget === tab.id 
-                        ? 'scale(1.02)'
-                        : 'none'
-                  }
-                  transition="all 0.15s ease"
-                  fontSize="sm"
-                  color={
-                    fileDropTarget === tab.id
-                      ? useColorModeValue('blue.700', 'blue.200')
-                      : useColorModeValue('gray.800', activeTabId === tab.id ? 'white' : 'gray.300')
-                  }
-                  fontWeight={activeTabId === tab.id ? '600' : '400'}
-                  boxShadow={fileDropTarget === tab.id ? 'sm' : 'none'}
-                >
+              <Flex
+                align="center"
+                bg={
+                  fileDropTarget === tab.id 
+                    ? useColorModeValue('blue.50', 'blue.900')
+                    : activeTabId === tab.id 
+                      ? activeBg 
+                      : inactiveBg
+                }
+                border="1px solid"
+                borderColor={
+                  fileDropTarget === tab.id 
+                    ? useColorModeValue('blue.300', 'blue.600')
+                    : borderColor
+                }
+                borderBottom={activeTabId === tab.id ? 'none' : `1px solid ${borderColor}`}
+                borderTopRadius="8px"
+                px={3}
+                py={1}
+                cursor="pointer"
+                _hover={{ 
+                  bg: fileDropTarget === tab.id 
+                    ? useColorModeValue('blue.100', 'blue.800')
+                    : activeTabId === tab.id 
+                      ? activeBg 
+                      : hoverBg 
+                }}
+                onClick={() => handleTabClick(tab.id)}
+                minW="159px"
+                maxW="200px"
+                h={activeTabId === tab.id ? "33px" : "32px"}
+                position="relative"
+                opacity={draggedTab === tab.id ? 0.5 : 1}
+                zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
+                mb={activeTabId === tab.id ? "-1px" : "0"}
+                transform={
+                  dragOverTab === tab.id && draggedTab !== tab.id 
+                    ? 'translateX(2px)' 
+                    : fileDropTarget === tab.id 
+                      ? 'scale(1.02)'
+                      : 'none'
+                }
+                transition="all 0.15s ease"
+                fontSize="sm"
+                color={
+                  fileDropTarget === tab.id
+                    ? useColorModeValue('blue.700', 'blue.200')
+                    : useColorModeValue('gray.800', activeTabId === tab.id ? 'white' : 'gray.300')
+                }
+                fontWeight={activeTabId === tab.id ? '600' : '400'}
+                boxShadow={fileDropTarget === tab.id ? 'sm' : 'none'}
+              >
                 <Text
                   fontSize="sm"
                   isTruncated
@@ -486,8 +630,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                   left="0"
                   right="0"
                   bottom="0"
-                  border="2px dashed"
-                  borderColor={useColorModeValue('blue.400', 'blue.300')}
                   borderRadius="6px"
                   bg={useColorModeValue('blue.50', 'blue.900')}
                   opacity={0.8}

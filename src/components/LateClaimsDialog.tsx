@@ -25,8 +25,9 @@ import {
   Spinner,
   useColorModeValue,
   Flex,
+  Badge,
 } from '@chakra-ui/react';
-import { Calculator } from 'lucide-react';
+import { Calculator, DollarSign, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { FileItem } from '../types';
 
@@ -44,6 +45,7 @@ interface GSTData {
   lateClaimsAmount: number;
   fileName: string;
   extractedText: string;
+  gstAmountDue: number;
 }
 
 export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
@@ -124,19 +126,29 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
     const purchasesPattern = /(?:box 11|total purchases and expenses)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
     const gstCollectedPattern = /(?:box 8|total gst collected on sales and income)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
     const gstCreditsPattern = /(?:box 12|total gst credits on purchases and expenses)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
+    
+    // Look for late claims as a standalone line item (not associated with a box number)
+    // It typically appears after Box 8 in the sales section
     const lateClaimsPattern = /(?:late claims)[:\s]*[\$]?\s*([\d,]+\.?\d*)/i;
 
     const salesMatch = text.match(salesPattern);
     const purchasesMatch = text.match(purchasesPattern);
     const gstCollectedMatch = text.match(gstCollectedPattern);
     const gstCreditsMatch = text.match(gstCreditsPattern);
+    
+    // Find late claims (should appear only once)
     const lateClaimsMatch = text.match(lateClaimsPattern);
 
     const totalSalesAndIncome = salesMatch ? parseFloat(salesMatch[1].replace(/,/g, '')) : 0;
     const totalPurchasesAndExpenses = purchasesMatch ? parseFloat(purchasesMatch[1].replace(/,/g, '')) : 0;
     const totalGSTCollected = gstCollectedMatch ? parseFloat(gstCollectedMatch[1].replace(/,/g, '')) : 0;
     const totalGSTCredits = gstCreditsMatch ? parseFloat(gstCreditsMatch[1].replace(/,/g, '')) : 0;
+    
+    // Extract late claims amount (should be the only late claims entry in the document)
     const lateClaimsAmount = lateClaimsMatch ? parseFloat(lateClaimsMatch[1].replace(/,/g, '')) : 0;
+
+    // Calculate GST amount due
+    const gstAmountDue = totalGSTCollected - totalGSTCredits;
 
     return {
       totalSalesAndIncome,
@@ -146,10 +158,9 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
       lateClaimsAmount,
       fileName,
       extractedText: text, // Keep full text for position analysis
+      gstAmountDue,
     };
   };
-
-
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-NZ', {
@@ -176,38 +187,70 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   function determineLateClaimsTarget(text: string): 'sales' | 'purchases' | 'none' {
     if (!text) return 'none';
     
-    // Find positions of key sections in the text
-    const salesPattern = /(?:box 5|total sales and income)/i;
-    const purchasesPattern = /(?:box 11|total purchases and expenses)/i;
-    const lateClaimsPattern = /(?:late claims)/i;
+    // Check if late claims exists at all
+    if (!text.toLowerCase().includes('late claims')) {
+      return 'none';
+    }
     
-    const salesMatch = text.search(salesPattern);
-    const purchasesMatch = text.search(purchasesPattern);
-    const lateClaimsMatch = text.search(lateClaimsPattern);
+    const textLower = text.toLowerCase();
     
-    // If no late claims found, return none
-    if (lateClaimsMatch === -1) return 'none';
+    // Find the position of late claims
+    const lateClaimsPos = textLower.search(/late claims/);
+    if (lateClaimsPos === -1) return 'none';
     
-    // If sales or purchases sections not found, fall back to text analysis
-    if (salesMatch === -1 || purchasesMatch === -1) {
-      // Check explicit text mentions
-      if (/late claims.*on.*sales/i.test(text)) return 'sales';
-      if (/late claims.*on.*purchases|late claims.*on.*expenses/i.test(text)) return 'purchases';
-      // Default to sales if unclear
+    // Late claims can appear in either sales or purchases section, but not both
+    // It's a standalone line item, not associated with a specific box number
+    
+    // Find section boundaries
+    const salesSectionStart = textLower.search(/(?:box 5|total sales and income)/);
+    const salesSectionEnd = textLower.search(/(?:box 10|total gst collected for the period)/);
+    const purchasesSectionStart = textLower.search(/(?:box 11|total purchases and expenses)/);
+    const purchasesSectionEnd = textLower.search(/(?:box 15|gst to pay)/);
+    
+    // Determine which section late claims appears in
+    let inSalesSection = false;
+    let inPurchasesSection = false;
+    
+    if (salesSectionStart !== -1 && salesSectionEnd !== -1) {
+      inSalesSection = lateClaimsPos >= salesSectionStart && lateClaimsPos <= salesSectionEnd;
+    } else if (salesSectionStart !== -1) {
+      // If we can't find the end, assume it's in sales if it appears after sales start
+      inSalesSection = lateClaimsPos >= salesSectionStart;
+    }
+    
+    if (purchasesSectionStart !== -1 && purchasesSectionEnd !== -1) {
+      inPurchasesSection = lateClaimsPos >= purchasesSectionStart && lateClaimsPos <= purchasesSectionEnd;
+    } else if (purchasesSectionStart !== -1) {
+      // If we can't find the end, assume it's in purchases if it appears after purchases start
+      inPurchasesSection = lateClaimsPos >= purchasesSectionStart;
+    }
+    
+    // If late claims appears in both sections (shouldn't happen), prioritize sales
+    if (inSalesSection && inPurchasesSection) {
       return 'sales';
     }
     
-    // Determine position logic:
-    // If late claims appears after both sales and purchases sections, add to purchases
-    // If late claims appears between sales and purchases, add to sales
-    if (lateClaimsMatch > Math.max(salesMatch, purchasesMatch)) {
+    // Return the section where late claims appears
+    if (inSalesSection) {
+      return 'sales';
+    } else if (inPurchasesSection) {
       return 'purchases';
-    } else if (lateClaimsMatch > salesMatch && lateClaimsMatch < purchasesMatch) {
-      return 'sales';
-    } else {
-      // Default case: if late claims appears before both or in unclear position, add to sales
-      return 'sales';
     }
+    
+    // Fallback: if we can't determine the section, use proximity analysis
+    if (salesSectionStart !== -1 && purchasesSectionStart !== -1) {
+      const distanceToSales = Math.abs(lateClaimsPos - salesSectionStart);
+      const distanceToPurchases = Math.abs(lateClaimsPos - purchasesSectionStart);
+      
+      if (distanceToSales < distanceToPurchases) {
+        return 'sales';
+      } else {
+        return 'purchases';
+      }
+    }
+    
+    // Final fallback: assume sales (more common)
+    return 'sales';
   }
 
   return (
@@ -231,80 +274,106 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
             </Alert>
           ) : gstData ? (
             (() => {
-              const { lateClaimsAmount, totalSalesAndIncome, totalPurchasesAndExpenses, extractedText } = gstData;
+              const { lateClaimsAmount, totalSalesAndIncome, totalPurchasesAndExpenses, extractedText, gstAmountDue } = gstData;
               const lateClaimsTarget = determineLateClaimsTarget(extractedText);
               const grossedUpAmount = calculateGrossedUpLateClaimsAmount(lateClaimsAmount);
               
-              if (lateClaimsTarget === 'none' || lateClaimsAmount <= 0) {
-                // No late claims scenario
-                return (
-                  <VStack align="stretch" spacing={4}>
-                    <Box 
-                      bg={useColorModeValue('gray.100', 'gray.700')} 
-                      color={textColor} 
-                      borderRadius="md" 
-                      p={4} 
-                      boxShadow="md" 
-                      textAlign="center"
-                      border="1px solid"
-                      borderColor={borderColor}
-                    >
-                      <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>No Late Claims</Text>
-                      <Text fontSize="lg" fontWeight="bold">No adjustments required</Text>
-                    </Box>
-                    <Box bg={cardBgColor} borderRadius="md" p={4} border="1px solid" borderColor={borderColor}>
-                      <VStack align="stretch" spacing={1}>
-                        <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
-                        <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
-                        <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
-                        <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
-                        <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
-                        <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.400')}><strong>Late Claims Amount:</strong> {formatCurrency(0)}</Text>
-                      </VStack>
-                    </Box>
-                  </VStack>
-                );
-              }
-              
-              // Late claims exist - calculate adjusted amount
-              const adjustedAmount = lateClaimsTarget === 'purchases' 
-                ? totalPurchasesAndExpenses + grossedUpAmount
-                : totalSalesAndIncome + grossedUpAmount;
-              
-              const targetSection = lateClaimsTarget === 'purchases' ? 'Total Purchases and Expenses' : 'Total Sales and Income';
+              // Primary focus: GST Amount Due
+              const isGSTDue = gstAmountDue > 0;
+              const hasLateClaims = lateClaimsTarget !== 'none' && lateClaimsAmount > 0;
               
               return (
                 <VStack align="stretch" spacing={4}>
+                  {/* Main GST Amount Due Display */}
                   <Box 
-                    bg={useColorModeValue('blue.50', 'blue.900')} 
-                    color={useColorModeValue('blue.800', 'blue.100')} 
-                    borderRadius="md" 
+                    bg={isGSTDue ? useColorModeValue('red.50', 'red.800') : useColorModeValue('green.50', 'green.800')} 
+                    color="white"
+                    borderRadius="lg" 
                     p={4} 
-                    boxShadow="md" 
-                    textAlign="center"
-                    border="1px solid"
-                    borderColor={useColorModeValue('blue.200', 'blue.700')}
+                    boxShadow="lg" 
+                    textAlign="left"
+                    border="2px solid"
+                    borderColor={isGSTDue ? useColorModeValue('red.200', 'red.600') : useColorModeValue('green.200', 'green.600')}
                   >
-                    <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>
-                      {targetSection} after Late Claims
-                    </Text>
-                    <Text fontSize="2xl" fontWeight="extrabold">
-                      {formatCurrency(adjustedAmount)}
-                    </Text>
-                    <Text fontSize="xs" mt={1} opacity={0.8}>
-                      Added to {lateClaimsTarget === 'purchases' ? 'Purchases' : 'Sales'}
-                    </Text>
+                    <Flex align="center" gap={3}>
+                      {isGSTDue ? <AlertTriangle size={24} /> : <CheckCircle size={24} />}
+                      <Box flex="1">
+                        <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>
+                          {isGSTDue ? 'GST Amount Due' : 'GST Refund'}
+                        </Text>
+                        <Text fontSize="2xl" fontWeight="extrabold">
+                          {formatCurrency(Math.abs(gstAmountDue))}
+                        </Text>
+                        <Badge 
+                          colorScheme={isGSTDue ? 'red' : 'green'} 
+                          variant="subtle" 
+                          mt={1}
+                          fontSize="xs"
+                        >
+                          {isGSTDue ? 'Payment Required' : 'Refund Due'}
+                        </Badge>
+                      </Box>
+                    </Flex>
                   </Box>
+                  
+                  {/* GST Breakdown */}
                   <Box bg={cardBgColor} borderRadius="md" p={4} border="1px solid" borderColor={borderColor}>
-                    <VStack align="stretch" spacing={1}>
-                      <Text fontSize="sm"><strong>File:</strong> {gstData.fileName}</Text>
-                      <Text fontSize="sm"><strong>Total Sales and Income (Box 5):</strong> {formatCurrency(gstData.totalSalesAndIncome)}</Text>
-                      <Text fontSize="sm"><strong>Total Purchases and Expenses (Box 11):</strong> {formatCurrency(gstData.totalPurchasesAndExpenses)}</Text>
-                      <Text fontSize="sm"><strong>Total GST Collected (Box 8):</strong> {formatCurrency(gstData.totalGSTCollected)}</Text>
-                      <Text fontSize="sm"><strong>Total GST Credits (Box 12):</strong> {formatCurrency(gstData.totalGSTCredits)}</Text>
-                      <Text fontSize="sm" color={useColorModeValue('orange.600', 'orange.400')}><strong>Late Claims Amount:</strong> {formatCurrency(gstData.lateClaimsAmount)}</Text>
-                      <Text fontSize="sm" color={useColorModeValue('green.600', 'green.400')}><strong>Grossed Up Amount:</strong> {formatCurrency(grossedUpAmount)}</Text>
+                    <Text fontSize="sm" fontWeight="semibold" mb={3} color={textColor}>
+                      GST Breakdown
+                    </Text>
+                    <VStack align="stretch" spacing={2}>
+                      <Flex justify="space-between" fontSize="sm">
+                        <Text color={useColorModeValue('gray.600', 'gray.400')}>GST Collected:</Text>
+                        <Text fontWeight="medium">{formatCurrency(gstData.totalGSTCollected)}</Text>
+                      </Flex>
+                      <Flex justify="space-between" fontSize="sm">
+                        <Text color={useColorModeValue('gray.600', 'gray.400')}>GST Credits:</Text>
+                        <Text fontWeight="medium">{formatCurrency(gstData.totalGSTCredits)}</Text>
+                      </Flex>
+                      <Divider />
+                      <Flex justify="space-between" fontSize="sm" fontWeight="semibold">
+                        <Text>Net GST:</Text>
+                        <Text color={isGSTDue ? 'red.500' : 'green.500'}>{formatCurrency(gstAmountDue)}</Text>
+                      </Flex>
                     </VStack>
+                  </Box>
+                  
+                  {/* Late Claims Section - Only show if present */}
+                  {hasLateClaims && (
+                    <Box bg={useColorModeValue('orange.50', 'orange.900')} borderRadius="md" p={4} border="1px solid" borderColor={useColorModeValue('orange.200', 'orange.700')}>
+                      <Text fontSize="sm" fontWeight="semibold" mb={3} color={useColorModeValue('orange.800', 'orange.100')}>
+                        Late Claims Adjustment
+                      </Text>
+                      <VStack align="stretch" spacing={2}>
+                        <Flex justify="space-between" fontSize="sm">
+                          <Text color={useColorModeValue('orange.700', 'orange.200')}>Late Claims Amount:</Text>
+                          <Text fontWeight="medium">{formatCurrency(lateClaimsAmount)}</Text>
+                        </Flex>
+                        <Flex justify="space-between" fontSize="sm">
+                          <Text color={useColorModeValue('orange.700', 'orange.200')}>Grossed Up Amount:</Text>
+                          <Text fontWeight="medium">{formatCurrency(grossedUpAmount)}</Text>
+                        </Flex>
+                        <Divider borderColor={useColorModeValue('orange.300', 'orange.600')} />
+                        <Flex justify="space-between" fontSize="sm" fontWeight="semibold">
+                          <Text color={useColorModeValue('orange.700', 'orange.200')}>
+                            Added to {lateClaimsTarget === 'purchases' ? 'Total Purchases' : 'Total Sales'}:
+                          </Text>
+                          <Text fontWeight="bold" color={useColorModeValue('orange.800', 'orange.100')}>
+                            {formatCurrency(lateClaimsTarget === 'purchases' ? totalPurchasesAndExpenses + grossedUpAmount : totalSalesAndIncome + grossedUpAmount)}
+                          </Text>
+                        </Flex>
+                        <Text fontSize="xs" color={useColorModeValue('orange.600', 'orange.300')} mt={1}>
+                          Original: {formatCurrency(lateClaimsTarget === 'purchases' ? totalPurchasesAndExpenses : totalSalesAndIncome)} + {formatCurrency(grossedUpAmount)}
+                        </Text>
+                      </VStack>
+                    </Box>
+                  )}
+                  
+                  {/* File Information */}
+                  <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
+                    <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} fontWeight="medium">
+                      Source: {gstData.fileName}
+                    </Text>
                   </Box>
                 </VStack>
               );

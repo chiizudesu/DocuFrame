@@ -9,6 +9,7 @@ import { DraggableFileItem } from './DraggableFileItem';
 export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: () => void, isCollapsed?: boolean }> = ({ collapsed = false, onToggleCollapse }) => {
   const {
     currentDirectory,
+    setCurrentDirectory,
     addLog,
     rootDirectory,
     setStatus,
@@ -32,16 +33,14 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const [clientError, setClientError] = useState<string | null>(null);
 
   // Add at the top, after other useState imports
-  const [clientInfoOpen, setClientInfoOpen] = useState(false);
-  // Removed document insights state
-  const [downloadsOpen, setDownloadsOpen] = useState(false);
-  const [downloadsFiles, setDownloadsFiles] = useState<FileItem[]>([]);
-  const [loadingDownloads, setLoadingDownloads] = useState(false);
-  const [selectedDownloads, setSelectedDownloads] = useState<string[]>([]);
-  const [lastSelectedDownloadIndex, setLastSelectedDownloadIndex] = useState<number | null>(null);
+  const [clientInfoOpen, setClientInfoOpen] = useState(true);
+  // Quick access state
+  const [quickAccessOpen, setQuickAccessOpen] = useState(true);
+  const [quickAccessFolders, setQuickAccessFolders] = useState<FileItem[]>([]);
+  const [loadingQuickAccess, setLoadingQuickAccess] = useState(false);
   
   // Transfer Files state
-  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(true);
   const [transferFileName, setTransferFileName] = useState('');
   const [transferFileCount, setTransferFileCount] = useState(1);
   const [transferLoading, setTransferLoading] = useState(false);
@@ -58,13 +57,45 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     }
   }, [transferFileCount, transferFileName, transferOpen]);
 
-  // Extract client name and tax year from path
-  const pathSegments = currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '');
-  // Find the index of the root (Client) folder
-  const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === rootDirectory.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase());
-  // Client Name is the third segment after root, Tax Year is the second segment after root
+  // Extract client name and tax year from path (ensure clientName is always defined)
+  const pathSegments = currentDirectory ? currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '') : [];
+  const rootSegments = rootDirectory ? rootDirectory.split(/[/\\]/).filter(Boolean) : [];
+  const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === (rootSegments[rootSegments.length - 1] || '').toLowerCase());
   const taxYear = rootIdx !== -1 && pathSegments.length > rootIdx + 1 ? pathSegments[rootIdx + 1] : '';
   const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 2 ? pathSegments[rootIdx + 2] : '';
+
+  // --- Auto-load client info when entering a client folder ---
+  useEffect(() => {
+    // Only try to load client info if we have a plausible clientName
+    if (clientName) {
+      handleLoadClientInfo();
+    } else {
+      setClientInfo(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientName]);
+
+  // --- Fix quick access scan to not run if rootDirectory is empty ---
+  useEffect(() => {
+    if (!rootDirectory) return;
+    const loadFolders = async () => {
+      setLoadingQuickAccess(true);
+      try {
+        const folders = await window.electronAPI.getDirectoryContents(rootDirectory);
+        // Filter only folders, exclude dot folders, and sort alphabetically
+        const sortedFolders = folders
+          .filter((item: FileItem) => item.type === 'folder' && !item.name.startsWith('.'))
+          .sort((a: FileItem, b: FileItem) => a.name.localeCompare(b.name));
+        setQuickAccessFolders(sortedFolders);
+      } catch (error) {
+        console.error('Failed to load quick access folders:', error);
+        addLog('Failed to load quick access folders', 'error');
+      } finally {
+        setLoadingQuickAccess(false);
+      }
+    };
+    loadFolders();
+  }, [rootDirectory]);
   
   // Extract document name from current directory
   const documentName = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : 'Current Folder';
@@ -171,27 +202,21 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     return `${(sizeNum / 1024).toFixed(1)} KB`;
   };
 
-  // Handler for loading downloads files
-  const handleLoadDownloads = async () => {
-    setLoadingDownloads(true);
+  // Handler for loading quick access folders
+  const handleLoadQuickAccess = async () => {
+    setLoadingQuickAccess(true);
     try {
-      const downloadsPath = await window.electronAPI.getDownloadsPath();
-      const files = await window.electronAPI.getDirectoryContents(downloadsPath);
-      // Sort by modified date, newest first, and limit to 20 items
-      const sortedFiles = files
-        .filter((file: FileItem) => file.type === 'file')
-        .sort((a: FileItem, b: FileItem) => {
-          const dateA = new Date(a.modified || '');
-          const dateB = new Date(b.modified || '');
-          return dateB.getTime() - dateA.getTime();
-        })
-        .slice(0, 20);
-      setDownloadsFiles(sortedFiles);
+      const folders = await window.electronAPI.getDirectoryContents(rootDirectory);
+      // Filter only folders and sort alphabetically
+      const sortedFolders = folders
+        .filter((item: FileItem) => item.type === 'folder')
+        .sort((a: FileItem, b: FileItem) => a.name.localeCompare(b.name));
+      setQuickAccessFolders(sortedFolders);
     } catch (error) {
-      console.error('Failed to load downloads:', error);
-      addLog('Failed to load downloads folder', 'error');
+      console.error('Failed to load quick access folders:', error);
+      addLog('Failed to load quick access folders', 'error');
     } finally {
-      setLoadingDownloads(false);
+      setLoadingQuickAccess(false);
     }
   };
 
@@ -323,28 +348,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
   // Removed handleBrainIconClick - document analysis moved to dedicated dialog
 
-  // Handler for selecting downloads (multi-select logic)
-  const handleSelectDownload = (file: FileItem, index: number, event: React.MouseEvent) => {
-    if (event.shiftKey && lastSelectedDownloadIndex !== null) {
-      // Range select
-      const start = Math.min(lastSelectedDownloadIndex, index);
-      const end = Math.max(lastSelectedDownloadIndex, index);
-      const range = downloadsFiles.slice(start, end + 1).map(f => f.name);
-      setSelectedDownloads(prev => Array.from(new Set([...prev, ...range])));
-    } else if (event.ctrlKey || event.metaKey) {
-      // Toggle select
-      setSelectedDownloads(prev =>
-        prev.includes(file.name)
-          ? prev.filter(name => name !== file.name)
-          : [...prev, file.name]
-      );
-      setLastSelectedDownloadIndex(index);
-    } else {
-      // Single select
-      setSelectedDownloads([file.name]);
-      setLastSelectedDownloadIndex(index);
-    }
-  };
+
 
   // Section header style for all three sections
   const sectionHeaderStyle = {
@@ -547,362 +551,230 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       flexDirection="column"
       overflow="hidden"
     >
-      {/* Quick Actions (no label) with collapse button at top right */}
-      <Flex mb={6} alignItems="center" flexShrink={0}>
-        <Flex gap={3} flex="1">
-          <Button 
-            leftIcon={<Info size={16} />} 
-            variant="outline" 
-            size="sm" 
-            flex="1" 
-            onClick={handleOpenClientLink} 
-            borderColor={accentColor} 
-            color={accentColor}
-            fontWeight="medium"
-            isDisabled={!(clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']))}
-            _hover={{
-              bg: useColorModeValue('#f1f5f9', 'gray.700'),
-              borderColor: accentColor
-            }}
-          >
-            Client
-          </Button>
-          {(() => {
-            if (!clientInfo) {
-              return (
-                <Button 
-                  leftIcon={<FileText size={16} />} 
-                  variant="outline" 
-                  size="sm" 
-                  flex="1" 
-                  isDisabled={true}
-                  borderColor="green.500" 
-                  color="green.600"
-                  fontWeight="medium"
-                  _hover={{
-                    bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                    borderColor: "green.500"
-                  }}
+      {/* --- Combined Client Info and Actions Section --- */}
+      <Flex mb={4} align="center" justify="space-between">
+        <Box
+          flex="1"
+          borderRadius="lg"
+          px={3}
+          py={2}
+          bg={clientInfo ? useColorModeValue('blue.50', 'blue.900') : useColorModeValue('gray.100', 'gray.700')}
+          color={clientInfo ? useColorModeValue('blue.900', 'blue.100') : useColorModeValue('gray.600', 'gray.300')}
+          boxShadow={clientInfo ? 'sm' : 'none'}
+          transition="background 0.2s, color 0.2s"
+        >
+          {clientInfo ? (
+            <Flex align="center" justify="space-between">
+              <Box flex="1" minW="0">
+                <Text 
+                  fontSize="md" 
+                  fontWeight="bold" 
+                  lineHeight={1.2} 
+                  noOfLines={1}
+                  cursor={clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) ? 'pointer' : 'default'}
+                  onClick={clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) ? handleOpenClientLink : undefined}
+                  _hover={clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) ? {
+                    textDecoration: 'underline',
+                    opacity: 0.8
+                  } : undefined}
+                  mb={0.5}
                 >
-                  Job
-                </Button>
-              );
-            }
+                  {clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']}
+                </Text>
+                <Text fontSize="xs" fontWeight="medium" opacity={0.85} noOfLines={1}>
+                  {clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-'}
+                </Text>
+              </Box>
+              {(() => {
+                const has2025 = clientInfo['2025 Job Link'];
+                const has2026 = clientInfo['2026 Job Link'];
+                const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
 
-            const has2025 = clientInfo['2025 Job Link'];
-            const has2026 = clientInfo['2026 Job Link'];
-            const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
-
-            if (has2025 && has2026) {
-              // Both years available - show popover
-              return (
-                                 <Box flex="1">
-                   <Popover placement="right-start">
-                     <PopoverTrigger>
-                       <Button
-                       leftIcon={<FileText size={16} />}
-                       rightIcon={<ChevronDown size={16} />}
-                       variant="outline"
-                       size="sm"
-                       w="100%"
-                       borderColor="green.500"
-                       color="green.600"
-                       fontWeight="medium"
-                       _hover={{
-                         bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                         borderColor: "green.500"
-                       }}
-                     >
-                       Job
-                       </Button>
-                     </PopoverTrigger>
-                     <Portal>
-                       <PopoverContent
-                       bg={useColorModeValue('white', 'gray.800')}
-                       border="1px solid"
-                         borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
-                         boxShadow="lg"
-                         w="auto"
-                         minW="120px"
-                         maxW="150px"
-                         zIndex={9999}
-                       >
-                         <PopoverArrow 
-                           bg={useColorModeValue('white', 'gray.800')}
-                           borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
-                         />
-                         <PopoverBody p={3}>
-                           <VStack spacing={2}>
-                             <Button
-                         onClick={() => handleOpenJobLink('2025')}
-                               bg="green.500"
-                               color="white"
-                               fontWeight="bold"
-                         fontSize="sm"
-                               borderRadius="md"
-                               px={4}
-                               py={2}
-                               w="100%"
-                               h="auto"
-                         _hover={{ 
-                                 bg: "green.600"
-                         }}
-                         _focus={{ 
-                                 bg: "green.600"
-                         }}
-                         _active={{
-                                 bg: "green.700"
-                         }}
-                       >
-                               2025
-                             </Button>
-                             <Button
-                         onClick={() => handleOpenJobLink('2026')}
-                               bg="green.500"
-                               color="white"
-                               fontWeight="bold"
-                         fontSize="sm"
-                               borderRadius="md"
-                               px={4}
-                               py={2}
-                               w="100%"
-                               h="auto"
-                         _hover={{ 
-                                 bg: "green.600"
-                         }}
-                         _focus={{ 
-                                 bg: "green.600"
-                         }}
-                         _active={{
-                                 bg: "green.700"
-                         }}
-                       >
-                               2026
-                             </Button>
-                           </VStack>
-                         </PopoverBody>
-                       </PopoverContent>
-                     </Portal>
-                   </Popover>
-                 </Box>
-              );
-            } else {
-              // Single year or current year available
-              const isDisabled = !(currentYearLink || has2025 || has2026);
-              
-              return (
-                <Button 
-                  leftIcon={<FileText size={16} />} 
-                  variant="outline" 
-                  size="sm" 
-                  flex="1" 
-                  onClick={() => handleOpenJobLink()} 
-                  borderColor="green.500" 
-                  color="green.600"
-                  fontWeight="medium"
-                  isDisabled={isDisabled}
-                  _hover={{
-                    bg: useColorModeValue('#f0fdf4', 'gray.700'),
-                    borderColor: "green.500"
-                  }}
-                >
-                  Job
-                </Button>
-              );
-            }
-          })()}
-        </Flex>
-        <IconButton aria-label="Collapse sidebar" icon={<ChevronLeft size={20} strokeWidth={2.5} />} size="sm" variant="ghost" ml={2} onClick={onToggleCollapse} />
+                if (has2025 && has2026) {
+                  // Both years available - show popover
+                  return (
+                    <Popover placement="right-start">
+                      <PopoverTrigger>
+                        <Box ml={2} cursor="pointer" display="flex" alignItems="center">
+                          <FileText size={20} color="currentColor" opacity={0.7} />
+                        </Box>
+                      </PopoverTrigger>
+                      <Portal>
+                        <PopoverContent
+                          bg={useColorModeValue('white', 'gray.800')}
+                          border="1px solid"
+                          borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                          boxShadow="lg"
+                          w="auto"
+                          minW="120px"
+                          maxW="150px"
+                          zIndex={9999}
+                        >
+                          <PopoverArrow 
+                            bg={useColorModeValue('white', 'gray.800')}
+                            borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                          />
+                          <PopoverBody p={3}>
+                            <VStack spacing={2}>
+                              <Button
+                                onClick={() => handleOpenJobLink('2025')}
+                                bg="green.500"
+                                color="white"
+                                fontWeight="bold"
+                                fontSize="sm"
+                                borderRadius="md"
+                                px={4}
+                                py={2}
+                                w="100%"
+                                h="auto"
+                                _hover={{ 
+                                  bg: "green.600"
+                                }}
+                                _focus={{ 
+                                  bg: "green.600"
+                                }}
+                                _active={{
+                                  bg: "green.700"
+                                }}
+                              >
+                                2025
+                              </Button>
+                              <Button
+                                onClick={() => handleOpenJobLink('2026')}
+                                bg="green.500"
+                                color="white"
+                                fontWeight="bold"
+                                fontSize="sm"
+                                borderRadius="md"
+                                px={4}
+                                py={2}
+                                w="100%"
+                                h="auto"
+                                _hover={{ 
+                                  bg: "green.600"
+                                }}
+                                _focus={{ 
+                                  bg: "green.600"
+                                }}
+                                _active={{
+                                  bg: "green.700"
+                                }}
+                              >
+                                2026
+                              </Button>
+                            </VStack>
+                          </PopoverBody>
+                        </PopoverContent>
+                      </Portal>
+                    </Popover>
+                  );
+                } else {
+                  // Single year or current year available
+                  const isDisabled = !(currentYearLink || has2025 || has2026);
+                  
+                  return (
+                    <Box 
+                      ml={2} 
+                      cursor={isDisabled ? 'default' : 'pointer'} 
+                      display="flex" 
+                      alignItems="center"
+                      onClick={isDisabled ? undefined : () => handleOpenJobLink()}
+                    >
+                      <FileText 
+                        size={20} 
+                        color="currentColor" 
+                        opacity={isDisabled ? 0.3 : 0.7} 
+                      />
+                    </Box>
+                  );
+                }
+              })()}
+            </Flex>
+          ) : (
+            <Text fontSize="sm" fontWeight="medium" opacity={0.7}>
+              No client loaded
+            </Text>
+          )}
+        </Box>
+        
+        {/* Collapse button positioned to the right */}
+        <IconButton 
+          aria-label="Collapse sidebar" 
+          icon={<ChevronLeft size={20} strokeWidth={2.5} />} 
+          size="sm" 
+          variant="ghost" 
+          ml={2}
+          onClick={onToggleCollapse} 
+        />
       </Flex>
 
-      {/* Downloads Section */}
-      <Box mb={2} flexShrink={0}>
-        <Box {...sectionHeaderStyle}
-          onClick={() => {
-            setDownloadsOpen((open) => !open);
-            if (!downloadsOpen && downloadsFiles.length === 0) {
-              handleLoadDownloads();
-            }
-          }}
-        >
-          <Text fontSize="sm" fontWeight="semibold" color={textColor}>
-            Downloads
+      {/* Quick Access Section */}
+      <Box mb={1} flexShrink={0}>
+        <Box {...sectionHeaderStyle} py={1} mb={0}>
+          <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
+            QUICK ACCESS
           </Text>
-          <Flex align="center" gap={1}>
-            <IconButton
-              aria-label="Refresh downloads"
-              icon={<RefreshCw size={16} />}
-              size="xs"
-              isLoading={loadingDownloads}
-              onClick={e => { e.stopPropagation(); handleLoadDownloads(); }}
-              variant="ghost"
-              color={accentColor}
-              _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-            />
-            <IconButton
-              aria-label={downloadsOpen ? 'Collapse' : 'Expand'}
-              icon={<ChevronDown size={18} style={{ transform: downloadsOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
-              size="xs"
-              variant="ghost"
-              onClick={e => { e.stopPropagation(); setDownloadsOpen((open) => !open); }}
-              tabIndex={-1}
-            />
-          </Flex>
+          {/* Removed refresh button */}
         </Box>
-        {downloadsOpen && (
-          <Box w="100%" flex="1" display="flex" flexDirection="column" minHeight="0" pt={2} pb={2}>
+        {quickAccessOpen && (
+          <Box w="100%" flex="1" display="flex" flexDirection="column" minHeight="0" pt={0} pb={0}>
             <Box
               position="relative"
               flex="1"
               minH="0"
-          display="flex"
+              display="flex"
               flexDirection="column"
               bg={useColorModeValue('#ffffff', 'gray.800')}
-              border="1px solid"
-              borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
-          borderRadius="md"
+              borderRadius="md"
               overflow="hidden"
             >
-              {/* Mini folder view header */}
-              <Box
-                bg={useColorModeValue('#f8fafc', 'gray.700')}
-                borderBottom="1px solid"
-                borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
-                px={3}
-                py={2}
-              >
-                <Flex align="center" fontSize="xs" fontWeight="medium" color={secondaryTextColor}>
-                  <Text>Name</Text>
-                </Flex>
-              </Box>
-              
-              {/* Files list */}
+              {/* Folders list */}
               <Box
                 flex="1"
                 overflowY="auto"
                 className="enhanced-scrollbar"
-                maxH="200px"
+                maxH="240px" // Increased to fit one more folder row
                 minH="100px"
               >
-                {loadingDownloads ? (
-                  <Flex justify="center" align="center" py={4}>
+                {loadingQuickAccess ? (
+                  <Flex justify="center" align="center" py={3}>
                     <Spinner size="sm" color={accentColor} />
                   </Flex>
-                ) : downloadsFiles.length > 0 ? (
-                  downloadsFiles.map((file, index) => (
-                    <DraggableFileItem
-                      key={file.path}
-                      file={file}
-                      isSelected={selectedDownloads.includes(file.name)}
-                      selectedFiles={selectedDownloads}
-                      sortedFiles={downloadsFiles}
-                      index={index}
-                      onSelect={(f, i, e) => handleSelectDownload(f, i, e)}
-                      onContextMenu={() => {}}
-                      onDragStateReset={() => {}}
-                      onFileMouseDown={() => {}}
-                      onFileClick={() => {}}
-                      as="box"
+                ) : quickAccessFolders.length > 0 ? (
+                  quickAccessFolders.map((folder, index) => (
+                    <Flex
+                      key={folder.path}
+                      align="center"
+                      px={3}
+                      py={1}
+                      fontSize="sm" // Reduced font size by 1px
+                      _hover={{
+                        bg: useColorModeValue('#f8fafc', 'gray.700')
+                      }}
+                      color={textColor}
+                      cursor="pointer"
+                      style={{ userSelect: 'none' }}
+                      onClick={() => setCurrentDirectory(folder.path)}
+                      borderRadius={0}
                     >
-                      <Flex
-                        align="center"
-                        px={3}
-                        py={2}
-                        fontSize="xs"
-                        borderBottom="1px solid"
-                        borderColor={useColorModeValue('#f1f5f9', 'gray.700')}
-                        _hover={{
-                          bg: useColorModeValue('#f8fafc', 'gray.700')
-                        }}
-                        bg={selectedDownloads.includes(file.name) ? useColorModeValue('#dbeafe', 'blue.800') : 'transparent'}
-                        color={selectedDownloads.includes(file.name) ? useColorModeValue('#1e40af', 'white') : textColor}
-                        cursor="default"
-                        style={{ userSelect: 'none' }}
-                        onClick={e => handleSelectDownload(file, index, e)}
-                        borderRadius={0}
+                      <Text
+                        noOfLines={1}
+                        color="inherit"
+                        fontWeight="normal" // Not bold
                       >
-                        <Icon
-                          as={getFileIcon(file.type, file.name)}
-                          color={getIconColor(file.type, file.name)}
-                          boxSize={4}
-                        />
-                        <Text
-                          noOfLines={1}
-                          color="inherit"
-                          fontWeight="medium"
-                          ml={2}
-                        >
-                          {file.name}
-                        </Text>
-                      </Flex>
-                    </DraggableFileItem>
+                        {folder.name}
+                      </Text>
+                    </Flex>
                   ))
                 ) : (
-                  <Flex justify="center" align="center" py={4}>
-                    <Text fontSize="xs" color={secondaryTextColor}>
-                      No files in Downloads
+                  <Flex justify="center" align="center" py={3}>
+                    <Text fontSize="sm" color={secondaryTextColor}>
+                      No folders found
                     </Text>
                   </Flex>
                 )}
               </Box>
             </Box>
-          </Box>
-        )}
-      </Box>
-
-      {/* Client Information */}
-      <Box mb={2} flexShrink={0}>
-        <Box {...sectionHeaderStyle}
-          onClick={() => setClientInfoOpen((open) => !open)}
-        >
-          <Text fontSize="sm" fontWeight="semibold" color={textColor}>
-            Client Information
-          </Text>
-          <Flex align="center" gap={1}>
-            <IconButton
-              aria-label="Refresh client info"
-              icon={<RefreshCw size={16} />}
-              size="xs"
-              isLoading={loadingClient}
-              onClick={e => { e.stopPropagation(); handleLoadClientInfo(); }}
-              variant="ghost"
-              color={accentColor}
-              _hover={{ bg: useColorModeValue('#f1f5f9', 'gray.700') }}
-            />
-            <IconButton
-              aria-label={clientInfoOpen ? 'Collapse' : 'Expand'}
-              icon={<ChevronDown size={18} style={{ transform: clientInfoOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
-              size="xs"
-              variant="ghost"
-              onClick={e => { e.stopPropagation(); setClientInfoOpen((open) => !open); }}
-              tabIndex={-1}
-            />
-          </Flex>
-        </Box>
-        {clientInfoOpen && (
-          <Box border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%" p={3}>
-            <Box mb={2} py={1} borderRadius="md" bg="transparent">
-              <Text fontSize="md" fontWeight="bold" color={clientInfo ? textColor : 'gray.500'} textAlign="left">
-                {clientInfo ? (clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']) : 'No client is loaded'}
-              </Text>
-            </Box>
-            <VStack align="stretch" spacing={3}>
-              {/* IRD Number */}
-              <Box>
-                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>IRD Number</Text>
-                <Text fontSize="sm" color={secondaryTextColor} fontFamily="mono">
-                  {clientInfo ? (clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-') : '-'}
-                </Text>
-              </Box>
-              {/* Address */}
-              {clientInfo && clientInfo['Address'] && (
-                <Box>
-                  <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={0.5}>Address</Text>
-                  <Text fontSize="sm" color={secondaryTextColor}>{clientInfo['Address']}</Text>
-                </Box>
-              )}
-              {clientError && <Text color="red.500" fontSize="sm">{clientError}</Text>}
-            </VStack>
           </Box>
         )}
       </Box>
@@ -920,7 +792,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
           }}
         >
           <Text fontSize="sm" fontWeight="semibold" color={textColor}>
-            Transfer Files
+            TRANSFER FILES
           </Text>
           <IconButton
             aria-label={transferOpen ? 'Collapse' : 'Expand'}
@@ -940,7 +812,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
           />
         </Box>
         {transferOpen && (
-          <Box border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%" p={3}>
+          <Box borderRadius="md" bg="transparent" w="100%" p={3}>
             <VStack align="stretch" spacing={3}>
               {/* Number of Files */}
               <Box>
