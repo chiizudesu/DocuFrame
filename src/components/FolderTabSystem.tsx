@@ -36,12 +36,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null); // For file drag/drop
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  // Colors - Active tab matches address bar background for seamless integration
+  // Colors - Updated to match light theme design with better contrast
   const bgColor = useColorModeValue('#f8fafc', 'gray.800');
-  const activeBg = useColorModeValue('#ffffff', 'gray.800'); // Same as address bar background
-  const inactiveBg = useColorModeValue('#e2e8f0', 'gray.600');
+  const activeBg = useColorModeValue('#ffffff', 'gray.800'); // Active tab - white background
+  const inactiveBg = useColorModeValue('#f1f5f9', 'gray.700'); // Inactive tabs - light gray, darker in dark mode
   const borderColor = useColorModeValue('#d1d5db', 'gray.700');
-  const hoverBg = useColorModeValue('#f1f5f9', 'gray.650');
+  const hoverBg = useColorModeValue('#e2e8f0', 'gray.650');
 
   // Helper function to get directory name from path
   function getDirectoryName(path: string): string {
@@ -405,9 +405,9 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                         : hoverBg 
                   }}
                   onClick={() => handleTabClick(tab.id)}
-                  minW="120px"
+                  minW="159px"
                   maxW="200px"
-                  h={activeTabId === tab.id ? "27px" : "26px"}
+                  h={activeTabId === tab.id ? "35px" : "34px"}
                   position="relative"
                   opacity={draggedTab === tab.id ? 0.5 : 1}
                   zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
@@ -420,21 +420,21 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                         : 'none'
                   }
                   transition="all 0.15s ease"
-                  fontSize="xs"
+                  fontSize="sm"
                   color={
                     fileDropTarget === tab.id
                       ? useColorModeValue('blue.700', 'blue.200')
-                      : useColorModeValue('gray.700', activeTabId === tab.id ? 'white' : 'gray.300')
+                      : useColorModeValue('gray.800', activeTabId === tab.id ? 'white' : 'gray.300')
                   }
-                  fontWeight={activeTabId === tab.id ? '500' : '400'}
+                  fontWeight={activeTabId === tab.id ? '600' : '400'}
                   boxShadow={fileDropTarget === tab.id ? 'sm' : 'none'}
                 >
                 <Text
-                  fontSize="xs"
+                  fontSize="sm"
                   isTruncated
                   flex={1}
                   userSelect="none"
-                  lineHeight="1.2"
+                  lineHeight="1.3"
                 >
                   {tab.name}
                 </Text>
@@ -443,8 +443,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                   <Box
                     as="button"
                     ml={2}
-                    p="2px"
-                    borderRadius="3px"
+                    p="3px"
+                    borderRadius="4px"
                     opacity={0.6}
                     _hover={{ 
                       opacity: 1,
@@ -459,7 +459,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                     justifyContent="center"
                     transition="all 0.15s ease"
                   >
-                    <X size={10} />
+                    <X size={12} />
                   </Box>
                 )}
               </Flex>
@@ -528,10 +528,10 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
           justifyContent="center"
           transition="all 0.15s ease"
           color={useColorModeValue('gray.600', 'gray.400')}
-          h="20px"
-          w="20px"
+          h="24px"
+          w="24px"
         >
-          <Plus size={12} />
+          <Plus size={14} />
         </Box>
       </Flex>
     </Box>

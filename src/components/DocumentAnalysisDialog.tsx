@@ -14,6 +14,7 @@ import {
   Flex,
   Spinner,
   useColorModeValue,
+  useColorMode,
   IconButton,
   Alert,
   AlertIcon,
@@ -204,6 +205,7 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   const [currentStage, setCurrentStage] = useState<'setup' | 'results'>('setup');
 
   const toast = useToast();
+  const { colorMode } = useColorMode();
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const cardBg = useColorModeValue('gray.50', 'gray.700');
@@ -1110,7 +1112,7 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                                 </Text>
                               </Flex>
                               <Box
-                                bg={message.type === 'user' ? 'blue.50' : cardBg}
+                                bg={message.type === 'user' ? useColorModeValue('blue.50', 'blue.900') : cardBg}
                                 p={3}
                                 borderRadius="md"
                                 border="1px"
@@ -1152,6 +1154,36 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                           onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendFollowUp()}
                           size="sm"
                           disabled={loading}
+                          bg={colorMode === 'dark' ? 'gray.800' : 'white'}
+                          color={colorMode === 'dark' ? 'white' : 'gray.900'}
+                          borderColor={borderColor}
+                          _focus={{
+                            borderColor: 'blue.500',
+                            boxShadow: '0 0 0 1px var(--chakra-colors-blue-500)',
+                            bg: colorMode === 'dark' ? 'gray.800' : 'white'
+                          }}
+                          _hover={{
+                            bg: colorMode === 'dark' ? 'gray.800' : 'white'
+                          }}
+                          _placeholder={{
+                            color: colorMode === 'dark' ? 'gray.400' : 'gray.500'
+                          }}
+                          style={{
+                            backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff',
+                            color: colorMode === 'dark' ? '#ffffff' : '#1a202c',
+                          }}
+                          sx={{
+                            backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff' + ' !important',
+                            '&::placeholder': {
+                              color: colorMode === 'dark' ? '#a0aec0' : '#718096' + ' !important'
+                            },
+                            '&:hover': {
+                              backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff' + ' !important'
+                            },
+                            '&:focus': {
+                              backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff' + ' !important'
+                            }
+                          }}
                         />
                         <IconButton
                           aria-label="Send message"

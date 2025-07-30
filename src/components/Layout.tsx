@@ -159,7 +159,7 @@ const CustomTitleBar: React.FC = () => {
 
 export const Layout: React.FC = () => {
   const { showOutputLog } = useAppContext();
-  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [sidebarWidth, setSidebarWidth] = useState(353);
   const [logHeight, setLogHeight] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [logMinimized, setLogMinimized] = useState(false);

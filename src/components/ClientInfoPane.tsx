@@ -988,11 +988,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                   isDisabled={transferFileCount > 1}
                   opacity={transferFileCount > 1 ? 0.5 : 1}
                 />
-                {transferFileCount > 1 && (
-                  <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                    Renaming disabled for multiple files
-                  </Text>
-                )}
+
               </Box>
               
               {/* Transfer Button */}
