@@ -58,6 +58,11 @@ interface ElectronAPI {
   closeCalculator: () => Promise<{ success: boolean }>;
   // Version method
   getVersion: () => string;
+  // File system watcher methods
+  startWatchingDirectory: (dirPath: string) => Promise<{ success: boolean; message: string; watchedDirectories: string[] }>;
+  stopWatchingDirectory: (dirPath: string) => Promise<{ success: boolean; message: string; watchedDirectories: string[] }>;
+  getWatchedDirectories: () => Promise<{ success: boolean; directories: string[]; isEnabled: boolean }>;
+  enableFileWatching: (enabled: boolean) => Promise<{ success: boolean; message: string; isEnabled: boolean }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -215,6 +220,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeListener: (channel: string, callback: (event: any, ...args: any[]) => void) => {
     ipcRenderer.removeListener(channel, callback);
+  },
+  // File system watcher methods
+  startWatchingDirectory: async (dirPath: string) => {
+    return await ipcRenderer.invoke('start-watching-directory', dirPath);
+  },
+  stopWatchingDirectory: async (dirPath: string) => {
+    return await ipcRenderer.invoke('stop-watching-directory', dirPath);
+  },
+  getWatchedDirectories: async () => {
+    return await ipcRenderer.invoke('get-watched-directories');
+  },
+  enableFileWatching: async (enabled: boolean) => {
+    return await ipcRenderer.invoke('enable-file-watching', enabled);
   }
 }); 
 

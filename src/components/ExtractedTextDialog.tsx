@@ -65,7 +65,7 @@ export const ExtractedTextDialog: React.FC<ExtractedTextDialogProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" scrollBehavior="inside" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent bg={bgColor} maxH="80vh">
         <ModalHeader borderBottom="1px solid" borderColor={borderColor}>
           <HStack spacing={3}>

@@ -153,7 +153,7 @@ export const MergePDFDialog: React.FC<MergePDFDialogProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="lg" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent bg={bgColor}>
         <ModalHeader>Merge PDF Files</ModalHeader>
         <ModalCloseButton />

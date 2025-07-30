@@ -81,6 +81,7 @@ interface Settings {
   enableNewTabShortcut?: boolean;
   closeTabShortcut?: string;
   enableCloseTabShortcut?: boolean;
+  enableFileWatching?: boolean;
 }
 
 export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose }) => {
@@ -98,6 +99,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [newTabShortcut, setNewTabShortcut] = useState('Ctrl+T');
   const [enableNewTabShortcut, setEnableNewTabShortcut] = useState(true);
   const [closeTabShortcut, setCloseTabShortcut] = useState('Ctrl+W');
+  const [enableFileWatching, setEnableFileWatching] = useState(true);
   const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
   const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
   
@@ -129,6 +131,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         setEnableNewTabShortcut(loadedSettings.enableNewTabShortcut !== false);
         setCloseTabShortcut(loadedSettings.closeTabShortcut || 'Ctrl+W');
         setEnableCloseTabShortcut(loadedSettings.enableCloseTabShortcut !== false);
+        setEnableFileWatching(loadedSettings.enableFileWatching !== false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -164,6 +167,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         enableNewTabShortcut,
         closeTabShortcut,
         enableCloseTabShortcut,
+        enableFileWatching,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -299,7 +303,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" isCentered motionPreset="slideInBottom">
-      <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent
         bg={bgColor}
         border="1px solid"
@@ -697,24 +701,43 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       </Text>
                     </CardHeader>
                     <CardBody pt={0}>
-                      <FormControl>
-                        <FormLabel fontSize="sm" color={textColor}>Show Output Log</FormLabel>
-                        <HStack justify="space-between">
-                          <VStack align="start" spacing={0}>
-                            <Text fontSize="sm" color={textColor}>
-                              Display output log area
-                            </Text>
-                            <Text fontSize="xs" color={secondaryTextColor}>
-                              Toggle the visibility of the output log at the bottom
-                            </Text>
-                          </VStack>
+                                              <FormControl>
+                          <FormLabel fontSize="sm" color={textColor}>Show Output Log</FormLabel>
+                          <HStack justify="space-between">
+                            <VStack align="start" spacing={0}>
+                              <Text fontSize="sm" color={textColor}>
+                                Display output log area
+                              </Text>
+                              <Text fontSize="xs" color={secondaryTextColor}>
+                                Toggle the visibility of the output log at the bottom
+                              </Text>
+                            </VStack>
               <Switch
                 isChecked={showOutputLog}
                 onChange={(e) => setShowOutputLog(e.target.checked)}
                 colorScheme="blue"
               />
                         </HStack>
-          </FormControl>
+                      </FormControl>
+
+                      <FormControl>
+                        <FormLabel fontSize="sm" color={textColor}>File System Watching</FormLabel>
+                        <HStack justify="space-between">
+                          <VStack align="start" spacing={0}>
+                            <Text fontSize="sm" color={textColor}>
+                              Auto-refresh folders
+                            </Text>
+                            <Text fontSize="xs" color={secondaryTextColor}>
+                              Automatically detect and refresh when files are added/changed externally
+                            </Text>
+                          </VStack>
+              <Switch
+                isChecked={enableFileWatching}
+                onChange={(e) => setEnableFileWatching(e.target.checked)}
+                colorScheme="blue"
+              />
+                        </HStack>
+                      </FormControl>
                     </CardBody>
                   </Card>
                 </VStack>

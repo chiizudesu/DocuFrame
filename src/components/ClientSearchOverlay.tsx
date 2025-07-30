@@ -107,7 +107,8 @@ export const ClientSearchOverlay: React.FC = () => {
       left="0" 
       right="0" 
       bottom="0" 
-      bg="rgba(0,0,0,0.3)" 
+      bg="blackAlpha.600" 
+      backdropFilter="blur(4px)"
       zIndex={1999} 
       display="flex" 
       alignItems="center" 

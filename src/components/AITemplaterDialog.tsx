@@ -121,7 +121,7 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="xl" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent 
         bg={bgColor} 
         color={useColorModeValue('gray.900', 'white')} 

@@ -221,7 +221,7 @@ export const OrgCodesDialog: React.FC<OrgCodesDialogProps> = ({ isOpen, onClose 
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="4xl" scrollBehavior="inside" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent>
         <ModalHeader py={3}>
           <HStack>

@@ -17,6 +17,7 @@ const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
 import { spawn, ChildProcess } from 'child_process';
 import { autoUpdaterService } from '../src/main/autoUpdater';
+import * as chokidar from 'chokidar';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,134 @@ interface PDFData {
 }
 
 let backendProcess: ChildProcess | null = null;
+
+// File system watcher management
+interface WatchedDirectory {
+  path: string;
+  watcher: chokidar.FSWatcher;
+  lastRefresh: number;
+}
+
+const watchedDirectories = new Map<string, WatchedDirectory>();
+let isWatchingEnabled = true;
+
+// File system watcher functions
+function startWatchingDirectory(dirPath: string) {
+  try {
+    // Check if already watching this directory
+    if (watchedDirectories.has(dirPath)) {
+      console.log(`[FileWatcher] Already watching directory: ${dirPath}`);
+      return;
+    }
+
+    const watcher = chokidar.watch(dirPath, {
+      persistent: true,
+      ignoreInitial: true,
+      depth: 1, // Only watch immediate children, not subdirectories
+      ignored: [
+        /(^|[\/\\])\../, // Ignore dotfiles
+        /node_modules/,   // Ignore node_modules
+        /\.git/,          // Ignore git files
+        /\.DS_Store/,     // Ignore macOS system files
+        /Thumbs\.db/,     // Ignore Windows thumbnail files
+        /desktop\.ini/,   // Ignore Windows desktop files
+        /\.tmp$/,         // Ignore temporary files
+        /\.temp$/,        // Ignore temporary files
+        /~$/,             // Ignore backup files
+        /\.swp$/,         // Ignore vim swap files
+        /\.swo$/,         // Ignore vim swap files
+      ],
+      awaitWriteFinish: {
+        stabilityThreshold: 500,
+        pollInterval: 500
+      },
+      usePolling: false, // Use native file system events when possible
+      interval: 1000 // Only poll every 1 second if polling is needed
+    });
+
+    // Debounce function to prevent excessive events
+    let debounceTimer: NodeJS.Timeout;
+    const debouncedRefresh = (event: string, filePath: string) => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        // Update last refresh time
+        const watched = watchedDirectories.get(dirPath);
+        if (watched) {
+          watched.lastRefresh = Date.now();
+        }
+
+        // Notify all windows about the change
+        BrowserWindow.getAllWindows().forEach(win => {
+          win.webContents.send('folderContentsChanged', { 
+            directory: dirPath,
+            event: event,
+            filePath: filePath,
+            newFiles: event === 'add' ? [filePath] : undefined
+          });
+        });
+      }, 1000); // 1 second debounce for better performance
+    };
+
+    // Set up event listeners
+    watcher
+      .on('add', (filePath) => {
+        debouncedRefresh('add', filePath);
+      })
+      .on('change', (filePath) => {
+        debouncedRefresh('change', filePath);
+      })
+      .on('unlink', (filePath) => {
+        debouncedRefresh('unlink', filePath);
+      })
+      .on('addDir', (dirPath) => {
+        debouncedRefresh('addDir', dirPath);
+      })
+      .on('unlinkDir', (dirPath) => {
+        debouncedRefresh('unlinkDir', dirPath);
+      })
+      .on('error', (error) => {
+        console.error(`[FileWatcher] Error watching ${dirPath}:`, error);
+      });
+
+    // Store the watcher
+    watchedDirectories.set(dirPath, {
+      path: dirPath,
+      watcher: watcher,
+      lastRefresh: Date.now()
+    });
+
+  } catch (error) {
+    console.error(`[FileWatcher] Error starting watcher for ${dirPath}:`, error);
+  }
+}
+
+function stopWatchingDirectory(dirPath: string) {
+  try {
+    const watched = watchedDirectories.get(dirPath);
+    if (watched) {
+      watched.watcher.close();
+      watchedDirectories.delete(dirPath);
+    }
+  } catch (error) {
+    console.error(`[FileWatcher] Error stopping watcher for ${dirPath}:`, error);
+  }
+}
+
+function stopAllWatchers() {
+  console.log(`[FileWatcher] Stopping all watchers (${watchedDirectories.size} active)`);
+  watchedDirectories.forEach((watched, dirPath) => {
+    try {
+      watched.watcher.close();
+    } catch (error) {
+      console.error(`[FileWatcher] Error closing watcher for ${dirPath}:`, error);
+    }
+  });
+  watchedDirectories.clear();
+}
+
+function getWatchedDirectories(): string[] {
+  return Array.from(watchedDirectories.keys());
+}
 
 // Load or create config
 async function loadConfig(): Promise<Config> {
@@ -254,6 +383,8 @@ app.on('window-all-closed', () => {
     backendProcess.kill();
     backendProcess = null;
   }
+  // Stop all file watchers
+  stopAllWatchers();
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -264,6 +395,8 @@ app.on('quit', () => {
     backendProcess.kill();
     backendProcess = null;
   }
+  // Stop all file watchers
+  stopAllWatchers();
 });
 
 app.on('activate', () => {
@@ -1572,6 +1705,70 @@ ipcMain.handle('open-new-window', async (_, initialPath?: string) => {
     return { success: true };
   } catch (error) {
     console.error('[Main] Error creating new window:', error);
+    throw error;
+  }
+});
+
+// File system watcher IPC handlers
+ipcMain.handle('start-watching-directory', async (_, dirPath: string) => {
+  try {
+    if (!isWatchingEnabled) {
+      console.log('[FileWatcher] Watching is disabled');
+      return { success: false, message: 'File watching is disabled' };
+    }
+
+    startWatchingDirectory(dirPath);
+    return { 
+      success: true, 
+      message: `Started watching directory: ${dirPath}`,
+      watchedDirectories: getWatchedDirectories()
+    };
+  } catch (error) {
+    console.error('[FileWatcher] Error starting directory watch:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('stop-watching-directory', async (_, dirPath: string) => {
+  try {
+    stopWatchingDirectory(dirPath);
+    return { 
+      success: true, 
+      message: `Stopped watching directory: ${dirPath}`,
+      watchedDirectories: getWatchedDirectories()
+    };
+  } catch (error) {
+    console.error('[FileWatcher] Error stopping directory watch:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-watched-directories', async () => {
+  try {
+    return {
+      success: true,
+      directories: getWatchedDirectories(),
+      isEnabled: isWatchingEnabled
+    };
+  } catch (error) {
+    console.error('[FileWatcher] Error getting watched directories:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('enable-file-watching', async (_, enabled: boolean) => {
+  try {
+    isWatchingEnabled = enabled;
+    if (!enabled) {
+      stopAllWatchers();
+    }
+    return { 
+      success: true, 
+      message: `File watching ${enabled ? 'enabled' : 'disabled'}`,
+      isEnabled: isWatchingEnabled
+    };
+  } catch (error) {
+    console.error('[FileWatcher] Error toggling file watching:', error);
     throw error;
   }
 });

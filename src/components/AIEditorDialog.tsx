@@ -70,7 +70,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="lg" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent bg={bgColor} color={useColorModeValue('gray.900', 'white')} borderRadius="lg" boxShadow="lg" maxW="540px">
         <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
           <Flex align="center" justify="center" gap={2}>

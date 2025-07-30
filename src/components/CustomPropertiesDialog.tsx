@@ -88,7 +88,7 @@ export const CustomPropertiesDialog: React.FC<CustomPropertiesDialogProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent bg={cardBg} borderRadius="lg" border="1px solid" borderColor={borderColor}>
         <ModalHeader>
           <HStack spacing={2}>

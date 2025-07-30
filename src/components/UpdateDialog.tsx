@@ -97,7 +97,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md" isCentered>
-      <ModalOverlay bg="blackAlpha.300" backdropFilter="blur(10px)" />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent
         bg={bgColor}
         border="1px solid"

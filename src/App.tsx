@@ -142,6 +142,12 @@ const AppContent: React.FC = () => {
         setIsQuickNavigating(true);
         setInitialCommandMode(false);
       }
+      
+      // Escape key to cancel any ongoing operations (drag, etc.)
+      if (e.key === 'Escape') {
+        // Dispatch a custom event that components can listen to for resetting their state
+        window.dispatchEvent(new CustomEvent('escape-key-pressed'));
+      }
     };
 
     // Helper function to get parent directory

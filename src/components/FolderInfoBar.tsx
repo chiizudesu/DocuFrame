@@ -536,7 +536,7 @@ export const FolderInfoBar: React.FC = () => {
       </Flex>
 
       <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} isCentered>
-        <ModalOverlay />
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
         <ModalContent>
           <ModalHeader>Create New Folder</ModalHeader>
           <ModalCloseButton />

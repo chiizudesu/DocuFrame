@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
 import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -11,7 +11,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     currentDirectory,
     addLog,
     rootDirectory,
-    setStatus
+    setStatus,
+    setFolderItems
   } = useAppContext();
 
   // Removed modal state - document insights moved to dedicated dialog
@@ -38,6 +39,24 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const [loadingDownloads, setLoadingDownloads] = useState(false);
   const [selectedDownloads, setSelectedDownloads] = useState<string[]>([]);
   const [lastSelectedDownloadIndex, setLastSelectedDownloadIndex] = useState<number | null>(null);
+  
+  // Transfer Files state
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferFileName, setTransferFileName] = useState('');
+  const [transferFileCount, setTransferFileCount] = useState(1);
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferPreviewFiles, setTransferPreviewFiles] = useState<FileItem[]>([]);
+  
+  // Auto-update preview when inputs change
+  useEffect(() => {
+    if (transferOpen && transferFileCount >= 1) {
+      const timeoutId = setTimeout(() => {
+        handleTransferPreview();
+      }, 300); // Debounce to avoid excessive API calls
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [transferFileCount, transferFileName, transferOpen]);
 
   // Extract client name and tax year from path
   const pathSegments = currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '');
@@ -173,6 +192,78 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       addLog('Failed to load downloads folder', 'error');
     } finally {
       setLoadingDownloads(false);
+    }
+  };
+
+  // Handler for transfer preview
+  const handleTransferPreview = async () => {
+    if (transferFileCount < 1) {
+      addLog('Number of files must be at least 1', 'error');
+      return;
+    }
+
+    try {
+      const previewResult = await window.electronAPI.transfer({ 
+        numFiles: transferFileCount,
+        command: 'preview',
+        currentDirectory: currentDirectory // Pass current directory
+      });
+      
+      if (previewResult.success && previewResult.files) {
+        setTransferPreviewFiles(previewResult.files.slice(0, 3)); // Limit to 3 files
+        addLog(`Preview: ${previewResult.files.length} files will be transferred`, 'info');
+      } else {
+        addLog(previewResult.message, 'error');
+        setTransferPreviewFiles([]);
+      }
+    } catch (error) {
+      console.error('Error during transfer preview:', error);
+      addLog(`Error during transfer preview: ${error}`, 'error');
+      setTransferPreviewFiles([]);
+    }
+  };
+
+  // Handler for transfer files
+  const handleTransferFiles = async () => {
+    if (transferFileCount < 1) {
+      addLog('Number of files must be at least 1', 'error');
+      return;
+    }
+
+    setTransferLoading(true);
+    try {
+      // Execute the actual transfer
+      const transferResult = await window.electronAPI.transfer({ 
+        numFiles: transferFileCount,
+        command: 'transfer',
+        currentDirectory: currentDirectory, // Pass current directory
+        newName: transferFileName || undefined // Pass new filename if provided
+      });
+      
+      if (transferResult.success) {
+        addLog(transferResult.message, 'response');
+        setStatus('Transfer completed', 'success');
+        // Clear form and preview
+        setTransferFileName('');
+        setTransferFileCount(1);
+        setTransferPreviewFiles([]);
+        // Refresh folder view
+        setStatus('Refreshing folder...', 'info');
+        if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+          const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+          if (typeof setFolderItems === 'function') setFolderItems(contents);
+          setStatus('Folder refreshed', 'success');
+        }
+      } else {
+        addLog(transferResult.message, 'error');
+        setStatus('Transfer failed', 'error');
+      }
+    } catch (error) {
+      console.error('Error during transfer:', error);
+      addLog(`Error during transfer: ${error}`, 'error');
+      setStatus('Transfer failed', 'error');
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -812,6 +903,174 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               )}
               {clientError && <Text color="red.500" fontSize="sm">{clientError}</Text>}
             </VStack>
+          </Box>
+        )}
+      </Box>
+
+      {/* Transfer Files Section */}
+      <Box mb={2} flexShrink={0}>
+        <Box {...sectionHeaderStyle}
+          onClick={() => {
+            const newOpen = !transferOpen;
+            setTransferOpen(newOpen);
+            // Auto-preview when expanding
+            if (newOpen && transferFileCount >= 1) {
+              handleTransferPreview();
+            }
+          }}
+        >
+          <Text fontSize="sm" fontWeight="semibold" color={textColor}>
+            Transfer Files
+          </Text>
+          <IconButton
+            aria-label={transferOpen ? 'Collapse' : 'Expand'}
+            icon={<ChevronDown size={18} style={{ transform: transferOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
+            size="xs"
+            variant="ghost"
+            onClick={e => { 
+              e.stopPropagation(); 
+              const newOpen = !transferOpen;
+              setTransferOpen(newOpen);
+              // Auto-preview when expanding
+              if (newOpen && transferFileCount >= 1) {
+                handleTransferPreview();
+              }
+            }}
+            tabIndex={-1}
+          />
+        </Box>
+        {transferOpen && (
+          <Box border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%" p={3}>
+            <VStack align="stretch" spacing={3}>
+              {/* Number of Files */}
+              <Box>
+                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                  Number of Files
+                </Text>
+                <Input
+                  type="number"
+                  value={transferFileCount}
+                  onChange={(e) => {
+                    const newCount = Math.max(1, parseInt(e.target.value) || 1);
+                    setTransferFileCount(newCount);
+                  }}
+                  size="sm"
+                  min={1}
+                  fontSize="sm"
+                  color={textColor}
+                  bg={useColorModeValue('white', 'gray.700')}
+                  borderColor={useColorModeValue('gray.300', 'gray.600')}
+                  _focus={{
+                    borderColor: accentColor,
+                    boxShadow: `0 0 0 1px ${accentColor}`
+                  }}
+                />
+              </Box>
+              
+              {/* New File Name */}
+              <Box>
+                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
+                  New File Name
+                </Text>
+                <Input
+                  placeholder="Enter new filename"
+                  value={transferFileName}
+                  onChange={(e) => setTransferFileName(e.target.value)}
+                  size="sm"
+                  fontSize="sm"
+                  color={textColor}
+                  bg={useColorModeValue('white', 'gray.700')}
+                  borderColor={useColorModeValue('gray.300', 'gray.600')}
+                  _focus={{
+                    borderColor: accentColor,
+                    boxShadow: `0 0 0 1px ${accentColor}`
+                  }}
+                  isDisabled={transferFileCount > 1}
+                  opacity={transferFileCount > 1 ? 0.5 : 1}
+                />
+                {transferFileCount > 1 && (
+                  <Text fontSize="xs" color={secondaryTextColor} mt={1}>
+                    Renaming disabled for multiple files
+                  </Text>
+                )}
+              </Box>
+              
+              {/* Transfer Button */}
+              <Button
+                leftIcon={<Upload size={16} />}
+                onClick={handleTransferFiles}
+                isLoading={transferLoading}
+                loadingText="Transferring..."
+                size="sm"
+                colorScheme="blue"
+                fontWeight="medium"
+                _hover={{
+                  bg: useColorModeValue('blue.600', 'blue.400')
+                }}
+              >
+                Transfer Files
+              </Button>
+            </VStack>
+            
+            {/* Preview Area */}
+            {transferPreviewFiles.length > 0 && (
+              <Box mt={3} border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%">
+                <Box
+                  bg={useColorModeValue('#f8fafc', 'gray.700')}
+                  borderBottom="1px solid"
+                  borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                  px={3}
+                  py={2}
+                >
+                  <Flex align="center" fontSize="xs" fontWeight="medium" color={secondaryTextColor}>
+                    <Text>Preview ({transferPreviewFiles.length} files)</Text>
+                  </Flex>
+                </Box>
+                
+                <Box
+                  maxH="120px"
+                  minH="60px"
+                  overflowY="auto"
+                  className="enhanced-scrollbar"
+                >
+                  {transferPreviewFiles.map((file, index) => (
+                    <Flex
+                      key={file.path}
+                      align="flex-start"
+                      px={3}
+                      py={2}
+                      fontSize="xs"
+                      borderBottom={index < transferPreviewFiles.length - 1 ? "1px solid" : "none"}
+                      borderColor={useColorModeValue('#f1f5f9', 'gray.700')}
+                      _hover={{
+                        bg: useColorModeValue('#f8fafc', 'gray.700')
+                      }}
+                      color={textColor}
+                      cursor="default"
+                      style={{ userSelect: 'none' }}
+                      borderRadius={0}
+                    >
+                      <Icon
+                        as={getFileIcon(file.type, file.name)}
+                        color={getIconColor(file.type, file.name)}
+                        boxSize={4}
+                        mt={0.5}
+                        flexShrink={0}
+                      />
+                      <Text
+                        noOfLines={transferPreviewFiles.length === 1 ? 2 : 1}
+                        color="inherit"
+                        fontWeight="medium"
+                        ml={2}
+                        wordBreak="break-word"
+                      >
+                        {file.name}
+                      </Text>
+                    </Flex>
+                  ))}
+                </Box>
+              </Box>
+            )}
           </Box>
         )}
       </Box>

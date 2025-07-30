@@ -107,6 +107,36 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
     addLog('Drag operation ended');
   };
 
+  // Handle escape key to reset drag state
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsDragging(false);
+        setIsHovering(false);
+        // Notify parent to reset drag state
+        if (onDragStateReset) {
+          onDragStateReset();
+        }
+      }
+    };
+
+    const handleEscapeEvent = () => {
+      setIsDragging(false);
+      setIsHovering(false);
+      // Notify parent to reset drag state
+      if (onDragStateReset) {
+        onDragStateReset();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('escape-key-pressed', handleEscapeEvent);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('escape-key-pressed', handleEscapeEvent);
+    };
+  }, [onDragStateReset]);
+
   const handleDragOver = (e: React.DragEvent) => {
     if (file.type === 'folder') {
       e.preventDefault();

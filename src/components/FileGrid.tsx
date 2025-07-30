@@ -14,6 +14,7 @@ import {
   Input,
   Image,
   Divider,
+  useToast,
 } from '@chakra-ui/react'
 import {
   File,
@@ -166,6 +167,7 @@ export const FileGrid: React.FC = () => {
     removeRecentlyTransferredFile,
     addTabToCurrentWindow
   } = useAppContext()
+  const toast = useToast()
   
   // All useState hooks next
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
@@ -459,6 +461,9 @@ export const FileGrid: React.FC = () => {
       // Provide summary feedback
       if (deletedFiles.length > 0) {
         setStatus(`Successfully deleted ${deletedFiles.length} file(s)`, 'success');
+        
+        // Show toast notification for successful delete operations
+        
       }
       
       if (failedFiles.length > 0) {
@@ -467,6 +472,20 @@ export const FileGrid: React.FC = () => {
         // Show detailed error message for failed files
         const errorDetails = failedFiles.map(f => `• ${f.name}: ${f.error}`).join('\n');
         addLog(`Delete operation completed with errors:\n${errorDetails}`, 'error');
+        
+        // Show a more user-friendly error message
+        const failedFileNames = failedFiles.map(f => f.name).join(', ');
+        setStatus(`Failed to delete: ${failedFileNames}`, 'error');
+        
+        // Show toast notification for failed delete operations
+        toast({
+          title: 'Delete Failed',
+          description: `Failed to delete ${failedFiles.length} file(s): ${failedFileNames}`,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
       }
       
       // Refresh the current directory regardless of errors
@@ -676,13 +695,30 @@ export const FileGrid: React.FC = () => {
       const newPath = isAbsolutePath(renameValue) ? renameValue : joinPath(currentDirectory === '/' ? '' : currentDirectory, renameValue)
       await (window.electronAPI as any).renameItem(oldPath, newPath)
       addLog(`Renamed ${isRenaming} to ${renameValue}`)
+      
+      // Show toast notification for successful rename operations
+      
+      
       setIsRenaming(null)
       setRenameValue('')
       // Use the existing folder refresh system
       loadDirectory(currentDirectory)
     } catch (error) {
       console.error('Error renaming:', error)
-      addLog(`Failed to rename: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Failed to rename: ${errorMessage}`, 'error')
+      setStatus(`Failed to rename "${isRenaming}": ${errorMessage}`, 'error')
+      
+      // Show toast notification for failed rename operations
+              toast({
+          title: 'Rename Failed',
+          description: `Failed to rename "${isRenaming}": ${errorMessage}`,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
+      
       setIsRenaming(null)
       setRenameValue('')
     }
@@ -709,12 +745,22 @@ export const FileGrid: React.FC = () => {
         }
       }
     }
-    const handleFolderContentsChanged = (event: any, data: { directory: string; newFiles?: string[] }) => {
+    const handleFolderContentsChanged = (_event: any, data: { directory: string; newFiles?: string[]; event?: string; filePath?: string }) => {
       console.log('[FileGrid] Folder contents changed event received:', data);
       if (data && data.directory === currentDirectory) {
         console.log('[FileGrid] Refreshing current directory:', currentDirectory);
         
-        // Add newly transferred files to the recently transferred list
+        // Handle file watcher events (new files detected)
+        if (data.event === 'add' && data.filePath) {
+          addRecentlyTransferredFiles([data.filePath]);
+          
+          // Set timeout to remove the "new" indicator (15 seconds)
+          setTimeout(() => {
+            removeRecentlyTransferredFile(data.filePath!);
+          }, 15000); // 15 seconds
+        }
+        
+        // Handle transfer events (existing functionality)
         if (data.newFiles && data.newFiles.length > 0) {
           console.log('[FileGrid] Adding new files to recently transferred list:', data.newFiles);
           addRecentlyTransferredFiles(data.newFiles);
@@ -727,7 +773,10 @@ export const FileGrid: React.FC = () => {
           });
         }
         
-        loadDirectory(currentDirectory);
+        // Force a re-render to show the "NEW" indicator
+        setTimeout(() => {
+          loadDirectory(currentDirectory);
+        }, 100);
       }
     }
 
@@ -887,7 +936,7 @@ export const FileGrid: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [selectedFile, isRenaming])
 
-  // Keyboard shortcuts: Enter to open, Delete to delete
+  // Keyboard shortcuts: Enter to open, Delete to delete, Escape to cancel drag
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Check if any input field is focused
@@ -906,11 +955,79 @@ export const FileGrid: React.FC = () => {
       } else if (e.key === 'Delete' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
         handleDeleteFile(selectedFileObjs)
+      } else if (e.key === 'Escape') {
+        // Cancel any ongoing drag operations
+        resetDragState();
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedFiles, sortedFiles, isRenaming])
+  }, [selectedFiles, sortedFiles, isRenaming, resetDragState])
+
+  // Listen for global escape events to reset drag state
+  useEffect(() => {
+    const handleGlobalEscape = () => {
+      resetDragState();
+    };
+
+    window.addEventListener('escape-key-pressed', handleGlobalEscape);
+    return () => {
+      window.removeEventListener('escape-key-pressed', handleGlobalEscape);
+    };
+  }, [resetDragState]);
+
+  // Lightweight file system watcher - only watches when user is idle
+  useEffect(() => {
+    let isWatching = false;
+    let watchTimeout: NodeJS.Timeout | undefined;
+    let idleTimeout: NodeJS.Timeout | undefined;
+
+    const startWatching = async () => {
+      try {
+        if (currentDirectory && !isWatching) {
+          // Check if file watching is enabled in settings
+          const config = await (window.electronAPI as any).getConfig();
+          if (config.enableFileWatching === false) {
+            return;
+          }
+
+          const result = await (window.electronAPI as any).startWatchingDirectory(currentDirectory);
+          if (result.success) {
+            isWatching = true;
+          }
+        }
+      } catch (error) {
+        console.error('[FileGrid] Error starting file watcher:', error);
+      }
+    };
+
+    const stopWatching = async () => {
+      try {
+        if (currentDirectory && isWatching) {
+          await (window.electronAPI as any).stopWatchingDirectory(currentDirectory);
+          isWatching = false;
+        }
+      } catch (error) {
+        console.error('[FileGrid] Error stopping file watcher:', error);
+      }
+    };
+
+    // Stop watching immediately when directory changes (user is navigating)
+    stopWatching();
+    if (idleTimeout) clearTimeout(idleTimeout);
+
+    // Only start watching if user has been idle for 3 seconds
+    idleTimeout = setTimeout(() => {
+      startWatching();
+    }, 3000); // 3 second idle delay
+
+    // Cleanup when component unmounts or directory changes
+    return () => {
+      if (watchTimeout) clearTimeout(watchTimeout);
+      if (idleTimeout) clearTimeout(idleTimeout);
+      stopWatching();
+    };
+  }, [currentDirectory]);
 
   useEffect(() => {
     // Register selectAllFiles callback
@@ -1191,7 +1308,15 @@ export const FileGrid: React.FC = () => {
 
   // Helper function to check if a file is newly transferred
   const isFileNew = (file: FileItem) => {
-    return recentlyTransferredFiles.includes(file.path);
+    const isNew = recentlyTransferredFiles.includes(file.path);
+    if (isNew) {
+      return true;
+    } else {
+      // Check if the file path might be in a different format (normalize slashes)
+      const normalizedPath = file.path.replace(/\\/g, '/');
+      const isNewNormalized = recentlyTransferredFiles.some(path => path.replace(/\\/g, '/') === normalizedPath);
+      return isNewNormalized;
+    }
   };
 
   // Grid view

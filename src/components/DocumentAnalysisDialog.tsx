@@ -673,7 +673,7 @@ Please respond to the user's new question while maintaining the context of the o
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="4xl">
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent 
         maxW="900px" 
         maxH="85vh" 

@@ -212,7 +212,7 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="md" isCentered>
-      <ModalOverlay />
+              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent bg={bgColor} color={textColor} borderRadius="lg" boxShadow="lg" maxW="400px" border="1px solid" borderColor={borderColor}>
         <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
           GST Return Summary
