@@ -63,6 +63,13 @@ interface ElectronAPI {
   stopWatchingDirectory: (dirPath: string) => Promise<{ success: boolean; message: string; watchedDirectories: string[] }>;
   getWatchedDirectories: () => Promise<{ success: boolean; directories: string[]; isEnabled: boolean }>;
   enableFileWatching: (enabled: boolean) => Promise<{ success: boolean; message: string; isEnabled: boolean }>;
+  // Document creation methods
+  createBlankSpreadsheet: (filePath: string) => Promise<{ success: boolean; filePath: string }>;
+  createWordDocument: (filePath: string) => Promise<{ success: boolean; filePath: string }>;
+  copyWorkpaperTemplate: (templatePath: string, destPath: string) => Promise<{ success: boolean; destPath: string }>;
+  getWorkpaperTemplates: () => Promise<{ success: boolean; templates: Array<{ name: string; path: string }> }>;
+  // Settings window method
+  openSettingsWindow: () => Promise<{ success: boolean }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -233,6 +240,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   enableFileWatching: async (enabled: boolean) => {
     return await ipcRenderer.invoke('enable-file-watching', enabled);
+  },
+  // Document creation methods
+  createBlankSpreadsheet: async (filePath: string) => {
+    return await ipcRenderer.invoke('create-blank-spreadsheet', filePath);
+  },
+  createWordDocument: async (filePath: string) => {
+    return await ipcRenderer.invoke('create-word-document', filePath);
+  },
+  copyWorkpaperTemplate: async (templatePath: string, destPath: string) => {
+    return await ipcRenderer.invoke('copy-workpaper-template', templatePath, destPath);
+  },
+  getWorkpaperTemplates: async () => {
+    return await ipcRenderer.invoke('get-workpaper-templates');
+  },
+  // Settings window method
+  openSettingsWindow: async () => {
+    return await ipcRenderer.invoke('open-settings-window');
   }
 }); 
 

@@ -20,6 +20,11 @@ import {
   Button,
   FormControl,
   FormLabel,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  MenuDivider,
 } from '@chakra-ui/react'
 import {
   Home,
@@ -37,6 +42,9 @@ import {
   X,
   Square,
   Download,
+  Plus,
+  FileText,
+  FileSpreadsheet,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
@@ -63,6 +71,8 @@ export const FolderInfoBar: React.FC = () => {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isCreateSpreadsheetOpen, setIsCreateSpreadsheetOpen] = useState(false)
+  const [newSpreadsheetName, setNewSpreadsheetName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(
     (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
@@ -71,6 +81,15 @@ export const FolderInfoBar: React.FC = () => {
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
   const [clickCount, setClickCount] = useState(0)
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
+
+  // Helper function to format template name for display
+  const formatTemplateName = (templateName: string): string => {
+    // Remove file extension and format as "New [filename]"
+    const nameWithoutExtension = templateName.replace(/\.[^/.]+$/, '')
+    return `New ${nameWithoutExtension}`
+  }
 
   // Optimized color values for consistent light mode appearance
   const bgColor = useColorModeValue('#f1f5f9', 'gray.800')
@@ -338,6 +357,71 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
+  const handleCreateBlankSpreadsheet = async () => {
+    if (!newSpreadsheetName.trim()) return;
+    
+    try {
+      const fileName = `${newSpreadsheetName}.xlsx`;
+      const filePath = joinPath(currentDirectory, fileName);
+      
+      await (window.electronAPI as any).createBlankSpreadsheet(filePath);
+      
+      addLog(`Created blank spreadsheet: ${fileName}`);
+      setStatus(`Created ${fileName}`, 'success');
+      
+      setIsCreateSpreadsheetOpen(false);
+      setNewSpreadsheetName('');
+      
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+      setFolderItems(contents);
+    } catch (error) {
+      console.error('Error creating spreadsheet:', error);
+      addLog(`Failed to create spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to create spreadsheet', 'error');
+    }
+  };
+
+  const handleCreateWordDocument = async () => {
+    try {
+      const fileName = `New Document ${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.docx`;
+      const filePath = joinPath(currentDirectory, fileName);
+      
+      // Create a basic Word document (this would need to be implemented in the main process)
+      await (window.electronAPI as any).createWordDocument(filePath);
+      
+      addLog(`Created Word document: ${fileName}`);
+      setStatus(`Created ${fileName}`, 'success');
+      
+      // Refresh the current directory
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+      setFolderItems(contents);
+    } catch (error) {
+      console.error('Error creating Word document:', error);
+      addLog(`Failed to create Word document: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to create Word document', 'error');
+    }
+  };
+
+  const handleCreateFromTemplate = async (templatePath: string, templateName: string) => {
+    try {
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const fileName = `${templateName.replace('.xlsx', '')} ${timestamp}.xlsx`;
+      const destPath = joinPath(currentDirectory, fileName);
+      
+      await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
+      
+      addLog(`Created ${fileName} from template`);
+      setStatus(`Created ${fileName} from template`, 'success');
+      
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+      setFolderItems(contents);
+    } catch (error) {
+      console.error('Error creating from template:', error);
+      addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to create from template', 'error');
+    }
+  };
+
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
       // Ctrl+Shift+N: Open create folder dialog
@@ -354,6 +438,27 @@ export const FolderInfoBar: React.FC = () => {
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, [handleRefresh]);
+
+  // Load templates on component mount
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        setIsLoadingTemplates(true);
+        const result = await (window.electronAPI as any).getWorkpaperTemplates();
+        if (result.success) {
+          setTemplates(result.templates);
+        } else {
+          console.warn('Failed to load workpaper templates:', result.message);
+        }
+      } catch (error) {
+        console.error('Error loading workpaper templates:', error);
+      } finally {
+        setIsLoadingTemplates(false);
+      }
+    };
+    
+    loadTemplates();
+  }, []);
 
   return (
     <>
@@ -494,6 +599,50 @@ export const FolderInfoBar: React.FC = () => {
             color={iconColor}
             _hover={{ bg: hoverBgColor }}
           />
+          <Menu>
+            <MenuButton
+              as={IconButton}
+              icon={<Plus size={16} />}
+              aria-label="Create new document"
+              variant="ghost"
+              size="sm"
+              color={iconColor}
+              _hover={{ bg: hoverBgColor }}
+            />
+            <MenuList minW="200px" py={1}>
+              <MenuItem 
+                icon={<FileSpreadsheet size={14} />} 
+                onClick={() => setIsCreateSpreadsheetOpen(true)}
+                py={2}
+                px={3}
+              >
+                New spreadsheet
+              </MenuItem>
+              {isLoadingTemplates ? (
+                <MenuItem isDisabled py={2} px={3}>Loading...</MenuItem>
+              ) : templates.length > 0 ? (
+                templates.map((template) => (
+                  <MenuItem 
+                    key={template.path}
+                    icon={<FileSpreadsheet size={14} />} 
+                    onClick={() => handleCreateFromTemplate(template.path, template.name)}
+                    py={2}
+                    px={3}
+                  >
+                    {formatTemplateName(template.name)}
+                  </MenuItem>
+                ))
+              ) : null}
+              <MenuItem 
+                icon={<FileText size={14} />} 
+                onClick={handleCreateWordDocument}
+                py={2}
+                px={3}
+              >
+                New Word document
+              </MenuItem>
+            </MenuList>
+          </Menu>
           <IconButton
             icon={<FolderPlus size={16} />}
             aria-label="Create folder"
@@ -570,6 +719,44 @@ export const FolderInfoBar: React.FC = () => {
               Create & Enter
             </Button>
             <Button variant="ghost" onClick={() => setIsCreateFolderOpen(false)}>
+              Cancel
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal isOpen={isCreateSpreadsheetOpen} onClose={() => setIsCreateSpreadsheetOpen(false)} isCentered>
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <ModalContent>
+          <ModalHeader>Create New Spreadsheet</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <FormControl>
+              <FormLabel>File Name</FormLabel>
+              <Input
+                value={newSpreadsheetName}
+                onChange={(e) => setNewSpreadsheetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newSpreadsheetName.trim()) {
+                    e.preventDefault();
+                    handleCreateBlankSpreadsheet();
+                  }
+                }}
+                placeholder="Enter file name (without .xlsx)"
+                autoFocus
+              />
+            </FormControl>
+          </ModalBody>
+          <ModalFooter>
+            <Button 
+              colorScheme="blue" 
+              mr={3} 
+              onClick={handleCreateBlankSpreadsheet}
+              isDisabled={!newSpreadsheetName.trim()}
+            >
+              Create
+            </Button>
+            <Button variant="ghost" onClick={() => setIsCreateSpreadsheetOpen(false)}>
               Cancel
             </Button>
           </ModalFooter>

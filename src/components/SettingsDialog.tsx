@@ -24,10 +24,8 @@ import {
   TabPanel,
   VStack,
   HStack,
-  Divider,
   Icon,
   useColorModeValue,
-  Badge,
   Alert,
   AlertIcon,
   AlertTitle,
@@ -36,11 +34,10 @@ import {
   CardBody,
   CardHeader,
   Heading,
-  Flex,
   Spacer,
-  Tooltip,
   Kbd,
   Select,
+  Divider,
 } from '@chakra-ui/react';
 import { 
   Folder, 
@@ -51,12 +48,8 @@ import {
   Settings as SettingsIcon,
   Keyboard,
   Eye,
-  EyeOff,
   Save,
-  X,
-  Info,
-  Calculator as CalculatorIcon,
-  Plus
+  X
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -65,6 +58,8 @@ interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+
 
 interface Settings {
   rootPath: string;
@@ -92,6 +87,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [gstTemplatePath, setGstTemplatePath] = useState('');
   const [clientbasePath, setClientbasePath] = useState('');
   const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
+  const [workpaperTemplateFolderPath, setWorkpaperTemplateFolderPath] = useState<string>('');
   const [activationShortcut, setActivationShortcut] = useState('`');
   const [enableActivationShortcut, setEnableActivationShortcut] = useState(true);
   const [calculatorShortcut, setCalculatorShortcut] = useState('Alt+Q');
@@ -101,10 +97,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [closeTabShortcut, setCloseTabShortcut] = useState('Ctrl+W');
   const [enableFileWatching, setEnableFileWatching] = useState(true);
   const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
-  const [isRecordingShortcut, setIsRecordingShortcut] = useState(false);
-  
   const toast = useToast();
-  const { setRootDirectory, setCurrentDirectory, showOutputLog, setShowOutputLog } = useAppContext();
+  const { setRootDirectory, showOutputLog, setShowOutputLog } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -133,6 +127,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         setEnableCloseTabShortcut(loadedSettings.enableCloseTabShortcut !== false);
         setEnableFileWatching(loadedSettings.enableFileWatching !== false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
+        settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -288,21 +283,40 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
+  const handleWorkpaperTemplateFolderChange = async () => {
+    try {
+      const result = await (window.electronAPI as any).selectDirectory();
+      if (result) {
+        setWorkpaperTemplateFolderPath(result);
+        await settingsService.setWorkpaperTemplateFolderPath(result);
+      }
+    } catch (error) {
+      console.error('Error selecting workpaper template folder:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select workpaper template folder',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
   const handleShortcutChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setActivationShortcut(event.target.value);
   };
 
-  const handleShortcutRecording = () => {
-    setIsRecordingShortcut(true);
-    // In a real implementation, you would listen for key events here
-    // For now, we'll just simulate it
-    setTimeout(() => {
-      setIsRecordingShortcut(false);
-    }, 2000);
-  };
+
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="xl" isCentered motionPreset="slideInBottom">
+    <Modal 
+      isOpen={isOpen} 
+      onClose={onClose} 
+      size="xl" 
+      isCentered 
+      motionPreset="slideInBottom"
+      scrollBehavior="inside"
+    >
               <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent
         bg={bgColor}
@@ -311,11 +325,15 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         borderRadius="xl"
         boxShadow="xl"
         mx={4}
-        maxW="800px"
+        maxW="1000px"
         w="90vw"
-        maxH="90vh"
-        minH="650px"
+        h="80vh"
+        maxH="800px"
+        minH="600px"
         overflow="hidden"
+        display="flex"
+        flexDirection="column"
+        position="relative"
       >
         <ModalHeader
           borderBottom="1px solid"
@@ -333,201 +351,300 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         </ModalHeader>
         <ModalCloseButton />
         
-        <ModalBody py={6} overflow="hidden" flex="1" display="flex" flexDirection="column">
-          <Tabs variant="soft-rounded" colorScheme="blue" size="sm" h="full" display="flex" flexDirection="column">
-            <TabList mb={6} gap={2} flexShrink={0}>
-              <Tab fontSize="sm" fontWeight="medium">
-                <Icon as={Folder} boxSize={4} mr={2} />
-                Paths
+        <ModalBody p={0} flex="1" display="flex">
+          <Tabs variant="line" colorScheme="blue" orientation="vertical" h="full" display="flex" w="full">
+            <TabList 
+              borderRight="1px solid" 
+              borderColor={borderColor}
+              w="200px"
+              p={4}
+              gap={1}
+            >
+              <Tab 
+                justifyContent="flex-start" 
+                px={3} 
+                py={2.5}
+                borderRadius="md"
+                _selected={{ bg: 'blue.50', color: 'blue.600', _dark: { bg: 'blue.900', color: 'blue.200' } }}
+                _hover={{ bg: 'gray.50', _dark: { bg: 'gray.700' } }}
+              >
+                <Icon as={Folder} boxSize={4} mr={3} />
+                <Text>Paths</Text>
               </Tab>
-              <Tab fontSize="sm" fontWeight="medium">
-                <Icon as={Key} boxSize={4} mr={2} />
-                API & Data
+              <Tab 
+                justifyContent="flex-start" 
+                px={3} 
+                py={2.5}
+                borderRadius="md"
+                _selected={{ bg: 'blue.50', color: 'blue.600', _dark: { bg: 'blue.900', color: 'blue.200' } }}
+                _hover={{ bg: 'gray.50', _dark: { bg: 'gray.700' } }}
+              >
+                <Icon as={Key} boxSize={4} mr={3} />
+                <Text>API & Data</Text>
               </Tab>
-              <Tab fontSize="sm" fontWeight="medium">
-                <Icon as={Keyboard} boxSize={4} mr={2} />
-                Shortcuts
+              <Tab 
+                justifyContent="flex-start" 
+                px={3} 
+                py={2.5}
+                borderRadius="md"
+                _selected={{ bg: 'blue.50', color: 'blue.600', _dark: { bg: 'blue.900', color: 'blue.200' } }}
+                _hover={{ bg: 'gray.50', _dark: { bg: 'gray.700' } }}
+              >
+                <Icon as={Keyboard} boxSize={4} mr={3} />
+                <Text>Shortcuts</Text>
               </Tab>
-              <Tab fontSize="sm" fontWeight="medium">
-                <Icon as={Eye} boxSize={4} mr={2} />
-                Interface
+              <Tab 
+                justifyContent="flex-start" 
+                px={3} 
+                py={2.5}
+                borderRadius="md"
+                _selected={{ bg: 'blue.50', color: 'blue.600', _dark: { bg: 'blue.900', color: 'blue.200' } }}
+                _hover={{ bg: 'gray.50', _dark: { bg: 'gray.700' } }}
+              >
+                <Icon as={Eye} boxSize={4} mr={3} />
+                <Text>Interface</Text>
               </Tab>
             </TabList>
 
-            <TabPanels flex="1" overflow="auto">
+            <TabPanels flex="1" p={0} overflow="hidden">
               {/* Paths Tab */}
-              <TabPanel p={0} h="full">
-                <VStack spacing={6} align="stretch" minH="400px">
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
-                        <Icon as={Folder} boxSize={4} />
-                        Root Directory
-                      </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        Default directory for file operations
-                      </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
-            <InputGroup>
-              <Input
-                value={rootPath}
-                onChange={(e) => setRootPath(e.target.value)}
-                placeholder="Enter root path"
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-              />
-              <InputRightElement width="4.5rem">
-                <Button h="1.75rem" size="sm" onClick={handleBrowseFolder}>
-                            <Icon as={FolderOpen} boxSize={4} />
-                </Button>
-              </InputRightElement>
-            </InputGroup>
-                    </CardBody>
-                  </Card>
+              <TabPanel 
+                h="full" 
+                overflowY="auto" 
+                overflowX="hidden"
+                p={6}
+                sx={{
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: 'transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: 'gray.400',
+                    borderRadius: '4px',
+                  },
+                }}
+              >
+                <VStack align="stretch" spacing={0}>
+                  <Box pb={6}>
+                    <Heading size="sm" mb={4} color={textColor} display="flex" alignItems="center" gap={2}>
+                      <Icon as={Folder} boxSize={4} />
+                      Root Directory
+                    </Heading>
+                    <Text fontSize="xs" color={secondaryTextColor} mb={4}>
+                      Default directory for file operations
+                    </Text>
+                    <InputGroup>
+                      <Input
+                        value={rootPath}
+                        onChange={(e) => setRootPath(e.target.value)}
+                        placeholder="Enter root path"
+                        bg="white"
+                        _dark={{ bg: 'gray.600' }}
+                      />
+                      <InputRightElement width="4.5rem">
+                        <Button h="1.75rem" size="sm" onClick={handleBrowseFolder}>
+                          <Icon as={FolderOpen} boxSize={4} />
+                        </Button>
+                      </InputRightElement>
+                    </InputGroup>
+                  </Box>
+                  
+                  <Divider />
+                  
+                  <Box py={6}>
+                    <Heading size="sm" mb={4} color={textColor} display="flex" alignItems="center" gap={2}>
+                      <Icon as={FileText} boxSize={4} />
+                      Template Files
+                    </Heading>
+                    <Text fontSize="xs" color={secondaryTextColor} mb={4}>
+                      GST template and template folder paths
+                    </Text>
+                    <VStack spacing={4}>
+                      <FormControl>
+                        <FormLabel fontSize="sm" color={textColor}>GST Template Path</FormLabel>
+                        <InputGroup>
+                          <Input
+                            value={gstTemplatePath}
+                            onChange={(e) => setGstTemplatePath(e.target.value)}
+                            placeholder="Enter GST template file path"
+                            bg="white"
+                            _dark={{ bg: 'gray.600' }}
+                          />
+                          <InputRightElement width="4.5rem">
+                            <Button h="1.75rem" size="sm" onClick={handleBrowseGstTemplate}>
+                              <Icon as={FolderOpen} boxSize={4} />
+                            </Button>
+                          </InputRightElement>
+                        </InputGroup>
+                      </FormControl>
+                      
+                      <FormControl>
+                        <FormLabel fontSize="sm" color={textColor}>AI Email Template Folder</FormLabel>
+                        <Text fontSize="xs" color={secondaryTextColor} mb={2}>
+                          Folder containing YAML email templates for AI Templater
+                        </Text>
+                        <InputGroup>
+                          <Input
+                            value={templateFolderPath} 
+                            isReadOnly 
+                            placeholder="Select AI email template folder..." 
+                            bg="white"
+                            _dark={{ bg: 'gray.600' }}
+                          />
+                          <InputRightElement width="4.5rem">
+                            <Button h="1.75rem" size="sm" onClick={handleTemplateFolderChange}>
+                              <Icon as={FolderOpen} boxSize={4} />
+                            </Button>
+                          </InputRightElement>
+                        </InputGroup>
+                      </FormControl>
 
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
-                        <Icon as={FileText} boxSize={4} />
-                        Template Files
-                      </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        GST template and template folder paths
-                      </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
-                      <VStack spacing={4}>
-                        <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>GST Template Path</FormLabel>
-            <InputGroup>
-              <Input
-                value={gstTemplatePath}
-                onChange={(e) => setGstTemplatePath(e.target.value)}
-                placeholder="Enter GST template file path"
-                              bg="white"
-                              _dark={{ bg: 'gray.600' }}
-              />
-              <InputRightElement width="4.5rem">
-                <Button h="1.75rem" size="sm" onClick={handleBrowseGstTemplate}>
-                                <Icon as={FolderOpen} boxSize={4} />
-                </Button>
-              </InputRightElement>
-            </InputGroup>
-          </FormControl>
-                        
-                        <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>Template Folder Path</FormLabel>
-            <InputGroup>
-              <Input
-                              value={templateFolderPath} 
-                              isReadOnly 
-                              placeholder="Select template folder..." 
-                              bg="white"
-                              _dark={{ bg: 'gray.600' }}
-              />
-              <InputRightElement width="4.5rem">
-                              <Button h="1.75rem" size="sm" onClick={handleTemplateFolderChange}>
-                                <Icon as={FolderOpen} boxSize={4} />
-                </Button>
-              </InputRightElement>
-            </InputGroup>
-          </FormControl>
-                      </VStack>
-                    </CardBody>
-                  </Card>
+                      <FormControl>
+                        <FormLabel fontSize="sm" color={textColor}>Workpaper Template Folder</FormLabel>
+                        <Text fontSize="xs" color={secondaryTextColor} mb={2}>
+                          Folder containing Excel templates for workpaper creation
+                        </Text>
+                        <InputGroup>
+                          <Input
+                            value={workpaperTemplateFolderPath} 
+                            isReadOnly 
+                            placeholder="Select workpaper template folder..." 
+                            bg="white"
+                            _dark={{ bg: 'gray.600' }}
+                          />
+                          <InputRightElement width="4.5rem">
+                            <Button h="1.75rem" size="sm" onClick={handleWorkpaperTemplateFolderChange}>
+                              <Icon as={FolderOpen} boxSize={4} />
+                            </Button>
+                          </InputRightElement>
+                        </InputGroup>
+                      </FormControl>
+                    </VStack>
+                  </Box>
                 </VStack>
               </TabPanel>
 
               {/* API & Data Tab */}
-              <TabPanel p={0} h="full">
-                <VStack spacing={6} align="stretch" minH="400px">
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
-                        <Icon as={Key} boxSize={4} />
-                        API Configuration
-                      </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        API keys for AI features
-                      </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
-                      <VStack spacing={4} align="stretch">
-                        <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>OpenAI API Key</FormLabel>
-                          <Input
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            type="password"
-                            placeholder="Enter your OpenAI API key"
-                            bg="white"
-                            _dark={{ bg: 'gray.600' }}
-                          />
-                        </FormControl>
-                        
-                        <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>Claude API Key</FormLabel>
-                          <Input
-                            value={claudeApiKey}
-                            onChange={(e) => setClaudeApiKey(e.target.value)}
-                            type="password"
-                            placeholder="Enter your Claude (Anthropic) API key"
-                            bg="white"
-                            _dark={{ bg: 'gray.600' }}
-                          />
-                        </FormControl>
-                      </VStack>
-                    </CardBody>
-                  </Card>
-
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
-                        <Icon as={Database} boxSize={4} />
-                        Data Sources
-                      </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                        Client database and reference files
-                      </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
+              <TabPanel 
+                h="full" 
+                overflowY="auto" 
+                overflowX="hidden"
+                p={6}
+                sx={{
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: 'transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: 'gray.400',
+                    borderRadius: '4px',
+                  },
+                }}
+              >
+                <VStack align="stretch" spacing={0}>
+                  <Box pb={6}>
+                    <Heading size="sm" mb={4} color={textColor} display="flex" alignItems="center" gap={2}>
+                      <Icon as={Key} boxSize={4} />
+                      API Configuration
+                    </Heading>
+                    <Text fontSize="xs" color={secondaryTextColor} mb={4}>
+                      API keys for AI features
+                    </Text>
+                    <VStack spacing={4} align="stretch">
                       <FormControl>
-                        <FormLabel fontSize="sm" color={textColor}>Clientbase CSV Path</FormLabel>
-            <InputGroup>
-                          <Input
-                            value={clientbasePath}
-                            onChange={(e) => setClientbasePath(e.target.value)}
-                            placeholder="Enter clientbase CSV file path"
-                            bg="white"
-                            _dark={{ bg: 'gray.600' }}
-                          />
-              <InputRightElement width="4.5rem">
-                            <Button h="1.75rem" size="sm" onClick={handleBrowseClientbase}>
-                              <Icon as={FolderOpen} boxSize={4} />
-                </Button>
-              </InputRightElement>
-            </InputGroup>
-          </FormControl>
-                    </CardBody>
-                  </Card>
+                        <FormLabel fontSize="sm" color={textColor}>OpenAI API Key</FormLabel>
+                        <Input
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          type="password"
+                          placeholder="Enter your OpenAI API key"
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                        />
+                      </FormControl>
+                      
+                      <FormControl>
+                        <FormLabel fontSize="sm" color={textColor}>Claude API Key</FormLabel>
+                        <Input
+                          value={claudeApiKey}
+                          onChange={(e) => setClaudeApiKey(e.target.value)}
+                          type="password"
+                          placeholder="Enter your Claude (Anthropic) API key"
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                        />
+                      </FormControl>
+                    </VStack>
+                  </Box>
+                  
+                  <Divider />
+                  
+                  <Box py={6}>
+                    <Heading size="sm" mb={4} color={textColor} display="flex" alignItems="center" gap={2}>
+                      <Icon as={Database} boxSize={4} />
+                      Data Sources
+                    </Heading>
+                    <Text fontSize="xs" color={secondaryTextColor} mb={4}>
+                      Client database and reference files
+                    </Text>
+                    <FormControl>
+                      <FormLabel fontSize="sm" color={textColor}>Clientbase CSV Path</FormLabel>
+                      <InputGroup>
+                        <Input
+                          value={clientbasePath}
+                          onChange={(e) => setClientbasePath(e.target.value)}
+                          placeholder="Enter clientbase CSV file path"
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                        />
+                        <InputRightElement width="4.5rem">
+                          <Button h="1.75rem" size="sm" onClick={handleBrowseClientbase}>
+                            <Icon as={FolderOpen} boxSize={4} />
+                          </Button>
+                        </InputRightElement>
+                      </InputGroup>
+                    </FormControl>
+                  </Box>
                 </VStack>
               </TabPanel>
 
               {/* Shortcuts Tab */}
-              <TabPanel p={0} h="full">
-                <VStack spacing={4} align="stretch" minH="400px">
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
+              <TabPanel 
+                h="full" 
+                overflowY="auto" 
+                overflowX="hidden"
+                p={6}
+                sx={{
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: 'transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: 'gray.400',
+                    borderRadius: '4px',
+                  },
+                }}
+              >
+                <VStack spacing={4} align="stretch">
+                  <Box pb={6}>
+                    <Heading size="sm" mb={4} color={textColor} display="flex" alignItems="center" gap={2}>
                         <Icon as={Keyboard} boxSize={4} />
                         Keyboard Shortcuts
                       </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
+                    <Text fontSize="xs" color={secondaryTextColor} mb={4}>
                         Configure keyboard shortcuts for quick access
                       </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
+                  </Box>
+                  
+                  <Divider />
+                  
+                  <Box py={6}>
                       <VStack spacing={4} align="stretch">
                         
                         {/* Activation Shortcut */}
@@ -672,8 +789,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                         </Box>
 
                       </VStack>
-                    </CardBody>
-                  </Card>
+                  </Box>
 
                   <Alert status="info" borderRadius="lg" size="sm">
                     <AlertIcon />
@@ -688,19 +804,39 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               </TabPanel>
 
               {/* Interface Tab */}
-              <TabPanel p={0} h="full">
-                <VStack spacing={6} align="stretch" minH="400px">
-                  <Card bg={cardBg} border="1px solid" borderColor={borderColor}>
-                    <CardHeader pb={3}>
-                      <Heading size="sm" color={textColor} display="flex" alignItems="center" gap={2}>
+              <TabPanel 
+                h="full" 
+                overflowY="auto" 
+                overflowX="hidden"
+                p={6}
+                sx={{
+                  '&::-webkit-scrollbar': {
+                    width: '8px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    background: 'transparent',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    background: 'gray.400',
+                    borderRadius: '4px',
+                  },
+                }}
+              >
+                <VStack spacing={6} align="stretch">
+                  <Box pb={6}>
+                    <Heading size="sm" mb={4} color={textColor} display="flex" alignItems="center" gap={2}>
                         <Icon as={Eye} boxSize={4} />
                         Display Options
                       </Heading>
-                      <Text fontSize="xs" color={secondaryTextColor} mt={1}>
+                    <Text fontSize="xs" color={secondaryTextColor} mb={4}>
                         Control interface visibility and behavior
                       </Text>
-                    </CardHeader>
-                    <CardBody pt={0}>
+                  </Box>
+                  
+                  <Divider />
+                  
+                  <Box py={6}>
+                    <VStack spacing={4} align="stretch">
                                               <FormControl>
                           <FormLabel fontSize="sm" color={textColor}>Show Output Log</FormLabel>
                           <HStack justify="space-between">
@@ -738,8 +874,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               />
                         </HStack>
                       </FormControl>
-                    </CardBody>
-                  </Card>
+                    </VStack>
+                  </Box>
                 </VStack>
               </TabPanel>
             </TabPanels>

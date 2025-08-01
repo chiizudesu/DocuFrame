@@ -3,7 +3,7 @@ import { Box, useColorMode, ChakraProvider } from '@chakra-ui/react';
 import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
-import { SettingsDialog } from './components/SettingsDialog';
+import { SettingsWindow } from './components/SettingsWindow';
 import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
@@ -28,6 +28,9 @@ const AppContent: React.FC = () => {
   
   // Calculator state
   const [isCalculatorOpen, setIsCalculatorOpen] = React.useState(false);
+
+  // Check if this is the settings window
+  const isSettingsWindow = window.location.hash === '#settings';
 
   // Handle initial path for new windows
   useEffect(() => {
@@ -176,11 +179,21 @@ const AppContent: React.FC = () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen]);
+  
+  // If this is the settings window, render only the settings
+  if (isSettingsWindow) {
+    return (
+      <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
+        <SettingsWindow isOpen={true} onClose={() => window.close()} />
+      </Box>
+    );
+  }
+  
   return <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
       <Layout />
       <QuickNavigateOverlay />
       <ClientSearchOverlay />
-      <SettingsDialog isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsWindow isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
     </Box>;
 };

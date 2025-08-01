@@ -3,6 +3,8 @@ export interface Config {
   apiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
+  templateFolderPath?: string;
+  workpaperTemplateFolderPath?: string;
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;

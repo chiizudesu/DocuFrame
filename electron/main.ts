@@ -212,9 +212,14 @@ async function saveConfig(config: Config) {
   }
 }
 
+// Track settings window state
+let settingsWindow: BrowserWindow | null = null;
+let isSettingsWindowOpen = false;
+let mainWindow: BrowserWindow | null = null;
+
 const createWindow = () => {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     frame: false,
@@ -232,6 +237,9 @@ const createWindow = () => {
 
   // Initialize autoUpdater service with the main window
   autoUpdaterService.setMainWindow(mainWindow);
+
+  // Setup modal behavior for settings window
+  setupModalBehavior();
 
   // Enable drag and drop for files
   mainWindow.webContents.on('will-navigate', (event, url) => {
@@ -1769,6 +1777,269 @@ ipcMain.handle('enable-file-watching', async (_, enabled: boolean) => {
     };
   } catch (error) {
     console.error('[FileWatcher] Error toggling file watching:', error);
+    throw error;
+  }
+});
+
+// Document creation IPC handlers
+ipcMain.handle('create-blank-spreadsheet', async (_, filePath: string) => {
+  try {
+    // Create a basic Excel file structure
+    const workbook = {
+      sheets: [{
+        name: 'Sheet1',
+        data: []
+      }]
+    };
+    
+    // For now, create an empty file - in a real implementation,
+    // you would use a library like ExcelJS to create proper Excel files
+    fs.writeFileSync(filePath, '');
+    
+    console.log(`[Main] Created blank spreadsheet: ${filePath}`);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('[Main] Error creating blank spreadsheet:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('create-word-document', async (_, filePath: string) => {
+  try {
+    // Create a basic Word document structure
+    // For now, create an empty file - in a real implementation,
+    // you would use a library like docx to create proper Word documents
+    fs.writeFileSync(filePath, '');
+    
+    console.log(`[Main] Created Word document: ${filePath}`);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('[Main] Error creating Word document:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('create-from-template', async (_, templateName: string, filePath: string) => {
+  try {
+    // Get the workpaper template folder path from settings
+    const config = await loadConfig();
+    const workpaperTemplateFolderPath = config.workpaperTemplateFolderPath || path.join(app.getPath('documents'), 'templates');
+    
+    // Ensure template folder exists
+    if (!fs.existsSync(workpaperTemplateFolderPath)) {
+      fs.mkdirSync(workpaperTemplateFolderPath, { recursive: true });
+    }
+    
+    const templatePath = path.join(workpaperTemplateFolderPath, `${templateName}.xlsx`);
+    
+    if (fs.existsSync(templatePath)) {
+      // Copy template to new location
+      fs.copyFileSync(templatePath, filePath);
+      console.log(`[Main] Created file from template: ${filePath}`);
+      return { success: true, filePath };
+    } else {
+      throw new Error(`Template not found: ${templateName}`);
+    }
+  } catch (error) {
+    console.error('[Main] Error creating from template:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-templates', async () => {
+  try {
+    const config = await loadConfig();
+    const workpaperTemplateFolderPath = config.workpaperTemplateFolderPath || path.join(app.getPath('documents'), 'templates');
+    
+    // Ensure template folder exists
+    if (!fs.existsSync(workpaperTemplateFolderPath)) {
+      fs.mkdirSync(workpaperTemplateFolderPath, { recursive: true });
+    }
+    
+    const files = fs.readdirSync(workpaperTemplateFolderPath);
+    const templates = files
+      .filter(file => file.endsWith('.xlsx'))
+      .map(file => ({
+        name: path.basename(file, '.xlsx'),
+        path: path.join(workpaperTemplateFolderPath, file)
+      }));
+    
+    return { success: true, templates };
+  } catch (error) {
+    console.error('[Main] Error getting templates:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('get-workpaper-templates', async () => {
+  try {
+    const config = await loadConfig();
+    const workpaperTemplateFolderPath = config.workpaperTemplateFolderPath || path.join(app.getPath('documents'), 'templates');
+    
+    // Ensure template folder exists
+    if (!fs.existsSync(workpaperTemplateFolderPath)) {
+      fs.mkdirSync(workpaperTemplateFolderPath, { recursive: true });
+    }
+    
+    const files = fs.readdirSync(workpaperTemplateFolderPath);
+    const templates = files
+      .filter(file => file.endsWith('.xlsx'))
+      .map(file => ({
+        name: path.basename(file),
+        path: path.join(workpaperTemplateFolderPath, file)
+      }));
+    
+    return { success: true, templates };
+  } catch (error) {
+    console.error('[Main] Error getting workpaper templates:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('copy-workpaper-template', async (_, templatePath: string, destPath: string) => {
+  try {
+    // Copy template to new location
+    fs.copyFileSync(templatePath, destPath);
+    console.log(`[Main] Copied workpaper template: ${templatePath} -> ${destPath}`);
+    return { success: true, destPath };
+  } catch (error) {
+    console.error('[Main] Error copying workpaper template:', error);
+    throw error;
+  }
+});
+
+// Settings window state is managed globally above
+
+const createSettingsWindow = () => {
+  try {
+    // Close existing settings window if open
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.close();
+    }
+
+    settingsWindow = new BrowserWindow({
+      width: 700,
+      height: 560,
+      minWidth: 560,
+      minHeight: 420,
+      title: 'Settings - DocuFrame',
+      icon: path.join(__dirname, '../assets/32.ico'),
+      show: false,
+      frame: false, // Use custom titlebar like main window
+      titleBarStyle: 'hidden',
+      modal: true, // Make it a true modal window
+      parent: mainWindow!, // Make it a child of the main window
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+      },
+    });
+
+    // Set modal state
+    isSettingsWindowOpen = true;
+
+    // Enable drag and drop for files
+    settingsWindow.webContents.on('will-navigate', (event, url) => {
+      if (url.startsWith('file://')) {
+        event.preventDefault();
+      }
+    });
+
+    // Intercept window.open and open external URLs in the default browser
+    settingsWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith('file://')) {
+        return { action: 'allow' };
+      }
+      shell.openExternal(url);
+      return { action: 'deny' };
+    });
+
+    // Handle settings window close
+    settingsWindow.on('closed', () => {
+      isSettingsWindowOpen = false;
+      settingsWindow = null;
+    });
+
+    // Load the settings window
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      settingsWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}#settings`);
+    } else {
+      settingsWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'settings' });
+    }
+
+    // Show window when ready
+    settingsWindow.once('ready-to-show', () => {
+      settingsWindow?.show();
+      settingsWindow?.focus();
+    });
+
+    console.log('[Main] Settings window created successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error creating settings window:', error);
+    throw error;
+  }
+};
+
+// Add focus prevention logic to main window
+const setupModalBehavior = () => {
+  if (!mainWindow) return;
+
+  // Handle main window focus attempts when settings is open
+  mainWindow.on('focus', () => {
+    if (isSettingsWindowOpen && settingsWindow && !settingsWindow.isDestroyed()) {
+      // Prevent focus on main window
+      settingsWindow.focus();
+      
+      // Visual feedback - flash the settings window
+      settingsWindow.flashFrame(true);
+      
+      // Stop flashing after 500ms
+      setTimeout(() => {
+        if (settingsWindow && !settingsWindow.isDestroyed()) {
+          settingsWindow.flashFrame(false);
+        }
+      }, 500);
+      
+      // Audio feedback - play system beep
+      shell.beep();
+      
+      console.log('[Main] Prevented focus on main window, redirected to settings');
+    }
+  });
+
+  // Handle main window focus attempts when settings is open
+  mainWindow.on('focus', () => {
+    if (isSettingsWindowOpen && settingsWindow && !settingsWindow.isDestroyed()) {
+      // Prevent focus on main window
+      settingsWindow.focus();
+      
+      // Visual feedback - flash the settings window
+      settingsWindow.flashFrame(true);
+      
+      // Stop flashing after 500ms
+      setTimeout(() => {
+        if (settingsWindow && !settingsWindow.isDestroyed()) {
+          settingsWindow.flashFrame(false);
+        }
+      }, 500);
+      
+      // Audio feedback - play system beep
+      shell.beep();
+      
+      console.log('[Main] Prevented focus on main window, redirected to settings');
+    }
+  });
+};
+
+// Settings window IPC handler
+ipcMain.handle('open-settings-window', async () => {
+  try {
+    return await createSettingsWindow();
+  } catch (error) {
+    console.error('[Main] Error opening settings window:', error);
     throw error;
   }
 });

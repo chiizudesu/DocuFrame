@@ -6,6 +6,7 @@ export interface AppSettings {
   gstTemplatePath?: string;
   clientbasePath?: string;
   templateFolderPath?: string;
+  workpaperTemplateFolderPath?: string;
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
@@ -79,6 +80,16 @@ class SettingsService {
   async setTemplateFolderPath(path: string): Promise<void> {
     const settings = await this.getSettings();
     await this.setSettings({ ...settings, templateFolderPath: path });
+  }
+
+  async getWorkpaperTemplateFolderPath(): Promise<string | undefined> {
+    const settings = await this.getSettings();
+    return settings.workpaperTemplateFolderPath;
+  }
+
+  async setWorkpaperTemplateFolderPath(path: string): Promise<void> {
+    const settings = await this.getSettings();
+    await this.setSettings({ ...settings, workpaperTemplateFolderPath: path });
   }
 }
 
