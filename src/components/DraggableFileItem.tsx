@@ -20,6 +20,7 @@ interface DraggableFileItemProps {
   onFileMouseUp?: (file: FileItem, index: number, event: React.MouseEvent) => void;
   onFileDragStart?: (file: FileItem, index: number, event: React.DragEvent) => void;
   onNativeIconLoaded?: (filePath: string, iconData: string) => void; // Callback to share native icon with parent
+  'data-file-index'?: number; // Add data attribute for keyboard navigation
 }
 
 export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
@@ -39,6 +40,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   onFileMouseUp,
   onFileDragStart,
   onNativeIconLoaded,
+  'data-file-index': dataFileIndex,
 }) => {
   const { addLog, currentDirectory, setStatus, setFolderItems } = useAppContext();
   const [isDragging, setIsDragging] = useState(false);
@@ -48,9 +50,10 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   const boxRef = useRef<HTMLDivElement>(null);
   const trRef = useRef<HTMLTableRowElement>(null);
   
-  const itemBgHover = useColorModeValue('#f0f9ff', 'blue.700'); // Lighter than selection
+  const itemBgHover = useColorModeValue('#f8fafc', 'gray.700'); // Much lighter hover
   const selectedBg = useColorModeValue('#dbeafe', 'blue.800');
   const dragOverBg = useColorModeValue('#3b82f6', 'blue.600');
+  const hoverBorderColor = useColorModeValue('gray.300', 'gray.600');
 
   // Load system icon for the file
   useEffect(() => {
@@ -394,11 +397,24 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       return {
         bg: isHovering ? itemBgHover : (isSelected ? selectedBg : undefined),
         borderLeft: '4px solid transparent',
-        transition: 'all 0.2s ease'
+        transition: 'all 0.2s ease',
+        _focus: {
+          outline: '2px solid',
+          outlineColor: 'blue.400',
+          outlineOffset: '2px'
+        }
       };
     }
     return {
-      bg: isHovering ? itemBgHover : (isSelected ? selectedBg : itemBgHover)
+      bg: isHovering ? itemBgHover : (isSelected ? selectedBg : undefined),
+      boxShadow: isHovering ? '0 2px 8px rgba(0, 0, 0, 0.1)' : undefined,
+      borderColor: isHovering ? hoverBorderColor : getBorderColor(),
+      transform: isHovering ? 'translateY(-1px)' : undefined,
+      _focus: {
+        outline: '2px solid',
+        outlineColor: 'blue.400',
+        outlineOffset: '2px'
+      }
     };
   };
 
@@ -434,6 +450,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
         bg={getBackgroundColor()}
         _hover={getHoverStyles()}
         style={{ userSelect: 'none', borderLeft: '4px solid transparent', opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
+        data-file-index={dataFileIndex}
       >
         {/* Removed system icon rendering for files to avoid overlap */}
         {children}
@@ -453,6 +470,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       position="relative"
       _hover={getHoverStyles()}
       style={{ opacity: isCut ? 0.5 : 1, fontStyle: isCut ? 'italic' : 'normal' }}
+      data-file-index={dataFileIndex}
     >
       {/* Removed system icon rendering for files to avoid overlap */}
       {children}

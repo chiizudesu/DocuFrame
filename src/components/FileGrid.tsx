@@ -165,7 +165,8 @@ export const FileGrid: React.FC = () => {
     clearRecentlyTransferredFiles, 
     recentlyTransferredFiles, 
     removeRecentlyTransferredFile,
-    addTabToCurrentWindow
+    addTabToCurrentWindow,
+    isQuickNavigating
   } = useAppContext()
   const toast = useToast()
   
@@ -203,6 +204,10 @@ export const FileGrid: React.FC = () => {
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
   const [isExtractedTextOpen, setExtractedTextOpen] = useState(false)
   const [extractedTextData, setExtractedTextData] = useState({ fileName: '', text: '' })
+
+  // Jump mode state
+  const [jumpBuffer, setJumpBuffer] = useState('');
+  const [jumpTimeout, setJumpTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
@@ -1233,9 +1238,11 @@ export const FileGrid: React.FC = () => {
   }, [selectedFiles, sortedFiles, clipboard, isRenaming]);
 
   // Add arrow key navigation for file selection
-  // TEMPORARILY DISABLED FOR TESTING
-  /*
   useEffect(() => {
+    let lastArrowTime = 0;
+    const arrowThrottle = 100; // 0.1 seconds throttle
+    let pendingSelection: number | null = null;
+
     const handleArrowNavigation = (e: KeyboardEvent) => {
       // Don't interfere if renaming or in input fields
       const target = e.target as HTMLElement;
@@ -1243,28 +1250,145 @@ export const FileGrid: React.FC = () => {
       if (isRenaming || isInputFocused) return;
       if (!sortedFiles.length) return;
 
-      let currentIndex = lastSelectedIndex;
-      if (selectedFiles.length === 0) currentIndex = -1;
+      // Only handle arrow keys
+      if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
 
+      // Prevent default scrolling behavior
+      e.preventDefault();
+      e.stopPropagation();
+
+      let currentIndex = lastSelectedIndex;
+      if (selectedFiles.length === 0 || currentIndex === null || currentIndex < 0) {
+        currentIndex = -1;
+      }
+
+      const columns = viewMode === 'grid' ? Math.floor(window.innerWidth / 240) : 1; // Approximate grid columns
+
+      // Calculate the next index immediately for visual feedback
+      let nextIndex: number;
       if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        let nextIndex = currentIndex === null || currentIndex === undefined || currentIndex < 0 ? 0 : Math.min(currentIndex + 1, sortedFiles.length - 1);
-        setSelectedFiles([sortedFiles[nextIndex].name]);
-        setSelectedFile(sortedFiles[nextIndex].name);
-        setLastSelectedIndex(nextIndex);
+        if (viewMode === 'list') {
+          nextIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, sortedFiles.length - 1);
+        } else {
+          // Grid view: move down by number of columns
+          nextIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + columns, sortedFiles.length - 1);
+        }
       } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        let nextIndex = currentIndex === null || currentIndex === undefined || currentIndex < 0 ? sortedFiles.length - 1 : Math.max(currentIndex - 1, 0);
-        setSelectedFiles([sortedFiles[nextIndex].name]);
-        setSelectedFile(sortedFiles[nextIndex].name);
-        setLastSelectedIndex(nextIndex);
+        if (viewMode === 'list') {
+          nextIndex = currentIndex < 0 ? sortedFiles.length - 1 : Math.max(currentIndex - 1, 0);
+        } else {
+          // Grid view: move up by number of columns
+          nextIndex = currentIndex < 0 ? sortedFiles.length - 1 : Math.max(currentIndex - columns, 0);
+        }
+      } else if (e.key === 'ArrowRight' && viewMode === 'grid') {
+        nextIndex = currentIndex < 0 ? 0 : Math.min(currentIndex + 1, sortedFiles.length - 1);
+      } else if (e.key === 'ArrowLeft' && viewMode === 'grid') {
+        nextIndex = currentIndex < 0 ? sortedFiles.length - 1 : Math.max(currentIndex - 1, 0);
+      } else {
+        return;
+      }
+
+      // Always provide immediate visual feedback
+      const element = document.querySelector(`[data-file-index="${nextIndex}"]`);
+      if (element) {
+        element.scrollIntoView({ 
+          behavior: 'instant', 
+          block: 'nearest',
+          inline: 'nearest'
+        });
+      }
+
+      // Throttle the actual selection change
+      const now = Date.now();
+      if (now - lastArrowTime >= arrowThrottle) {
+        // Update selection immediately
+        selectFileAtIndex(nextIndex);
+        lastArrowTime = now;
+        pendingSelection = null;
+      } else {
+        // Store pending selection for later
+        pendingSelection = nextIndex;
+        // Schedule the selection update
+        setTimeout(() => {
+          if (pendingSelection === nextIndex) {
+            selectFileAtIndex(nextIndex);
+            lastArrowTime = Date.now();
+            pendingSelection = null;
+          }
+        }, arrowThrottle - (now - lastArrowTime));
+      }
+    };
+
+    // Helper function to select file and ensure it's visible
+    const selectFileAtIndex = (index: number) => {
+      if (index >= 0 && index < sortedFiles.length) {
+        const file = sortedFiles[index];
+        setSelectedFiles([file.name]);
+        setSelectedFile(file.name);
+        setLastSelectedIndex(index);
       }
     };
 
     window.addEventListener('keydown', handleArrowNavigation);
     return () => window.removeEventListener('keydown', handleArrowNavigation);
-  }, [selectedFiles, sortedFiles, lastSelectedIndex, isRenaming]);
-  */
+  }, [selectedFiles, sortedFiles, lastSelectedIndex, isRenaming, viewMode]);
+
+  // Jump mode navigation
+  useEffect(() => {
+    const handleJumpMode = (e: KeyboardEvent) => {
+      // Don't interfere if renaming, in input fields, or if QuickNavigate is open
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      if (isRenaming || isInputFocused || isQuickNavigating) return;
+      
+      // Only handle single letter/number keys
+      if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
+      
+      // Clear existing timeout
+      if (jumpTimeout) clearTimeout(jumpTimeout);
+      
+      // Add to jump buffer
+      const newBuffer = jumpBuffer + e.key.toLowerCase();
+      setJumpBuffer(newBuffer);
+      
+      // Find first matching item
+      const matchIndex = sortedFiles.findIndex(item =>
+        item.name.toLowerCase().startsWith(newBuffer)
+      );
+      
+      if (matchIndex !== -1) {
+        // Select the matching file
+        const matchingFile = sortedFiles[matchIndex];
+        setSelectedFiles([matchingFile.name]);
+        setSelectedFile(matchingFile.name);
+        setLastSelectedIndex(matchIndex);
+        
+        // Instantly scroll to the item without delay
+        const element = document.querySelector(`[data-file-index="${matchIndex}"]`);
+        if (element) {
+          element.scrollIntoView({ 
+            behavior: 'instant', 
+            block: 'nearest',
+            inline: 'nearest'
+          });
+        }
+        
+        addLog(`Jumped to: ${matchingFile.name}`);
+      }
+      
+      // Reset buffer after 1 second
+      const timeout = setTimeout(() => {
+        setJumpBuffer('');
+      }, 1000);
+      setJumpTimeout(timeout);
+    };
+    
+    window.addEventListener('keydown', handleJumpMode);
+    return () => {
+      window.removeEventListener('keydown', handleJumpMode);
+      if (jumpTimeout) clearTimeout(jumpTimeout);
+    };
+  }, [jumpBuffer, jumpTimeout, sortedFiles, isRenaming, isQuickNavigating, viewMode]);
 
   // Enhanced paste handler with conflict resolution
   const handlePaste = async () => {
@@ -1422,6 +1546,7 @@ export const FileGrid: React.FC = () => {
                 onFileMouseUp={handleFileItemMouseUp}
                 onFileDragStart={handleFileItemDragStart}
                 onNativeIconLoaded={handleNativeIconLoaded}
+                data-file-index={index}
             >
               <Flex
             p={4}
@@ -1665,6 +1790,7 @@ export const FileGrid: React.FC = () => {
                 onFileDragStart={handleFileItemDragStart}
                 onNativeIconLoaded={handleNativeIconLoaded}
                 as="tr"
+                data-file-index={index}
               >
                 <Td borderColor={tableBorderColor} width="50%" position="relative">
                   <Flex align="center">

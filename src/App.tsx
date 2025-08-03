@@ -140,12 +140,6 @@ const AppContent: React.FC = () => {
         return;
       }
       
-      // If a letter key is pressed and no input is focused (but not when calculator is open)
-      if (!isInputFocused && !isQuickNavigating && !isCalculatorOpen && e.key.length === 1 && e.key.match(/[a-z0-9]/i) && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        setIsQuickNavigating(true);
-        setInitialCommandMode(false);
-      }
-      
       // Escape key to cancel any ongoing operations (drag, etc.)
       if (e.key === 'Escape') {
         // Dispatch a custom event that components can listen to for resetting their state

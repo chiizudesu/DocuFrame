@@ -1,8 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Box, Input, Text, Flex, Icon, useColorModeValue, List, ListItem, Divider, IconButton } from '@chakra-ui/react';
-import { File, FolderOpen, Search, ChevronRight } from 'lucide-react';
+import { Box, Input, Text, Flex, Icon, useColorModeValue, Divider, IconButton } from '@chakra-ui/react';
+import { ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { useFileSearch } from '../hooks/useFileSearch';
 import type { FileItem, TransferOptions } from '../types';
 import { joinPath, isAbsolutePath } from '../utils/path'
 
@@ -25,23 +24,8 @@ export const QuickNavigateOverlay: React.FC = () => {
     setFolderItems
   } = useAppContext();
 
-  // File search hook
-  const {
-    results: searchResultsList,
-    isLoading: isSearching,
-    error: searchError,
-    search: performSearch,
-    clearResults
-  } = useFileSearch({
-    currentDirectory,
-    maxResults: 12, // Increase results for better coverage
-    debounceMs: 75  // Faster response - reduce from 200ms to 75ms
-  });
-
   // All useState hooks next
   const [inputValue, setInputValue] = useState('');
-  const [filteredResults, setFilteredResults] = useState<FileItem[]>([]);
-  const [isCommandMode, setIsCommandMode] = useState(false);
   const [commandInfo, setCommandInfo] = useState<{
     title: string;
     description: string;
@@ -135,7 +119,7 @@ export const QuickNavigateOverlay: React.FC = () => {
 
   // Re-trigger command info update when mappings are loaded
   useEffect(() => {
-    if (Object.keys(transferMappings).length > 0 && inputValue && isCommandMode) {
+    if (Object.keys(transferMappings).length > 0 && inputValue) {
       const commandText = inputValue.trim().toLowerCase();
       handleCommandInfoUpdate(commandText);
     }
@@ -145,147 +129,119 @@ export const QuickNavigateOverlay: React.FC = () => {
   useEffect(() => {
     if (isQuickNavigating && inputRef.current) {
       inputRef.current.focus();
-      // Set command mode only if explicitly triggered with Ctrl+Space
       console.log('[QuickNavigate] Setting mode - initialCommandMode:', initialCommandMode);
-      setIsCommandMode(initialCommandMode);
       setInputValue('');
     } else if (!isQuickNavigating) {
       // Clear everything when overlay closes
       setInputValue('');
-      setFilteredResults([]);
-      clearResults();
       setCommandInfo(null);
       setPreviewFiles([]);
     }
-  }, [isQuickNavigating, initialCommandMode, clearResults, setPreviewFiles]);
+  }, [isQuickNavigating, initialCommandMode]);
 
   // Process input changes
   useEffect(() => {
     if (!inputValue) {
-      setFilteredResults([]);
       setCommandInfo(null);
       setPreviewFiles([]); // Clear preview when input is empty
-      if (isCommandMode) {
-        setCommandInfo({
-          title: 'Command Info',
-          description: 'Type a command to execute',
-          usage: '[command] [arguments]'
-        });
-      } else {
-        setCommandInfo(null);
-      }
       return;
     }
-    if (isCommandMode) {
-      const commandText = inputValue.trim().toLowerCase();
-      handleCommandInfoUpdate(commandText);
-      setFilteredResults([]);
-      
-      // Auto-preview for transfer commands (including mapping commands)
-      const commandParts = commandText.split(' ');
-      const command = commandParts[0];
-      const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
-      
-      if (commandText.startsWith('transfer ')) {
-        // Parse argument, supporting quoted strings
-        const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
-        let arg = match && (match[1] || match[2] || match[3]);
-        let numFiles: number | undefined = 1;
-        let newName: string | undefined = undefined;
-        if (arg) {
-          if (!isNaN(Number(arg))) {
-            numFiles = Number(arg);
-          } else {
-            newName = arg;
-          }
+    
+    const commandText = inputValue.trim().toLowerCase();
+    handleCommandInfoUpdate(commandText);
+    
+    // Auto-preview for transfer commands (including mapping commands)
+    const commandParts = commandText.split(' ');
+    const command = commandParts[0];
+    const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
+    
+    if (commandText.startsWith('transfer ')) {
+      // Parse argument, supporting quoted strings
+      const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
+      let arg = match && (match[1] || match[2] || match[3]);
+      let numFiles: number | undefined = 1;
+      let newName: string | undefined = undefined;
+      if (arg) {
+        if (!isNaN(Number(arg))) {
+          numFiles = Number(arg);
+        } else {
+          newName = arg;
         }
-        // Always call preview API for transfer command
-        window.electronAPI.transfer({
-          numFiles,
-          newName,
-          command: 'preview',
-          currentDirectory
-        }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (mappingKey) {
-        // Auto-preview for mapping commands
-        handleTransferMappingPreview(command);
-      } else if (command === 'finals') {
-        // Auto-preview for finals command
-        window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (command === 'edsby') {
-        // Auto-preview for edsby command
-        let period = commandParts.slice(1).join(' ').trim();
-        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
-          period = period.slice(1, -1);
-        }
-        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (command === 'pdfinc') {
-        // Auto-preview for pdfinc command
-        window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (command === 'sc') {
-        // Auto-preview for sc (screenshot) command
-        let newName: string | undefined;
-        if (commandParts.length > 1) {
-          newName = commandParts.slice(1).join(' ').trim();
-          // Remove quotes if present
-          if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
-            newName = newName.slice(1, -1);
-          }
-        }
-        
-        window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else {
-        setPreviewFiles([]); // Clear preview for non-transfer commands
       }
+      // Always call preview API for transfer command
+      window.electronAPI.transfer({
+        numFiles,
+        newName,
+        command: 'preview',
+        currentDirectory
+      }).then((previewResult: any) => {
+        if (previewResult.success && previewResult.files) {
+          setPreviewFiles(previewResult.files);
+        } else {
+          setPreviewFiles([]);
+        }
+      }).catch(() => setPreviewFiles([]));
+    } else if (mappingKey) {
+      // Auto-preview for mapping commands
+      handleTransferMappingPreview(command);
+    } else if (command === 'finals') {
+      // Auto-preview for finals command
+      window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
+        if (previewResult.success && previewResult.files) {
+          setPreviewFiles(previewResult.files);
+        } else {
+          setPreviewFiles([]);
+        }
+      }).catch(() => setPreviewFiles([]));
+    } else if (command === 'edsby') {
+      // Auto-preview for edsby command
+      let period = commandParts.slice(1).join(' ').trim();
+      if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+        period = period.slice(1, -1);
+      }
+      window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
+        if (previewResult.success && previewResult.files) {
+          setPreviewFiles(previewResult.files);
+        } else {
+          setPreviewFiles([]);
+        }
+      }).catch(() => setPreviewFiles([]));
+    } else if (command === 'pdfinc') {
+      // Auto-preview for pdfinc command
+      window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
+        if (previewResult.success && previewResult.files) {
+          setPreviewFiles(previewResult.files);
+        } else {
+          setPreviewFiles([]);
+        }
+      }).catch(() => setPreviewFiles([]));
+    } else if (command === 'sc') {
+      // Auto-preview for sc (screenshot) command
+      let newName: string | undefined;
+      if (commandParts.length > 1) {
+        newName = commandParts.slice(1).join(' ').trim();
+        // Remove quotes if present
+        if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
+          newName = newName.slice(1, -1);
+        }
+      }
+      
+      window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
+        if (previewResult.success && previewResult.files) {
+          setPreviewFiles(previewResult.files);
+        } else {
+          setPreviewFiles([]);
+        }
+      }).catch(() => setPreviewFiles([]));
     } else {
-      // Regular search mode - use real file search
-      if (inputValue.trim()) {
-        performSearch(inputValue);
-      } else {
-        setFilteredResults([]);
-        clearResults();
-      }
-      setCommandInfo(null);
-      setPreviewFiles([]); // Clear preview in search mode
+      setPreviewFiles([]); // Clear preview for non-transfer commands
     }
-  }, [inputValue, isCommandMode, transferMappings, handleTransferPreview, handleTransferMappingPreview, performSearch, clearResults]);
+  }, [inputValue, transferMappings, handleTransferMappingPreview, currentDirectory, setPreviewFiles]);
 
   // Sync search results to filtered results for display
   useEffect(() => {
-    if (!isCommandMode && searchResultsList.length > 0) {
-      setFilteredResults(searchResultsList.slice(0, 10)); // Show more results
-    }
-  }, [searchResultsList, isCommandMode]);
+    // This useEffect is no longer needed as search functionality is removed
+  }, []);
 
   const handleCommandInfoUpdate = (commandText: string) => {
     console.log('[QuickNavigate] handleCommandInfoUpdate called with commandText:', commandText);
@@ -412,20 +368,6 @@ export const QuickNavigateOverlay: React.FC = () => {
       });
     }
   };
-  const toggleCommandMode = () => {
-    setIsCommandMode(!isCommandMode);
-    setInputValue('');
-    if (!isCommandMode) {
-      setCommandInfo({
-        title: 'Command Info',
-        description: 'Type a command to execute',
-        usage: '[command] [arguments]'
-      });
-    } else {
-      setCommandInfo(null);
-    }
-    inputRef.current?.focus();
-  };
   const navigateHistory = (direction: number) => {
     const newIndex = historyIndex + direction;
     if (newIndex >= -1 && newIndex < commandHistory.length) {
@@ -434,48 +376,17 @@ export const QuickNavigateOverlay: React.FC = () => {
     }
   };
 
-  const handleResultSelection = async (result: FileItem) => {
-    if (result.type === 'folder') {
-      setCurrentPath(isAbsolutePath(result.path) ? result.path : joinPath(result.path));
-      addLog(`Changed directory to: ${result.path}`);
-      setStatus(`Navigated to: ${result.name}`, 'info');
-    } else {
-      try {
-        if (window.electronAPI && (window.electronAPI as any).openFile) {
-          await (window.electronAPI as any).openFile(result.path);
-          addLog(`Opened file: ${result.path}`);
-          setStatus(`Opened: ${result.name}`, 'success');
-        } else {
-          addLog(`Cannot open file: ${result.path} - API not available`, 'error');
-          setStatus(`Failed to open: ${result.name}`, 'error');
-        }
-      } catch (error) {
-        addLog(`Failed to open file: ${result.path} - ${error}`, 'error');
-        setStatus(`Failed to open: ${result.name}`, 'error');
-      }
-    }
-    // Always close overlay after selection
-    setIsQuickNavigating(false);
-    setInputValue('');
-    clearResults();
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsQuickNavigating(false);
       setInputValue('');
-      clearResults();
+      setCommandInfo(null); // Clear command info on escape
+      setPreviewFiles([]); // Clear preview on escape
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       
-      // If in search mode and we have results, navigate to first result
-      if (!isCommandMode && filteredResults.length > 0) {
-        const firstResult = filteredResults[0];
-        handleResultSelection(firstResult);
-      } else if (isCommandMode) {
-        // Execute command in command mode
-        executeCommand();
-      }
+      // Execute command in command mode
+      executeCommand();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       navigateHistory(-1);
@@ -484,10 +395,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       navigateHistory(1);
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      if (filteredResults.length > 0) {
-        const firstResult = filteredResults[0];
-        handleResultSelection(firstResult);
-      }
+      // No results to navigate in command mode
     }
   };
   const executeCommand = async () => {
@@ -662,10 +570,10 @@ export const QuickNavigateOverlay: React.FC = () => {
         {/* Input container */}
         <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
           <Flex align="center" p={3} minH="47px">
-            <IconButton icon={isCommandMode ? <ChevronRight size={25} strokeWidth={2} /> : <Search size={18} />} aria-label={isCommandMode ? 'Command mode' : 'Search mode'} variant="ghost" size="sm" color="blue.400" onClick={toggleCommandMode} />
+            <IconButton icon={<ChevronRight size={25} strokeWidth={2} />} aria-label="Command mode" variant="ghost" size="sm" color="blue.400" onClick={() => setIsQuickNavigating(false)} />
             <Input 
               ref={inputRef} 
-              placeholder={isCommandMode ? 'Enter command...' : 'Type to search files and folders... (Enter=Navigate, Backspace=Up)'} 
+              placeholder="Enter command... (Enter=Execute, Backspace=Up)" 
               value={inputValue} 
               onChange={e => setInputValue(e.target.value)} 
               onKeyDown={handleKeyDown} 
@@ -680,13 +588,9 @@ export const QuickNavigateOverlay: React.FC = () => {
           </Flex>
         </Box>
         {/* Search error indicator */}
-        {!isCommandMode && searchError && (
-          <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} p={4} onClick={e => e.stopPropagation()}>
-            <Text fontSize="sm" color="red.500">Search failed: {searchError}</Text>
-          </Box>
-        )}
+        {/* Removed as search functionality is removed */}
         {/* Command info panel - separate from input container */}
-        {isCommandMode && commandInfo && (
+        {commandInfo && (
           <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} className="thin-scrollbar" maxH="300px" overflowY="auto" onClick={e => e.stopPropagation()}>
             <Box p={4} bg={commandBgColor}>
               <Text fontSize="sm" fontWeight="medium" mb={2}>
@@ -789,43 +693,9 @@ export const QuickNavigateOverlay: React.FC = () => {
           </Box>
         )}
         {/* Search results - now always inside modal, below input */}
-        {!isCommandMode && filteredResults.length > 0 && <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} zIndex="1" overflow="hidden" mt={2} className="enhanced-scrollbar" maxH="300px" overflowY="auto" onClick={e => e.stopPropagation()}>
-            <List spacing={0}>
-              {filteredResults.map((result, index) => <ListItem key={index} p={2} bg={index === 0 ? useColorModeValue('#eff6ff', 'blue.900') : 'transparent'} cursor="pointer" _hover={{
-            bg: useColorModeValue('#f8fafc', 'gray.700')
-          }} onClick={() => handleResultSelection(result)}>
-                  <Flex align="center">
-                    <Icon as={result.type === 'folder' ? FolderOpen : File} color={result.type === 'folder' ? 'blue.400' : 'gray.400'} boxSize={4} mr={3} />
-                    <Box flex="1">
-                      <Text fontSize="sm" fontWeight={index === 0 ? 'medium' : 'normal'}>
-                        {result.name}
-                      </Text>
-                      <Flex align="center" gap={2}>
-                        <Text fontSize="xs" color="gray.500" flex="1" isTruncated>
-                          {result.path}
-                        </Text>
-                        {result.type !== 'folder' && result.size && String(result.size) !== '0' && String(result.size).trim() !== '' && (
-                          <Text fontSize="xs" color="gray.400">
-                            {result.size}
-                          </Text>
-                        )}
-                      </Flex>
-                    </Box>
-                    {index === 0 && <Text fontSize="xs" color="gray.500" ml={2}>
-                        Press Enter to open
-                      </Text>}
-                  </Flex>
-                </ListItem>)}
-            </List>
-          </Box>}
+        {/* Removed as search functionality is removed */}
         {/* No results message */}
-        {!isCommandMode && inputValue.trim() && !isSearching && filteredResults.length === 0 && (
-          <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={2} p={4} onClick={e => e.stopPropagation()}>
-            <Text fontSize="sm" color="gray.500" textAlign="center">
-              No files or folders found for "{inputValue}"
-            </Text>
-          </Box>
-        )}
+        {/* Removed as search functionality is removed */}
       </Box>
     </Box>;
 };
