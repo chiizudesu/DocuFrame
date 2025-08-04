@@ -205,9 +205,7 @@ export const FileGrid: React.FC = () => {
   const [isExtractedTextOpen, setExtractedTextOpen] = useState(false)
   const [extractedTextData, setExtractedTextData] = useState({ fileName: '', text: '' })
 
-  // Jump mode state
-  const [jumpBuffer, setJumpBuffer] = useState('');
-  const [jumpTimeout, setJumpTimeout] = useState<NodeJS.Timeout | null>(null);
+
 
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
@@ -1054,6 +1052,67 @@ export const FileGrid: React.FC = () => {
     return () => setSelectAllFiles(() => () => {});
   }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog]);
 
+  // Listen for jump mode selection events from App component
+  useEffect(() => {
+    const handleJumpModeSelect = (e: CustomEvent) => {
+      const { fileName, index } = e.detail;
+      
+      // Find the file in sortedFiles
+      const fileIndex = sortedFiles.findIndex(f => f.name === fileName);
+      if (fileIndex !== -1) {
+        // Select the matching file
+        setSelectedFiles([fileName]);
+        setSelectedFile(fileName);
+        setLastSelectedIndex(fileIndex);
+        
+        // Instantly scroll to the item, prioritizing top position when possible
+        const element = document.querySelector(`[data-file-index="${fileIndex}"]`);
+        if (element) {
+          // Get the container element (either grid or list view)
+          const container = viewMode === 'grid' 
+            ? dropAreaRef.current 
+            : document.querySelector('[data-file-index]')?.closest('div');
+          
+          if (container) {
+            const containerRect = container.getBoundingClientRect();
+            const elementRect = element.getBoundingClientRect();
+            
+            // Calculate if we can position the element at the top
+            const canPositionAtTop = elementRect.top >= containerRect.top;
+            
+            // If element is below the visible area or we can position it at top, scroll to top
+            if (elementRect.bottom > containerRect.bottom || canPositionAtTop) {
+              element.scrollIntoView({ 
+                behavior: 'instant', 
+                block: 'start',
+                inline: 'nearest'
+              });
+            } else {
+              // If element is above the visible area, scroll to show it at top
+              element.scrollIntoView({ 
+                behavior: 'instant', 
+                block: 'start',
+                inline: 'nearest'
+              });
+            }
+          } else {
+            // Fallback to nearest if container not found
+            element.scrollIntoView({ 
+              behavior: 'instant', 
+              block: 'nearest',
+              inline: 'nearest'
+            });
+          }
+        }
+      }
+    };
+
+    window.addEventListener('jump-mode-select', handleJumpModeSelect as EventListener);
+    return () => {
+      window.removeEventListener('jump-mode-select', handleJumpModeSelect as EventListener);
+    };
+  }, [sortedFiles, viewMode]);
+
   // Drag and drop handlers for the main container
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -1288,14 +1347,44 @@ export const FileGrid: React.FC = () => {
         return;
       }
 
-      // Always provide immediate visual feedback
+      // Always provide immediate visual feedback with top positioning when possible
       const element = document.querySelector(`[data-file-index="${nextIndex}"]`);
       if (element) {
-        element.scrollIntoView({ 
-          behavior: 'instant', 
-          block: 'nearest',
-          inline: 'nearest'
-        });
+        // Get the container element (either grid or list view)
+        const container = viewMode === 'grid' 
+          ? dropAreaRef.current 
+          : document.querySelector('[data-file-index]')?.closest('div');
+        
+        if (container) {
+          const containerRect = container.getBoundingClientRect();
+          const elementRect = element.getBoundingClientRect();
+          
+          // Calculate if we can position the element at the top
+          const canPositionAtTop = elementRect.top >= containerRect.top;
+          
+          // If element is below the visible area or we can position it at top, scroll to top
+          if (elementRect.bottom > containerRect.bottom || canPositionAtTop) {
+            element.scrollIntoView({ 
+              behavior: 'instant', 
+              block: 'start',
+              inline: 'nearest'
+            });
+          } else {
+            // If element is above the visible area, scroll to show it at top
+            element.scrollIntoView({ 
+              behavior: 'instant', 
+              block: 'start',
+              inline: 'nearest'
+            });
+          }
+        } else {
+          // Fallback to nearest if container not found
+          element.scrollIntoView({ 
+            behavior: 'instant', 
+            block: 'nearest',
+            inline: 'nearest'
+          });
+        }
       }
 
       // Throttle the actual selection change
@@ -1333,62 +1422,7 @@ export const FileGrid: React.FC = () => {
     return () => window.removeEventListener('keydown', handleArrowNavigation);
   }, [selectedFiles, sortedFiles, lastSelectedIndex, isRenaming, viewMode]);
 
-  // Jump mode navigation
-  useEffect(() => {
-    const handleJumpMode = (e: KeyboardEvent) => {
-      // Don't interfere if renaming, in input fields, or if QuickNavigate is open
-      const target = e.target as HTMLElement;
-      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      if (isRenaming || isInputFocused || isQuickNavigating) return;
-      
-      // Only handle single letter/number keys
-      if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return;
-      
-      // Clear existing timeout
-      if (jumpTimeout) clearTimeout(jumpTimeout);
-      
-      // Add to jump buffer
-      const newBuffer = jumpBuffer + e.key.toLowerCase();
-      setJumpBuffer(newBuffer);
-      
-      // Find first matching item
-      const matchIndex = sortedFiles.findIndex(item =>
-        item.name.toLowerCase().startsWith(newBuffer)
-      );
-      
-      if (matchIndex !== -1) {
-        // Select the matching file
-        const matchingFile = sortedFiles[matchIndex];
-        setSelectedFiles([matchingFile.name]);
-        setSelectedFile(matchingFile.name);
-        setLastSelectedIndex(matchIndex);
-        
-        // Instantly scroll to the item without delay
-        const element = document.querySelector(`[data-file-index="${matchIndex}"]`);
-        if (element) {
-          element.scrollIntoView({ 
-            behavior: 'instant', 
-            block: 'nearest',
-            inline: 'nearest'
-          });
-        }
-        
-        addLog(`Jumped to: ${matchingFile.name}`);
-      }
-      
-      // Reset buffer after 1 second
-      const timeout = setTimeout(() => {
-        setJumpBuffer('');
-      }, 1000);
-      setJumpTimeout(timeout);
-    };
-    
-    window.addEventListener('keydown', handleJumpMode);
-    return () => {
-      window.removeEventListener('keydown', handleJumpMode);
-      if (jumpTimeout) clearTimeout(jumpTimeout);
-    };
-  }, [jumpBuffer, jumpTimeout, sortedFiles, isRenaming, isQuickNavigating, viewMode]);
+
 
   // Enhanced paste handler with conflict resolution
   const handlePaste = async () => {

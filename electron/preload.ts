@@ -70,6 +70,9 @@ interface ElectronAPI {
   getWorkpaperTemplates: () => Promise<{ success: boolean; templates: Array<{ name: string; path: string }> }>;
   // Settings window method
   openSettingsWindow: () => Promise<{ success: boolean }>;
+  // Search methods
+  searchInDocuments: (options: { query: string; currentDirectory: string; maxResults?: number }) => Promise<FileItem[]>;
+  searchFiles: (options: { query: string; searchPath: string; maxResults?: number; includeFiles?: boolean; includeFolders?: boolean; recursive?: boolean }) => Promise<FileItem[]>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -257,6 +260,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings window method
   openSettingsWindow: async () => {
     return await ipcRenderer.invoke('open-settings-window');
+  },
+  // Search methods
+  searchInDocuments: async (options: { query: string; currentDirectory: string; maxResults?: number }) => {
+    return await ipcRenderer.invoke('search-in-documents', options);
+  },
+  searchFiles: async (options: { query: string; searchPath: string; maxResults?: number; includeFiles?: boolean; includeFolders?: boolean; recursive?: boolean }) => {
+    return await ipcRenderer.invoke('search-files', options);
   }
 }); 
 

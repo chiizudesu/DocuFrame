@@ -45,6 +45,7 @@ import {
   Plus,
   FileText,
   FileSpreadsheet,
+  Search,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
@@ -65,7 +66,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -678,6 +679,18 @@ export const FolderInfoBar: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={handleOpenExplorer}
+            color={iconColor}
+            _hover={{ bg: hoverBgColor }}
+          />
+          <IconButton
+            icon={<Search size={16} />}
+            aria-label="Search files"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setIsSearchMode(true);
+              setIsQuickNavigating(true);
+            }}
             color={iconColor}
             _hover={{ bg: hoverBgColor }}
           />

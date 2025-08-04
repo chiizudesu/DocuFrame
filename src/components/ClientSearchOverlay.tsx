@@ -3,9 +3,21 @@ import { Box, Input, InputGroup, InputRightElement, IconButton, VStack, Button, 
 import { ChevronDown, Search, User, Briefcase } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
-export const ClientSearchOverlay: React.FC = () => {
+interface ClientSearchOverlayProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen: externalIsOpen, onClose: externalOnClose }) => {
   const { setStatus } = useAppContext();
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen;
+  const setIsOpen = externalOnClose ? (value: boolean) => {
+    if (value === false && externalOnClose) {
+      externalOnClose();
+    }
+    setInternalIsOpen(value);
+  } : setInternalIsOpen;
   const [searchValue, setSearchValue] = useState('');
   const [selectedYear, setSelectedYear] = useState('2025');
   const [results, setResults] = useState<any[]>([]);
@@ -20,11 +32,6 @@ export const ClientSearchOverlay: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        setIsOpen(true);
-        setTimeout(() => inputRef.current?.focus(), 100);
-      }
       if (e.key === 'Escape' && isOpen) {
         setIsOpen(false);
         setSearchValue('');

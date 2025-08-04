@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain, Users } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -15,6 +15,7 @@ import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
 import { Calculator as CalculatorDialog } from './Calculator';
+import { ClientSearchOverlay } from './ClientSearchOverlay';
 
 import { getAppVersion } from '../utils/version';
 
@@ -99,6 +100,7 @@ export const FunctionPanels: React.FC = () => {
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+  const [isClientSearchOpen, setClientSearchOpen] = useState(false);
 
   const [updateInfo, setUpdateInfo] = useState<{
     currentVersion: string;
@@ -249,6 +251,12 @@ export const FunctionPanels: React.FC = () => {
     if (action === 'calculator') {
       setCalculatorOpen(true);
       setStatus('Opened Calculator', 'info');
+      return;
+    }
+
+    if (action === 'client_search') {
+      setClientSearchOpen(true);
+      setStatus('Opened Client Search', 'info');
       return;
     }
 
@@ -644,6 +652,7 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Mail} label="Extract EML" action="extract_eml" description="Extract attachments from EML files" color="cyan.400" />
                   <FunctionButton icon={Settings} label="Transfer Map" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
                   <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
+                  <FunctionButton icon={Users} label="Search Clients" action="client_search" description="Search client database for contacts" color="purple.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   File Management
@@ -740,6 +749,10 @@ export const FunctionPanels: React.FC = () => {
       onInstallUpdate={handleInstallUpdate}
       updateInfo={updateInfo}
       />
+    <ClientSearchOverlay 
+      isOpen={isClientSearchOpen} 
+      onClose={() => setClientSearchOpen(false)} 
+    />
 
   </>;
 };

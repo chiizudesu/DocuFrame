@@ -32,6 +32,9 @@ interface AppContextType {
   setIsQuickNavigating: (value: boolean) => void;
   initialCommandMode: boolean;
   setInitialCommandMode: (value: boolean) => void;
+  // Search mode state
+  isSearchMode: boolean;
+  setIsSearchMode: (value: boolean) => void;
   // File search system - replaced allFiles mock data
   searchResults: FileItem[];
   setSearchResults: (files: FileItem[]) => void;
@@ -85,6 +88,7 @@ export const AppProvider: React.FC<{
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [isQuickNavigating, setIsQuickNavigating] = useState(false);
   const [initialCommandMode, setInitialCommandMode] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
   // Footer status system
   const [statusMessage, setStatusMessage] = useState<string>('Ready');
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | 'default'>('default');
@@ -214,6 +218,8 @@ export const AppProvider: React.FC<{
       setIsQuickNavigating,
       initialCommandMode,
       setInitialCommandMode,
+      isSearchMode,
+      setIsSearchMode,
       searchResults,
       setSearchResults,
       rootDirectory,

@@ -1908,6 +1908,294 @@ ipcMain.handle('copy-workpaper-template', async (_, templatePath: string, destPa
   }
 });
 
+// Search in documents (CSV, TXT, PDF files)
+ipcMain.handle('search-in-documents', async (_, options: { query: string; currentDirectory: string; maxResults?: number }) => {
+  try {
+    const { query, currentDirectory, maxResults = 20 } = options;
+    console.log('[Search] Searching in documents for:', query, 'in:', currentDirectory);
+    
+    const results: any[] = [];
+    const searchPath = currentDirectory || '';
+    
+    // Helper function to format file size
+    const formatFileSize = (bytes: number): string => {
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let size = bytes;
+      let unitIndex = 0;
+      
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex++;
+      }
+      
+      return `${size.toFixed(1)} ${units[unitIndex]}`;
+    };
+    
+    // Helper function to extract PDF text
+    const extractPdfText = async (filePath: string): Promise<string> => {
+      try {
+        console.log(`Reading PDF text from: ${filePath}`);
+        
+        if (!fs.existsSync(filePath)) {
+          throw new Error('PDF file not found');
+        }
+
+        // Create a new PDFParser instance
+        const pdfParser = new PDFParser();
+        
+        // Read the PDF file
+        const pdfBuffer = fs.readFileSync(filePath);
+        
+        // Parse the PDF
+        const pdfData = await new Promise<PDFData>((resolve, reject) => {
+          pdfParser.on('pdfParser_dataReady', (pdfData) => {
+            resolve(pdfData as PDFData);
+          });
+          
+          pdfParser.on('pdfParser_dataError', (error) => {
+            reject(error);
+          });
+          
+          pdfParser.parseBuffer(pdfBuffer);
+        });
+        
+        // Extract text from all pages
+        let extractedText = '';
+        if (pdfData && pdfData.Pages) {
+          for (const page of pdfData.Pages) {
+            if (page.Texts) {
+              for (const text of page.Texts) {
+                if (text.R && text.R[0] && text.R[0].T) {
+                  extractedText += decodeURIComponent(text.R[0].T) + ' ';
+                }
+              }
+            }
+          }
+        }
+
+        // Clean up the extracted text
+        extractedText = extractedText
+          .replace(/\r\n/g, '\n')  // Normalize line endings
+          .replace(/\n{3,}/g, '\n\n')  // Remove excessive newlines
+          .replace(/\s+/g, ' ')  // Normalize spaces
+          .trim();
+
+        return extractedText;
+      } catch (error) {
+        console.error('Error reading PDF text:', error);
+        throw error;
+      }
+    };
+    
+    // Get all document files in the directory and subdirectories
+    const getAllDocumentFiles = async (dirPath: string): Promise<string[]> => {
+      const files: string[] = [];
+      try {
+        const items = await fsPromises.readdir(dirPath, { withFileTypes: true });
+        for (const item of items) {
+          const fullPath = path.join(dirPath, item.name);
+          if (item.isDirectory()) {
+            // Recursively search subdirectories
+            const subFiles = await getAllDocumentFiles(fullPath);
+            files.push(...subFiles);
+          } else if (item.isFile()) {
+            const ext = path.extname(item.name).toLowerCase();
+            if (['.pdf', '.csv', '.txt'].includes(ext)) {
+              files.push(fullPath);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading directory ${dirPath}:`, error);
+      }
+      return files;
+    };
+    
+    const documentFiles = await getAllDocumentFiles(searchPath);
+    console.log(`[Search] Found ${documentFiles.length} document files to search`);
+    
+    // Search in each document file
+    for (const filePath of documentFiles) {
+      try {
+        const ext = path.extname(filePath).toLowerCase();
+        const fileName = path.basename(filePath).toLowerCase();
+        const searchQuery = query.toLowerCase();
+        let fileContent = '';
+        
+        // Extract text based on file type
+        if (ext === '.pdf') {
+          // Use existing PDF text extraction
+          try {
+            fileContent = await extractPdfText(filePath);
+          } catch (pdfError) {
+            console.error(`Error extracting PDF text from ${filePath}:`, pdfError);
+            // Fallback to filename search
+            if (fileName.includes(searchQuery)) {
+              const stats = await fsPromises.stat(filePath);
+              results.push({
+                name: path.basename(filePath),
+                type: 'pdf',
+                path: filePath,
+                size: formatFileSize(stats.size),
+                modified: stats.mtime.toISOString()
+              });
+            }
+            continue;
+          }
+        } else if (ext === '.csv' || ext === '.txt') {
+          // Read text files
+          try {
+            fileContent = await fsPromises.readFile(filePath, 'utf-8');
+          } catch (textError) {
+            console.error(`Error reading text file ${filePath}:`, textError);
+            // Fallback to filename search
+            if (fileName.includes(searchQuery)) {
+              const stats = await fsPromises.stat(filePath);
+              results.push({
+                name: path.basename(filePath),
+                type: ext === '.csv' ? 'document' : 'document',
+                path: filePath,
+                size: formatFileSize(stats.size),
+                modified: stats.mtime.toISOString()
+              });
+            }
+            continue;
+          }
+        }
+        
+        // Search in file content
+        if (fileContent.toLowerCase().includes(searchQuery)) {
+          const stats = await fsPromises.stat(filePath);
+          results.push({
+            name: path.basename(filePath),
+            type: ext === '.pdf' ? 'pdf' : 'document',
+            path: filePath,
+            size: formatFileSize(stats.size),
+            modified: stats.mtime.toISOString()
+          });
+          
+          if (results.length >= maxResults) {
+            break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error searching in document ${filePath}:`, error);
+        // Continue with other files
+      }
+    }
+    
+    console.log(`[Search] Found ${results.length} documents containing "${query}"`);
+    return results;
+  } catch (error) {
+    console.error('[Search] Error searching in documents:', error);
+    return [];
+  }
+});
+
+// Search files by name
+ipcMain.handle('search-files', async (_, options: { query: string; searchPath: string; maxResults?: number; includeFiles?: boolean; includeFolders?: boolean; recursive?: boolean }) => {
+  try {
+    const { query, searchPath, maxResults = 20, includeFiles = true, includeFolders = true, recursive = true } = options;
+    console.log('[Search] Searching files for:', query, 'in:', searchPath);
+    
+    const results: any[] = [];
+    const searchDir = searchPath || '';
+    
+    // Helper function to format file size
+    const formatFileSize = (bytes: number): string => {
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let size = bytes;
+      let unitIndex = 0;
+      
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex++;
+      }
+      
+      return `${size.toFixed(1)} ${units[unitIndex]}`;
+    };
+    
+    // Helper function to get file type
+    const getFileType = (filename: string): string => {
+      const ext = path.extname(filename).toLowerCase();
+      if (ext === '.pdf') return 'pdf';
+      if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].includes(ext)) return 'image';
+      if (['.doc', '.docx', '.txt', '.rtf'].includes(ext)) return 'document';
+      return 'file';
+    };
+    
+    // Get all files and folders in the directory
+    const getAllItems = async (dirPath: string): Promise<string[]> => {
+      const items: string[] = [];
+      try {
+        const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry.name);
+          if (entry.isDirectory()) {
+            if (includeFolders) {
+              items.push(fullPath);
+            }
+            if (recursive) {
+              const subItems = await getAllItems(fullPath);
+              items.push(...subItems);
+            }
+          } else if (entry.isFile() && includeFiles) {
+            items.push(fullPath);
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading directory ${dirPath}:`, error);
+      }
+      return items;
+    };
+    
+    const allItems = await getAllItems(searchDir);
+    console.log(`[Search] Found ${allItems.length} items to search`);
+    
+    // Filter items by query
+    const normalizedQuery = query.toLowerCase();
+    for (const itemPath of allItems) {
+      try {
+        const stats = await fsPromises.stat(itemPath);
+        const itemName = path.basename(itemPath);
+        const isDirectory = stats.isDirectory();
+        
+        // Check if name matches query
+        if (itemName.toLowerCase().includes(normalizedQuery)) {
+          const relativePath = path.relative(searchDir, itemPath);
+          
+          results.push({
+            name: itemName,
+            type: isDirectory ? 'folder' : getFileType(itemName),
+            path: itemPath,
+            size: isDirectory ? undefined : formatFileSize(stats.size),
+            modified: stats.mtime.toISOString()
+          });
+          
+          if (results.length >= maxResults) {
+            break;
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing item ${itemPath}:`, error);
+      }
+    }
+    
+    // Sort results: folders first, then by name
+    results.sort((a, b) => {
+      if (a.type === 'folder' && b.type !== 'folder') return -1;
+      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      return a.name.localeCompare(b.name);
+    });
+    
+    console.log(`[Search] Found ${results.length} items matching "${query}"`);
+    return results;
+  } catch (error) {
+    console.error('[Search] Error searching files:', error);
+    return [];
+  }
+});
+
 // Settings window state is managed globally above
 
 const createSettingsWindow = () => {

@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Box, Input, Text, Flex, Icon, useColorModeValue, Divider, IconButton } from '@chakra-ui/react';
-import { ChevronRight } from 'lucide-react';
+import { Box, Input, Text, Flex, Icon, useColorModeValue, Divider, IconButton, Switch, FormControl, FormLabel } from '@chakra-ui/react';
+import { ChevronRight, Search, FileText } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { FileItem, TransferOptions } from '../types';
 import { joinPath, isAbsolutePath } from '../utils/path'
+import { fileSearchService } from '../services/fileSearch';
 
 
 export const QuickNavigateOverlay: React.FC = () => {
@@ -19,9 +20,13 @@ export const QuickNavigateOverlay: React.FC = () => {
     initialCommandMode,
     isQuickNavigating,
     setIsQuickNavigating,
+    isSearchMode,
+    setIsSearchMode,
     commandHistory,
     setStatus,
-    setFolderItems
+    setFolderItems,
+    searchResults,
+    setSearchResults
   } = useAppContext();
 
   // All useState hooks next
@@ -40,6 +45,11 @@ export const QuickNavigateOverlay: React.FC = () => {
   } | null>(null);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [transferMappings, setTransferMappings] = useState<{ [key: string]: string }>({});
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchInDocuments, setSearchInDocuments] = useState(false);
+  const [localSearchResults, setLocalSearchResults] = useState<FileItem[]>([]);
 
   // All useRef hooks next
   const inputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +85,43 @@ export const QuickNavigateOverlay: React.FC = () => {
       setPreviewFiles([]);
     }
   }, [currentDirectory, setPreviewFiles]);
+
+  // Search functionality
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setLocalSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      console.log('[QuickNavigate] Performing search for:', query);
+      
+      if (searchInDocuments) {
+        // Document search - search inside PDF files
+        const result = await window.electronAPI.searchInDocuments({
+          query,
+          currentDirectory,
+          maxResults: 20
+        });
+        setLocalSearchResults(result || []);
+      } else {
+        // File search - search file names
+        const result = await fileSearchService.search({
+          query,
+          currentDirectory,
+          maxResults: 20,
+          recursive: true
+        });
+        setLocalSearchResults(result.results);
+      }
+    } catch (error) {
+      console.error('[QuickNavigate] Search failed:', error);
+      setLocalSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [currentDirectory, searchInDocuments]);
 
   const handleTransferPreview = useCallback(async (numFiles: number) => {
     try {
@@ -129,114 +176,149 @@ export const QuickNavigateOverlay: React.FC = () => {
   useEffect(() => {
     if (isQuickNavigating && inputRef.current) {
       inputRef.current.focus();
-      console.log('[QuickNavigate] Setting mode - initialCommandMode:', initialCommandMode);
+      console.log('[QuickNavigate] Setting mode - initialCommandMode:', initialCommandMode, 'isSearchMode:', isSearchMode);
       setInputValue('');
+      setSearchQuery('');
+      setLocalSearchResults([]);
     } else if (!isQuickNavigating) {
       // Clear everything when overlay closes
       setInputValue('');
+      setSearchQuery('');
       setCommandInfo(null);
       setPreviewFiles([]);
+      setLocalSearchResults([]);
+      setIsSearchMode(false);
     }
-  }, [isQuickNavigating, initialCommandMode]);
+  }, [isQuickNavigating, initialCommandMode, isSearchMode]);
+
+  // Global Ctrl+F shortcut for file search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setIsSearchMode(true);
+        setIsQuickNavigating(true);
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Process input changes
   useEffect(() => {
-    if (!inputValue) {
-      setCommandInfo(null);
-      setPreviewFiles([]); // Clear preview when input is empty
-      return;
-    }
-    
-    const commandText = inputValue.trim().toLowerCase();
-    handleCommandInfoUpdate(commandText);
-    
-    // Auto-preview for transfer commands (including mapping commands)
-    const commandParts = commandText.split(' ');
-    const command = commandParts[0];
-    const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
-    
-    if (commandText.startsWith('transfer ')) {
-      // Parse argument, supporting quoted strings
-      const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
-      let arg = match && (match[1] || match[2] || match[3]);
-      let numFiles: number | undefined = 1;
-      let newName: string | undefined = undefined;
-      if (arg) {
-        if (!isNaN(Number(arg))) {
-          numFiles = Number(arg);
-        } else {
-          newName = arg;
-        }
-      }
-      // Always call preview API for transfer command
-      window.electronAPI.transfer({
-        numFiles,
-        newName,
-        command: 'preview',
-        currentDirectory
-      }).then((previewResult: any) => {
-        if (previewResult.success && previewResult.files) {
-          setPreviewFiles(previewResult.files);
-        } else {
-          setPreviewFiles([]);
-        }
-      }).catch(() => setPreviewFiles([]));
-    } else if (mappingKey) {
-      // Auto-preview for mapping commands
-      handleTransferMappingPreview(command);
-    } else if (command === 'finals') {
-      // Auto-preview for finals command
-      window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
-        if (previewResult.success && previewResult.files) {
-          setPreviewFiles(previewResult.files);
-        } else {
-          setPreviewFiles([]);
-        }
-      }).catch(() => setPreviewFiles([]));
-    } else if (command === 'edsby') {
-      // Auto-preview for edsby command
-      let period = commandParts.slice(1).join(' ').trim();
-      if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
-        period = period.slice(1, -1);
-      }
-      window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
-        if (previewResult.success && previewResult.files) {
-          setPreviewFiles(previewResult.files);
-        } else {
-          setPreviewFiles([]);
-        }
-      }).catch(() => setPreviewFiles([]));
-    } else if (command === 'pdfinc') {
-      // Auto-preview for pdfinc command
-      window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
-        if (previewResult.success && previewResult.files) {
-          setPreviewFiles(previewResult.files);
-        } else {
-          setPreviewFiles([]);
-        }
-      }).catch(() => setPreviewFiles([]));
-    } else if (command === 'sc') {
-      // Auto-preview for sc (screenshot) command
-      let newName: string | undefined;
-      if (commandParts.length > 1) {
-        newName = commandParts.slice(1).join(' ').trim();
-        // Remove quotes if present
-        if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
-          newName = newName.slice(1, -1);
-        }
+    if (isSearchMode) {
+      // Search mode - handle search query
+      if (!searchQuery) {
+        setLocalSearchResults([]);
+        return;
       }
       
-      window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
-        if (previewResult.success && previewResult.files) {
-          setPreviewFiles(previewResult.files);
-        } else {
-          setPreviewFiles([]);
-        }
-      }).catch(() => setPreviewFiles([]));
+      // Debounce search
+      const timeoutId = setTimeout(() => {
+        performSearch(searchQuery);
+      }, 300);
+      
+      return () => clearTimeout(timeoutId);
     } else {
-      setPreviewFiles([]); // Clear preview for non-transfer commands
+      // Command mode - handle command input
+      if (!inputValue) {
+        setCommandInfo(null);
+        setPreviewFiles([]); // Clear preview when input is empty
+        return;
+      }
+      
+      const commandText = inputValue.trim().toLowerCase();
+      handleCommandInfoUpdate(commandText);
+      
+      // Auto-preview for transfer commands (including mapping commands)
+      const commandParts = commandText.split(' ');
+      const command = commandParts[0];
+      const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
+      
+      if (commandText.startsWith('transfer ')) {
+        // Parse argument, supporting quoted strings
+        const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
+        let arg = match && (match[1] || match[2] || match[3]);
+        let numFiles: number | undefined = 1;
+        let newName: string | undefined = undefined;
+        if (arg) {
+          if (!isNaN(Number(arg))) {
+            numFiles = Number(arg);
+          } else {
+            newName = arg;
+          }
+        }
+        // Always call preview API for transfer command
+        window.electronAPI.transfer({
+          numFiles,
+          newName,
+          command: 'preview',
+          currentDirectory
+        }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (mappingKey) {
+        // Auto-preview for mapping commands
+        handleTransferMappingPreview(command);
+      } else if (command === 'finals') {
+        // Auto-preview for finals command
+        window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'edsby') {
+        // Auto-preview for edsby command
+        let period = commandParts.slice(1).join(' ').trim();
+        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+          period = period.slice(1, -1);
+        }
+        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'pdfinc') {
+        // Auto-preview for pdfinc command
+        window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'sc') {
+        // Auto-preview for sc (screenshot) command
+        let newName: string | undefined;
+        if (commandParts.length > 1) {
+          newName = commandParts.slice(1).join(' ').trim();
+          // Remove quotes if present
+          if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
+            newName = newName.slice(1, -1);
+          }
+        }
+        
+        window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else {
+        setPreviewFiles([]); // Clear preview for non-transfer commands
+      }
     }
-  }, [inputValue, transferMappings, handleTransferMappingPreview, currentDirectory, setPreviewFiles]);
+  }, [inputValue, searchQuery, isSearchMode, transferMappings, handleTransferMappingPreview, currentDirectory, setPreviewFiles, performSearch]);
 
   // Sync search results to filtered results for display
   useEffect(() => {
@@ -380,21 +462,54 @@ export const QuickNavigateOverlay: React.FC = () => {
     if (e.key === 'Escape') {
       setIsQuickNavigating(false);
       setInputValue('');
+      setSearchQuery('');
       setCommandInfo(null); // Clear command info on escape
       setPreviewFiles([]); // Clear preview on escape
+      setLocalSearchResults([]); // Clear search results on escape
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       
-      // Execute command in command mode
-      executeCommand();
+      if (isSearchMode) {
+        // In search mode, select the first result or do nothing
+        if (localSearchResults.length > 0) {
+          // Navigate to the first result
+          const firstResult = localSearchResults[0];
+          if (firstResult.type === 'folder') {
+            setCurrentPath(firstResult.path);
+            setIsQuickNavigating(false);
+            addLog(`Navigated to: ${firstResult.path}`);
+          } else {
+            // Open the file
+            window.electronAPI.openFile(firstResult.path);
+            setIsQuickNavigating(false);
+            addLog(`Opened file: ${firstResult.name}`);
+          }
+        }
+      } else {
+        // Execute command in command mode
+        executeCommand();
+      }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      navigateHistory(-1);
+      if (isSearchMode) {
+        // Navigate search results
+        // TODO: Implement search result navigation
+      } else {
+        navigateHistory(-1);
+      }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      navigateHistory(1);
+      if (isSearchMode) {
+        // Navigate search results
+        // TODO: Implement search result navigation
+      } else {
+        navigateHistory(1);
+      }
     } else if (e.key === 'Tab') {
       e.preventDefault();
+      if (isSearchMode) {
+        // TODO: Implement search result selection
+      }
       // No results to navigate in command mode
     }
   };
@@ -570,21 +685,52 @@ export const QuickNavigateOverlay: React.FC = () => {
         {/* Input container */}
         <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
           <Flex align="center" p={3} minH="47px">
-            <IconButton icon={<ChevronRight size={25} strokeWidth={2} />} aria-label="Command mode" variant="ghost" size="sm" color="blue.400" onClick={() => setIsQuickNavigating(false)} />
+            <IconButton 
+              icon={isSearchMode ? <Search size={25} strokeWidth={2} /> : <ChevronRight size={25} strokeWidth={2} />} 
+              aria-label={isSearchMode ? "Search mode" : "Command mode"} 
+              variant="ghost" 
+              size="sm" 
+              color="blue.400" 
+              onClick={() => setIsQuickNavigating(false)} 
+            />
             <Input 
               ref={inputRef} 
-              placeholder="Enter command... (Enter=Execute, Backspace=Up)" 
-              value={inputValue} 
-              onChange={e => setInputValue(e.target.value)} 
+              placeholder={isSearchMode ? "Search files..." : "Enter command... (Enter=Execute, Backspace=Up)"} 
+              value={isSearchMode ? searchQuery : inputValue} 
+              onChange={e => {
+                if (isSearchMode) {
+                  setSearchQuery(e.target.value);
+                } else {
+                  setInputValue(e.target.value);
+                }
+              }} 
               onKeyDown={handleKeyDown} 
 
               variant="unstyled" 
               fontSize="md" 
               ml={2} 
               autoFocus 
-              pr="60px" 
+              pr={isSearchMode ? "120px" : "60px"} 
               height="41px" 
             />
+            {/* Document search toggle - inline in search mode */}
+            {isSearchMode && (
+              <Flex align="center" position="absolute" right={3} gap={2}>
+                <Flex align="center" gap={1}>
+                  <FileText size={14} color={useColorModeValue('gray.500', 'gray.400')} />
+                  <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
+                    Contents
+                  </Text>
+                </Flex>
+                <Switch 
+                  id="document-search" 
+                  isChecked={searchInDocuments}
+                  onChange={(e) => setSearchInDocuments(e.target.checked)}
+                  size="sm"
+                  colorScheme="blue"
+                />
+              </Flex>
+            )}
           </Flex>
         </Box>
         {/* Search error indicator */}
@@ -626,6 +772,66 @@ export const QuickNavigateOverlay: React.FC = () => {
                 </Box>
               </Box>
             )}
+          </Box>
+        )}
+        {/* Search results panel - shows search results */}
+        {isSearchMode && localSearchResults.length > 0 && (
+          <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>
+            <Box p={4} bg={commandBgColor}>
+              <Text fontSize="sm" fontWeight="medium" mb={2}>
+                {isSearching ? 'Searching...' : `Found ${localSearchResults.length} result${localSearchResults.length > 1 ? 's' : ''}:`}
+              </Text>
+              <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
+                {localSearchResults.map((file, index) => (
+                  <Box
+                    key={index}
+                    fontSize="sm"
+                    borderRadius="lg"
+                    bg={useColorModeValue('gray.100', 'gray.700')}
+                    px={3}
+                    py={2}
+                    boxShadow="sm"
+                    borderWidth="1px"
+                    borderColor={useColorModeValue('gray.200', 'gray.600')}
+                    w="100%"
+                    overflow="visible"
+                    display="flex"
+                    flexDirection="column"
+                    gap={1}
+                    cursor="pointer"
+                    _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                    onClick={() => {
+                      if (file.type === 'folder') {
+                        setCurrentPath(file.path);
+                        setIsQuickNavigating(false);
+                        addLog(`Navigated to: ${file.path}`);
+                      } else {
+                        window.electronAPI.openFile(file.path);
+                        setIsQuickNavigating(false);
+                        addLog(`Opened file: ${file.name}`);
+                      }
+                    }}
+                  >
+                    <Flex align="center" gap={2}>
+                      <Box color={file.type === 'folder' ? 'blue.400' : 'gray.400'}>
+                        {file.type === 'folder' ? '📁' : '📄'}
+                      </Box>
+                      <Text whiteSpace="normal" wordBreak="break-all" title={file.path} fontWeight="medium" overflow="visible">
+                        {file.name}
+                      </Text>
+                    </Flex>
+                    <Text fontSize="xs" color="gray.500" ml={6}>
+                      {file.path}
+                    </Text>
+                    {file.size && (
+                      <Text fontSize="xs" color="gray.500" ml={6}>
+                        {file.size}
+                      </Text>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
           </Box>
         )}
         {/* Preview files panel - shows actual files to be transferred */}
