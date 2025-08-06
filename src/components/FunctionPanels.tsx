@@ -19,6 +19,61 @@ import { ClientSearchOverlay } from './ClientSearchOverlay';
 
 import { getAppVersion } from '../utils/version';
 
+// Add client search shortcut functionality
+const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) => {
+  const [clientSearchShortcut, setClientSearchShortcut] = useState('Alt+F');
+  const [enableClientSearchShortcut, setEnableClientSearchShortcut] = useState(true);
+
+  useEffect(() => {
+    const loadShortcutSettings = async () => {
+      try {
+        const settings = await (window.electronAPI as any).getConfig();
+        console.log('[ClientSearch] Loading settings:', settings);
+        setClientSearchShortcut(settings.clientSearchShortcut || 'Alt+F');
+        setEnableClientSearchShortcut(settings.enableClientSearchShortcut !== false);
+        console.log('[ClientSearch] Shortcut enabled:', settings.enableClientSearchShortcut !== false);
+      } catch (error) {
+        console.error('Error loading client search shortcut settings:', error);
+      }
+    };
+    loadShortcutSettings();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!enableClientSearchShortcut) {
+        console.log('[ClientSearch] Shortcut disabled');
+        return;
+      }
+      
+      // Check for both uppercase and lowercase F, and also handle different key formats
+      const key = event.key.toLowerCase();
+      const isAltF = event.altKey && key === 'f';
+      
+      console.log('[ClientSearch] Key pressed:', {
+        key: event.key,
+        altKey: event.altKey,
+        ctrlKey: event.ctrlKey,
+        shiftKey: event.shiftKey,
+        isAltF,
+        enableClientSearchShortcut
+      });
+      
+      if (isAltF) {
+        event.preventDefault();
+        console.log('[ClientSearch] Alt+F shortcut triggered');
+        // Trigger client search
+        setClientSearchOpen(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [enableClientSearchShortcut, setClientSearchOpen]);
+
+  return { clientSearchShortcut, setClientSearchShortcut, enableClientSearchShortcut, setEnableClientSearchShortcut };
+};
+
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
   const [preview, setPreview] = useState<{ original: string; preview: string }[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,6 +156,9 @@ export const FunctionPanels: React.FC = () => {
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
+
+  // Use client search shortcut hook
+  useClientSearchShortcut(setClientSearchOpen);
 
   const [updateInfo, setUpdateInfo] = useState<{
     currentVersion: string;
@@ -255,6 +313,7 @@ export const FunctionPanels: React.FC = () => {
     }
 
     if (action === 'client_search') {
+      console.log('[ClientSearch] Button clicked - opening client search');
       setClientSearchOpen(true);
       setStatus('Opened Client Search', 'info');
       return;
@@ -351,13 +410,13 @@ export const FunctionPanels: React.FC = () => {
     }
 
     if (action === 'gst_transfer') {
-      addLog('Executing GST Transfer (transfer 3)');
-      setStatus('Transferring 3 files from DL...', 'info');
+      addLog('Executing Transfer Latest (transfer 1)');
+      setStatus('Transferring latest file from DL...', 'info');
       try {
-        const result = await window.electronAPI.transfer({ numFiles: 3, command: 'transfer', currentDirectory });
+        const result = await window.electronAPI.transfer({ numFiles: 1, command: 'transfer', currentDirectory });
         if (result.success) {
           addLog(result.message, 'response');
-          setStatus('GST Transfer completed', 'success');
+          setStatus('Transfer Latest completed', 'success');
           // Refresh folder view
           setStatus('Refreshing folder...', 'info');
           if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
@@ -367,13 +426,13 @@ export const FunctionPanels: React.FC = () => {
           }
         } else {
           addLog(result.message, 'error');
-          setStatus('GST Transfer failed', 'error');
+          setStatus('Transfer Latest failed', 'error');
         }
       } catch (error) {
-        const errorMsg = `Error executing GST Transfer: ${error}`;
+        const errorMsg = `Error executing Transfer Latest: ${error}`;
         addLog(errorMsg, 'error');
-        setStatus('GST Transfer failed', 'error');
-        console.error('[FunctionPanels] GST Transfer error:', error);
+        setStatus('Transfer Latest failed', 'error');
+        console.error('[FunctionPanels] Transfer Latest error:', error);
       }
       return;
     }
@@ -390,6 +449,7 @@ export const FunctionPanels: React.FC = () => {
     const functionNames: { [key: string]: string } = {
       gst_template: 'GST Template',
       gst_rename: 'GST Rename',
+      gst_transfer: 'Transfer Latest',
       copy_notes: 'Copy Notes',
       merge_pdfs: 'Merge PDFs',
       extract_zips: 'Extract Zips',
@@ -647,6 +707,21 @@ export const FunctionPanels: React.FC = () => {
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
                 <Flex gap={1}>
+                  <FunctionButton icon={Download} label="Transfer Latest" action="gst_transfer" description="Transfer latest file from DL to current path" color="blue.600" />
+                  <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
+                </Flex>
+                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
+                  GST
+                </Text>
+              </Box>
+              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
+              <Box 
+                p={2} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
+                borderRadius="md" 
+                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
+              >
+                <Flex gap={1}>
                   <FunctionButton icon={FilePlus2} label="Merge PDFs" action="merge_pdfs" description="Combine multiple PDF files into one document" color="red.400" />
                   <FunctionButton icon={Archive} label="Extract Zips" action="extract_zips" description="Extract all ZIP files in current directory" color="orange.400" />
                   <FunctionButton icon={Mail} label="Extract EML" action="extract_eml" description="Extract attachments from EML files" color="cyan.400" />
@@ -688,8 +763,6 @@ export const FunctionPanels: React.FC = () => {
                 boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
               >
                 <Flex gap={1}>
-                  <FunctionButton icon={Download} label="GST Transfer" action="gst_transfer" description="Transfer 3 files from DL to current path" color="blue.600" />
-                  <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
                   <FunctionButton icon={FileText} label="GST Template" action="gst_template" description="Open GST template for processing" color="blue.400" />
                   <FunctionButton icon={Copy} label="Copy Notes" action="copy_notes" description="Copy asset notes to clipboard" color="purple.400" />
                 </Flex>

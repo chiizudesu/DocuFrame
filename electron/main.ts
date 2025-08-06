@@ -341,6 +341,12 @@ function convertToElectronShortcut(shortcut: string): string {
       return 'F7';
     case 'F6':
       return 'F6';
+    case 'Alt+F':
+      return 'Alt+F';
+    case 'Ctrl+Shift+F':
+      return 'CommandOrControl+Shift+F';
+    case 'Ctrl+Alt+F':
+      return 'CommandOrControl+Alt+F';
     default:
       return shortcut;
   }

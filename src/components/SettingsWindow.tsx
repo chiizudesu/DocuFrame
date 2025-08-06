@@ -68,6 +68,8 @@ interface Settings {
   closeTabShortcut?: string;
   enableCloseTabShortcut?: boolean;
   enableFileWatching?: boolean;
+  clientSearchShortcut?: string;
+  enableClientSearchShortcut?: boolean;
 }
 
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
@@ -88,6 +90,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [closeTabShortcut, setCloseTabShortcut] = useState('Ctrl+W');
   const [enableFileWatching, setEnableFileWatching] = useState(true);
   const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
+  const [clientSearchShortcut, setClientSearchShortcut] = useState('Alt+F');
+  const [enableClientSearchShortcut, setEnableClientSearchShortcut] = useState(true);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const toast = useToast();
@@ -118,6 +122,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setCloseTabShortcut(loadedSettings.closeTabShortcut || 'Ctrl+W');
         setEnableCloseTabShortcut(loadedSettings.enableCloseTabShortcut !== false);
         setEnableFileWatching(loadedSettings.enableFileWatching !== false);
+        setClientSearchShortcut(loadedSettings.clientSearchShortcut || 'Alt+F');
+        setEnableClientSearchShortcut(loadedSettings.enableClientSearchShortcut !== false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
       } catch (error) {
@@ -155,6 +161,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         closeTabShortcut,
         enableCloseTabShortcut,
         enableFileWatching,
+        clientSearchShortcut,
+        enableClientSearchShortcut,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -864,6 +872,43 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         </Select>
                         <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
                           {closeTabShortcut}
+                        </Kbd>
+                      </HStack>
+                    )}
+                  </Box>
+
+                  {/* Client Search Shortcut */}
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <HStack justify="space-between" mb={2}>
+                      <Box>
+                        <Text fontSize="xs" fontWeight="600" color={textColor}>Search Clients</Text>
+                        <Text fontSize="xs" color={secondaryTextColor}>Open client search overlay</Text>
+                      </Box>
+                      <Switch
+                        isChecked={enableClientSearchShortcut}
+                        onChange={(e) => setEnableClientSearchShortcut(e.target.checked)}
+                        colorScheme="blue"
+                        size="sm"
+                      />
+                    </HStack>
+                    {enableClientSearchShortcut && (
+                      <HStack spacing={2.5}>
+                        <Select
+                          value={clientSearchShortcut}
+                          onChange={(e) => setClientSearchShortcut(e.target.value)}
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                          maxW="132px"
+                          size="xs"
+                          borderRadius="sm"
+                        >
+                          <option value="Alt+F">Alt + F</option>
+                          <option value="Ctrl+Shift+F">Ctrl + Shift + F</option>
+                          <option value="Ctrl+Alt+F">Ctrl + Alt + F</option>
+                          <option value="F6">F6</option>
+                        </Select>
+                        <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
+                          {clientSearchShortcut}
                         </Kbd>
                       </HStack>
                     )}

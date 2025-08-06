@@ -10,6 +10,8 @@ export interface AppSettings {
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
+  clientSearchShortcut?: string;
+  enableClientSearchShortcut?: boolean;
 }
 
 class SettingsService {

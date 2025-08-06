@@ -8,6 +8,8 @@ export interface Config {
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
+  clientSearchShortcut?: string;
+  enableClientSearchShortcut?: boolean;
 }
 
 class ConfigService {
