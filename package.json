@@ -1,7 +1,7 @@
 {
   "name": "docuframe",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "Edward John Matias <edwardjohncpa@gmail.com>",
   "type": "commonjs",
   "main": "dist-electron/main.js",
@@ -27,7 +27,12 @@
     "dist-win-unsigned": "npm run build-no-check && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
     "publish-github": "npm run build-no-check && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --publish=always",
     "make": "electron-forge make",
-    "publish": "electron-forge publish"
+    "publish": "electron-forge publish",
+    "version:patch": "npm version patch && git push origin main --follow-tags",
+    "version:minor": "npm version minor && git push origin main --follow-tags",
+    "version:major": "npm version major && git push origin main --follow-tags",
+    "release:test": "npm run dist-win-unsigned && echo 'Upload to GitHub as pre-release'",
+    "release:prod": "npm run dist-win && echo 'Upload to GitHub as release'"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.57.0",
