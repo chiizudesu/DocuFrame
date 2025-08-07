@@ -104,9 +104,7 @@ const AppContent: React.FC = () => {
     };
   }, [addLog, setStatus]);
 
-  // Jump mode state
-  const [jumpBuffer, setJumpBuffer] = React.useState('');
-  const [jumpTimeout, setJumpTimeout] = React.useState<NodeJS.Timeout | null>(null);
+
 
   // Handle keyboard events for quick navigation, backspace navigation, and jump mode
   useEffect(() => {
@@ -144,58 +142,7 @@ const AppContent: React.FC = () => {
         return;
       }
       
-      // Jump mode - only handle single letter/number keys when not in input fields or quick navigate
-      if (!isInputFocused && !isQuickNavigating && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        // Clear existing timeout
-        if (jumpTimeout) clearTimeout(jumpTimeout);
-        
-        // Add to jump buffer
-        const newBuffer = jumpBuffer + e.key.toLowerCase();
-        setJumpBuffer(newBuffer);
-        
-        // Find the file grid element and get sorted files
-        const fileGridElement = document.querySelector('[data-file-index]');
-        if (fileGridElement) {
-          // Get all file elements to find the matching one
-          const fileElements = document.querySelectorAll('[data-file-index]');
-          const sortedFiles: Array<{ name: string; index: number }> = [];
-          
-          fileElements.forEach((element) => {
-            const index = parseInt(element.getAttribute('data-file-index') || '0');
-            const fileNameElement = element.querySelector('div, td')?.textContent?.trim();
-            if (fileNameElement) {
-              sortedFiles.push({ name: fileNameElement, index });
-            }
-          });
-          
-          // Sort by index to maintain order
-          sortedFiles.sort((a, b) => a.index - b.index);
-          
-          // Find first matching item
-          const matchIndex = sortedFiles.findIndex(item =>
-            item.name.toLowerCase().startsWith(newBuffer)
-          );
-          
-          if (matchIndex !== -1) {
-            const matchingFile = sortedFiles[matchIndex];
-            
-            // Dispatch custom event to notify FileGrid to update selection
-            window.dispatchEvent(new CustomEvent('jump-mode-select', {
-              detail: { fileName: matchingFile.name, index: matchingFile.index }
-            }));
-            
-            addLog(`Jumped to: ${matchingFile.name}`);
-          }
-        }
-        
-        // Reset buffer after 1 second
-        const timeout = setTimeout(() => {
-          setJumpBuffer('');
-        }, 1000);
-        setJumpTimeout(timeout);
-        
-        return;
-      }
+
       
       // Escape key to cancel any ongoing operations (drag, etc.)
       if (e.key === 'Escape') {
@@ -228,9 +175,8 @@ const AppContent: React.FC = () => {
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      if (jumpTimeout) clearTimeout(jumpTimeout);
     };
-  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen, jumpBuffer, jumpTimeout]);
+  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen]);
   
   // If this is the settings window, render only the settings
   if (isSettingsWindow) {

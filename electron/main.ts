@@ -1794,17 +1794,21 @@ ipcMain.handle('enable-file-watching', async (_, enabled: boolean) => {
 // Document creation IPC handlers
 ipcMain.handle('create-blank-spreadsheet', async (_, filePath: string) => {
   try {
-    // Create a basic Excel file structure
-    const workbook = {
-      sheets: [{
-        name: 'Sheet1',
-        data: []
-      }]
-    };
+    // Import ExcelJS dynamically to avoid issues with Electron
+    const ExcelJS = require('exceljs');
     
-    // For now, create an empty file - in a real implementation,
-    // you would use a library like ExcelJS to create proper Excel files
-    fs.writeFileSync(filePath, '');
+    // Create a new workbook
+    const workbook = new ExcelJS.Workbook();
+    
+    // Add a worksheet
+    const worksheet = workbook.addWorksheet('Sheet1');
+    
+    // Set some basic properties
+    worksheet.properties.defaultRowHeight = 15;
+    worksheet.properties.defaultColWidth = 10;
+    
+    // Write the workbook to file
+    await workbook.xlsx.writeFile(filePath);
     
     console.log(`[Main] Created blank spreadsheet: ${filePath}`);
     return { success: true, filePath };
@@ -1816,10 +1820,40 @@ ipcMain.handle('create-blank-spreadsheet', async (_, filePath: string) => {
 
 ipcMain.handle('create-word-document', async (_, filePath: string) => {
   try {
-    // Create a basic Word document structure
-    // For now, create an empty file - in a real implementation,
-    // you would use a library like docx to create proper Word documents
-    fs.writeFileSync(filePath, '');
+    // Import docx dynamically to avoid issues with Electron
+    const { Document, Packer, Paragraph } = require('docx');
+    
+    // Create a new document
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: [
+          new Paragraph({
+            children: [
+              {
+                text: "New Document",
+                size: 24,
+                bold: true,
+              },
+            ],
+          }),
+          new Paragraph({
+            children: [
+              {
+                text: "This is a new Word document created by DocuFrame.",
+                size: 20,
+              },
+            ],
+          }),
+        ],
+      }],
+    });
+    
+    // Generate the document
+    const buffer = await Packer.toBuffer(doc);
+    
+    // Write the buffer to file
+    fs.writeFileSync(filePath, buffer);
     
     console.log(`[Main] Created Word document: ${filePath}`);
     return { success: true, filePath };

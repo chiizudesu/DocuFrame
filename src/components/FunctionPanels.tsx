@@ -709,6 +709,7 @@ export const FunctionPanels: React.FC = () => {
                 <Flex gap={1}>
                   <FunctionButton icon={Download} label="Transfer Latest" action="gst_transfer" description="Transfer latest file from DL to current path" color="blue.600" />
                   <FunctionButton icon={FileEdit} label="GST Rename" action="gst_rename" description="Rename files according to GST standards" color="green.400" />
+                  <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   GST
@@ -726,7 +727,6 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Archive} label="Extract Zips" action="extract_zips" description="Extract all ZIP files in current directory" color="orange.400" />
                   <FunctionButton icon={Mail} label="Extract EML" action="extract_eml" description="Extract attachments from EML files" color="cyan.400" />
                   <FunctionButton icon={Settings} label="Transfer Map" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
-                  <FunctionButton icon={Calculator} label="Late Claims" action="late_claims" description="Calculate GST late claims adjustments" color="orange.400" />
                   <FunctionButton icon={Users} label="Search Clients" action="client_search" description="Search client database for contacts" color="purple.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">

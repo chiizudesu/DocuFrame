@@ -1,0 +1,38 @@
+directories:
+  output: release-v107
+  buildResources: build
+appId: com.edwardmatias.docuframe
+productName: DocuFrame
+files:
+  - filter:
+      - dist/**/*
+      - dist-electron/**/*
+      - public/**/*
+      - build/icon.ico
+asarUnpack:
+  - public/**/*
+publish:
+  - provider: github
+    owner: chiizudesu
+    repo: DocuFrame
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  forceCodeSigning: false
+  signAndEditExecutable: false
+  signExts: null
+  verifyUpdateCodeSignature: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: DocuFrame
+mac:
+  icon: build/icon.ico
+linux:
+  icon: build/icon.ico
+electronVersion: 29.4.6

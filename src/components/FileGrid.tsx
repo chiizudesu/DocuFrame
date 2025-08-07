@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import {
   Grid,
   Box,
@@ -54,6 +54,7 @@ function formatPathForLog(path: string) {
   return isWindows ? path.replace(/\//g, '\\') : path;
 }
 
+// Icon functions (moved inside component to avoid hook issues)
 const getFileIcon = (type: string, name: string) => {
   if (type === 'folder') {
     return FolderOpen;
@@ -95,7 +96,7 @@ const getFileIcon = (type: string, name: string) => {
     default:
       return File
   }
-}
+};
 
 const getIconColor = (type: string, name: string) => {
   if (type === 'folder') return 'blue.400'
@@ -136,9 +137,9 @@ const getIconColor = (type: string, name: string) => {
     default:
       return 'gray.400'
   }
-}
+};
 
-// Format file size
+// File size formatting function
 const formatFileSize = (size: string | undefined) => {
   if (!size) return '';
   const sizeNum = parseFloat(size);
@@ -168,6 +169,99 @@ export const FileGrid: React.FC = () => {
     addTabToCurrentWindow,
     isQuickNavigating
   } = useAppContext()
+
+  // Memoized icon functions for better performance
+  const getFileIcon = useCallback((type: string, name: string) => {
+    if (type === 'folder') {
+      return FolderOpen;
+    }
+    
+    const extension = name.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return FileText
+      case 'doc':
+      case 'docx':
+        return FileText
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return FileText
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'svg':
+        return ImageIcon
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+        return FileText
+      case 'txt':
+      case 'md':
+      case 'json':
+      case 'xml':
+      case 'html':
+      case 'css':
+      case 'js':
+      case 'ts':
+        return FileText
+      default:
+        return File
+    }
+  }, []);
+
+  const getIconColor = useCallback((type: string, name: string) => {
+    if (type === 'folder') return 'blue.400'
+    
+    const extension = name.split('.').pop()?.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return 'red.400'
+      case 'doc':
+      case 'docx':
+        return 'blue.400'
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return 'green.400'
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'bmp':
+      case 'svg':
+        return 'purple.400'
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+        return 'orange.400'
+      case 'txt':
+      case 'md':
+      case 'json':
+      case 'xml':
+      case 'html':
+      case 'css':
+      case 'js':
+      case 'ts':
+        return 'yellow.400'
+      default:
+        return 'gray.400'
+    }
+  }, []);
+
+  // Memoized file size formatting for better performance
+  const formatFileSize = useCallback((size: string | undefined) => {
+    if (!size) return '';
+    const sizeNum = parseFloat(size);
+    if (isNaN(sizeNum)) return size;
+    return `${(sizeNum / 1024).toFixed(1)} KB`;
+  }, []);
   const toast = useToast()
   
   // All useState hooks next
@@ -177,7 +271,6 @@ export const FileGrid: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [sortColumn, setSortColumn] = useState<SortColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
-  const [sortedFiles, setSortedFiles] = useState<FileItem[]>([])
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean
     position: {
@@ -197,6 +290,7 @@ export const FileGrid: React.FC = () => {
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const hasPositionedCursor = useRef<boolean>(false)
+  const isLoadingRef = useRef<boolean>(false)
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [lastClickTime, setLastClickTime] = useState<number>(0)
@@ -274,9 +368,9 @@ export const FileGrid: React.FC = () => {
   const tableHeadTextColor = useColorModeValue('#475569', 'gray.300')
   const tableBorderColor = useColorModeValue('#d1d5db', 'gray.700')
 
-  // Update sorted files when folder items change
-  useEffect(() => {
-    const sorted = [...folderItems].sort((a, b) => {
+  // Memoize sorted files computation for better performance
+  const sortedFiles = useMemo(() => {
+    return [...folderItems].sort((a, b) => {
       // Always sort folders first
       if (a.type === 'folder' && b.type !== 'folder') return -1;
       if (a.type !== 'folder' && b.type === 'folder') return 1;
@@ -297,18 +391,21 @@ export const FileGrid: React.FC = () => {
           return 0;
       }
     });
-    setSortedFiles(sorted);
   }, [folderItems, sortColumn, sortDirection]);
 
-  // Load directory contents when current directory changes
-  useEffect(() => {
-    const loadDirectory = async () => {
-      if (!currentDirectory) return
+  // Debounced directory loading to prevent rapid reloads
+  const debouncedLoadDirectory = useCallback(
+    async (dirPath: string) => {
+      if (!dirPath) return
+      
+      // Prevent concurrent loads
+      if (isLoadingRef.current) return
+      isLoadingRef.current = true
       setIsLoading(true)
-      // Start timer at the beginning
+      
       const navStart = performance.now();
       try {
-        const fullPath = currentDirectory
+        const fullPath = dirPath
         const isValid = await (window.electronAPI as any).validatePath(fullPath)
         if (!isValid) {
           addLog(`Invalid path: ${fullPath}`, 'error')
@@ -316,19 +413,28 @@ export const FileGrid: React.FC = () => {
         }
         const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
         setFolderItems(contents)
-        // Log folder load time after contents are set
         const navEnd = performance.now();
         addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
-        addLog(`Loaded directory: ${formatPathForLog(currentDirectory)}`)
+        addLog(`Loaded directory: ${formatPathForLog(dirPath)}`)
       } catch (error) {
         console.error('Failed to load directory:', error)
         addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
       } finally {
         setIsLoading(false)
+        isLoadingRef.current = false
       }
-    }
-    loadDirectory()
-  }, [currentDirectory, addLog, rootDirectory, setFolderItems])
+    },
+    [addLog, setFolderItems]
+  );
+
+  // Load directory contents when current directory changes with debouncing
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      debouncedLoadDirectory(currentDirectory);
+    }, 50); // 50ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [currentDirectory, debouncedLoadDirectory])
 
   // Handle column header click for sorting
   const handleSort = (column: SortColumn) => {
@@ -811,9 +917,14 @@ export const FileGrid: React.FC = () => {
     }
   }, [contextMenu.isOpen, currentDirectory])
 
-  const loadDirectory = async (dirPath: string) => {
+  const loadDirectory = useCallback(async (dirPath: string) => {
     if (!dirPath) return;
+    
+    // Prevent concurrent loads
+    if (isLoadingRef.current) return
+    isLoadingRef.current = true
     setIsLoading(true);
+    
     try {
       const contents = await (window.electronAPI as any).getDirectoryContents(dirPath);
       setFolderItems(contents);
@@ -823,8 +934,9 @@ export const FileGrid: React.FC = () => {
       addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     } finally {
       setIsLoading(false);
+      isLoadingRef.current = false;
     }
-  };
+  }, [setFolderItems, addLog]);
 
   // Add this function for selection on mouse down  
   const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
@@ -1043,75 +1155,124 @@ export const FileGrid: React.FC = () => {
 
   useEffect(() => {
     // Register selectAllFiles callback
-    setSelectAllFiles(() => () => {
+    const selectAllCallback = () => {
       const allFileNames = sortedFiles.map(f => f.name);
       setSelectedFiles(allFileNames);
       setStatus(`Selected all files in ${currentDirectory.split(/[\\/]/).pop() || currentDirectory}`, 'info');
       addLog(`Selected all files in ${currentDirectory}`);
-    });
+    };
+    
+    setSelectAllFiles(() => selectAllCallback);
     return () => setSelectAllFiles(() => () => {});
-  }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog]);
+  }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog, setSelectedFiles]);
 
-  // Listen for jump mode selection events from App component
-  useEffect(() => {
-    const handleJumpModeSelect = (e: CustomEvent) => {
-      const { fileName, index } = e.detail;
+  // Jump mode state and optimization
+  const [jumpBuffer, setJumpBuffer] = useState('');
+  const [jumpTimeout, setJumpTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [isJumpModeActive, setIsJumpModeActive] = useState(false);
+
+  // Memoized jump mode matching for O(1) performance with early termination
+  const jumpModeMatches = useMemo(() => {
+    if (!jumpBuffer || !sortedFiles.length) return [];
+    
+    const buffer = jumpBuffer.toLowerCase();
+    const matches: Array<{ file: FileItem; index: number; score: number }> = [];
+    
+    // Early termination: stop after finding first 5 exact matches for performance
+    let exactMatches = 0;
+    const maxExactMatches = 5;
+    
+    for (let i = 0; i < sortedFiles.length; i++) {
+      const file = sortedFiles[i];
+      const fileName = file.name.toLowerCase();
       
-      // Find the file in sortedFiles
-      const fileIndex = sortedFiles.findIndex(f => f.name === fileName);
-      if (fileIndex !== -1) {
-        // Select the matching file
-        setSelectedFiles([fileName]);
-        setSelectedFile(fileName);
-        setLastSelectedIndex(fileIndex);
+      if (fileName.startsWith(buffer)) {
+        // Exact start match gets highest priority
+        matches.push({ file, index: i, score: 1 });
+        exactMatches++;
         
-        // Instantly scroll to the item, prioritizing top position when possible
-        const element = document.querySelector(`[data-file-index="${fileIndex}"]`);
-        if (element) {
-          // Get the container element (either grid or list view)
-          const container = viewMode === 'grid' 
-            ? dropAreaRef.current 
-            : document.querySelector('[data-file-index]')?.closest('div');
-          
-          if (container) {
-            const containerRect = container.getBoundingClientRect();
-            const elementRect = element.getBoundingClientRect();
-            
-            // Calculate if we can position the element at the top
-            const canPositionAtTop = elementRect.top >= containerRect.top;
-            
-            // If element is below the visible area or we can position it at top, scroll to top
-            if (elementRect.bottom > containerRect.bottom || canPositionAtTop) {
-              element.scrollIntoView({ 
-                behavior: 'instant', 
-                block: 'start',
-                inline: 'nearest'
-              });
-            } else {
-              // If element is above the visible area, scroll to show it at top
-              element.scrollIntoView({ 
-                behavior: 'instant', 
-                block: 'start',
-                inline: 'nearest'
-              });
-            }
-          } else {
-            // Fallback to nearest if container not found
-            element.scrollIntoView({ 
-              behavior: 'instant', 
-              block: 'nearest',
-              inline: 'nearest'
-            });
-          }
-        }
+        // Early termination if we have enough exact matches
+        if (exactMatches >= maxExactMatches) break;
+      } else if (fileName.includes(buffer)) {
+        // Contains match gets lower priority
+        matches.push({ file, index: i, score: 0.5 });
+      }
+    }
+    
+    // Sort by score (exact matches first), then by index
+    return matches.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return a.index - b.index;
+    });
+  }, [jumpBuffer, sortedFiles]);
+
+  // Optimized jump mode handler
+  const handleJumpMode = useCallback((key: string) => {
+    // Clear existing timeout
+    if (jumpTimeout) clearTimeout(jumpTimeout);
+    
+    // Add to jump buffer
+    const newBuffer = jumpBuffer + key.toLowerCase();
+    setJumpBuffer(newBuffer);
+    setIsJumpModeActive(true);
+    
+    // Find first matching item
+    if (jumpModeMatches.length > 0) {
+      const firstMatch = jumpModeMatches[0];
+      
+      // Update selection
+      setSelectedFiles([firstMatch.file.name]);
+      setSelectedFile(firstMatch.file.name);
+      setLastSelectedIndex(firstMatch.index);
+      
+      // Optimized scroll to the item with instant positioning
+      const element = document.querySelector(`[data-file-index="${firstMatch.index}"]`);
+      if (element) {
+        // Use requestAnimationFrame for smoother performance
+        requestAnimationFrame(() => {
+          element.scrollIntoView({ 
+            behavior: 'instant', 
+            block: 'start',
+            inline: 'nearest'
+          });
+        });
+      }
+      
+      addLog(`Jumped to: ${firstMatch.file.name}`);
+    }
+    
+    // Reset buffer after 1 second
+    const timeout = setTimeout(() => {
+      setJumpBuffer('');
+      setIsJumpModeActive(false);
+    }, 1000);
+    setJumpTimeout(timeout);
+  }, [jumpBuffer, jumpModeMatches, jumpTimeout, viewMode, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
+
+  // Global keyboard handler for jump mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if any input field is focused
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      // Jump mode - only handle single letter/number keys when not in input fields or quick navigate
+      if (!isInputFocused && !isQuickNavigating && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        handleJumpMode(e.key);
       }
     };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleJumpMode, isQuickNavigating]);
 
-    window.addEventListener('jump-mode-select', handleJumpModeSelect as EventListener);
+  // Cleanup jump mode on unmount
+  useEffect(() => {
     return () => {
-      window.removeEventListener('jump-mode-select', handleJumpModeSelect as EventListener);
+      if (jumpTimeout) clearTimeout(jumpTimeout);
     };
-  }, [sortedFiles, viewMode]);
+  }, [jumpTimeout]);
 
   // Drag and drop handlers for the main container
   const handleDragEnter = (e: React.DragEvent) => {
@@ -1470,24 +1631,31 @@ export const FileGrid: React.FC = () => {
     }
   };
 
-  // Add this helper function before renderGridView and renderListView
-  const isFileCut = (file: FileItem) => clipboard.operation === 'cut' && clipboard.files.some(f => f.path === file.path);
+  // Memoized helper function to check if file is cut
+  const isFileCut = useCallback((file: FileItem) => 
+    clipboard.operation === 'cut' && clipboard.files.some(f => f.path === file.path),
+    [clipboard.operation, clipboard.files]
+  );
 
-  // Helper function to check if a file is being dragged (for immediate visual feedback)
-  const isFileDragged = (file: FileItem) => draggedFiles.has(file.name);
+  // Memoized helper function to check if a file is being dragged
+  const isFileDragged = useCallback((file: FileItem) => draggedFiles.has(file.name), [draggedFiles]);
 
-  // Helper function to check if a file is newly transferred
-  const isFileNew = (file: FileItem) => {
-    const isNew = recentlyTransferredFiles.includes(file.path);
-    if (isNew) {
+  // Memoize recently transferred files Set for O(1) lookup performance
+  const recentlyTransferredFilesSet = useMemo(() => {
+    const set = new Set(recentlyTransferredFiles);
+    const normalizedSet = new Set(recentlyTransferredFiles.map(path => path.replace(/\\/g, '/')));
+    return { set, normalizedSet };
+  }, [recentlyTransferredFiles]);
+
+  // Helper function to check if a file is newly transferred (optimized with Set)
+  const isFileNew = useCallback((file: FileItem) => {
+    if (recentlyTransferredFilesSet.set.has(file.path)) {
       return true;
-    } else {
-      // Check if the file path might be in a different format (normalize slashes)
-      const normalizedPath = file.path.replace(/\\/g, '/');
-      const isNewNormalized = recentlyTransferredFiles.some(path => path.replace(/\\/g, '/') === normalizedPath);
-      return isNewNormalized;
     }
-  };
+    // Check if the file path might be in a different format (normalize slashes)
+    const normalizedPath = file.path.replace(/\\/g, '/');
+    return recentlyTransferredFilesSet.normalizedSet.has(normalizedPath);
+  }, [recentlyTransferredFilesSet]);
 
   // Grid view
   const renderGridView = () => (
@@ -2057,7 +2225,29 @@ export const FileGrid: React.FC = () => {
   };
 
   return (
-    <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%">
+    <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%" position="relative">
+      {/* Jump mode indicator */}
+      {isJumpModeActive && jumpBuffer && (
+        <Box
+          position="fixed"
+          top="50%"
+          left="50%"
+          transform="translate(-50%, -50%)"
+          bg="blue.500"
+          color="white"
+          px={4}
+          py={2}
+          borderRadius="lg"
+          fontSize="lg"
+          fontWeight="bold"
+          zIndex={2000}
+          boxShadow="lg"
+          animation="pulse 0.5s ease-in-out"
+        >
+          Jump: {jumpBuffer}
+        </Box>
+      )}
+      
       {viewMode === 'grid' ? renderGridView() : renderListView()}
       <ContextMenu 
         contextMenu={contextMenu}

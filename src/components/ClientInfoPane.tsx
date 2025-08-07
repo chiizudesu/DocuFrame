@@ -26,6 +26,22 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const labelColor = useColorModeValue('#64748b', 'gray.400');
   const textColor = useColorModeValue('#334155', 'white');
   const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
+  
+  // Additional color mode values for conditional rendering
+  const popoverBg = useColorModeValue('white', 'gray.800');
+  const popoverBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
+  const dividerBorderColor = useColorModeValue('gray.300', 'gray.600');
+  const clientInfoBg = useColorModeValue('blue.50', 'blue.900');
+  const clientInfoColor = useColorModeValue('blue.900', 'blue.100');
+  const noClientBg = useColorModeValue('gray.100', 'gray.700');
+  const noClientColor = useColorModeValue('gray.600', 'gray.300');
+  const transferBg = useColorModeValue('#ffffff', 'gray.800');
+  const transferSectionBg = useColorModeValue('#f8fafc', 'gray.700');
+  const transferBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
+  const transferItemBg = useColorModeValue('white', 'gray.700');
+  const transferItemBorderColor = useColorModeValue('gray.300', 'gray.600');
+  const transferButtonBg = useColorModeValue('blue.600', 'blue.400');
+  const transferSectionBorderColor = useColorModeValue('#f1f5f9', 'gray.700');
 
   // State for loaded client info
   const [clientInfo, setClientInfo] = useState<any | null>(null);
@@ -351,6 +367,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
 
   // Section header style for all three sections
+  const sectionHeaderHoverBg = useColorModeValue('gray.50', 'gray.800');
   const sectionHeaderStyle = {
     w: "100%",
     display: "flex",
@@ -360,7 +377,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     py: 2,
     borderRadius: "md",
     bg: "transparent",
-    _hover: { bg: useColorModeValue('gray.50', 'gray.800') },
+    _hover: { bg: sectionHeaderHoverBg },
     transition: "background 0.2s",
     border: "none",
     mb: 0,
@@ -425,17 +442,17 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                    <Portal>
                      <PopoverContent
                        zIndex={9999}
-                       bg={useColorModeValue('white', 'gray.800')}
+                       bg={popoverBg}
                        border="1px solid"
-                       borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                       borderColor={popoverBorderColor}
                        boxShadow="lg"
                        w="auto"
                        minW="120px"
                        maxW="150px"
                      >
                        <PopoverArrow 
-                         bg={useColorModeValue('white', 'gray.800')}
-                         borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                         bg={popoverBg}
+                         borderColor={popoverBorderColor}
                        />
                        <PopoverBody p={3}>
                          <VStack spacing={2}>
@@ -558,8 +575,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
           borderRadius="lg"
           px={3}
           py={2}
-          bg={clientInfo ? useColorModeValue('blue.50', 'blue.900') : useColorModeValue('gray.100', 'gray.700')}
-          color={clientInfo ? useColorModeValue('blue.900', 'blue.100') : useColorModeValue('gray.600', 'gray.300')}
+          bg={clientInfo ? clientInfoBg : noClientBg}
+          color={clientInfo ? clientInfoColor : noClientColor}
           boxShadow={clientInfo ? 'sm' : 'none'}
           transition="background 0.2s, color 0.2s"
         >
@@ -601,9 +618,9 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                       </PopoverTrigger>
                       <Portal>
                         <PopoverContent
-                          bg={useColorModeValue('white', 'gray.800')}
+                          bg={popoverBg}
                           border="1px solid"
-                          borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                          borderColor={popoverBorderColor}
                           boxShadow="lg"
                           w="auto"
                           minW="120px"
@@ -611,8 +628,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                           zIndex={9999}
                         >
                           <PopoverArrow 
-                            bg={useColorModeValue('white', 'gray.800')}
-                            borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                            bg={popoverBg}
+                            borderColor={popoverBorderColor}
                           />
                           <PopoverBody p={3}>
                             <VStack spacing={2}>
@@ -708,6 +725,9 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         />
       </Flex>
 
+      {/* Add separator above Quick Access */}
+      <Divider mb={2} borderColor={dividerBorderColor} />
+      
       {/* Quick Access Section */}
       <Box mb={1} flexShrink={0}>
         <Box {...sectionHeaderStyle} py={1} mb={0}>
@@ -724,7 +744,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               minH="0"
               display="flex"
               flexDirection="column"
-              bg={useColorModeValue('#ffffff', 'gray.800')}
+              bg={transferBg}
               borderRadius="md"
               overflow="hidden"
             >
@@ -749,7 +769,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                       py={1}
                       fontSize="sm" // Reduced font size by 1px
                       _hover={{
-                        bg: useColorModeValue('#f8fafc', 'gray.700')
+                        bg: transferSectionBg
                       }}
                       color={textColor}
                       cursor="pointer"
@@ -779,7 +799,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         )}
       </Box>
       {/* Add this separator */}
-      <Divider mb={2} borderColor={borderColor} />
+      <Divider mb={2} borderColor={dividerBorderColor} />
       {/* Transfer Files Section */}
       <Box mb={2} flexShrink={0}>
         <Box {...sectionHeaderStyle}
@@ -831,8 +851,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                   min={1}
                   fontSize="sm"
                   color={textColor}
-                  bg={useColorModeValue('white', 'gray.700')}
-                  borderColor={useColorModeValue('gray.300', 'gray.600')}
+                  bg={transferItemBg}
+                  borderColor={transferItemBorderColor}
                   _focus={{
                     borderColor: accentColor,
                     boxShadow: `0 0 0 1px ${accentColor}`
@@ -852,8 +872,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                   size="sm"
                   fontSize="sm"
                   color={textColor}
-                  bg={useColorModeValue('white', 'gray.700')}
-                  borderColor={useColorModeValue('gray.300', 'gray.600')}
+                  bg={transferItemBg}
+                  borderColor={transferItemBorderColor}
                   _focus={{
                     borderColor: accentColor,
                     boxShadow: `0 0 0 1px ${accentColor}`
@@ -874,7 +894,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                 colorScheme="blue"
                 fontWeight="medium"
                 _hover={{
-                  bg: useColorModeValue('blue.600', 'blue.400')
+                  bg: transferButtonBg
                 }}
               >
                 Transfer Files
@@ -885,9 +905,9 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             {transferPreviewFiles.length > 0 && (
               <Box mt={3} border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%">
                 <Box
-                  bg={useColorModeValue('#f8fafc', 'gray.700')}
+                  bg={transferSectionBg}
                   borderBottom="1px solid"
-                  borderColor={useColorModeValue('#e2e8f0', 'gray.600')}
+                  borderColor={transferBorderColor}
                   px={3}
                   py={2}
                 >
@@ -910,10 +930,10 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                       py={2}
                       fontSize="xs"
                       borderBottom={index < transferPreviewFiles.length - 1 ? "1px solid" : "none"}
-                      borderColor={useColorModeValue('#f1f5f9', 'gray.700')}
+                      borderColor={transferSectionBorderColor}
                       _hover={{
-                        bg: useColorModeValue('#f8fafc', 'gray.700')
-                      }}
+                        bg: transferSectionBg}
+                      }
                       color={textColor}
                       cursor="default"
                       style={{ userSelect: 'none' }}
