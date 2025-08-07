@@ -357,6 +357,11 @@ function activateApp() {
   if (windows.length > 0) {
     const mainWindow = windows[0];
     
+    // Handle minimized state first
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    
     // Show the window if it's hidden
     if (!mainWindow.isVisible()) {
       mainWindow.show();
@@ -365,14 +370,13 @@ function activateApp() {
     // Focus the window
     mainWindow.focus();
     
-    // Restore if minimized
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore();
+    // Bring to front on Windows/Linux
+    if (process.platform !== 'darwin') {
+      mainWindow.setAlwaysOnTop(true);
+      setTimeout(() => {
+        mainWindow.setAlwaysOnTop(false);
+      }, 100);
     }
-    
-    // Bring to front
-    mainWindow.setAlwaysOnTop(true);
-    mainWindow.setAlwaysOnTop(false);
     
     console.log('[Main] App activated via global shortcut');
   }

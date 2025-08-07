@@ -70,6 +70,7 @@ interface Settings {
   enableFileWatching?: boolean;
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
+  sidebarCollapsedByDefault?: boolean;
 }
 
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
@@ -94,6 +95,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [enableClientSearchShortcut, setEnableClientSearchShortcut] = useState(true);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
+  const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const toast = useToast();
   const { setRootDirectory, showOutputLog, setShowOutputLog } = useAppContext();
 
@@ -124,6 +126,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setEnableFileWatching(loadedSettings.enableFileWatching !== false);
         setClientSearchShortcut(loadedSettings.clientSearchShortcut || 'Alt+F');
         setEnableClientSearchShortcut(loadedSettings.enableClientSearchShortcut !== false);
+        setSidebarCollapsedByDefault(loadedSettings.sidebarCollapsedByDefault || false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
       } catch (error) {
@@ -163,6 +166,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         enableFileWatching,
         clientSearchShortcut,
         enableClientSearchShortcut,
+        sidebarCollapsedByDefault,
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -996,6 +1000,25 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       </HStack>
                     </FormControl>
                   </Box>
+
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+  <FormControl>
+    <HStack justify="space-between">
+      <VStack align="start" spacing={1}>
+        <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Sidebar Collapsed by Default</FormLabel>
+        <Text fontSize="xs" color={secondaryTextColor}>
+          Start with the sidebar in collapsed state when opening the app
+        </Text>
+      </VStack>
+      <Switch
+        isChecked={sidebarCollapsedByDefault}
+        onChange={(e) => setSidebarCollapsedByDefault(e.target.checked)}
+        colorScheme="blue"
+        size="sm"
+      />
+    </HStack>
+  </FormControl>
+</Box>
                 </VStack>
               </VStack>
             </TabPanel>

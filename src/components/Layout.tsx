@@ -10,6 +10,7 @@ import { FolderTabSystem } from './FolderTabSystem';
 import { Footer } from './Footer';
 import { ChevronLeft, ChevronRight, Minimize2, Maximize2, X, Square } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { settingsService } from '../services/settings';
 
 // CustomTitleBar component
 const CustomTitleBar: React.FC = () => {
@@ -35,6 +36,8 @@ const CustomTitleBar: React.FC = () => {
       // No off/unsubscribe available in this API, so nothing to clean up
     };
   }, []);
+
+
 
   const bgColor = useColorModeValue('#f1f5f9', 'gray.800');
   const iconColor = useColorModeValue('#64748b', 'gray.400');
@@ -159,9 +162,9 @@ const CustomTitleBar: React.FC = () => {
 
 export const Layout: React.FC = () => {
   const { showOutputLog } = useAppContext();
-  const [sidebarWidth, setSidebarWidth] = useState(333);
+  const [sidebarWidth, setSidebarWidth] = useState(263);
   const [logHeight, setLogHeight] = useState(200);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [logMinimized, setLogMinimized] = useState(false);
   const borderColor = useColorModeValue('#d1d5db', 'gray.700');
   const accentBorderColor = useColorModeValue('#d1d5db', 'gray.700');
@@ -265,6 +268,20 @@ export const Layout: React.FC = () => {
     // This ensures all path-related functions work with the active tab
     // The currentDirectory is already updated by the tab system
   }, []);
+
+    useEffect(() => {
+  const loadSidebarSettings = async () => {
+    try {
+      const settings = await settingsService.getSettings();
+      if (settings.sidebarCollapsedByDefault !== undefined) {
+        setSidebarCollapsed(settings.sidebarCollapsedByDefault);
+      }
+    } catch (error) {
+      console.error('Error loading sidebar settings:', error);
+    }
+  };
+  loadSidebarSettings();
+}, []);
 
   return <Grid templateAreas={`
         "titlebar titlebar titlebar"

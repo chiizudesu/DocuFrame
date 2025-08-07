@@ -10,8 +10,16 @@ export interface AppSettings {
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
+  calculatorShortcut?: string;           // <-- ADD THIS
+  enableCalculatorShortcut?: boolean;     // <-- ADD THIS
+  newTabShortcut?: string;                // <-- ADD THIS
+  enableNewTabShortcut?: boolean;         // <-- ADD THIS
+  closeTabShortcut?: string;              // <-- ADD THIS
+  enableCloseTabShortcut?: boolean;       // <-- ADD THIS
+  enableFileWatching?: boolean;           // <-- ADD THIS
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
+  sidebarCollapsedByDefault?: boolean;    // <-- ADD THIS
 }
 
 class SettingsService {

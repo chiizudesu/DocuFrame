@@ -40,7 +40,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const [loadingQuickAccess, setLoadingQuickAccess] = useState(false);
   
   // Transfer Files state
-  const [transferOpen, setTransferOpen] = useState(true);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [transferFileName, setTransferFileName] = useState('');
   const [transferFileCount, setTransferFileCount] = useState(1);
   const [transferLoading, setTransferLoading] = useState(false);
@@ -778,7 +778,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
           </Box>
         )}
       </Box>
-
+      {/* Add this separator */}
+      <Divider mb={2} borderColor={borderColor} />
       {/* Transfer Files Section */}
       <Box mb={2} flexShrink={0}>
         <Box {...sectionHeaderStyle}
