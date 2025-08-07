@@ -97,7 +97,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const toast = useToast();
-  const { setRootDirectory, showOutputLog, setShowOutputLog } = useAppContext();
+  const { setRootDirectory, showOutputLog, setShowOutputLog, reloadSettings } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -182,6 +182,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       if (rootPath !== originalRootPath) {
         setRootDirectory(rootPath);
       }
+      
+      // Immediately reload settings to update the UI
+      await reloadSettings();
       
       toast({
         title: 'Settings saved',

@@ -74,6 +74,8 @@ interface AppContextType {
   // Tab Management Functions
   addTabToCurrentWindow: (path?: string) => void;
   closeCurrentTab: () => void;
+  // Settings reload function
+  reloadSettings: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -114,26 +116,28 @@ export const AppProvider: React.FC<{
   // Close Tab Shortcut
   const [closeTabShortcut, setCloseTabShortcut] = useState<string>('Ctrl+W');
 
+  // Settings loading function
+  const loadSettings = useCallback(async () => {
+    try {
+      const settings = await settingsService.getSettings();
+      if (settings.apiKey) {
+        setApiKey(settings.apiKey);
+      }
+      if (settings.rootPath) {
+        setRootDirectoryState(settings.rootPath);
+        setCurrentDirectory(settings.rootPath);
+      }
+      // Load showOutputLog setting, default to true if not set
+      setShowOutputLog(settings.showOutputLog !== false);
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    }
+  }, []);
+
   // Load settings on mount
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const settings = await settingsService.getSettings();
-        if (settings.apiKey) {
-          setApiKey(settings.apiKey);
-        }
-        if (settings.rootPath) {
-          setRootDirectoryState(settings.rootPath);
-          setCurrentDirectory(settings.rootPath);
-        }
-        // Load showOutputLog setting, default to true if not set
-        setShowOutputLog(settings.showOutputLog !== false);
-      } catch (error) {
-        console.error('Error loading settings:', error);
-      }
-    };
     loadSettings();
-  }, []);
+  }, [loadSettings]);
 
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
@@ -250,6 +254,7 @@ export const AppProvider: React.FC<{
       setCloseTabShortcut,
       addTabToCurrentWindow,
       closeCurrentTab,
+      reloadSettings: loadSettings,
       // Document insights properties removed
     }}>
       {children}

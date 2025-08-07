@@ -128,6 +128,15 @@ const AppContent: React.FC = () => {
         return;
       }
       
+      // Debug Enter key handling
+      if (!isInputFocused && !isQuickNavigating && e.key === 'Enter') {
+        console.log('[App] Enter key pressed after navigation, preventing default');
+        e.preventDefault();
+        return;
+      }
+      
+
+      
       // If Ctrl + Space is pressed, open in command mode
       if (!isInputFocused && !isQuickNavigating && e.ctrlKey && e.code === 'Space') {
         setIsQuickNavigating(true);

@@ -1076,6 +1076,12 @@ export const FileGrid: React.FC = () => {
         } else if (selectedFileObjs.length > 1 && selectedFileObjs.every(f => f.type !== 'folder')) {
           for (const f of selectedFileObjs) handleOpenOrNavigate(f)
         }
+      } else if (e.key === 'Enter' && selectedFiles.length === 0) {
+        // Prevent Enter from doing anything when no files are selected
+        // This prevents unwanted behavior after navigation
+        console.log('[FileGrid] Enter pressed with no files selected, preventing default');
+        e.preventDefault();
+        return;
       } else if (e.key === 'Delete' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFiles.includes(f.name))
         handleDeleteFile(selectedFileObjs)
@@ -1188,7 +1194,10 @@ export const FileGrid: React.FC = () => {
       
       if (fileName.startsWith(buffer)) {
         // Exact start match gets highest priority
-        matches.push({ file, index: i, score: 1 });
+        // Prioritize exact matches: if buffer is "2025" and fileName is "2025", it should score higher than "2024"
+        const isExactMatch = fileName === buffer;
+        const score = isExactMatch ? 2.0 : 1.0; // Exact match gets highest priority
+        matches.push({ file, index: i, score });
         exactMatches++;
         
         // Early termination if we have enough exact matches
@@ -1216,9 +1225,43 @@ export const FileGrid: React.FC = () => {
     setJumpBuffer(newBuffer);
     setIsJumpModeActive(true);
     
+    // Calculate matches with the NEW buffer immediately
+    const buffer = newBuffer.toLowerCase();
+    const matches: Array<{ file: FileItem; index: number; score: number }> = [];
+    
+    // Early termination: stop after finding first 5 exact matches for performance
+    let exactMatches = 0;
+    const maxExactMatches = 5;
+    
+    for (let i = 0; i < sortedFiles.length; i++) {
+      const file = sortedFiles[i];
+      const fileName = file.name.toLowerCase();
+      
+      if (fileName.startsWith(buffer)) {
+        // Exact start match gets highest priority
+        // Prioritize exact matches: if buffer is "2025" and fileName is "2025", it should score higher than "2024"
+        const isExactMatch = fileName === buffer;
+        const score = isExactMatch ? 2.0 : 1.0; // Exact match gets highest priority
+        matches.push({ file, index: i, score });
+        exactMatches++;
+        
+        // Early termination if we have enough exact matches
+        if (exactMatches >= maxExactMatches) break;
+      } else if (fileName.includes(buffer)) {
+        // Contains match gets lower priority
+        matches.push({ file, index: i, score: 0.5 });
+      }
+    }
+    
+    // Sort by score (exact matches first), then by index
+    const newMatches = matches.sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return a.index - b.index;
+    });
+    
     // Find first matching item
-    if (jumpModeMatches.length > 0) {
-      const firstMatch = jumpModeMatches[0];
+    if (newMatches.length > 0) {
+      const firstMatch = newMatches[0];
       
       // Update selection
       setSelectedFiles([firstMatch.file.name]);
@@ -1247,7 +1290,7 @@ export const FileGrid: React.FC = () => {
       setIsJumpModeActive(false);
     }, 1000);
     setJumpTimeout(timeout);
-  }, [jumpBuffer, jumpModeMatches, jumpTimeout, viewMode, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
+  }, [jumpBuffer, sortedFiles, jumpTimeout, viewMode, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
 
   // Global keyboard handler for jump mode
   useEffect(() => {
