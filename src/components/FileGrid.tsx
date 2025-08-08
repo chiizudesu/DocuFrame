@@ -147,6 +147,22 @@ const formatFileSize = (size: string | undefined) => {
   return `${(sizeNum / 1024).toFixed(1)} KB`;
 };
 
+const formatDate = (dateString: string) => {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (error) {
+    return dateString; // Fallback to original string if parsing fails
+  }
+};
+
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
   const { 
@@ -167,7 +183,9 @@ export const FileGrid: React.FC = () => {
     recentlyTransferredFiles, 
     removeRecentlyTransferredFile,
     addTabToCurrentWindow,
-    isQuickNavigating
+    isQuickNavigating,
+    isJumpModeActive,
+    setIsJumpModeActive
   } = useAppContext()
 
   // Memoized icon functions for better performance
@@ -304,7 +322,17 @@ export const FileGrid: React.FC = () => {
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
   const [dragCounter, setDragCounter] = useState(0)
+  const dragLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const dropAreaRef = useRef<HTMLDivElement>(null)
+  
+  // Cleanup drag leave timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (dragLeaveTimeoutRef.current) {
+        clearTimeout(dragLeaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const [blankContextMenu, setBlankContextMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({ isOpen: false, position: { x: 0, y: 0 } });
 
@@ -318,6 +346,19 @@ export const FileGrid: React.FC = () => {
   const [pendingSelectionChange, setPendingSelectionChange] = useState<{ fileName: string; index: number } | null>(null);
   const [isDragStarted, setIsDragStarted] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
+
+  // Track which row is hovered to highlight the entire row in list view
+  const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
+
+  // Stable row hover handlers to avoid flicker when moving between cells
+  const handleRowMouseEnter = useCallback((index: number) => {
+    setHoveredRowIndex(index);
+  }, []);
+  const handleRowMouseLeave = useCallback((index: number, e: React.MouseEvent) => {
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related && related.closest(`[data-row-index="${index}"]`)) return;
+    setHoveredRowIndex(prev => (prev === index ? null : prev));
+  }, []);
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
@@ -370,6 +411,7 @@ export const FileGrid: React.FC = () => {
 
   // Memoize sorted files computation for better performance
   const sortedFiles = useMemo(() => {
+    if (!Array.isArray(folderItems)) return [];
     return [...folderItems].sort((a, b) => {
       // Always sort folders first
       if (a.type === 'folder' && b.type !== 'folder') return -1;
@@ -884,10 +926,10 @@ export const FileGrid: React.FC = () => {
           });
         }
         
-        // Force a re-render to show the "NEW" indicator
+        // Force a re-render to show the "NEW" indicator (reduced timeout)
         setTimeout(() => {
-          loadDirectory(currentDirectory);
-        }, 100);
+          refreshDirectory(currentDirectory);
+        }, 50);
       }
     }
 
@@ -927,14 +969,43 @@ export const FileGrid: React.FC = () => {
     
     try {
       const contents = await (window.electronAPI as any).getDirectoryContents(dirPath);
-      setFolderItems(contents);
-      addLog(`Loaded directory: ${formatPathForLog(dirPath)}`);
+      // Accept both array and { files: [] } shapes
+      const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
+      if (files) {
+        setFolderItems(files);
+        addLog(`Loaded directory: ${formatPathForLog(dirPath)}`);
+      } else {
+        addLog(`Warning: Directory refresh returned invalid data`, 'info');
+      }
     } catch (error) {
       console.error('Failed to load directory:', error);
       addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     } finally {
       setIsLoading(false);
       isLoadingRef.current = false;
+    }
+  }, [setFolderItems, addLog]);
+
+  // Separate refresh function that doesn't show loading state (for background refreshes)
+  const refreshDirectory = useCallback(async (dirPath: string) => {
+    if (!dirPath) return;
+    
+    // Prevent concurrent refreshes but don't show loading
+    if (isLoadingRef.current) return
+    
+    try {
+      const contents = await (window.electronAPI as any).getDirectoryContents(dirPath);
+      // Accept both array and { files: [] } shapes
+      const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
+      if (files) {
+        setFolderItems(files);
+        addLog(`Refreshed directory: ${formatPathForLog(dirPath)}`);
+      } else {
+        addLog(`Warning: Directory refresh returned invalid data`, 'info');
+      }
+    } catch (error) {
+      console.error('Failed to refresh directory:', error);
+      addLog(`Failed to refresh directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
   }, [setFolderItems, addLog]);
 
@@ -1005,8 +1076,36 @@ export const FileGrid: React.FC = () => {
 
   // Add this function for handling drag start - prevents selection change on drag
   const handleFileItemDragStart = (file: FileItem, index: number, event?: React.DragEvent) => {
+    if (!event) return;
+    
     setIsDragStarted(true);
     setPendingSelectionChange(null);
+    
+    // Clear any existing folder hover states from previous drag operations
+    setFolderHoverState({});
+    setFolderDragCounter({});
+    
+    // Use Electron's native file drag and drop exactly as documented
+    event.preventDefault();
+    const filesToDrag: string[] = Array.isArray(selectedFiles) && selectedFiles.length > 0 && sortedFiles
+      ? selectedFiles.map(name => {
+          const selectedFile = sortedFiles.find(f => f.name === name);
+          return selectedFile ? selectedFile.path : null;
+        }).filter((path): path is string => path !== null)
+      : [file.path];
+    
+    // Mark this as an internal drag globally and attach JSON payload
+    try { (window as any).__docuframeInternalDrag = { files: filesToDrag }; } catch {}
+    event.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
+    event.dataTransfer.effectAllowed = 'copyMove';
+    
+    if (window.electron && typeof window.electron.startDrag === 'function') {
+      // Pass all files for multi-file drag - startDrag accepts string | string[]
+      window.electron.startDrag(filesToDrag as any);
+      addLog(`Started native drag for ${filesToDrag.length} file(s)`);
+    } else {
+      addLog('Native drag not available', 'error');
+    }
     
     // Immediately hide the dragged files for snappy UX
     const filesToHide = selectedFiles.length > 0 && selectedFiles.includes(file.name)
@@ -1172,10 +1271,9 @@ export const FileGrid: React.FC = () => {
     return () => setSelectAllFiles(() => () => {});
   }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog, setSelectedFiles]);
 
-  // Jump mode state and optimization
-  const [jumpBuffer, setJumpBuffer] = useState('');
-  const [jumpTimeout, setJumpTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [isJumpModeActive, setIsJumpModeActive] = useState(false);
+     // Jump mode state and optimization
+   const [jumpBuffer, setJumpBuffer] = useState('');
+   const [jumpTimeout, setJumpTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Memoized jump mode matching for O(1) performance with early termination
   const jumpModeMatches = useMemo(() => {
@@ -1268,16 +1366,34 @@ export const FileGrid: React.FC = () => {
       setSelectedFile(firstMatch.file.name);
       setLastSelectedIndex(firstMatch.index);
       
-      // Optimized scroll to the item with instant positioning
-      const element = document.querySelector(`[data-file-index="${firstMatch.index}"]`);
+      // Optimized scroll to the item with container-aware positioning
+      let element = document.querySelector(`[data-row-index="${firstMatch.index}"]`) as HTMLElement | null;
+      if (!element) element = document.querySelector(`[data-file-index="${firstMatch.index}"]`) as HTMLElement | null;
       if (element) {
-        // Use requestAnimationFrame for smoother performance
         requestAnimationFrame(() => {
-          element.scrollIntoView({ 
-            behavior: 'instant', 
-            block: 'start',
-            inline: 'nearest'
-          });
+          const scrollContainer = dropAreaRef.current;
+          if (scrollContainer) {
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const elementRect = element!.getBoundingClientRect();
+
+            // Compute top of element relative to container scroll origin
+            const elementTopInContainer = elementRect.top - containerRect.top + scrollContainer.scrollTop;
+            const headerHeight = 28; // sticky header height
+
+            const containerHeight = scrollContainer.clientHeight;
+            const maxScrollTop = scrollContainer.scrollHeight - containerHeight;
+
+            // Target: element aligned just below sticky header
+            let targetScrollTop = elementTopInContainer - headerHeight;
+            if (targetScrollTop < 0) targetScrollTop = 0;
+            if (targetScrollTop > maxScrollTop) targetScrollTop = maxScrollTop;
+
+            if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 2) {
+              scrollContainer.scrollTo({ top: targetScrollTop, behavior: 'auto' });
+            }
+          } else {
+            element!.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
+          }
         });
       }
       
@@ -1290,25 +1406,149 @@ export const FileGrid: React.FC = () => {
       setIsJumpModeActive(false);
     }, 1000);
     setJumpTimeout(timeout);
-  }, [jumpBuffer, sortedFiles, jumpTimeout, viewMode, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
+     }, [jumpBuffer, sortedFiles, jumpTimeout, viewMode, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
 
-  // Global keyboard handler for jump mode
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if any input field is focused
-      const target = e.target as HTMLElement;
-      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      
-      // Jump mode - only handle single letter/number keys when not in input fields or quick navigate
-      if (!isInputFocused && !isQuickNavigating && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        e.preventDefault();
-        handleJumpMode(e.key);
-      }
-    };
+   // Optimized jump mode backspace handler
+   const handleJumpModeBackspace = useCallback(() => {
+     // Clear existing timeout
+     if (jumpTimeout) clearTimeout(jumpTimeout);
+     
+     // Remove last character from buffer
+     const newBuffer = jumpBuffer.slice(0, -1);
+     setJumpBuffer(newBuffer);
+     
+     if (newBuffer.length === 0) {
+       // If buffer is empty, deactivate jump mode
+       setIsJumpModeActive(false);
+       return;
+     }
+     
+     // Calculate matches with the NEW buffer immediately
+     const buffer = newBuffer.toLowerCase();
+     const matches: Array<{ file: FileItem; index: number; score: number }> = [];
+     
+     // Early termination: stop after finding first 5 exact matches for performance
+     let exactMatches = 0;
+     const maxExactMatches = 5;
+     
+     for (let i = 0; i < sortedFiles.length; i++) {
+       const file = sortedFiles[i];
+       const fileName = file.name.toLowerCase();
+       
+       if (fileName.startsWith(buffer)) {
+         // Exact start match gets highest priority
+         const isExactMatch = fileName === buffer;
+         const score = isExactMatch ? 2.0 : 1.0;
+         matches.push({ file, index: i, score });
+         exactMatches++;
+         
+         // Early termination if we have enough exact matches
+         if (exactMatches >= maxExactMatches) break;
+       } else if (fileName.includes(buffer)) {
+         // Contains match gets lower priority
+         matches.push({ file, index: i, score: 0.5 });
+       }
+     }
+     
+     // Sort by score (exact matches first), then by index
+     const newMatches = matches.sort((a, b) => {
+       if (a.score !== b.score) return b.score - a.score;
+       return a.index - b.index;
+     });
+     
+     // Find first matching item
+     if (newMatches.length > 0) {
+       const firstMatch = newMatches[0];
+       
+       // Update selection
+       setSelectedFiles([firstMatch.file.name]);
+       setSelectedFile(firstMatch.file.name);
+       setLastSelectedIndex(firstMatch.index);
+       
+       // Optimized scroll to the item with instant positioning
+       const element = document.querySelector(`[data-file-index="${firstMatch.index}"]`);
+       if (element) {
+         // Use requestAnimationFrame for smoother performance
+         requestAnimationFrame(() => {
+           // Find the scrollable container (the dropAreaRef)
+           const scrollContainer = dropAreaRef.current;
+           if (scrollContainer) {
+             const elementRect = element.getBoundingClientRect();
+             const containerRect = scrollContainer.getBoundingClientRect();
+             
+             // Always scroll to show the item at the top, unless it's at the bottom
+             const elementTop = (element as HTMLElement).offsetTop;
+             const containerHeight = scrollContainer.clientHeight;
+             const maxScrollTop = scrollContainer.scrollHeight - containerHeight;
+             
+             // Calculate target scroll position to show item at top
+             let targetScrollTop = elementTop;
+             
+             // If scrolling to top would go beyond the bottom, adjust to show at bottom
+             if (targetScrollTop > maxScrollTop) {
+               targetScrollTop = maxScrollTop;
+             }
+             
+             // Only scroll if the target position is different from current
+             if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 5) {
+               scrollContainer.scrollTo({
+                 top: targetScrollTop,
+                 behavior: 'instant'
+               });
+             }
+           } else {
+             // Fallback to direct scrollIntoView
+             element.scrollIntoView({ 
+               behavior: 'instant', 
+               block: 'start',
+               inline: 'nearest'
+             });
+           }
+         });
+       }
+       
+       addLog(`Jumped to: ${firstMatch.file.name} (backspaced to "${newBuffer}")`);
+     } else {
+       // No matches found, clear selection
+       setSelectedFiles([]);
+       setSelectedFile(null);
+       setLastSelectedIndex(null);
+       addLog(`No matches for: "${newBuffer}"`);
+     }
+     
+     // Reset buffer after 1 second
+     const timeout = setTimeout(() => {
+       setJumpBuffer('');
+       setIsJumpModeActive(false);
+     }, 1000);
+     setJumpTimeout(timeout);
+   }, [jumpBuffer, sortedFiles, jumpTimeout, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
+
+     // Global keyboard handler for jump mode
+   useEffect(() => {
+     const handleKeyDown = (e: KeyboardEvent) => {
+       // Check if any input field is focused
+       const target = e.target as HTMLElement;
+       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+       
+       // Handle backspace in jump mode (only when jump mode is active)
+       if (!isInputFocused && !isQuickNavigating && e.key === 'Backspace' && isJumpModeActive && jumpBuffer.length > 0) {
+         e.preventDefault();
+         e.stopPropagation();
+         handleJumpModeBackspace();
+         return;
+       }
+       
+       // Jump mode - only handle single letter/number keys when not in input fields or quick navigate
+       if (!isInputFocused && !isQuickNavigating && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+         e.preventDefault();
+         handleJumpMode(e.key);
+       }
+     };
     
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleJumpMode, isQuickNavigating]);
+         window.addEventListener('keydown', handleKeyDown);
+     return () => window.removeEventListener('keydown', handleKeyDown);
+   }, [handleJumpMode, handleJumpModeBackspace, isQuickNavigating, isJumpModeActive, jumpBuffer]);
 
   // Cleanup jump mode on unmount
   useEffect(() => {
@@ -1321,6 +1561,13 @@ export const FileGrid: React.FC = () => {
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Clear any pending drag leave timeout
+    if (dragLeaveTimeoutRef.current) {
+      clearTimeout(dragLeaveTimeoutRef.current);
+      dragLeaveTimeoutRef.current = null;
+    }
+    
     setDragCounter(prev => prev + 1);
     
     // Debug drag enter
@@ -1345,22 +1592,50 @@ export const FileGrid: React.FC = () => {
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Clear any existing timeout
+    if (dragLeaveTimeoutRef.current) {
+      clearTimeout(dragLeaveTimeoutRef.current);
+    }
+    
     setDragCounter(prev => prev - 1);
     
-    // Only hide drag overlay when counter reaches 0
-    if (dragCounter <= 1) {
-      setIsDragOver(false);
-    }
+    // Use a timeout to debounce drag leave events
+    // This prevents the overlay from flickering when moving between child elements
+    dragLeaveTimeoutRef.current = setTimeout(() => {
+      // Double-check if we're actually still dragging by checking if counter is 0
+      setDragCounter(current => {
+        if (current <= 0) {
+          setIsDragOver(false);
+          // Clear all folder hover states when leaving the entire file grid area
+          setFolderHoverState({});
+          setFolderDragCounter({});
+          return 0;
+        }
+        return current;
+      });
+    }, 50); // Small delay to debounce rapid enter/leave events
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Set appropriate drop effect based on drag type
+    // Clear any pending drag leave timeout to keep the overlay visible
+    if (dragLeaveTimeoutRef.current) {
+      clearTimeout(dragLeaveTimeoutRef.current);
+      dragLeaveTimeoutRef.current = null;
+    }
+    
+    // Ensure drag overlay stays visible for external files
     const hasExternalFiles = e.dataTransfer.types.includes('Files');
     const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
     
+    if (hasExternalFiles && !isInternalDrag && !isDragOver) {
+      setIsDragOver(true);
+    }
+    
+    // Set appropriate drop effect based on drag type
     if (hasExternalFiles) {
       e.dataTransfer.dropEffect = 'copy'; // External files are copied/uploaded
     } else if (isInternalDrag) {
@@ -1374,6 +1649,13 @@ export const FileGrid: React.FC = () => {
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Clear any pending drag leave timeout
+    if (dragLeaveTimeoutRef.current) {
+      clearTimeout(dragLeaveTimeoutRef.current);
+      dragLeaveTimeoutRef.current = null;
+    }
+    
     setIsDragOver(false);
     setDragCounter(0);
 
@@ -1681,7 +1963,7 @@ export const FileGrid: React.FC = () => {
   );
 
   // Memoized helper function to check if a file is being dragged
-  const isFileDragged = useCallback((file: FileItem) => draggedFiles.has(file.name), [draggedFiles]);
+
 
   // Memoize recently transferred files Set for O(1) lookup performance
   const recentlyTransferredFilesSet = useMemo(() => {
@@ -1814,14 +2096,14 @@ export const FileGrid: React.FC = () => {
             {file.type === 'file' && nativeIcons.has(file.path) ? (
               <Image
                 src={nativeIcons.get(file.path)}
-                boxSize={7}
+                boxSize={9.5}
                 mr={4}
                 alt={`${file.name} icon`}
               />
             ) : (
               <Icon
                 as={getFileIcon(file.type, file.name)}
-                boxSize={7}
+                boxSize={9.5}
                 mr={4}
                 color={getIconColor(file.type, file.name)}
               />
@@ -1860,239 +2142,592 @@ export const FileGrid: React.FC = () => {
     </Grid>
     </Box>
   )
+// Complete renderListView function replacement for FileGrid.tsx
+// This fixes the row highlighting and drag-drop issues
+// Complete renderListView function replacement for FileGrid.tsx
+// This fixes the row highlighting and drag-drop issues
 
-  // List view
-  const renderListView = () => (
-    <Box 
-      ref={dropAreaRef}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+const renderListView = () => (
+  <Box 
+    ref={dropAreaRef}
+    onDragEnter={handleDragEnter}
+    onDragLeave={handleDragLeave}
+    onDragOver={handleDragOver}
+    onDrop={handleDrop}
+    position="relative"
+    height="100%"
+    width="100%"
+    overflowY="auto"
+    overflowX="auto"
+    pl={3}
+    onContextMenu={e => {
+      if (e.target === e.currentTarget) {
+        e.preventDefault();
+        const position = getSmartMenuPosition(e.clientX, e.clientY, 150);
+        setBlankContextMenu({ isOpen: true, position });
+      }
+    }}
+    onClick={e => {
+      if (e.target === e.currentTarget && selectedFiles.length > 0) {
+        setSelectedFiles([]);
+        setSelectedFile(null);
+      }
+    }}
+  >
+    {/* Drag overlay */}
+    {isDragOver && (
+      <Box
+        position="absolute"
+        top={0}
+        left={0}
+        right={0}
+        bottom={0}
+        bg="blue.500"
+        opacity={0.1}
+        borderRadius="md"
+        border="2px dashed"
+        borderColor="blue.500"
+        zIndex={1000}
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        pointerEvents="none"
+      >
+        <Flex direction="column" align="center" color="blue.600">
+          <Icon as={Upload} boxSize={12} mb={2} />
+          <Text fontSize="lg" fontWeight="bold">
+            Drop files here to upload
+          </Text>
+        </Flex>
+      </Box>
+    )}
+    
+    {/* CSS Grid container */}
+    <Box
+      display="grid"
+      gridTemplateColumns={`${columnWidths[columnOrder[0] as keyof typeof columnWidths]}px ${columnWidths[columnOrder[1] as keyof typeof columnWidths]}px ${columnWidths[columnOrder[2] as keyof typeof columnWidths]}px`}
+      gridAutoRows="32px"
+      width="fit-content"
+      fontSize="xs"
+      userSelect="none"
+      minWidth="610px"
       position="relative"
-      overflowY="auto"
-      overflowX="auto" 
-      p={0} 
-      m={0}
-      height="100%"
-      width="100%"
-      onContextMenu={e => {
-        if (e.target === e.currentTarget) {
-          e.preventDefault();
-          const position = getSmartMenuPosition(e.clientX, e.clientY, 150); // Blank menu is smaller
-          setBlankContextMenu({ isOpen: true, position });
-        }
-      }}
-      onClick={e => {
-        // Clear selection when clicking on empty space within the list
-        if (e.target === e.currentTarget && selectedFiles.length > 0) {
-          setSelectedFiles([]);
-          setSelectedFile(null);
-        }
-      }}
     >
-      {/* Drag overlay - now covers the entire file list area */}
-      {isDragOver && (
+      {/* Sticky header */}
+      <Box 
+        display="contents" 
+        position="sticky" 
+        top={0} 
+        zIndex={100}
+      >
         <Box
-          position="absolute"
-          top={0}
-          left={0}
-          right={0}
-          bottom={0}
-          bg="blue.500"
-          opacity={0.1}
-          borderRadius="md"
-          border="2px dashed"
-          borderColor="blue.500"
-          zIndex={1000}
+          px={2}
+          py={1}
+          fontWeight="medium"
+          fontSize="xs"
+          color={tableHeadTextColor}
           display="flex"
           alignItems="center"
-          justifyContent="center"
-          pointerEvents="none"
+          cursor="pointer"
+          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+          onClick={() => handleSort('name')}
+          position="sticky"
+          top={0}
+          zIndex={100}
+          bg={useColorModeValue('gray.50', 'gray.900')}
+          _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: useColorModeValue('gray.300', 'gray.700') }}
+          data-column="name"
+          onMouseDown={(e) => handleColumnDragStart('name', e)}
+          opacity={draggingColumn === 'name' ? 0.5 : 1}
         >
-          <Flex direction="column" align="center" color="blue.600">
-            <Icon as={Upload} boxSize={12} mb={2} />
-            <Text fontSize="lg" fontWeight="bold">
-              Drop files here to upload
-            </Text>
-          </Flex>
+          Name
+          {sortColumn === 'name' && (
+            <Icon
+              as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+              ml={1}
+              boxSize={2.5}
+              color="#4F46E5"
+            />
+          )}
+          <Box
+            position="absolute"
+            left={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            cursor="grab"
+            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+            _active={{ cursor: 'grabbing' }}
+          />
+          <Box
+            position="absolute"
+            right={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            cursor="col-resize"
+            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+            onMouseDown={(e) => handleResizeStart('name', e)}
+          />
         </Box>
-      )}
-      
-      <Table
-        size="sm"
-        variant="simple"
-        bg={tableBgColor}
-        borderRadius={0}
-        overflow="unset"
-        mt={0}
-        style={{ 
-          userSelect: 'none',
-          tableLayout: 'fixed', // Prevent column width changes
-          width: '100%'
-        }}
-      >
-        <Thead bg={tableHeadBgColor}>
-          <Tr>
-            <Th
-              color={tableHeadTextColor}
-              cursor="pointer"
-              onClick={() => handleSort('name')}
-              borderColor={tableBorderColor}
-              width="50%"
+        <Box
+          px={2}
+          py={1}
+          fontWeight="medium"
+          fontSize="xs"
+          color={tableHeadTextColor}
+          display="flex"
+          alignItems="center"
+          cursor="pointer"
+          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+          onClick={() => handleSort('size')}
+          position="sticky"
+          top={0}
+          zIndex={100}
+          bg={useColorModeValue('gray.50', 'gray.900')}
+          _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: useColorModeValue('gray.300', 'gray.700') }}
+          data-column="size"
+          onMouseDown={(e) => handleColumnDragStart('size', e)}
+          opacity={draggingColumn === 'size' ? 0.5 : 1}
+        >
+          Size
+          {sortColumn === 'size' && (
+            <Icon
+              as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+              ml={1}
+              boxSize={2.5}
+              color="#4F46E5"
+            />
+          )}
+          <Box
+            position="absolute"
+            left={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            cursor="grab"
+            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+            _active={{ cursor: 'grabbing' }}
+          />
+          <Box
+            position="absolute"
+            right={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            cursor="col-resize"
+            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+            onMouseDown={(e) => handleResizeStart('size', e)}
+          />
+        </Box>
+        <Box
+          px={2}
+          py={1}
+          fontWeight="medium"
+          fontSize="xs"
+          color={tableHeadTextColor}
+          display="flex"
+          alignItems="center"
+          cursor="pointer"
+          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+          onClick={() => handleSort('modified')}
+          position="sticky"
+          top={0}
+          zIndex={100}
+          bg={useColorModeValue('gray.50', 'gray.900')}
+          data-column="modified"
+          onMouseDown={(e) => handleColumnDragStart('modified', e)}
+          opacity={draggingColumn === 'modified' ? 0.5 : 1}
+        >
+          Modified
+          {sortColumn === 'modified' && (
+            <Icon
+              as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+              ml={1}
+              boxSize={2.5}
+              color="#4F46E5"
+            />
+          )}
+          <Box
+            position="absolute"
+            left={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            cursor="grab"
+            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+            _active={{ cursor: 'grabbing' }}
+          />
+          <Box
+            position="absolute"
+            right={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            cursor="col-resize"
+            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+            onMouseDown={(e) => handleResizeStart('modified', e)}
+          />
+        </Box>
+      </Box>
+
+      {/* Header spacer */}
+            <Box 
+        position="absolute"
+        top={0}
+        left="610px"
+        right={0}
+        height="32px"
+        zIndex={99}
+        bg={useColorModeValue('gray.50', 'gray.900')}
+      />
+
+      {/* Header right edge separator */}
+      <Box
+        position="absolute"
+        top={0}
+        right={0}
+        width="1px"
+        height="32px"
+        bg={useColorModeValue('gray.300', 'gray.700')}
+        zIndex={99}
+      />
+
+      {/* File rows - FIXED VERSION */}
+      {sortedFiles.map((file, index) => {
+        if (isRenaming === file.name) {
+          return (
+            <Box
+              key={index}
+              gridColumn="1 / -1"
+              px={2}
+              py={1}
             >
-              <Flex align="center">
-                Name
-                {sortColumn === 'name' && (
-                  <Icon
-                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                    ml={1}
-                    boxSize={3}
-                    color="#4F46E5"
-                  />
-                )}
-              </Flex>
-            </Th>
-            <Th
-              color={tableHeadTextColor}
-              cursor="pointer"
-              onClick={() => handleSort('size')}
-              borderColor={tableBorderColor}
-              width="25%"
-            >
-              <Flex align="center">
-                Size
-                {sortColumn === 'size' && (
-                  <Icon
-                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                    ml={1}
-                    boxSize={3}
-                    color="#4F46E5"
-                  />
-                )}
-              </Flex>
-            </Th>
-            <Th
-              color={tableHeadTextColor}
-              cursor="pointer"
-              onClick={() => handleSort('modified')}
-              borderColor={tableBorderColor}
-              width="25%"
-            >
-              <Flex align="center">
-                Modified
-                {sortColumn === 'modified' && (
-                  <Icon
-                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                    ml={1}
-                    boxSize={3}
-                    color="#4F46E5"
-                  />
-                )}
-              </Flex>
-            </Th>
-          </Tr>
-        </Thead>
-        <Tbody>
-          {sortedFiles.map((file, index) => {
-            // console.log('Rendering row:', file.name, 'type:', file.type);
-            return isRenaming === file.name ? (
-              <Tr key={index}>
-                <Td colSpan={3} borderColor={tableBorderColor}>
-                  <form onSubmit={handleRenameSubmit}>
-                    <Input
-                      ref={renameInputRef}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={handleRenameSubmit}
-                      autoFocus
-                      size="sm"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          setIsRenaming(null)
-                          setRenameValue('')
-                        }
-                      }}
-                    />
-                  </form>
-                </Td>
-              </Tr>
-            ) : (
-              <DraggableFileItem
-                key={index}
-                file={file}
-                isSelected={selectedFiles.includes(file.name)}
-                onSelect={handleFileItemClick}
-                onContextMenu={handleContextMenu}
-                index={index}
-                selectedFiles={selectedFiles}
-                sortedFiles={sortedFiles}
-                onDragStateReset={resetDragState}
-                isCut={isFileCut(file)}
-                onFileMouseDown={handleFileItemMouseDown}
-                onFileClick={handleFileItemClick}
-                onFileMouseUp={handleFileItemMouseUp}
-                onFileDragStart={handleFileItemDragStart}
-                onNativeIconLoaded={handleNativeIconLoaded}
-                as="tr"
+              <form onSubmit={handleRenameSubmit}>
+                <Input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleRenameSubmit}
+                  autoFocus
+                  size="xs"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setIsRenaming(null)
+                      setRenameValue('')
+                    }
+                  }}
+                />
+              </form>
+            </Box>
+          )
+        }
+
+        const isFileSelected = selectedFiles.includes(file.name);
+        const isRowHovered = hoveredRowIndex === index;
+        
+        // FIXED: Simplified hover logic for consistent row highlighting
+        const rowBg = isFileSelected 
+          ? useColorModeValue('blue.200', 'blue.900')
+          : (isRowHovered ? useColorModeValue('gray.100', 'gray.700') : 'transparent');
+        
+        // FIXED: Folder drop background override
+        const folderDropBg = file.type === 'folder' && folderHoverState[file.path] 
+          ? useColorModeValue('blue.100', 'blue.700')
+          : undefined;
+        
+        const finalBg = folderDropBg || rowBg;
+
+        // FIXED: Row-level event handlers applied to all cells
+        const createCellHandlers = (isFirstCell: boolean) => ({
+          onMouseEnter: () => setHoveredRowIndex(index),
+          onMouseLeave: (e: React.MouseEvent) => {
+            const relatedTarget = e.relatedTarget as Element;
+            // Only clear hover if truly leaving the row
+            if (!relatedTarget || typeof relatedTarget.closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
+              setHoveredRowIndex(prev => prev === index ? null : prev);
+            }
+          },
+          ...(isFirstCell && {
+            onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, file),
+            onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
+            onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
+            onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
+            draggable: true,
+            onDragStart: (e: React.DragEvent) => {
+              // FIXED: Prevent dragging within same folder
+              const filesToDrag: string[] = selectedFiles.length > 0 && selectedFiles.includes(file.name)
+                ? selectedFiles.map(name => {
+                    const selectedFile = sortedFiles.find(f => f.name === name);
+                    return selectedFile ? selectedFile.path : null;
+                  }).filter((path): path is string => path !== null)
+                : [file.path];
+              
+              // Set internal drag data
+              e.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
+              e.dataTransfer.effectAllowed = 'copyMove';
+              
+              handleFileItemDragStart(file, index, e);
+            },
+            onDragEnd: (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragStarted(false);
+              setDraggedFiles(new Set());
+              setFolderHoverState({});
+              setFolderDragCounter({});
+              try { delete (window as any).__docuframeInternalDrag; } catch {}
+              addLog('Drag operation ended');
+            }
+          })
+        });
+
+        // FIXED: Folder drop handlers for all cells
+        const folderDropHandlers = file.type === 'folder' ? {
+          onDragEnterCapture: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setFolderHoverState({ [file.path]: true });
+            setFolderDragCounter(prev => ({
+              ...prev,
+              [file.path]: (prev[file.path] || 0) + 1
+            }));
+          },
+          onDragOverCapture: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const hasExternalFiles = e.dataTransfer.types.includes('Files');
+            const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+            
+            if (hasExternalFiles) {
+              e.dataTransfer.dropEffect = 'copy';
+            } else if (isInternalDrag) {
+              e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+            } else {
+              e.dataTransfer.dropEffect = 'none';
+            }
+          },
+          onDragLeaveCapture: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const relatedTarget = e.relatedTarget as Element;
+            
+            // Only clear if truly leaving the row
+            if (!relatedTarget || typeof (relatedTarget as any).closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
+              setFolderHoverState(prev => ({ ...prev, [file.path]: false }));
+              setFolderDragCounter(prev => ({ ...prev, [file.path]: 0 }));
+            }
+          },
+          onDropCapture: async (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            setFolderHoverState(prev => ({ ...prev, [file.path]: false }));
+            setFolderDragCounter(prev => ({ ...prev, [file.path]: 0 }));
+            
+            const hasExternalFiles = e.dataTransfer.types.includes('Files');
+            const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+            const isInternal = isInternalDrag || !!((window as any).__docuframeInternalDrag?.files?.length);
+            
+            if (isInternal) {
+              try {
+                let filesToTransfer: string[] = [];
+                const draggedFilesData = e.dataTransfer.getData('application/x-docuframe-files');
+                if (draggedFilesData) {
+                  filesToTransfer = JSON.parse(draggedFilesData) as string[];
+                } else if ((window as any).__docuframeInternalDrag?.files) {
+                  filesToTransfer = (window as any).__docuframeInternalDrag.files as string[];
+                } else {
+                  return;
+                }
+                
+                // FIXED: Check if dragging to same folder
+                const targetFolderPath = file.path.replace(/\\/g, '/');
+                const isSameFolder = filesToTransfer.some(path => {
+                  const sourceFolder = path.substring(0, path.lastIndexOf('/')).replace(/\\/g, '/');
+                  return sourceFolder === targetFolderPath;
+                });
+                
+                if (isSameFolder) {
+                  addLog('Cannot move files to the same folder', 'info');
+                  setStatus('Files are already in this folder', 'info');
+                  return;
+                }
+                
+                const operation = e.ctrlKey ? 'copy' : 'move';
+                
+                if (window.electronAPI) {
+                  // FIXED: Use proper API methods for move vs copy
+                  if (operation === 'copy') {
+                    const results = await window.electronAPI.copyFilesWithConflictResolution(filesToTransfer, file.path);
+                    const successful = results.filter((r: any) => r.status === 'success').length;
+                    addLog(`Copied ${successful} file(s) to ${file.name}`);
+                    setStatus(`Copied ${successful} file(s)`, 'success');
+                  } else {
+                    // Use moveFilesWithConflictResolution for actual move operation
+                    const results = await window.electronAPI.moveFilesWithConflictResolution(filesToTransfer, file.path);
+                    const successful = results.filter((r: any) => r.status === 'success').length;
+                    const failed = results.filter((r: any) => r.status === 'error').length;
+                    
+                    let message = `Moved ${successful} file(s) to ${file.name}`;
+                    if (failed > 0) message += `, ${failed} failed`;
+                    
+                    addLog(message);
+                    setStatus(message, failed > 0 ? 'error' : 'success');
+                  }
+                  
+                  setDraggedFiles(new Set());
+                  await refreshDirectory(currentDirectory);
+                  
+                  if (operation === 'move') {
+                    setSelectedFiles([]);
+                  }
+                }
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                addLog(`${e.ctrlKey ? 'Copy' : 'Move'} operation failed: ${errorMessage}`, 'error');
+                setDraggedFiles(new Set());
+              }
+            } else if (hasExternalFiles && e.dataTransfer.files.length > 0) {
+              // Handle external file drops
+              try {
+                const files = Array.from(e.dataTransfer.files).map(f => (f as any).path || f.name);
+                const validFiles = files.filter(f => f && f !== f.name);
+                
+                if (validFiles.length > 0 && window.electronAPI) {
+                  const results = await window.electronAPI.copyFilesWithConflictResolution(validFiles, file.path);
+                  const successful = results.filter((r: any) => r.status === 'success').length;
+                  addLog(`Uploaded ${successful} file(s) to ${file.name}`);
+                  await refreshDirectory(currentDirectory);
+                }
+              } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                addLog(`Upload operation failed: ${errorMessage}`, 'error');
+              }
+            }
+          }
+        } : {};
+
+        // FIXED: Common cell styles with proper row highlighting
+        const cellStyles = {
+          bg: finalBg,
+          transition: "background 0.1s",
+          cursor: "default",
+          px: 2,
+          py: 1.05,
+          display: "flex",
+          alignItems: "center",
+          position: "relative" as const,
+          // Ensure the cell itself is the drop target area
+          pointerEvents: 'auto' as const,
+        };
+
+        return (
+          <React.Fragment key={index}>
+            {/* Name Column */}
+            {columnOrder.includes('name') && (
+              <Box 
+                {...cellStyles} 
+                {...createCellHandlers(true)}
+                {...(file.type === 'folder' ? folderDropHandlers : {})}
+                data-row-index={index}
                 data-file-index={index}
               >
-                <Td borderColor={tableBorderColor} width="50%" position="relative">
-                  <Flex align="center">
-                    {/* Use native icon if available for files, otherwise use Lucide icons */}
-                    {file.type === 'file' && nativeIcons.has(file.path) ? (
-                      <Image
-                        src={nativeIcons.get(file.path)}
-                        boxSize={4}
-                        mr={2}
-                        alt={`${file.name} icon`}
-                      />
-                    ) : (
-                      <Icon
-                        as={getFileIcon(file.type, file.name)}
-                        boxSize={4}
-                        mr={2}
-                        color={getIconColor(file.type, file.name)}
-                      />
-                    )}
-                    <Text fontSize="sm" color={fileTextColor} style={{ userSelect: 'none' }}>
-                      {file.name}
-                    </Text>
-                    {/* NEW indicator for recently transferred files */}
-                    {isFileNew(file) && (
-                      <Box
-                        position="absolute"
-                        top={1}
-                        right={1}
-                        bg="green.500"
-                        color="white"
-                        fontSize="xs"
-                        fontWeight="bold"
-                        px={2}
-                        py={0.5}
-                        borderRadius="full"
-                        zIndex={2}
-                        boxShadow="0 1px 3px rgba(0,0,0,0.3)"
-                      >
-                        NEW
-                      </Box>
-                    )}
-                  </Flex>
-                </Td>
-                <Td borderColor={tableBorderColor} color={fileSubTextColor} width="25%">
+                {/* Icon */}
+                {file.type === 'file' && nativeIcons.has(file.path) ? (
+                  <Image
+                    src={nativeIcons.get(file.path)}
+                    boxSize={4}
+                    mr={1.5}
+                    alt={`${file.name} icon`}
+                    flexShrink={0}
+                  />
+                ) : (
+                  <Icon
+                    as={getFileIcon(file.type, file.name)}
+                    boxSize={4}
+                    mr={1.5}
+                    color={getIconColor(file.type, file.name)}
+                    flexShrink={0}
+                  />
+                )}
+                
+                {/* File name */}
+                <Text 
+                  fontSize="xs" 
+                  color={fileTextColor} 
+                  style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
+                  overflow="hidden"
+                  textOverflow="ellipsis"
+                  whiteSpace="nowrap"
+                  flex={1}
+                >
+                  {file.name}
+                </Text>
+                
+                {/* NEW indicator */}
+                {isFileNew(file) && (
+                  <Box
+                    position="absolute"
+                    top={1}
+                    right={1}
+                    bg="green.500"
+                    color="white"
+                    fontSize="2xs"
+                    fontWeight="bold"
+                    px={1}
+                    py={0.25}
+                    borderRadius="full"
+                    zIndex={2}
+                    boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+                  >
+                    NEW
+                  </Box>
+                )}
+              </Box>
+            )}
+            
+            {/* Size Column */}
+            {columnOrder.includes('size') && (
+              <Box 
+                {...cellStyles}
+                {...createCellHandlers(false)}
+                {...(file.type === 'folder' ? folderDropHandlers : {})}
+                data-row-index={index}
+              >
+                <Text 
+                  fontSize="xs" 
+                  color={fileSubTextColor}
+                  style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
+                >
                   {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
-                </Td>
-                <Td borderColor={tableBorderColor} color={fileSubTextColor} width="25%">
-                  {file.modified ? new Date(file.modified).toLocaleString() : '-'}
-                </Td>
-              </DraggableFileItem>
-            );
-          })}
-        </Tbody>
-      </Table>
+                </Text>
+              </Box>
+            )}
+            
+            {/* Modified Column */}
+            {columnOrder.includes('modified') && (
+              <Box 
+                {...cellStyles}
+                {...createCellHandlers(false)}
+                {...(file.type === 'folder' ? folderDropHandlers : {})}
+                data-row-index={index}
+              >
+                <Text 
+                  fontSize="xs" 
+                  color={fileSubTextColor}
+                  style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
+                >
+                  {file.modified ? formatDate(file.modified) : '-'}
+                </Text>
+              </Box>
+            )}
+          </React.Fragment>
+        )
+      })}
     </Box>
-  )
-
+  </Box>
+)
   // Convert renderContextMenu to a component
   const ContextMenu: React.FC<{
     contextMenu: typeof contextMenu;
@@ -2267,30 +2902,145 @@ export const FileGrid: React.FC = () => {
     setPropertiesFile({ ...propertiesFile, isBlocked: false });
   };
 
+  // Column management state
+  const [columnWidths, setColumnWidths] = useState({
+    name: 400,
+    size: 100,
+    modified: 180
+  });
+  const [columnOrder, setColumnOrder] = useState(['name', 'size', 'modified']);
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null);
+  const [draggingColumn, setDraggingColumn] = useState<string | null>(null);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [originalColumnOrder, setOriginalColumnOrder] = useState<string[]>([]);
+  const [dragTargetColumn, setDragTargetColumn] = useState<string | null>(null);
+
+  // Add folder drop states
+  const [folderHoverState, setFolderHoverState] = useState<{[key: string]: boolean}>({});
+  const [folderDragCounter, setFolderDragCounter] = useState<{[key: string]: number}>({});
+
+  // Column resize handlers
+  const handleResizeStart = (column: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingColumn(column);
+    setDragStartX(e.clientX);
+  };
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (!resizingColumn) return;
+    
+    const deltaX = e.clientX - dragStartX;
+    const newWidth = Math.max(50, columnWidths[resizingColumn as keyof typeof columnWidths] + deltaX);
+    
+    setColumnWidths(prev => ({
+      ...prev,
+      [resizingColumn]: newWidth
+    }));
+    setDragStartX(e.clientX);
+  }, [resizingColumn, dragStartX, columnWidths]);
+
+  const handleResizeEnd = useCallback(() => {
+    setResizingColumn(null);
+  }, []);
+
+  // Column reorder handlers
+  const handleColumnDragStart = (column: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingColumn(column);
+    setOriginalColumnOrder([...columnOrder]);
+  };
+
+  const handleColumnDragMove = useCallback((e: MouseEvent) => {
+    if (!draggingColumn) return;
+    
+    // Just track the target column, don't reorder yet
+    const target = e.target as HTMLElement;
+    const headerCell = target.closest('[data-column]') as HTMLElement;
+    
+    if (headerCell) {
+      const targetColumn = headerCell.getAttribute('data-column');
+      if (targetColumn && targetColumn !== draggingColumn) {
+        // Store the target for when mouse is released
+        setDragTargetColumn(targetColumn);
+      }
+    }
+  }, [draggingColumn]);
+
+  const handleColumnDragEnd = useCallback(() => {
+    if (draggingColumn && dragTargetColumn && draggingColumn !== dragTargetColumn) {
+      // Now perform the reorder
+      const newOrder = [...columnOrder];
+      const dragIndex = newOrder.indexOf(draggingColumn);
+      const targetIndex = newOrder.indexOf(dragTargetColumn);
+      
+      newOrder.splice(dragIndex, 1);
+      newOrder.splice(targetIndex, 0, draggingColumn);
+      
+      setColumnOrder(newOrder);
+    }
+    
+    setDraggingColumn(null);
+    setDragTargetColumn(null);
+  }, [draggingColumn, dragTargetColumn, columnOrder]);
+
+  // Column drag event listeners
+  useEffect(() => {
+    if (draggingColumn) {
+      const handleMouseMove = (e: MouseEvent) => handleColumnDragMove(e);
+      const handleMouseUp = () => handleColumnDragEnd();
+      
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [draggingColumn, handleColumnDragMove, handleColumnDragEnd]);
+
+  // Column resize event listeners
+  useEffect(() => {
+    if (resizingColumn) {
+      const handleMouseMove = (e: MouseEvent) => handleResizeMove(e);
+      const handleMouseUp = () => handleResizeEnd();
+      
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+      };
+    }
+  }, [resizingColumn, handleResizeMove, handleResizeEnd]);
+
+  // Load native icons for files
+  useEffect(() => {
+    const loadNativeIcons = async () => {
+      if (!window.electronAPI?.getFileIcon) return;
+      
+      for (const file of sortedFiles) {
+        if (file.type === 'file' && !nativeIcons.has(file.path)) {
+          try {
+            const iconData = await window.electronAPI.getFileIcon(file.path);
+            if (iconData) {
+              setNativeIcons(prev => new Map(prev.set(file.path, iconData)));
+            }
+          } catch (error) {
+            console.error('Failed to get file icon:', error);
+          }
+        }
+      }
+    };
+    
+    loadNativeIcons();
+  }, [sortedFiles, nativeIcons]);
+
   return (
     <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%" position="relative">
-      {/* Jump mode indicator */}
-      {isJumpModeActive && jumpBuffer && (
-        <Box
-          position="fixed"
-          top="50%"
-          left="50%"
-          transform="translate(-50%, -50%)"
-          bg="blue.500"
-          color="white"
-          px={4}
-          py={2}
-          borderRadius="lg"
-          fontSize="lg"
-          fontWeight="bold"
-          zIndex={2000}
-          boxShadow="lg"
-          animation="pulse 0.5s ease-in-out"
-        >
-          Jump: {jumpBuffer}
-        </Box>
-      )}
-      
       {viewMode === 'grid' ? renderGridView() : renderListView()}
       <ContextMenu 
         contextMenu={contextMenu}

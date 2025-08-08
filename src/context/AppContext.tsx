@@ -76,6 +76,9 @@ interface AppContextType {
   closeCurrentTab: () => void;
   // Settings reload function
   reloadSettings: () => Promise<void>;
+  // Jump mode state
+  isJumpModeActive: boolean;
+  setIsJumpModeActive: (value: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -115,6 +118,8 @@ export const AppProvider: React.FC<{
   const [newTabShortcut, setNewTabShortcut] = useState<string>('Ctrl+T');
   // Close Tab Shortcut
   const [closeTabShortcut, setCloseTabShortcut] = useState<string>('Ctrl+W');
+  // Jump mode state
+  const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
 
   // Settings loading function
   const loadSettings = useCallback(async () => {
@@ -255,6 +260,8 @@ export const AppProvider: React.FC<{
       addTabToCurrentWindow,
       closeCurrentTab,
       reloadSettings: loadSettings,
+      isJumpModeActive,
+      setIsJumpModeActive,
       // Document insights properties removed
     }}>
       {children}

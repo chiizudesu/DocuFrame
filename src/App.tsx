@@ -23,6 +23,7 @@ const AppContent: React.FC = () => {
     setCurrentDirectory,
     setStatus,
     addLog,
+    isJumpModeActive,
 
   } = useAppContext();
   
@@ -114,8 +115,9 @@ const AppContent: React.FC = () => {
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       
 
-      // Backspace to go up one directory level
-      if (!isInputFocused && !isQuickNavigating && e.key === 'Backspace') {
+      // Backspace to go up one directory level (only when jump mode is not active)
+      if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Backspace') {
+        console.log('[App] Backspace navigation triggered:', { isInputFocused, isQuickNavigating, isJumpModeActive });
         e.preventDefault();
         const parentPath = getParentDirectory(currentDirectory);
         if (parentPath && parentPath !== currentDirectory) {
@@ -185,7 +187,7 @@ const AppContent: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen]);
+  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen, isJumpModeActive]);
   
   // If this is the settings window, render only the settings
   if (isSettingsWindow) {

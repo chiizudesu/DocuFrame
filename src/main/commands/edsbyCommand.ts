@@ -81,7 +81,8 @@ export async function edsbyCommand(currentDirectory: string, period: string, pre
       if (edsbyMatch) {
         const extension = edsbyMatch[2];
         if (extension.toLowerCase() === 'xlsx' || extension.toLowerCase() === 'xls') {
-          newName = `Edsby NZ Limited - Service Fee Analysis - ${periodTitleCase}.xlsx`;
+          // Preserve original extension (.xls vs .xlsx)
+          newName = `Edsby NZ Limited - Service Fee Analysis - ${periodTitleCase}.${extension.toLowerCase()}`;
         } else if (extension.toLowerCase() === 'pdf') {
           newName = `Edsby NZ Limited - Profit and Loss - ${periodTitleCase}.pdf`;
         }
