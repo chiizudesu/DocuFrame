@@ -2204,9 +2204,10 @@ const renderListView = () => (
     
     {/* CSS Grid container */}
     <Box
+      ref={gridContainerRef}
       display="grid"
       gridTemplateColumns={`${columnWidths[columnOrder[0] as keyof typeof columnWidths]}px ${columnWidths[columnOrder[1] as keyof typeof columnWidths]}px ${columnWidths[columnOrder[2] as keyof typeof columnWidths]}px`}
-      gridAutoRows="32px"
+      gridAutoRows="30px"
       width="fit-content"
       fontSize="xs"
       userSelect="none"
@@ -2220,155 +2221,66 @@ const renderListView = () => (
         top={0} 
         zIndex={100}
       >
-        <Box
-          px={2}
-          py={1}
-          fontWeight="medium"
-          fontSize="xs"
-          color={tableHeadTextColor}
-          display="flex"
-          alignItems="center"
-          cursor="pointer"
-          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
-          onClick={() => handleSort('name')}
-          position="sticky"
-          top={0}
-          zIndex={100}
-          bg={useColorModeValue('gray.50', 'gray.900')}
-          _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: useColorModeValue('gray.300', 'gray.700') }}
-          data-column="name"
-          onMouseDown={(e) => handleColumnDragStart('name', e)}
-          opacity={draggingColumn === 'name' ? 0.5 : 1}
-        >
-          Name
-          {sortColumn === 'name' && (
-            <Icon
-              as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-              ml={1}
-              boxSize={2.5}
-              color="#4F46E5"
-            />
-          )}
-          <Box
-            position="absolute"
-            left={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            cursor="grab"
-            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
-            _active={{ cursor: 'grabbing' }}
-          />
-          <Box
-            position="absolute"
-            right={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            cursor="col-resize"
-            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
-            onMouseDown={(e) => handleResizeStart('name', e)}
-          />
-        </Box>
-        <Box
-          px={2}
-          py={1}
-          fontWeight="medium"
-          fontSize="xs"
-          color={tableHeadTextColor}
-          display="flex"
-          alignItems="center"
-          cursor="pointer"
-          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
-          onClick={() => handleSort('size')}
-          position="sticky"
-          top={0}
-          zIndex={100}
-          bg={useColorModeValue('gray.50', 'gray.900')}
-          _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: useColorModeValue('gray.300', 'gray.700') }}
-          data-column="size"
-          onMouseDown={(e) => handleColumnDragStart('size', e)}
-          opacity={draggingColumn === 'size' ? 0.5 : 1}
-        >
-          Size
-          {sortColumn === 'size' && (
-            <Icon
-              as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-              ml={1}
-              boxSize={2.5}
-              color="#4F46E5"
-            />
-          )}
-          <Box
-            position="absolute"
-            left={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            cursor="grab"
-            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
-            _active={{ cursor: 'grabbing' }}
-          />
-          <Box
-            position="absolute"
-            right={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            cursor="col-resize"
-            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
-            onMouseDown={(e) => handleResizeStart('size', e)}
-          />
-        </Box>
-        <Box
-          px={2}
-          py={1}
-          fontWeight="medium"
-          fontSize="xs"
-          color={tableHeadTextColor}
-          display="flex"
-          alignItems="center"
-          cursor="pointer"
-          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
-          onClick={() => handleSort('modified')}
-          position="sticky"
-          top={0}
-          zIndex={100}
-          bg={useColorModeValue('gray.50', 'gray.900')}
-          data-column="modified"
-          onMouseDown={(e) => handleColumnDragStart('modified', e)}
-          opacity={draggingColumn === 'modified' ? 0.5 : 1}
-        >
-          Modified
-          {sortColumn === 'modified' && (
-            <Icon
-              as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-              ml={1}
-              boxSize={2.5}
-              color="#4F46E5"
-            />
-          )}
-          <Box
-            position="absolute"
-            left={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            cursor="grab"
-            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
-            _active={{ cursor: 'grabbing' }}
-          />
-          <Box
-            position="absolute"
-            right={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            cursor="col-resize"
-            _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
-            onMouseDown={(e) => handleResizeStart('modified', e)}
-          />
-        </Box>
+        {columnOrder.map((column) => {
+          const isName = column === 'name';
+          const isSize = column === 'size';
+          const isModified = column === 'modified';
+          
+          return (
+            <Box
+              key={column}
+              px={2}
+              py={0.85}
+              fontWeight="medium"
+              fontSize="xs"
+              color={tableHeadTextColor}
+              display="flex"
+              alignItems="center"
+              cursor="pointer"
+              _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+              onClick={() => handleSort(column as SortColumn)}
+              position="sticky"
+              top={0}
+              zIndex={100}
+              bg={useColorModeValue('gray.50', 'gray.900')}
+              _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: useColorModeValue('gray.300', 'gray.700') }}
+              data-column={column}
+              onMouseDown={(e) => handleColumnDragStart(column, e)}
+              opacity={draggingColumn === column ? 0.5 : 1}
+              borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
+            >
+              {isName ? 'Name' : isSize ? 'Size' : 'Modified'}
+              {sortColumn === column && (
+                <Icon
+                  as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+                  ml={1}
+                  boxSize={2.5}
+                  color="#4F46E5"
+                />
+              )}
+              <Box
+                position="absolute"
+                left={0}
+                top={0}
+                bottom={0}
+                width="4px"
+                cursor="grab"
+                _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+                _active={{ cursor: 'grabbing' }}
+              />
+              <Box
+                position="absolute"
+                right={0}
+                top={0}
+                bottom={0}
+                width="4px"
+                cursor="col-resize"
+                _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+                onMouseDown={(e) => handleResizeStart(column, e)}
+              />
+            </Box>
+          );
+        })}
       </Box>
 
       {/* Header spacer */}
@@ -2377,7 +2289,7 @@ const renderListView = () => (
         top={0}
         left="610px"
         right={0}
-        height="32px"
+        height="30px"
         zIndex={99}
         bg={useColorModeValue('gray.50', 'gray.900')}
       />
@@ -2388,7 +2300,7 @@ const renderListView = () => (
         top={0}
         right={0}
         width="1px"
-        height="32px"
+        height="30px"
         bg={useColorModeValue('gray.300', 'gray.700')}
         zIndex={99}
       />
@@ -2448,38 +2360,36 @@ const renderListView = () => (
               setHoveredRowIndex(prev => prev === index ? null : prev);
             }
           },
-          ...(isFirstCell && {
-            onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, file),
-            onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
-            onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
-            onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
-            draggable: true,
-            onDragStart: (e: React.DragEvent) => {
-              // FIXED: Prevent dragging within same folder
-              const filesToDrag: string[] = selectedFiles.length > 0 && selectedFiles.includes(file.name)
-                ? selectedFiles.map(name => {
-                    const selectedFile = sortedFiles.find(f => f.name === name);
-                    return selectedFile ? selectedFile.path : null;
-                  }).filter((path): path is string => path !== null)
-                : [file.path];
-              
-              // Set internal drag data
-              e.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
-              e.dataTransfer.effectAllowed = 'copyMove';
-              
-              handleFileItemDragStart(file, index, e);
-            },
-            onDragEnd: (e: React.DragEvent) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDragStarted(false);
-              setDraggedFiles(new Set());
-              setFolderHoverState({});
-              setFolderDragCounter({});
-              try { delete (window as any).__docuframeInternalDrag; } catch {}
-              addLog('Drag operation ended');
-            }
-          })
+          onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, file),
+          onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
+          onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
+          onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
+          draggable: true,
+          onDragStart: (e: React.DragEvent) => {
+            // FIXED: Prevent dragging within same folder
+            const filesToDrag: string[] = selectedFiles.length > 0 && selectedFiles.includes(file.name)
+              ? selectedFiles.map(name => {
+                  const selectedFile = sortedFiles.find(f => f.name === name);
+                  return selectedFile ? selectedFile.path : null;
+                }).filter((path): path is string => path !== null)
+              : [file.path];
+            
+            // Set internal drag data
+            e.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
+            e.dataTransfer.effectAllowed = 'copyMove';
+            
+            handleFileItemDragStart(file, index, e);
+          },
+          onDragEnd: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsDragStarted(false);
+            setDraggedFiles(new Set());
+            setFolderHoverState({});
+            setFolderDragCounter({});
+            try { delete (window as any).__docuframeInternalDrag; } catch {}
+            addLog('Drag operation ended');
+          }
         });
 
         // FIXED: Folder drop handlers for all cells
@@ -2624,107 +2534,154 @@ const renderListView = () => (
 
         return (
           <React.Fragment key={index}>
-            {/* Name Column */}
-            {columnOrder.includes('name') && (
-              <Box 
-                {...cellStyles} 
-                {...createCellHandlers(true)}
-                {...(file.type === 'folder' ? folderDropHandlers : {})}
-                data-row-index={index}
-                data-file-index={index}
-              >
-                {/* Icon */}
-                {file.type === 'file' && nativeIcons.has(file.path) ? (
-                  <Image
-                    src={nativeIcons.get(file.path)}
-                    boxSize={4}
-                    mr={1.5}
-                    alt={`${file.name} icon`}
-                    flexShrink={0}
-                  />
-                ) : (
-                  <Icon
-                    as={getFileIcon(file.type, file.name)}
-                    boxSize={4}
-                    mr={1.5}
-                    color={getIconColor(file.type, file.name)}
-                    flexShrink={0}
-                  />
-                )}
-                
-                {/* File name */}
-                <Text 
-                  fontSize="xs" 
-                  color={fileTextColor} 
-                  style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
-                  overflow="hidden"
-                  textOverflow="ellipsis"
-                  whiteSpace="nowrap"
-                  flex={1}
-                >
-                  {file.name}
-                </Text>
-                
-                {/* NEW indicator */}
-                {isFileNew(file) && (
-                  <Box
-                    position="absolute"
-                    top={1}
-                    right={1}
-                    bg="green.500"
-                    color="white"
-                    fontSize="2xs"
-                    fontWeight="bold"
-                    px={1}
-                    py={0.25}
-                    borderRadius="full"
-                    zIndex={2}
-                    boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+            {columnOrder.map((column) => {
+              const isName = column === 'name';
+              const isSize = column === 'size';
+              const isModified = column === 'modified';
+              
+              if (isName) {
+                return (
+                  <Box 
+                    key={column}
+                    {...cellStyles} 
+                    {...createCellHandlers(true)}
+                    {...(file.type === 'folder' ? folderDropHandlers : {})}
+                    data-row-index={index}
+                    data-file-index={index}
                   >
-                    NEW
+                    {/* Icon */}
+                    {file.type === 'file' && nativeIcons.has(file.path) ? (
+                      <Image
+                        src={nativeIcons.get(file.path)}
+                        boxSize={4}
+                        mr={1.5}
+                        alt={`${file.name} icon`}
+                        flexShrink={0}
+                      />
+                    ) : (
+                      <Icon
+                        as={getFileIcon(file.type, file.name)}
+                        boxSize={4}
+                        mr={1.5}
+                        color={getIconColor(file.type, file.name)}
+                        flexShrink={0}
+                      />
+                    )}
+                    
+                    {/* File name */}
+                    <Text 
+                      fontSize="xs" 
+                      color={fileTextColor} 
+                      style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
+                      overflow="hidden"
+                      textOverflow="ellipsis"
+                      whiteSpace="nowrap"
+                      flex={1}
+                    >
+                      {file.name}
+                    </Text>
+                    
+                    {/* NEW indicator */}
+                    {isFileNew(file) && (
+                      <Box
+                        position="absolute"
+                        top={1}
+                        right={1}
+                        bg="green.500"
+                        color="white"
+                        fontSize="2xs"
+                        fontWeight="bold"
+                        px={1}
+                        py={0.25}
+                        borderRadius="full"
+                        zIndex={2}
+                        boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+                      >
+                        NEW
+                      </Box>
+                    )}
                   </Box>
-                )}
-              </Box>
-            )}
-            
-            {/* Size Column */}
-            {columnOrder.includes('size') && (
-              <Box 
-                {...cellStyles}
-                {...createCellHandlers(false)}
-                {...(file.type === 'folder' ? folderDropHandlers : {})}
-                data-row-index={index}
-              >
-                <Text 
-                  fontSize="xs" 
-                  color={fileSubTextColor}
-                  style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
-                >
-                  {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
-                </Text>
-              </Box>
-            )}
-            
-            {/* Modified Column */}
-            {columnOrder.includes('modified') && (
-              <Box 
-                {...cellStyles}
-                {...createCellHandlers(false)}
-                {...(file.type === 'folder' ? folderDropHandlers : {})}
-                data-row-index={index}
-              >
-                <Text 
-                  fontSize="xs" 
-                  color={fileSubTextColor}
-                  style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
-                >
-                  {file.modified ? formatDate(file.modified) : '-'}
-                </Text>
-              </Box>
-            )}
+                );
+              } else if (isSize) {
+                return (
+                  <Box 
+                    key={column}
+                    {...cellStyles}
+                    {...createCellHandlers(true)}
+                    {...(file.type === 'folder' ? folderDropHandlers : {})}
+                    data-row-index={index}
+                  >
+                    <Text 
+                      fontSize="xs" 
+                      color={fileSubTextColor}
+                      style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
+                    >
+                      {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
+                    </Text>
+                  </Box>
+                );
+              } else if (isModified) {
+                return (
+                  <Box 
+                    key={column}
+                    {...cellStyles}
+                    {...createCellHandlers(true)}
+                    {...(file.type === 'folder' ? folderDropHandlers : {})}
+                    data-row-index={index}
+                  >
+                    <Text 
+                      fontSize="xs" 
+                      color={fileSubTextColor}
+                      style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
+                    >
+                      {file.modified ? formatDate(file.modified) : '-'}
+                    </Text>
+                  </Box>
+                );
+              }
+              return null;
+            })}
           </React.Fragment>
         )
       })}
+
+      {/* Drag ghost preview */}
+      {draggingColumn && dragMousePos && (
+        <Box
+          position="fixed"
+          left={dragMousePos.x - 50}
+          top={dragMousePos.y - 15}
+          width={`${columnWidths[draggingColumn as keyof typeof columnWidths]}px`}
+          height="30px"
+          bg={useColorModeValue('gray.50', 'gray.900')}
+          border="1px solid"
+          borderColor={useColorModeValue('gray.300', 'gray.700')}
+          borderRadius="md"
+          px={2}
+          py={0.85}
+          fontWeight="medium"
+          fontSize="xs"
+          color={tableHeadTextColor}
+          display="flex"
+          alignItems="center"
+          opacity={0.8}
+          zIndex={9999}
+          pointerEvents="none"
+          boxShadow="lg"
+          transform="rotate(-2deg)"
+        >
+          {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : 'Modified'}
+          <Box
+            position="absolute"
+            left={0}
+            top={0}
+            bottom={0}
+            width="4px"
+            bg={useColorModeValue('blue.400', 'blue.300')}
+            borderRadius="md 0 0 md"
+          />
+        </Box>
+      )}
     </Box>
   </Box>
 )
@@ -2914,6 +2871,9 @@ const renderListView = () => (
   const [dragStartX, setDragStartX] = useState(0);
   const [originalColumnOrder, setOriginalColumnOrder] = useState<string[]>([]);
   const [dragTargetColumn, setDragTargetColumn] = useState<string | null>(null);
+  // Drag ghost preview and indicator state
+  const [dragMousePos, setDragMousePos] = useState<{ x: number; y: number } | null>(null);
+  const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Add folder drop states
   const [folderHoverState, setFolderHoverState] = useState<{[key: string]: boolean}>({});
@@ -2950,6 +2910,7 @@ const renderListView = () => (
     e.stopPropagation();
     setDraggingColumn(column);
     setOriginalColumnOrder([...columnOrder]);
+    setDragMousePos({ x: e.clientX, y: e.clientY });
   };
 
   const handleColumnDragMove = useCallback((e: MouseEvent) => {
@@ -2966,6 +2927,8 @@ const renderListView = () => (
         setDragTargetColumn(targetColumn);
       }
     }
+    // Track mouse position for ghost preview
+    setDragMousePos({ x: e.clientX, y: e.clientY });
   }, [draggingColumn]);
 
   const handleColumnDragEnd = useCallback(() => {
@@ -2983,6 +2946,7 @@ const renderListView = () => (
     
     setDraggingColumn(null);
     setDragTargetColumn(null);
+    setDragMousePos(null);
   }, [draggingColumn, dragTargetColumn, columnOrder]);
 
   // Column drag event listeners
