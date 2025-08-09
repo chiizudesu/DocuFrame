@@ -30,6 +30,7 @@ import {
   Heading,
   Spacer,
   IconButton,
+  Textarea,
 } from '@chakra-ui/react';
 import { 
   Folder, 
@@ -71,6 +72,8 @@ interface Settings {
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
+  hideTemporaryFiles?: boolean;
+  aiEditorInstructions?: string; // NEW
 }
 
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
@@ -96,6 +99,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
+  const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
+  const [aiEditorInstructions, setAiEditorInstructions] = useState(''); // NEW
   const toast = useToast();
   const { setRootDirectory, showOutputLog, setShowOutputLog, reloadSettings } = useAppContext();
 
@@ -129,6 +134,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setSidebarCollapsedByDefault(loadedSettings.sidebarCollapsedByDefault || false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
+        // NEW: file grid setting (default true when unset)
+        setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
+        // NEW: AI editor instructions
+        setAiEditorInstructions(loadedSettings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -167,6 +176,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         clientSearchShortcut,
         enableClientSearchShortcut,
         sidebarCollapsedByDefault,
+        hideTemporaryFiles,
+        aiEditorInstructions, // NEW
       };
       
       await settingsService.setSettings(newSettings as any);
@@ -451,6 +462,44 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Interface</Text>
+            </Tab>
+            <Tab 
+              justifyContent="flex-start" 
+              px={2.5} 
+              py={2}
+              borderRadius="sm"
+              fontSize="sm"
+              fontWeight="500"
+              _selected={{ 
+                bg: 'blue.50', 
+                color: 'blue.600', 
+                borderLeft: '3px solid',
+                borderLeftColor: 'blue.500',
+                _dark: { bg: 'blue.900', color: 'blue.200' } 
+              }}
+              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              transition="all 0.2s"
+            >
+              <Text>File Grid</Text>
+            </Tab>
+            <Tab 
+              justifyContent="flex-start" 
+              px={2.5} 
+              py={2}
+              borderRadius="sm"
+              fontSize="sm"
+              fontWeight="500"
+              _selected={{ 
+                bg: 'blue.50', 
+                color: 'blue.600', 
+                borderLeft: '3px solid',
+                borderLeftColor: 'blue.500',
+                _dark: { bg: 'blue.900', color: 'blue.200' } 
+              }}
+              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              transition="all 0.2s"
+            >
+              <Text>AI</Text>
             </Tab>
           </TabList>
 
@@ -975,12 +1024,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                             Toggle the visibility of the output log at the bottom
                           </Text>
                         </VStack>
-            <Switch
-              isChecked={showOutputLog}
-              onChange={(e) => setShowOutputLog(e.target.checked)}
-              colorScheme="blue"
-              size="sm"
-            />
+                        <Switch
+                          isChecked={showOutputLog}
+                          onChange={(e) => setShowOutputLog(e.target.checked)}
+                          colorScheme="blue"
+                          size="sm"
+                        />
                       </HStack>
                     </FormControl>
                   </Box>
@@ -994,12 +1043,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                             Automatically detect and refresh when files are added/changed externally
                           </Text>
                         </VStack>
-            <Switch
-              isChecked={enableFileWatching}
-              onChange={(e) => setEnableFileWatching(e.target.checked)}
-              colorScheme="blue"
-              size="sm"
-            />
+                        <Switch
+                          isChecked={enableFileWatching}
+                          onChange={(e) => setEnableFileWatching(e.target.checked)}
+                          colorScheme="blue"
+                          size="sm"
+                        />
                       </HStack>
                     </FormControl>
                   </Box>
@@ -1023,6 +1072,118 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   </FormControl>
 </Box>
                 </VStack>
+              </VStack>
+            </TabPanel>
+
+            {/* File Grid Tab */}
+            <TabPanel 
+              h="full" 
+              overflowY="auto" 
+              overflowX="hidden"
+              px={6}
+              py={4}
+              sx={{
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  background: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  background: useColorModeValue('gray.300', 'gray.600'),
+                  borderRadius: '2px',
+                },
+              }}
+            >
+              <VStack spacing={2.5} align="stretch">
+                <Box pb={1.5}>
+                  <Heading size="sm" mb={1.5} color={textColor}>File Grid Options</Heading>
+                  <Text fontSize="sm" color={secondaryTextColor}>
+                    Control how files are displayed in the file grid
+                  </Text>
+                </Box>
+
+                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius="sm">
+                  <FormControl>
+                    <HStack justify="space-between">
+                      <VStack align="start" spacing={1}>
+                        <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Hide Temporary Files</FormLabel>
+                        <Text fontSize="xs" color={secondaryTextColor}>
+                          Hide files that start with ~$, typically created by Office when a document is open
+                        </Text>
+                      </VStack>
+                      <Switch
+                        isChecked={hideTemporaryFiles}
+                        onChange={(e) => setHideTemporaryFiles(e.target.checked)}
+                        colorScheme="blue"
+                        size="sm"
+                      />
+                    </HStack>
+                  </FormControl>
+                </Box>
+              </VStack>
+            </TabPanel>
+
+            {/* AI Tab */}
+            <TabPanel 
+              h="full" 
+              overflowY="auto" 
+              overflowX="hidden"
+              px={6}
+              py={4}
+              sx={{
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  background: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  background: useColorModeValue('gray.300', 'gray.600'),
+                  borderRadius: '2px',
+                },
+              }}
+            >
+              <VStack spacing={6} align="stretch">
+                {/* AI Editor Section */}
+                <Box>
+                  <Heading size="md" mb={2} color={textColor}>
+                    AI Editor
+                  </Heading>
+                  <Text fontSize="sm" color={secondaryTextColor} mb={4}>
+                    Customize the instructions that guide the AI when rewriting emails
+                  </Text>
+                  
+                  <VStack spacing={4} align="stretch">
+                    <Box>
+                      <Text fontSize="sm" fontWeight="semibold" color={textColor} mb={2}>
+                        Custom Instructions
+                      </Text>
+                      <Text fontSize="sm" color={secondaryTextColor} mb={3}>
+                        Instructions shown to users when they open the AI Email Editor dialog
+                      </Text>
+                      <Textarea
+                        value={aiEditorInstructions}
+                        onChange={(e) => setAiEditorInstructions(e.target.value)}
+                        placeholder="Enter custom instructions for the AI editor..."
+                        minH="120px"
+                        maxH="240px"
+                        resize="vertical"
+                        bg={useColorModeValue('white', 'gray.700')}
+                        borderColor={useColorModeValue('gray.300', 'gray.600')}
+                        borderRadius="0"
+                        _hover={{
+                          borderColor: useColorModeValue('gray.400', 'gray.500')
+                        }}
+                        _focus={{
+                          borderColor: 'blue.500',
+                          boxShadow: '0 0 0 1px #3182ce'
+                        }}
+                        fontSize="sm"
+                      />
+                    </Box>
+                  </VStack>
+                </Box>
               </VStack>
             </TabPanel>
           </TabPanels>

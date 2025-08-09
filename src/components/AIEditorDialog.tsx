@@ -20,6 +20,7 @@ import {
 } from '@chakra-ui/react';
 import { Copy, Sparkles } from 'lucide-react';
 import { rewriteEmailBlurb } from '../services/openai';
+import { useAppContext } from '../context/AppContext';
 
 interface AIEditorDialogProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const { aiEditorInstructions } = useAppContext();
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -71,7 +73,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="lg" isCentered>
               <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor} color={useColorModeValue('gray.900', 'white')} borderRadius="lg" boxShadow="lg" maxW="540px">
+      <ModalContent bg={bgColor} color={useColorModeValue('gray.900', 'white')} boxShadow="lg" maxW="540px">
         <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
           <Flex align="center" justify="center" gap={2}>
             <Sparkles size={22} />
@@ -81,7 +83,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
         <ModalCloseButton />
         <ModalBody p={6}>
           <VStack align="stretch" spacing={4}>
-            <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.</Text>
+            <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>{aiEditorInstructions}</Text>
             <Textarea
               value={input}
               onChange={e => setInput(e.target.value)}

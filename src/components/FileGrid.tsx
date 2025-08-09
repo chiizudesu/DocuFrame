@@ -185,7 +185,8 @@ export const FileGrid: React.FC = () => {
     addTabToCurrentWindow,
     isQuickNavigating,
     isJumpModeActive,
-    setIsJumpModeActive
+    setIsJumpModeActive,
+    hideTemporaryFiles // NEW
   } = useAppContext()
 
   // Memoized icon functions for better performance
@@ -454,7 +455,12 @@ export const FileGrid: React.FC = () => {
           return
         }
         const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
-        setFolderItems(contents)
+        // Normalize shape and apply filters
+        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : [])
+        const filtered = hideTemporaryFiles
+          ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')))
+          : files
+        setFolderItems(filtered)
         const navEnd = performance.now();
         addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
         addLog(`Loaded directory: ${formatPathForLog(dirPath)}`)
@@ -466,7 +472,7 @@ export const FileGrid: React.FC = () => {
         isLoadingRef.current = false
       }
     },
-    [addLog, setFolderItems]
+    [addLog, setFolderItems, hideTemporaryFiles]
   );
 
   // Load directory contents when current directory changes with debouncing
@@ -643,7 +649,13 @@ export const FileGrid: React.FC = () => {
       
       // Refresh the current directory regardless of errors
       const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
-      setFolderItems(contents)
+      {
+        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
+        const filtered = hideTemporaryFiles
+          ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+          : files;
+        setFolderItems(filtered as any)
+      }
       setSelectedFiles([])
       
     } catch (error: any) {
@@ -730,7 +742,13 @@ export const FileGrid: React.FC = () => {
                 setStatus('ZIP extraction completed', 'success');
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                setFolderItems(contents);
+                {
+                  const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
+                  const filtered = hideTemporaryFiles
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    : files;
+                  setFolderItems(filtered as any);
+                }
               } else {
                 addLog(result.message, 'error');
                 setStatus('ZIP extraction failed', 'error');
@@ -749,7 +767,13 @@ export const FileGrid: React.FC = () => {
                 setStatus(`${zipFilesToExtract.length} ZIP files extracted successfully`, 'success');
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                setFolderItems(contents);
+                {
+                  const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
+                  const filtered = hideTemporaryFiles
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    : files;
+                  setFolderItems(filtered as any);
+                }
               } else {
                 addLog(result.message, 'error');
                 setStatus('ZIP extraction failed', 'error');
@@ -778,7 +802,13 @@ export const FileGrid: React.FC = () => {
                 setStatus('EML extraction completed', 'success');
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                setFolderItems(contents);
+                {
+                  const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
+                  const filtered = hideTemporaryFiles
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    : files;
+                  setFolderItems(filtered as any);
+                }
               } else {
                 addLog(result.message, 'error');
                 setStatus('EML extraction failed', 'error');
@@ -797,7 +827,13 @@ export const FileGrid: React.FC = () => {
                 setStatus(`${emlFilesToExtract.length} EML files processed successfully`, 'success');
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                setFolderItems(contents);
+                {
+                  const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
+                  const filtered = hideTemporaryFiles
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    : files;
+                  setFolderItems(filtered as any);
+                }
               } else {
                 addLog(result.message, 'error');
                 setStatus('EML extraction failed', 'error');
@@ -972,7 +1008,10 @@ export const FileGrid: React.FC = () => {
       // Accept both array and { files: [] } shapes
       const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
       if (files) {
-        setFolderItems(files);
+        const filtered = hideTemporaryFiles
+          ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')))
+          : files
+        setFolderItems(filtered as any);
         addLog(`Loaded directory: ${formatPathForLog(dirPath)}`);
       } else {
         addLog(`Warning: Directory refresh returned invalid data`, 'info');
@@ -984,7 +1023,7 @@ export const FileGrid: React.FC = () => {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [setFolderItems, addLog]);
+  }, [setFolderItems, addLog, hideTemporaryFiles]);
 
   // Separate refresh function that doesn't show loading state (for background refreshes)
   const refreshDirectory = useCallback(async (dirPath: string) => {
@@ -998,7 +1037,10 @@ export const FileGrid: React.FC = () => {
       // Accept both array and { files: [] } shapes
       const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
       if (files) {
-        setFolderItems(files);
+        const filtered = hideTemporaryFiles
+          ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')))
+          : files
+        setFolderItems(filtered as any);
         addLog(`Refreshed directory: ${formatPathForLog(dirPath)}`);
       } else {
         addLog(`Warning: Directory refresh returned invalid data`, 'info');
@@ -1007,7 +1049,7 @@ export const FileGrid: React.FC = () => {
       console.error('Failed to refresh directory:', error);
       addLog(`Failed to refresh directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
-  }, [setFolderItems, addLog]);
+  }, [setFolderItems, addLog, hideTemporaryFiles]);
 
   // Add this function for selection on mouse down  
   const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
@@ -3002,6 +3044,13 @@ const renderListView = () => (
     
     loadNativeIcons();
   }, [sortedFiles, nativeIcons]);
+
+  // Reapply filters when the hideTemporaryFiles setting changes
+  useEffect(() => {
+    if (currentDirectory) {
+      refreshDirectory(currentDirectory);
+    }
+  }, [hideTemporaryFiles, currentDirectory, refreshDirectory]);
 
   return (
     <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%" position="relative">

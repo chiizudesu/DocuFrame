@@ -20,6 +20,8 @@ export interface AppSettings {
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;    // <-- ADD THIS
+  hideTemporaryFiles?: boolean;           // NEW: hide files that start with "~$" in File Grid
+  aiEditorInstructions?: string;          // NEW: custom instructions for AI editor
 }
 
 class SettingsService {

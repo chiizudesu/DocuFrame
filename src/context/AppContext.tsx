@@ -47,6 +47,10 @@ interface AppContextType {
   setIsSettingsOpen: (isOpen: boolean) => void;
   showOutputLog: boolean;
   setShowOutputLog: (show: boolean) => void;
+  hideTemporaryFiles: boolean;
+  setHideTemporaryFiles: (hide: boolean) => void;
+  aiEditorInstructions: string;             // NEW
+  setAiEditorInstructions: (instructions: string) => void; // NEW
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
@@ -104,6 +108,8 @@ export const AppProvider: React.FC<{
   const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showOutputLog, setShowOutputLog] = useState(true);
+  const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
+  const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [selectAllFilesCallback, setSelectAllFilesCallback] = useState<() => void>(() => () => {});
@@ -134,6 +140,10 @@ export const AppProvider: React.FC<{
       }
       // Load showOutputLog setting, default to true if not set
       setShowOutputLog(settings.showOutputLog !== false);
+      // NEW: Load hideTemporaryFiles (default true when unset)
+      setHideTemporaryFiles(settings.hideTemporaryFiles !== false);
+      // NEW: Load AI editor instructions (default to current instructions if unset)
+      setAiEditorInstructions(settings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -239,6 +249,10 @@ export const AppProvider: React.FC<{
       setIsSettingsOpen: setIsSettingsOpenWithStatus,
       showOutputLog,
       setShowOutputLog,
+      hideTemporaryFiles,
+      setHideTemporaryFiles,
+      aiEditorInstructions,                 // NEW
+      setAiEditorInstructions,              // NEW
       previewFiles,
       setPreviewFiles,
       selectAllFiles,
