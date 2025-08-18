@@ -15,7 +15,7 @@ import { PDFDocument } from 'pdf-lib';
 import PDFParser from 'pdf2json';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, ChildProcess, exec } from 'child_process';
 import { autoUpdaterService } from '../src/main/autoUpdater';
 import * as chokidar from 'chokidar';
 
@@ -185,7 +185,25 @@ async function loadConfig(): Promise<Config> {
     const defaultConfig: Config = {
       rootPath: app.getPath('documents'),
       apiKey: undefined,
-      gstTemplatePath: undefined
+      gstTemplatePath: undefined,
+      clientbasePath: undefined,
+      templateFolderPath: undefined,
+      workpaperTemplateFolderPath: undefined,
+      showOutputLog: true,
+      activationShortcut: '`',
+      enableActivationShortcut: true,
+      calculatorShortcut: 'Alt+Q',
+      enableCalculatorShortcut: true,
+      newTabShortcut: 'Ctrl+T',
+      enableNewTabShortcut: true,
+      closeTabShortcut: 'Ctrl+W',
+      enableCloseTabShortcut: true,
+      clientSearchShortcut: 'Alt+F',
+      enableClientSearchShortcut: true,
+      sidebarCollapsedByDefault: false,
+      hideTemporaryFiles: true,
+      aiEditorInstructions: '',
+      
     };
     await fsPromises.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
     return defaultConfig;
@@ -291,11 +309,9 @@ let currentShortcut: string | null = null;
 
 async function registerGlobalShortcut(config: Config) {
   try {
-    // Unregister existing shortcut if any
-    if (currentShortcut) {
-      globalShortcut.unregister(currentShortcut);
-      currentShortcut = null;
-    }
+    // Unregister all previously registered shortcuts to avoid duplicates
+    globalShortcut.unregisterAll();
+    currentShortcut = null;
 
     // Check if activation shortcut is enabled
     if (config.enableActivationShortcut !== false) {
@@ -317,6 +333,8 @@ async function registerGlobalShortcut(config: Config) {
         console.error('[Main] Failed to register global shortcut:', electronShortcut);
       }
     }
+
+    
   } catch (error) {
     console.error('[Main] Error registering global shortcut:', error);
   }
@@ -341,13 +359,42 @@ function convertToElectronShortcut(shortcut: string): string {
       return 'F7';
     case 'F6':
       return 'F6';
+    case 'F5':
+      return 'F5';
+    case 'F4':
+      return 'F4';
+    case 'F3':
+      return 'F3';
+    case 'F2':
+      return 'F2';
+    case 'F1':
+      return 'F1';
     case 'Alt+F':
       return 'Alt+F';
+    case 'Alt+Q':
+      return 'Alt+Q';
+    case 'Alt+W':
+      return 'Alt+W';
+    case 'Ctrl+T':
+      return 'CommandOrControl+T';
+    case 'Ctrl+W':
+      return 'CommandOrControl+W';
     case 'Ctrl+Shift+F':
       return 'CommandOrControl+Shift+F';
     case 'Ctrl+Alt+F':
       return 'CommandOrControl+Alt+F';
+    
     default:
+      // Handle dynamic shortcuts by converting common patterns
+      if (shortcut.includes('Shift+')) {
+        return shortcut.replace('Shift+', 'Shift+');
+      }
+      if (shortcut.includes('Ctrl+')) {
+        return shortcut.replace('Ctrl+', 'CommandOrControl+');
+      }
+      if (shortcut.includes('Alt+')) {
+        return shortcut.replace('Alt+', 'Alt+');
+      }
       return shortcut;
   }
 }
@@ -381,6 +428,8 @@ function activateApp() {
     console.log('[Main] App activated via global shortcut');
   }
 }
+
+
 
 // IPC handler to update global shortcut
 ipcMain.handle('update-global-shortcut', async (_, config: Config) => {

@@ -8,8 +8,18 @@ export interface Config {
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
+  calculatorShortcut?: string;
+  enableCalculatorShortcut?: boolean;
+  newTabShortcut?: string;
+  enableNewTabShortcut?: boolean;
+  closeTabShortcut?: string;
+  enableCloseTabShortcut?: boolean;
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
+  sidebarCollapsedByDefault?: boolean;
+  hideTemporaryFiles?: boolean;
+  aiEditorInstructions?: string;
+
 }
 
 class ConfigService {

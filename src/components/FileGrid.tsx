@@ -410,6 +410,21 @@ export const FileGrid: React.FC = () => {
   const tableHeadTextColor = useColorModeValue('#475569', 'gray.300')
   const tableBorderColor = useColorModeValue('#d1d5db', 'gray.700')
 
+  // Additional color tokens (hoisted) to avoid calling hooks inside loops/conditionals
+  const borderColorDefault = useColorModeValue('gray.200', 'gray.700')
+  const gridItemSelectedBg = useColorModeValue('blue.50', 'blue.900')
+  const gridItemDefaultBg = useColorModeValue('#f8f9fc', 'gray.800')
+  const hoverBorderColor = useColorModeValue('blue.200', 'blue.700')
+  const headerHoverBg = useColorModeValue('gray.200', 'gray.600')
+  const headerStickyBg = useColorModeValue('gray.50', 'gray.900')
+  const headerDividerBg = useColorModeValue('gray.300', 'gray.700')
+  const rowSelectedBg = useColorModeValue('blue.200', 'blue.900')
+  const rowHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const folderDropBgColor = useColorModeValue('blue.100', 'blue.700')
+  const dragGhostBg = useColorModeValue('gray.50', 'gray.900')
+  const dragGhostBorder = useColorModeValue('gray.300', 'gray.700')
+  const dragGhostAccent = useColorModeValue('blue.400', 'blue.300')
+
   // Memoize sorted files computation for better performance
   const sortedFiles = useMemo(() => {
     if (!Array.isArray(folderItems)) return [];
@@ -1830,6 +1845,50 @@ export const FileGrid: React.FC = () => {
     const arrowThrottle = 100; // 0.1 seconds throttle
     let pendingSelection: number | null = null;
 
+    // Helper to scroll the target element so it appears at the top of the
+    // visible area, accounting for the sticky header height in list view.
+    const scrollItemToTopWithHeaderOffset = (targetEl: Element) => {
+      // Always use the main scroll container
+      const container = dropAreaRef.current as HTMLElement | null;
+
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const elementRect = (targetEl as HTMLElement).getBoundingClientRect();
+
+        // Compute element's top relative to the container's scroll origin
+        const elementTopInContainer = elementRect.top - containerRect.top + container.scrollTop;
+
+        // Dynamically measure sticky header height for list view
+        let headerOffset = 0;
+        if (viewMode === 'list') {
+          const headerCell = container.querySelector('[data-column]') as HTMLElement | null;
+          const headerHeight = headerCell ? headerCell.getBoundingClientRect().height : 30;
+          // Try to detect a typical row height in list view
+          const anyRow = container.querySelector('[data-row-index]') as HTMLElement | null;
+          const rowHeight = anyRow ? anyRow.getBoundingClientRect().height : 30;
+          // Offset by header height + one full row so the selected item appears fully below the header
+          headerOffset = headerHeight + rowHeight + 2; // +2 buffer
+        }
+
+        const containerHeight = container.clientHeight;
+        const maxScrollTop = container.scrollHeight - containerHeight;
+        let targetScrollTop = elementTopInContainer - headerOffset;
+        if (targetScrollTop < 0) targetScrollTop = 0;
+        if (targetScrollTop > maxScrollTop) targetScrollTop = maxScrollTop;
+
+        if (Math.abs(container.scrollTop - targetScrollTop) > 2) {
+          container.scrollTo({ top: targetScrollTop, behavior: 'instant' as any });
+        }
+      } else {
+        // Fallback
+        (targetEl as HTMLElement).scrollIntoView({
+          behavior: 'instant' as any,
+          block: 'start',
+          inline: 'nearest'
+        });
+      }
+    };
+
     const handleArrowNavigation = (e: KeyboardEvent) => {
       // Don't interfere if renaming or in input fields
       const target = e.target as HTMLElement;
@@ -1875,44 +1934,10 @@ export const FileGrid: React.FC = () => {
         return;
       }
 
-      // Always provide immediate visual feedback with top positioning when possible
+      // Always provide immediate visual feedback with precise top positioning
       const element = document.querySelector(`[data-file-index="${nextIndex}"]`);
       if (element) {
-        // Get the container element (either grid or list view)
-        const container = viewMode === 'grid' 
-          ? dropAreaRef.current 
-          : document.querySelector('[data-file-index]')?.closest('div');
-        
-        if (container) {
-          const containerRect = container.getBoundingClientRect();
-          const elementRect = element.getBoundingClientRect();
-          
-          // Calculate if we can position the element at the top
-          const canPositionAtTop = elementRect.top >= containerRect.top;
-          
-          // If element is below the visible area or we can position it at top, scroll to top
-          if (elementRect.bottom > containerRect.bottom || canPositionAtTop) {
-            element.scrollIntoView({ 
-              behavior: 'instant', 
-              block: 'start',
-              inline: 'nearest'
-            });
-          } else {
-            // If element is above the visible area, scroll to show it at top
-            element.scrollIntoView({ 
-              behavior: 'instant', 
-              block: 'start',
-              inline: 'nearest'
-            });
-          }
-        } else {
-          // Fallback to nearest if container not found
-          element.scrollIntoView({ 
-            behavior: 'instant', 
-            block: 'nearest',
-            inline: 'nearest'
-          });
-        }
+        scrollItemToTopWithHeaderOffset(element);
       }
 
       // Throttle the actual selection change
@@ -1943,6 +1968,14 @@ export const FileGrid: React.FC = () => {
         setSelectedFiles([file.name]);
         setSelectedFile(file.name);
         setLastSelectedIndex(index);
+        
+        // Ensure the element is visible after selection with precise positioning
+        requestAnimationFrame(() => {
+          const element = document.querySelector(`[data-file-index="${index}"]`);
+          if (element) {
+            scrollItemToTopWithHeaderOffset(element);
+          }
+        });
       }
     };
 
@@ -2123,12 +2156,12 @@ export const FileGrid: React.FC = () => {
             cursor="default"
             borderRadius="lg"
             borderWidth="1px"
-            borderColor={selectedFiles.includes(file.name) ? 'blue.400' : useColorModeValue('gray.200', 'gray.700')}
-            bg={selectedFiles.includes(file.name) ? useColorModeValue('blue.50', 'blue.900') : useColorModeValue('#f8f9fc', 'gray.800')}
+            borderColor={selectedFiles.includes(file.name) ? 'blue.400' : borderColorDefault}
+            bg={selectedFiles.includes(file.name) ? gridItemSelectedBg : gridItemDefaultBg}
             _hover={{
               bg: itemBgHover,
               boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
-              borderColor: useColorModeValue('blue.200', 'blue.700'),
+              borderColor: hoverBorderColor,
             }}
             transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
             style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
@@ -2279,13 +2312,13 @@ const renderListView = () => (
               display="flex"
               alignItems="center"
               cursor="pointer"
-              _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+              _hover={{ bg: headerHoverBg }}
               onClick={() => handleSort(column as SortColumn)}
               position="sticky"
               top={0}
               zIndex={100}
-              bg={useColorModeValue('gray.50', 'gray.900')}
-              _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: useColorModeValue('gray.300', 'gray.700') }}
+              bg={headerStickyBg}
+              _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: headerDividerBg }}
               data-column={column}
               onMouseDown={(e) => handleColumnDragStart(column, e)}
               opacity={draggingColumn === column ? 0.5 : 1}
@@ -2307,7 +2340,7 @@ const renderListView = () => (
                 bottom={0}
                 width="4px"
                 cursor="grab"
-                _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+                _hover={{ bg: dragGhostAccent }}
                 _active={{ cursor: 'grabbing' }}
               />
               <Box
@@ -2317,7 +2350,7 @@ const renderListView = () => (
                 bottom={0}
                 width="4px"
                 cursor="col-resize"
-                _hover={{ bg: useColorModeValue('blue.400', 'blue.300') }}
+                _hover={{ bg: dragGhostAccent }}
                 onMouseDown={(e) => handleResizeStart(column, e)}
               />
             </Box>
@@ -2333,7 +2366,7 @@ const renderListView = () => (
         right={0}
         height="30px"
         zIndex={99}
-        bg={useColorModeValue('gray.50', 'gray.900')}
+        bg={headerStickyBg}
       />
 
       {/* Header right edge separator */}
@@ -2343,7 +2376,7 @@ const renderListView = () => (
         right={0}
         width="1px"
         height="30px"
-        bg={useColorModeValue('gray.300', 'gray.700')}
+        bg={headerDividerBg}
         zIndex={99}
       />
 
@@ -2382,12 +2415,12 @@ const renderListView = () => (
         
         // FIXED: Simplified hover logic for consistent row highlighting
         const rowBg = isFileSelected 
-          ? useColorModeValue('blue.200', 'blue.900')
-          : (isRowHovered ? useColorModeValue('gray.100', 'gray.700') : 'transparent');
+          ? rowSelectedBg
+          : (isRowHovered ? rowHoverBg : 'transparent');
         
         // FIXED: Folder drop background override
         const folderDropBg = file.type === 'folder' && folderHoverState[file.path] 
-          ? useColorModeValue('blue.100', 'blue.700')
+          ? folderDropBgColor
           : undefined;
         
         const finalBg = folderDropBg || rowBg;
@@ -2695,9 +2728,9 @@ const renderListView = () => (
           top={dragMousePos.y - 15}
           width={`${columnWidths[draggingColumn as keyof typeof columnWidths]}px`}
           height="30px"
-          bg={useColorModeValue('gray.50', 'gray.900')}
+          bg={dragGhostBg}
           border="1px solid"
-          borderColor={useColorModeValue('gray.300', 'gray.700')}
+          borderColor={dragGhostBorder}
           borderRadius="md"
           px={2}
           py={0.85}
@@ -2719,7 +2752,7 @@ const renderListView = () => (
             top={0}
             bottom={0}
             width="4px"
-            bg={useColorModeValue('blue.400', 'blue.300')}
+            bg={dragGhostAccent}
             borderRadius="md 0 0 md"
           />
         </Box>

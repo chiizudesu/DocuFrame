@@ -43,7 +43,8 @@ import {
   Eye,
   EyeOff,
   Save,
-  X
+  X,
+  Edit
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -74,6 +75,7 @@ interface Settings {
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   aiEditorInstructions?: string; // NEW
+
 }
 
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
@@ -101,6 +103,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState(''); // NEW
+
+  
+  // Keyboard recorder state
+  const [isKeyRecorderOpen, setIsKeyRecorderOpen] = useState(false);
+  const [recordingKeys, setRecordingKeys] = useState<string[]>([]);
+  const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
+  
   const toast = useToast();
   const { setRootDirectory, showOutputLog, setShowOutputLog, reloadSettings } = useAppContext();
 
@@ -138,6 +147,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
         // NEW: AI editor instructions
         setAiEditorInstructions(loadedSettings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
+
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({
@@ -154,6 +164,14 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       loadSettings();
     }
   }, [isOpen, toast]);
+
+  // Cleanup event listeners on unmount
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   const handleSave = async () => {
     try {
@@ -178,9 +196,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
         aiEditorInstructions, // NEW
+
       };
       
       await settingsService.setSettings(newSettings as any);
+      
+      // Clear the settings cache to force fresh reload
+      (settingsService as any).clearCache();
       
       // Update global shortcut in main process
       try {
@@ -194,13 +216,30 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setRootDirectory(rootPath);
       }
       
+      // Show what shortcuts were saved
+      console.log('Saved shortcuts:', {
+        activationShortcut,
+        calculatorShortcut,
+        newTabShortcut,
+        closeTabShortcut,
+        clientSearchShortcut
+      });
+      
       // Immediately reload settings to update the UI
       await reloadSettings();
       
+      // Force a re-render to show updated shortcuts immediately
+      setActivationShortcut(activationShortcut);
+      setCalculatorShortcut(calculatorShortcut);
+      setNewTabShortcut(newTabShortcut);
+      setCloseTabShortcut(closeTabShortcut);
+      setClientSearchShortcut(clientSearchShortcut);
+      
       toast({
         title: 'Settings saved',
+        description: `Shortcuts updated: ${activationShortcut}, ${calculatorShortcut}, ${newTabShortcut}, ${closeTabShortcut}, ${clientSearchShortcut}`,
         status: 'success',
-        duration: 3000,
+        duration: 5000,
         isClosable: true,
       });
       onClose();
@@ -321,6 +360,103 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
   const handleShortcutChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setActivationShortcut(event.target.value);
+  };
+
+  // Keyboard recorder functions
+  const openKeyRecorder = (shortcutType: string) => {
+    setCurrentEditingShortcut(shortcutType);
+    setRecordingKeys([]);
+    setIsKeyRecorderOpen(true);
+    
+    // Add global keyboard listener
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+  };
+
+  const closeKeyRecorder = () => {
+    setIsKeyRecorderOpen(false);
+    setRecordingKeys([]);
+    setCurrentEditingShortcut('');
+    
+    // Remove global keyboard listeners
+    document.removeEventListener('keydown', handleKeyDown);
+    document.removeEventListener('keyup', handleKeyUp);
+  };
+
+  const clearRecording = () => {
+    setRecordingKeys([]);
+  };
+
+  const saveRecording = () => {
+    if (recordingKeys.length === 0) return;
+    
+    const newShortcut = recordingKeys.join(' + ');
+    
+    // Update the appropriate shortcut based on currentEditingShortcut
+    switch (currentEditingShortcut) {
+      case 'activationShortcut':
+        setActivationShortcut(newShortcut);
+        break;
+      case 'calculatorShortcut':
+        setCalculatorShortcut(newShortcut);
+        break;
+      case 'newTabShortcut':
+        setNewTabShortcut(newShortcut);
+        break;
+      case 'closeTabShortcut':
+        setCloseTabShortcut(newShortcut);
+        break;
+      case 'clientSearchShortcut':
+        setClientSearchShortcut(newShortcut);
+        break;
+
+    }
+    
+    closeKeyRecorder();
+    toast({
+      title: 'Shortcut updated',
+      description: `New shortcut: ${newShortcut}`,
+      status: 'success',
+      duration: 2000,
+      isClosable: true,
+    });
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const key = e.key;
+    const modifiers: string[] = [];
+    
+    if (e.ctrlKey) modifiers.push('Ctrl');
+    if (e.shiftKey) modifiers.push('Shift');
+    if (e.altKey) modifiers.push('Alt');
+    if (e.metaKey) modifiers.push('Meta');
+    
+    // Add the main key if it's not a modifier
+    if (!['Control', 'Shift', 'Alt', 'Meta'].includes(key)) {
+      modifiers.push(key);
+    }
+    
+    // Update recording keys
+    setRecordingKeys(modifiers);
+  };
+
+  const handleKeyUp = (e: KeyboardEvent) => {
+    // Handle Enter key to save
+    if (e.key === 'Enter' && isKeyRecorderOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveRecording();
+    }
+    
+    // Handle Escape key to cancel
+    if (e.key === 'Escape' && isKeyRecorderOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeKeyRecorder();
+    }
   };
 
   if (!isOpen) return null;
@@ -782,206 +918,300 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </Text>
                 </Box>
                 
-                <VStack spacing={2.5} align="stretch">
-                  
-                  {/* Activation Shortcut */}
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <HStack justify="space-between" mb={2}>
-                      <Box>
-                        <Text fontSize="xs" fontWeight="600" color={textColor}>Global Activation</Text>
-                        <Text fontSize="xs" color={secondaryTextColor}>Bring app to front from anywhere</Text>
-                      </Box>
-                      <Switch
-                        isChecked={enableActivationShortcut}
-                        onChange={(e) => setEnableActivationShortcut(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                  {enableActivationShortcut && (
-                      <HStack spacing={2.5}>
-                        <Select
-                          value={activationShortcut}
-                          onChange={handleShortcutChange}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          maxW="132px"
-                          size="xs"
-                          borderRadius="sm"
-                        >
-                          <option value="`">` (Backtick)</option>
-                          <option value="F12">F12</option>
-                          <option value="F11">F11</option>
-                          <option value="F10">F10</option>
-                          <option value="F9">F9</option>
-                        </Select>
-                        <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
-                          {activationShortcut}
-                        </Kbd>
-                      </HStack>
-                  )}
-                  </Box>
+                {/* Shortcuts Table - VS Code Style */}
+                <Box
+                  border="1px solid"
+                  borderColor={borderColor}
+                  borderRadius="sm"
+                  overflow="hidden"
+                  bg={useColorModeValue('white', 'gray.700')}
+                  sx={{
+                    '& table': {
+                      width: '100%',
+                      borderCollapse: 'collapse',
+                      borderSpacing: 0,
+                    },
+                    '& th, & td': {
+                      border: 'none',
+                      padding: '4px 12px',
+                      fontSize: '11px',
+                      textAlign: 'left',
+                      verticalAlign: 'middle',
+                    },
+                    '& th': {
+                      backgroundColor: useColorModeValue('gray.50', 'gray.800'),
+                      borderBottom: `1px solid ${useColorModeValue('gray.200', 'gray.600')}`,
+                      fontWeight: '600',
+                      color: textColor,
+                    },
+                    '& tr:nth-child(even)': {
+                      backgroundColor: useColorModeValue('gray.50', 'gray.700') + ' !important',
+                    },
+                    '& tr:nth-child(odd)': {
+                      backgroundColor: useColorModeValue('gray.100', 'gray.750') + ' !important',
+                    },
+                    '& tr:hover': {
+                      backgroundColor: useColorModeValue('gray.150', 'gray.600') + ' !important',
+                    },
+                    '& tr': {
+                      borderBottom: `1px solid ${useColorModeValue('gray.200', 'gray.600')} !important`,
+                    },
+                    '& td:not(:last-child)': {
+                      borderRight: `1px solid ${useColorModeValue('gray.200', 'gray.600')} !important`,
+                    },
+                  }}
+                >
+                  <table>
+                    {/* Table Header */}
+                    <thead>
+                      <tr>
+                        <th style={{ width: '40px', textAlign: 'center' }}>
+                          <Icon as={Edit} boxSize={3} color={useColorModeValue('gray.400', 'gray.500')} />
+                        </th>
+                        <th>Command</th>
+                        <th>Keybinding</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Global Activation */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('activationShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Global Activation
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {activationShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Bring app to front from anywhere
+                        </td>
+                      </tr>
 
-                  {/* Calculator Shortcut */}
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <HStack justify="space-between" mb={2}>
-                      <Box>
-                        <Text fontSize="xs" fontWeight="600" color={textColor}>Open Calculator</Text>
-                        <Text fontSize="xs" color={secondaryTextColor}>Quick calculator access</Text>
-                      </Box>
-                      <Switch
-                        isChecked={enableCalculatorShortcut}
-                        onChange={(e) => setEnableCalculatorShortcut(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                  {enableCalculatorShortcut && (
-                      <HStack spacing={2.5}>
-                        <Select
-                          value={calculatorShortcut}
-                          onChange={(e) => setCalculatorShortcut(e.target.value)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          maxW="132px"
-                          size="xs"
-                          borderRadius="sm"
-                        >
-                          <option value="Alt+Q">Alt + Q</option>
-                          <option value="Alt+C">Alt + C</option>
-                          <option value="Ctrl+Alt+C">Ctrl + Alt + C</option>
-                          <option value="Ctrl+Shift+C">Ctrl + Shift + C</option>
-                        </Select>
-                        <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
-                          {calculatorShortcut}
-                        </Kbd>
-                      </HStack>
-                    )}
-                  </Box>
+                      {/* Calculator Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('calculatorShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Open Calculator
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {calculatorShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Quick calculator access
+                        </td>
+                      </tr>
 
-                  {/* New Tab Shortcut */}
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <HStack justify="space-between" mb={2}>
-                      <Box>
-                        <Text fontSize="xs" fontWeight="600" color={textColor}>New Tab</Text>
-                        <Text fontSize="xs" color={secondaryTextColor}>Create new folder tab</Text>
-                      </Box>
-                      <Switch
-                        isChecked={enableNewTabShortcut}
-                        onChange={(e) => setEnableNewTabShortcut(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                    {enableNewTabShortcut && (
-                      <HStack spacing={2.5}>
-                        <Select
-                          value={newTabShortcut}
-                          onChange={(e) => setNewTabShortcut(e.target.value)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          maxW="132px"
-                          size="xs"
-                          borderRadius="sm"
-                        >
-                          <option value="Ctrl+T">Ctrl + T</option>
-                          <option value="Ctrl+Shift+T">Ctrl + Shift + T</option>
-                          <option value="Alt+T">Alt + T</option>
-                          <option value="Ctrl+N">Ctrl + N</option>
-                        </Select>
-                        <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
-                          {newTabShortcut}
-                        </Kbd>
-                      </HStack>
-                    )}
-                  </Box>
+                      {/* New Tab Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('newTabShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          New Tab
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {newTabShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Create new folder tab
+                        </td>
+                      </tr>
 
-                  {/* Close Tab Shortcut */}
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <HStack justify="space-between" mb={2}>
-                      <Box>
-                        <Text fontSize="xs" fontWeight="600" color={textColor}>Close Tab</Text>
-                        <Text fontSize="xs" color={secondaryTextColor}>Close current tab</Text>
-                      </Box>
-                      <Switch
-                        isChecked={enableCloseTabShortcut}
-                        onChange={(e) => setEnableCloseTabShortcut(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                    {enableCloseTabShortcut && (
-                      <HStack spacing={2.5}>
-                        <Select
-                          value={closeTabShortcut}
-                          onChange={(e) => setCloseTabShortcut(e.target.value)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          maxW="132px"
-                          size="xs"
-                          borderRadius="sm"
-                        >
-                          <option value="Ctrl+W">Ctrl + W</option>
-                          <option value="Ctrl+F4">Ctrl + F4</option>
-                          <option value="Alt+F4">Alt + F4</option>
-                          <option value="Ctrl+Shift+W">Ctrl + Shift + W</option>
-                        </Select>
-                        <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
-                          {closeTabShortcut}
-                        </Kbd>
-                      </HStack>
-                    )}
-                  </Box>
+                      {/* Close Tab Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('closeTabShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Close Tab
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {closeTabShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Close current tab
+                        </td>
+                      </tr>
 
-                  {/* Client Search Shortcut */}
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <HStack justify="space-between" mb={2}>
-                      <Box>
-                        <Text fontSize="xs" fontWeight="600" color={textColor}>Search Clients</Text>
-                        <Text fontSize="xs" color={secondaryTextColor}>Open client search overlay</Text>
-                      </Box>
-                      <Switch
-                        isChecked={enableClientSearchShortcut}
-                        onChange={(e) => setEnableClientSearchShortcut(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                    {enableClientSearchShortcut && (
-                      <HStack spacing={2.5}>
-                        <Select
-                          value={clientSearchShortcut}
-                          onChange={(e) => setClientSearchShortcut(e.target.value)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          maxW="132px"
-                          size="xs"
-                          borderRadius="sm"
-                        >
-                          <option value="Alt+F">Alt + F</option>
-                          <option value="Ctrl+Shift+F">Ctrl + Shift + F</option>
-                          <option value="Ctrl+Alt+F">Ctrl + Alt + F</option>
-                          <option value="F6">F6</option>
-                        </Select>
-                        <Kbd fontSize="xs" px={2.5} py={0.5} bg={useColorModeValue('gray.100', 'gray.600')} borderRadius="sm">
-                          {clientSearchShortcut}
-                        </Kbd>
-                      </HStack>
-                    )}
-                  </Box>
+                      {/* Client Search Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('clientSearchShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Search Clients
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {clientSearchShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Open client search overlay
+                        </td>
+                      </tr>
 
-                </VStack>
 
-                <Alert status="info" size="sm" mt={2.5} borderRadius="sm">
+                    </tbody>
+                  </table>
+                </Box>
+
+                <Alert status="info" size="sm" mt={3} borderRadius="sm">
                   <AlertIcon />
           <Box>
                     <AlertTitle fontSize="xs">Shortcut Information</AlertTitle>
                     <AlertDescription fontSize="xs">
-                      Global shortcuts work anywhere. Tab shortcuts work when the app is focused.
+                      Global shortcuts work anywhere. Tab shortcuts work when the app is focused. App activation shortcuts work globally.
                     </AlertDescription>
                   </Box>
                 </Alert>
               </VStack>
+
+              {/* Keyboard Shortcut Recorder Modal */}
+              {isKeyRecorderOpen && (
+                <Box
+                  position="fixed"
+                  top="50%"
+                  left="50%"
+                  transform="translate(-50%, -50%)"
+                  bg={useColorModeValue('white', 'gray.800')}
+                  border="1px solid"
+                  borderColor={borderColor}
+                  borderRadius="md"
+                  p={6}
+                  boxShadow="xl"
+                  zIndex={9999}
+                  minW="400px"
+                  maxW="500px"
+                >
+                  <VStack spacing={4} align="stretch">
+                    <Text fontSize="lg" fontWeight="600" color={textColor} textAlign="center">
+                      Press desired key combination and then press ENTER
+                    </Text>
+                    
+                    <Box
+                      border="1px solid"
+                      borderColor={borderColor}
+                      borderRadius="sm"
+                      p={4}
+                      bg={useColorModeValue('gray.50', 'gray.700')}
+                      minH="60px"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                    >
+                      <Text fontSize="lg" fontWeight="500" color={textColor}>
+                        {recordingKeys.length > 0 ? recordingKeys.join(' + ') : 'Press keys...'}
+                      </Text>
+                    </Box>
+
+                    {/* Visual Key Representation */}
+                    {recordingKeys.length > 0 && (
+                      <HStack spacing={2} justify="center">
+                        {recordingKeys.map((key, index) => (
+                          <React.Fragment key={index}>
+                            <Box
+                              px={3}
+                              py={1.5}
+                              bg={useColorModeValue('gray.200', 'gray.600')}
+                              borderRadius="md"
+                              border="1px solid"
+                              borderColor={borderColor}
+                            >
+                              <Text fontSize="sm" fontWeight="500" color={textColor}>
+                                {key}
+                              </Text>
+                            </Box>
+                            {index < recordingKeys.length - 1 && (
+                              <Text fontSize="lg" color={secondaryTextColor}>+</Text>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </HStack>
+                    )}
+
+                    <HStack spacing={3} justify="center">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={clearRecording}
+                        colorScheme="gray"
+                      >
+                        Clear
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={closeKeyRecorder}
+                        colorScheme="gray"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        colorScheme="blue"
+                        onClick={saveRecording}
+                        isDisabled={recordingKeys.length === 0}
+                      >
+                        Save
+                      </Button>
+                    </HStack>
+                  </VStack>
+                </Box>
+              )}
             </TabPanel>
 
             {/* Interface Tab */}

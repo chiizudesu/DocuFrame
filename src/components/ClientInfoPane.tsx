@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload } from 'lucide-react';
+import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload, Folder } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 // Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
 import type { FileItem } from '../types';
@@ -777,6 +777,13 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                       onClick={() => setCurrentDirectory(folder.path)}
                       borderRadius={0}
                     >
+                      <Icon
+                        as={Folder}
+                        boxSize={4}
+                        mr={2}
+                        color="blue.400"
+                        flexShrink={0}
+                      />
                       <Text
                         noOfLines={1}
                         color="inherit"

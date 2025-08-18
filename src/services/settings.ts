@@ -10,18 +10,19 @@ export interface AppSettings {
   showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
-  calculatorShortcut?: string;           // <-- ADD THIS
-  enableCalculatorShortcut?: boolean;     // <-- ADD THIS
-  newTabShortcut?: string;                // <-- ADD THIS
-  enableNewTabShortcut?: boolean;         // <-- ADD THIS
-  closeTabShortcut?: string;              // <-- ADD THIS
-  enableCloseTabShortcut?: boolean;       // <-- ADD THIS
-  enableFileWatching?: boolean;           // <-- ADD THIS
+  calculatorShortcut?: string;
+  enableCalculatorShortcut?: boolean;
+  newTabShortcut?: string;
+  enableNewTabShortcut?: boolean;
+  closeTabShortcut?: string;
+  enableCloseTabShortcut?: boolean;
+  enableFileWatching?: boolean;
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
-  sidebarCollapsedByDefault?: boolean;    // <-- ADD THIS
-  hideTemporaryFiles?: boolean;           // NEW: hide files that start with "~$" in File Grid
-  aiEditorInstructions?: string;          // NEW: custom instructions for AI editor
+  sidebarCollapsedByDefault?: boolean;
+  hideTemporaryFiles?: boolean;
+  aiEditorInstructions?: string;
+
 }
 
 class SettingsService {
@@ -62,6 +63,11 @@ class SettingsService {
       console.error('Error setting settings:', error);
       throw error;
     }
+  }
+
+  // Clear cached settings to force reload
+  clearCache(): void {
+    this.settings = null;
   }
 
   async getRootPath(): Promise<string> {

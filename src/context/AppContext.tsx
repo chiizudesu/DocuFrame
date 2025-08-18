@@ -75,6 +75,14 @@ interface AppContextType {
   // Close Tab Shortcut
   closeTabShortcut: string;
   setCloseTabShortcut: (shortcut: string) => void;
+  // Additional shortcuts for SettingsWindow
+  activationShortcut: string;
+  setActivationShortcut: (shortcut: string) => void;
+  calculatorShortcut: string;
+  setCalculatorShortcut: (shortcut: string) => void;
+  clientSearchShortcut: string;
+  setClientSearchShortcut: (shortcut: string) => void;
+
   // Tab Management Functions
   addTabToCurrentWindow: (path?: string) => void;
   closeCurrentTab: () => void;
@@ -124,6 +132,11 @@ export const AppProvider: React.FC<{
   const [newTabShortcut, setNewTabShortcut] = useState<string>('Ctrl+T');
   // Close Tab Shortcut
   const [closeTabShortcut, setCloseTabShortcut] = useState<string>('Ctrl+W');
+  // Additional shortcuts for SettingsWindow
+  const [activationShortcut, setActivationShortcut] = useState<string>('`');
+  const [calculatorShortcut, setCalculatorShortcut] = useState<string>('Alt+Q');
+  const [clientSearchShortcut, setClientSearchShortcut] = useState<string>('Alt+F');
+
   // Jump mode state
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
 
@@ -144,6 +157,24 @@ export const AppProvider: React.FC<{
       setHideTemporaryFiles(settings.hideTemporaryFiles !== false);
       // NEW: Load AI editor instructions (default to current instructions if unset)
       setAiEditorInstructions(settings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
+      
+      // Load all shortcut settings
+      if (settings.newTabShortcut) {
+        setNewTabShortcut(settings.newTabShortcut);
+      }
+      if (settings.closeTabShortcut) {
+        setCloseTabShortcut(settings.closeTabShortcut);
+      }
+      if (settings.activationShortcut) {
+        setActivationShortcut(settings.activationShortcut);
+      }
+      if (settings.calculatorShortcut) {
+        setCalculatorShortcut(settings.calculatorShortcut);
+      }
+      if (settings.clientSearchShortcut) {
+        setClientSearchShortcut(settings.clientSearchShortcut);
+      }
+
     } catch (error) {
       console.error('Error loading settings:', error);
     }
@@ -271,6 +302,13 @@ export const AppProvider: React.FC<{
       setNewTabShortcut,
       closeTabShortcut,
       setCloseTabShortcut,
+      activationShortcut,
+      setActivationShortcut,
+      calculatorShortcut,
+      setCalculatorShortcut,
+      clientSearchShortcut,
+      setClientSearchShortcut,
+
       addTabToCurrentWindow,
       closeCurrentTab,
       reloadSettings: loadSettings,

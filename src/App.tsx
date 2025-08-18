@@ -7,6 +7,7 @@ import { SettingsWindow } from './components/SettingsWindow';
 import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
+import { eventMatchesShortcut } from './utils/shortcuts';
 
 // Separate component to use context
 const AppContent: React.FC = () => {
@@ -24,7 +25,8 @@ const AppContent: React.FC = () => {
     setStatus,
     addLog,
     isJumpModeActive,
-
+    // Bring in shortcuts from context
+    calculatorShortcut,
   } = useAppContext();
   
   // Calculator state
@@ -146,8 +148,8 @@ const AppContent: React.FC = () => {
         e.preventDefault();
         return;
       }
-      // Calculator shortcut (Alt + Q)
-      if (e.altKey && e.key.toLowerCase() === 'q') {
+      // Calculator shortcut (configurable)
+      if (!isInputFocused && eventMatchesShortcut(e, calculatorShortcut)) {
         setIsCalculatorOpen(true);
         e.preventDefault();
         return;
