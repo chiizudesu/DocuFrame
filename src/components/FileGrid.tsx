@@ -17,10 +17,8 @@ import {
   useToast,
 } from '@chakra-ui/react'
 import {
-  File,
-  FileText,
   FolderOpen,
-  Image as ImageIcon,
+  FileText,
   Trash2,
   Edit2,
   ExternalLink,
@@ -29,6 +27,7 @@ import {
   FileSymlink,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   FilePlus2,
   Archive,
   Mail,
@@ -54,90 +53,7 @@ function formatPathForLog(path: string) {
   return isWindows ? path.replace(/\//g, '\\') : path;
 }
 
-// Icon functions (moved inside component to avoid hook issues)
-const getFileIcon = (type: string, name: string) => {
-  if (type === 'folder') {
-    return FolderOpen;
-  }
-  
-  const extension = name.split('.').pop()?.toLowerCase();
-  switch (extension) {
-    case 'pdf':
-      return FileText
-    case 'doc':
-    case 'docx':
-      return FileText
-    case 'xls':
-    case 'xlsx':
-    case 'csv':
-      return FileText
-    case 'jpg':
-    case 'jpeg':
-    case 'png':
-    case 'gif':
-    case 'bmp':
-    case 'svg':
-      return ImageIcon
-    case 'zip':
-    case 'rar':
-    case '7z':
-    case 'tar':
-    case 'gz':
-      return FileText
-    case 'txt':
-    case 'md':
-    case 'json':
-    case 'xml':
-    case 'html':
-    case 'css':
-    case 'js':
-    case 'ts':
-      return FileText
-    default:
-      return File
-  }
-};
-
-const getIconColor = (type: string, name: string) => {
-  if (type === 'folder') return 'blue.400'
-  
-  const extension = name.split('.').pop()?.toLowerCase();
-  switch (extension) {
-    case 'pdf':
-      return 'red.400'
-    case 'doc':
-    case 'docx':
-      return 'blue.400'
-    case 'xls':
-    case 'xlsx':
-    case 'csv':
-      return 'green.400'
-    case 'jpg':
-    case 'jpeg':
-    case 'png':
-    case 'gif':
-    case 'bmp':
-    case 'svg':
-      return 'purple.400'
-    case 'zip':
-    case 'rar':
-    case '7z':
-    case 'tar':
-    case 'gz':
-      return 'orange.400'
-    case 'txt':
-    case 'md':
-    case 'json':
-    case 'xml':
-    case 'html':
-    case 'css':
-    case 'js':
-    case 'ts':
-      return 'yellow.400'
-    default:
-      return 'gray.400'
-  }
-};
+// Icon functions removed - using native Windows icons instead
 
 // File size formatting function
 const formatFileSize = (size: string | undefined) => {
@@ -162,6 +78,8 @@ const formatDate = (dateString: string) => {
     return dateString; // Fallback to original string if parsing fails
   }
 };
+
+// JumpModeOverlay component moved to main app level
 
 export const FileGrid: React.FC = () => {
   // All useContext hooks first
@@ -189,90 +107,7 @@ export const FileGrid: React.FC = () => {
     hideTemporaryFiles // NEW
   } = useAppContext()
 
-  // Memoized icon functions for better performance
-  const getFileIcon = useCallback((type: string, name: string) => {
-    if (type === 'folder') {
-      return FolderOpen;
-    }
-    
-    const extension = name.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'pdf':
-        return FileText
-      case 'doc':
-      case 'docx':
-        return FileText
-      case 'xls':
-      case 'xlsx':
-      case 'csv':
-        return FileText
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'bmp':
-      case 'svg':
-        return ImageIcon
-      case 'zip':
-      case 'rar':
-      case '7z':
-      case 'tar':
-      case 'gz':
-        return FileText
-      case 'txt':
-      case 'md':
-      case 'json':
-      case 'xml':
-      case 'html':
-      case 'css':
-      case 'js':
-      case 'ts':
-        return FileText
-      default:
-        return File
-    }
-  }, []);
-
-  const getIconColor = useCallback((type: string, name: string) => {
-    if (type === 'folder') return 'blue.400'
-    
-    const extension = name.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'pdf':
-        return 'red.400'
-      case 'doc':
-      case 'docx':
-        return 'blue.400'
-      case 'xls':
-      case 'xlsx':
-      case 'csv':
-        return 'green.400'
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'bmp':
-      case 'svg':
-        return 'purple.400'
-      case 'zip':
-      case 'rar':
-      case '7z':
-      case 'tar':
-      case 'gz':
-        return 'orange.400'
-      case 'txt':
-      case 'md':
-      case 'json':
-      case 'xml':
-      case 'html':
-      case 'css':
-      case 'js':
-      case 'ts':
-        return 'yellow.400'
-      default:
-        return 'gray.400'
-    }
-  }, []);
+  // Icon functions removed - using native Windows icons instead
 
   // Memoized file size formatting for better performance
   const formatFileSize = useCallback((size: string | undefined) => {
@@ -427,28 +262,47 @@ export const FileGrid: React.FC = () => {
 
   // Memoize sorted files computation for better performance
   const sortedFiles = useMemo(() => {
-    if (!Array.isArray(folderItems)) return [];
-    return [...folderItems].sort((a, b) => {
+    if (!Array.isArray(folderItems) || folderItems.length === 0) return [];
+    
+    // Early return for single item or no sorting needed
+    if (folderItems.length === 1) return folderItems;
+    
+    // Create a stable sort with optimized comparison functions
+    const items = [...folderItems];
+    
+    // Pre-compute sort values to avoid repeated calculations
+    const sortData = items.map((item, index) => ({
+      item,
+      index,
+      nameValue: item.name.toLowerCase(), // Use lowercase for consistent sorting
+      sizeValue: typeof item.size === 'string' ? parseFloat(item.size) || 0 : 0,
+      modifiedValue: item.modified ? new Date(item.modified).getTime() : 0
+    }));
+    
+    // Sort with optimized comparison
+    sortData.sort((a, b) => {
       // Always sort folders first
-      if (a.type === 'folder' && b.type !== 'folder') return -1;
-      if (a.type !== 'folder' && b.type === 'folder') return 1;
+      if (a.item.type === 'folder' && b.item.type !== 'folder') return -1;
+      if (a.item.type !== 'folder' && b.item.type === 'folder') return 1;
       
       // Then sort by the selected column
-      switch (sortColumn) {
-        case 'name':
-          return sortDirection === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-        case 'size':
-          const sizeA = typeof a.size === 'string' ? parseFloat(a.size) : 0;
-          const sizeB = typeof b.size === 'string' ? parseFloat(b.size) : 0;
-          return sortDirection === 'asc' ? sizeA - sizeB : sizeB - sizeA;
-        case 'modified':
-          const dateA = a.modified ? new Date(a.modified).getTime() : 0;
-          const dateB = b.modified ? new Date(b.modified).getTime() : 0;
-          return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
-        default:
-          return 0;
+      if (sortColumn === 'name') {
+        return sortDirection === 'asc' 
+          ? a.nameValue.localeCompare(b.nameValue)
+          : b.nameValue.localeCompare(a.nameValue);
+      } else if (sortColumn === 'size') {
+        return sortDirection === 'asc' 
+          ? a.sizeValue - b.sizeValue
+          : b.sizeValue - a.sizeValue;
+      } else if (sortColumn === 'modified') {
+        return sortDirection === 'asc' 
+          ? a.modifiedValue - b.modifiedValue
+          : b.modifiedValue - a.modifiedValue;
       }
+      return 0;
     });
+    
+    return sortData.map(data => data.item);
   }, [folderItems, sortColumn, sortDirection]);
 
   // Debounced directory loading to prevent rapid reloads
@@ -1328,291 +1182,15 @@ export const FileGrid: React.FC = () => {
     return () => setSelectAllFiles(() => () => {});
   }, [sortedFiles, currentDirectory, setSelectAllFiles, setStatus, addLog, setSelectedFiles]);
 
-     // Jump mode state and optimization
-   const [jumpBuffer, setJumpBuffer] = useState('');
-   const [jumpTimeout, setJumpTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  // Memoized jump mode matching for O(1) performance with early termination
-  const jumpModeMatches = useMemo(() => {
-    if (!jumpBuffer || !sortedFiles.length) return [];
-    
-    const buffer = jumpBuffer.toLowerCase();
-    const matches: Array<{ file: FileItem; index: number; score: number }> = [];
-    
-    // Early termination: stop after finding first 5 exact matches for performance
-    let exactMatches = 0;
-    const maxExactMatches = 5;
-    
-    for (let i = 0; i < sortedFiles.length; i++) {
-      const file = sortedFiles[i];
-      const fileName = file.name.toLowerCase();
-      
-      if (fileName.startsWith(buffer)) {
-        // Exact start match gets highest priority
-        // Prioritize exact matches: if buffer is "2025" and fileName is "2025", it should score higher than "2024"
-        const isExactMatch = fileName === buffer;
-        const score = isExactMatch ? 2.0 : 1.0; // Exact match gets highest priority
-        matches.push({ file, index: i, score });
-        exactMatches++;
-        
-        // Early termination if we have enough exact matches
-        if (exactMatches >= maxExactMatches) break;
-      } else if (fileName.includes(buffer)) {
-        // Contains match gets lower priority
-        matches.push({ file, index: i, score: 0.5 });
-      }
-    }
-    
-    // Sort by score (exact matches first), then by index
-    return matches.sort((a, b) => {
-      if (a.score !== b.score) return b.score - a.score;
-      return a.index - b.index;
-    });
-  }, [jumpBuffer, sortedFiles]);
 
-  // Optimized jump mode handler
-  const handleJumpMode = useCallback((key: string) => {
-    // Clear existing timeout
-    if (jumpTimeout) clearTimeout(jumpTimeout);
-    
-    // Add to jump buffer
-    const newBuffer = jumpBuffer + key.toLowerCase();
-    setJumpBuffer(newBuffer);
-    setIsJumpModeActive(true);
-    
-    // Calculate matches with the NEW buffer immediately
-    const buffer = newBuffer.toLowerCase();
-    const matches: Array<{ file: FileItem; index: number; score: number }> = [];
-    
-    // Early termination: stop after finding first 5 exact matches for performance
-    let exactMatches = 0;
-    const maxExactMatches = 5;
-    
-    for (let i = 0; i < sortedFiles.length; i++) {
-      const file = sortedFiles[i];
-      const fileName = file.name.toLowerCase();
-      
-      if (fileName.startsWith(buffer)) {
-        // Exact start match gets highest priority
-        // Prioritize exact matches: if buffer is "2025" and fileName is "2025", it should score higher than "2024"
-        const isExactMatch = fileName === buffer;
-        const score = isExactMatch ? 2.0 : 1.0; // Exact match gets highest priority
-        matches.push({ file, index: i, score });
-        exactMatches++;
-        
-        // Early termination if we have enough exact matches
-        if (exactMatches >= maxExactMatches) break;
-      } else if (fileName.includes(buffer)) {
-        // Contains match gets lower priority
-        matches.push({ file, index: i, score: 0.5 });
-      }
-    }
-    
-    // Sort by score (exact matches first), then by index
-    const newMatches = matches.sort((a, b) => {
-      if (a.score !== b.score) return b.score - a.score;
-      return a.index - b.index;
-    });
-    
-    // Find first matching item
-    if (newMatches.length > 0) {
-      const firstMatch = newMatches[0];
-      
-      // Update selection
-      setSelectedFiles([firstMatch.file.name]);
-      setSelectedFile(firstMatch.file.name);
-      setLastSelectedIndex(firstMatch.index);
-      
-      // Optimized scroll to the item with container-aware positioning
-      let element = document.querySelector(`[data-row-index="${firstMatch.index}"]`) as HTMLElement | null;
-      if (!element) element = document.querySelector(`[data-file-index="${firstMatch.index}"]`) as HTMLElement | null;
-      if (element) {
-        requestAnimationFrame(() => {
-          const scrollContainer = dropAreaRef.current;
-          if (scrollContainer) {
-            const containerRect = scrollContainer.getBoundingClientRect();
-            const elementRect = element!.getBoundingClientRect();
+  // Jump mode matching removed - now handled by overlay
 
-            // Compute top of element relative to container scroll origin
-            const elementTopInContainer = elementRect.top - containerRect.top + scrollContainer.scrollTop;
-            const headerHeight = 28; // sticky header height
+  // Jump mode handler removed - now handled by overlay
 
-            const containerHeight = scrollContainer.clientHeight;
-            const maxScrollTop = scrollContainer.scrollHeight - containerHeight;
+   // Jump mode backspace handler removed - now handled by overlay
 
-            // Target: element aligned just below sticky header
-            let targetScrollTop = elementTopInContainer - headerHeight;
-            if (targetScrollTop < 0) targetScrollTop = 0;
-            if (targetScrollTop > maxScrollTop) targetScrollTop = maxScrollTop;
-
-            if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 2) {
-              scrollContainer.scrollTo({ top: targetScrollTop, behavior: 'auto' });
-            }
-          } else {
-            element!.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
-          }
-        });
-      }
-      
-      addLog(`Jumped to: ${firstMatch.file.name}`);
-    }
-    
-    // Reset buffer after 1 second
-    const timeout = setTimeout(() => {
-      setJumpBuffer('');
-      setIsJumpModeActive(false);
-    }, 1000);
-    setJumpTimeout(timeout);
-     }, [jumpBuffer, sortedFiles, jumpTimeout, viewMode, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
-
-   // Optimized jump mode backspace handler
-   const handleJumpModeBackspace = useCallback(() => {
-     // Clear existing timeout
-     if (jumpTimeout) clearTimeout(jumpTimeout);
-     
-     // Remove last character from buffer
-     const newBuffer = jumpBuffer.slice(0, -1);
-     setJumpBuffer(newBuffer);
-     
-     if (newBuffer.length === 0) {
-       // If buffer is empty, deactivate jump mode
-       setIsJumpModeActive(false);
-       return;
-     }
-     
-     // Calculate matches with the NEW buffer immediately
-     const buffer = newBuffer.toLowerCase();
-     const matches: Array<{ file: FileItem; index: number; score: number }> = [];
-     
-     // Early termination: stop after finding first 5 exact matches for performance
-     let exactMatches = 0;
-     const maxExactMatches = 5;
-     
-     for (let i = 0; i < sortedFiles.length; i++) {
-       const file = sortedFiles[i];
-       const fileName = file.name.toLowerCase();
-       
-       if (fileName.startsWith(buffer)) {
-         // Exact start match gets highest priority
-         const isExactMatch = fileName === buffer;
-         const score = isExactMatch ? 2.0 : 1.0;
-         matches.push({ file, index: i, score });
-         exactMatches++;
-         
-         // Early termination if we have enough exact matches
-         if (exactMatches >= maxExactMatches) break;
-       } else if (fileName.includes(buffer)) {
-         // Contains match gets lower priority
-         matches.push({ file, index: i, score: 0.5 });
-       }
-     }
-     
-     // Sort by score (exact matches first), then by index
-     const newMatches = matches.sort((a, b) => {
-       if (a.score !== b.score) return b.score - a.score;
-       return a.index - b.index;
-     });
-     
-     // Find first matching item
-     if (newMatches.length > 0) {
-       const firstMatch = newMatches[0];
-       
-       // Update selection
-       setSelectedFiles([firstMatch.file.name]);
-       setSelectedFile(firstMatch.file.name);
-       setLastSelectedIndex(firstMatch.index);
-       
-       // Optimized scroll to the item with instant positioning
-       const element = document.querySelector(`[data-file-index="${firstMatch.index}"]`);
-       if (element) {
-         // Use requestAnimationFrame for smoother performance
-         requestAnimationFrame(() => {
-           // Find the scrollable container (the dropAreaRef)
-           const scrollContainer = dropAreaRef.current;
-           if (scrollContainer) {
-             const elementRect = element.getBoundingClientRect();
-             const containerRect = scrollContainer.getBoundingClientRect();
-             
-             // Always scroll to show the item at the top, unless it's at the bottom
-             const elementTop = (element as HTMLElement).offsetTop;
-             const containerHeight = scrollContainer.clientHeight;
-             const maxScrollTop = scrollContainer.scrollHeight - containerHeight;
-             
-             // Calculate target scroll position to show item at top
-             let targetScrollTop = elementTop;
-             
-             // If scrolling to top would go beyond the bottom, adjust to show at bottom
-             if (targetScrollTop > maxScrollTop) {
-               targetScrollTop = maxScrollTop;
-             }
-             
-             // Only scroll if the target position is different from current
-             if (Math.abs(scrollContainer.scrollTop - targetScrollTop) > 5) {
-               scrollContainer.scrollTo({
-                 top: targetScrollTop,
-                 behavior: 'instant'
-               });
-             }
-           } else {
-             // Fallback to direct scrollIntoView
-             element.scrollIntoView({ 
-               behavior: 'instant', 
-               block: 'start',
-               inline: 'nearest'
-             });
-           }
-         });
-       }
-       
-       addLog(`Jumped to: ${firstMatch.file.name} (backspaced to "${newBuffer}")`);
-     } else {
-       // No matches found, clear selection
-       setSelectedFiles([]);
-       setSelectedFile(null);
-       setLastSelectedIndex(null);
-       addLog(`No matches for: "${newBuffer}"`);
-     }
-     
-     // Reset buffer after 1 second
-     const timeout = setTimeout(() => {
-       setJumpBuffer('');
-       setIsJumpModeActive(false);
-     }, 1000);
-     setJumpTimeout(timeout);
-   }, [jumpBuffer, sortedFiles, jumpTimeout, setSelectedFiles, setSelectedFile, setLastSelectedIndex, addLog]);
-
-     // Global keyboard handler for jump mode
-   useEffect(() => {
-     const handleKeyDown = (e: KeyboardEvent) => {
-       // Check if any input field is focused
-       const target = e.target as HTMLElement;
-       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-       
-       // Handle backspace in jump mode (only when jump mode is active)
-       if (!isInputFocused && !isQuickNavigating && e.key === 'Backspace' && isJumpModeActive && jumpBuffer.length > 0) {
-         e.preventDefault();
-         e.stopPropagation();
-         handleJumpModeBackspace();
-         return;
-       }
-       
-       // Jump mode - only handle single letter/number keys when not in input fields or quick navigate
-       if (!isInputFocused && !isQuickNavigating && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-         e.preventDefault();
-         handleJumpMode(e.key);
-       }
-     };
-    
-         window.addEventListener('keydown', handleKeyDown);
-     return () => window.removeEventListener('keydown', handleKeyDown);
-   }, [handleJumpMode, handleJumpModeBackspace, isQuickNavigating, isJumpModeActive, jumpBuffer]);
-
-  // Cleanup jump mode on unmount
-  useEffect(() => {
-    return () => {
-      if (jumpTimeout) clearTimeout(jumpTimeout);
-    };
-  }, [jumpTimeout]);
+     // Global keyboard handler for jump mode overlay - moved to main app level
 
   // Drag and drop handlers for the main container
   const handleDragEnter = (e: React.DragEvent) => {
@@ -2042,6 +1620,10 @@ export const FileGrid: React.FC = () => {
 
   // Memoize recently transferred files Set for O(1) lookup performance
   const recentlyTransferredFilesSet = useMemo(() => {
+    if (recentlyTransferredFiles.length === 0) {
+      return { set: new Set(), normalizedSet: new Set() };
+    }
+    
     const set = new Set(recentlyTransferredFiles);
     const normalizedSet = new Set(recentlyTransferredFiles.map(path => path.replace(/\\/g, '/')));
     return { set, normalizedSet };
@@ -2056,6 +1638,8 @@ export const FileGrid: React.FC = () => {
     const normalizedPath = file.path.replace(/\\/g, '/');
     return recentlyTransferredFilesSet.normalizedSet.has(normalizedPath);
   }, [recentlyTransferredFilesSet]);
+
+  // Helper function to check if a file is the first jump result - removed
 
   // Grid view
   const renderGridView = () => (
@@ -2164,10 +1748,14 @@ export const FileGrid: React.FC = () => {
               borderColor: hoverBorderColor,
             }}
             transition="border-color 0.2s, box-shadow 0.2s, background 0.2s"
-            style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
+            style={{ 
+              userSelect: 'none', 
+              opacity: isFileCut(file) ? 0.5 : 1, 
+              fontStyle: isFileCut(file) ? 'italic' : 'normal'
+            }}
             position="relative"
           >
-            {/* Use native icon if available for files, otherwise use Lucide icons */}
+            {/* Use native icon if available for files, otherwise use folder icon */}
             {file.type === 'file' && nativeIcons.has(file.path) ? (
               <Image
                 src={nativeIcons.get(file.path)}
@@ -2177,10 +1765,10 @@ export const FileGrid: React.FC = () => {
               />
             ) : (
               <Icon
-                as={getFileIcon(file.type, file.name)}
+                as={FolderOpen}
                 boxSize={9.5}
                 mr={4}
-                color={getIconColor(file.type, file.name)}
+                color="blue.400"
               />
             )}
             <Box flex="1">
@@ -2635,10 +2223,10 @@ const renderListView = () => (
                       />
                     ) : (
                       <Icon
-                        as={getFileIcon(file.type, file.name)}
+                        as={FolderOpen}
                         boxSize={4}
                         mr={1.5}
-                        color={getIconColor(file.type, file.name)}
+                        color="blue.400"
                         flexShrink={0}
                       />
                     )}
@@ -2647,7 +2235,11 @@ const renderListView = () => (
                     <Text 
                       fontSize="xs" 
                       color={fileTextColor} 
-                      style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1, fontStyle: isFileCut(file) ? 'italic' : 'normal' }}
+                      style={{ 
+                        userSelect: 'none', 
+                        opacity: isFileCut(file) ? 0.5 : 1, 
+                        fontStyle: isFileCut(file) ? 'italic' : 'normal'
+                      }}
                       overflow="hidden"
                       textOverflow="ellipsis"
                       whiteSpace="nowrap"
@@ -3056,21 +2648,54 @@ const renderListView = () => (
     }
   }, [resizingColumn, handleResizeMove, handleResizeEnd]);
 
-  // Load native icons for files
+  // Load native icons for files - optimized with batching and error handling
   useEffect(() => {
     const loadNativeIcons = async () => {
       if (!window.electronAPI?.getFileIcon) return;
       
-      for (const file of sortedFiles) {
-        if (file.type === 'file' && !nativeIcons.has(file.path)) {
-          try {
-            const iconData = await window.electronAPI.getFileIcon(file.path);
-            if (iconData) {
-              setNativeIcons(prev => new Map(prev.set(file.path, iconData)));
+      // Only load icons for visible files to improve performance
+      const filesToProcess = sortedFiles
+        .filter(file => file.type === 'file' && !nativeIcons.has(file.path))
+        .slice(0, 50); // Limit to first 50 files to prevent overwhelming the system
+      
+      if (filesToProcess.length === 0) return;
+      
+      // Process icons in parallel batches for better performance
+      const batchSize = 10;
+      for (let i = 0; i < filesToProcess.length; i += batchSize) {
+        const batch = filesToProcess.slice(i, i + batchSize);
+        
+        try {
+          const iconPromises = batch.map(async (file) => {
+            try {
+              const iconData = await window.electronAPI.getFileIcon(file.path);
+              return { path: file.path, iconData };
+            } catch (error) {
+              console.warn(`Failed to get icon for ${file.name}:`, error);
+              return null;
             }
-          } catch (error) {
-            console.error('Failed to get file icon:', error);
+          });
+          
+          const results = await Promise.allSettled(iconPromises);
+          const validResults = results
+            .filter((result): result is PromiseFulfilledResult<{ path: string; iconData: string } | null> => 
+              result.status === 'fulfilled' && result.value !== null
+            )
+            .map(result => result.value)
+            .filter((item): item is { path: string; iconData: string } => item !== null);
+          
+          // Batch update the state to reduce re-renders
+          if (validResults.length > 0) {
+            setNativeIcons(prev => {
+              const newMap = new Map(prev);
+              validResults.forEach(({ path, iconData }) => {
+                newMap.set(path, iconData);
+              });
+              return newMap;
+            });
           }
+        } catch (error) {
+          console.error('Batch icon loading failed:', error);
         }
       }
     };
@@ -3085,8 +2710,19 @@ const renderListView = () => (
     }
   }, [hideTemporaryFiles, currentDirectory, refreshDirectory]);
 
+
+  
   return (
-    <Box p={viewMode === 'grid' ? 0 : 0} m={0} height="100%" position="relative">
+    <Box 
+      p={viewMode === 'grid' ? 0 : 0} 
+      m={0} 
+      height="100%" 
+      position="relative"
+      style={{ 
+        filter: isJumpModeActive ? 'blur(2px)' : 'none',
+        transition: 'filter 0.2s ease-in-out'
+      }}
+    >
       {viewMode === 'grid' ? renderGridView() : renderListView()}
       <ContextMenu 
         contextMenu={contextMenu}
@@ -3122,6 +2758,7 @@ const renderListView = () => (
         file={propertiesFile}
         onUnblock={handleUnblockFile}
       />
+      {/* JumpModeOverlay moved to main app level */}
     </Box>
   )
 }

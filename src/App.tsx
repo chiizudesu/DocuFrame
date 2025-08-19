@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Box, useColorMode, ChakraProvider } from '@chakra-ui/react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Box, useColorMode, ChakraProvider, Input, useColorModeValue } from '@chakra-ui/react';
 import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
@@ -8,6 +8,250 @@ import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
+import type { FileItem } from './types';
+
+// Jump mode overlay component - simple 2 rows
+const JumpModeOverlay: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  currentDirectory: string;
+  sortedFiles: FileItem[];
+  onNavigate: (path: string) => void;
+  onOpenFile: (file: FileItem) => void;
+  initialKey?: string;
+}> = ({ isOpen, onClose, currentDirectory, sortedFiles, onNavigate, onOpenFile, initialKey }) => {
+  const [searchText, setSearchText] = useState('');
+  const [overlayPath, setOverlayPath] = useState(currentDirectory);
+  const [overlayFiles, setOverlayFiles] = useState<FileItem[]>([]);
+  const [searchResults, setSearchResults] = useState<FileItem[]>([]);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  
+  // Reset overlay when opening
+  useEffect(() => {
+    if (isOpen) {
+      setOverlayPath(currentDirectory);
+      setOverlayFiles(sortedFiles);
+      setSearchText(initialKey || '');
+      setSearchResults([]);
+      // Focus input after a short delay to ensure overlay is rendered
+      setTimeout(() => searchInputRef.current?.focus(), 100);
+    } else {
+      // Reset all state when overlay closes
+      setSearchText('');
+      setOverlayPath(currentDirectory);
+      setOverlayFiles(sortedFiles);
+      setSearchResults([]);
+    }
+  }, [isOpen, currentDirectory, sortedFiles, initialKey]);
+  
+  // Update search results when search text or overlay files change
+  useEffect(() => {
+    if (!searchText.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    const query = searchText.toLowerCase();
+    const matches = overlayFiles
+      .filter(file => file.name.toLowerCase().includes(query))
+      .sort((a, b) => {
+        // Prioritize exact matches and folder matches
+        const aStartsWith = a.name.toLowerCase().startsWith(query);
+        const bStartsWith = b.name.toLowerCase().startsWith(query);
+        const aIsFolder = a.type === 'folder';
+        const bIsFolder = b.type === 'folder';
+        
+        if (aStartsWith && !bStartsWith) return -1;
+        if (!aStartsWith && bStartsWith) return 1;
+        if (aIsFolder && !bIsFolder) return -1;
+        if (!aIsFolder && bIsFolder) return 1;
+        
+        return a.name.localeCompare(b.name);
+      })
+      .slice(0, 1); // Only take first result
+    
+    setSearchResults(matches);
+  }, [searchText, overlayFiles]);
+  
+  const handleTab = async () => {
+    if (searchResults.length === 0) return;
+    
+    const currentResult = searchResults[0];
+    if (currentResult.type === 'folder') {
+      try {
+        // Load files from the new folder
+        const contents = await (window.electronAPI as any).getDirectoryContents(currentResult.path);
+        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
+        
+        // Navigate overlay to this folder
+        setOverlayPath(currentResult.path);
+        setOverlayFiles(files);
+        setSearchText('');
+        setSearchResults([]);
+      } catch (error) {
+        console.error('Failed to load directory contents:', error);
+        // Fallback: just update the path
+        setOverlayPath(currentResult.path);
+        setSearchText('');
+        setSearchResults([]);
+      }
+    } else {
+      // Open the file
+      onOpenFile(currentResult);
+      onClose();
+    }
+  };
+  
+  const handleEnter = () => {
+    if (searchResults.length === 0) return;
+    
+    const currentResult = searchResults[0];
+    if (currentResult.type === 'folder') {
+      // Navigate to this folder in the real app
+      onNavigate(currentResult.path);
+      onClose();
+    } else {
+      // Open the file
+      onOpenFile(currentResult);
+      onClose();
+    }
+  };
+  
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      handleTab();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      handleEnter();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
+  };
+
+  // Handle window focus/blur to reset overlay state
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      if (isOpen) {
+        setSearchText('');
+        setSearchResults([]);
+      }
+    };
+
+    const handleWindowFocus = () => {
+      if (isOpen) {
+        // Refocus the input when window regains focus
+        setTimeout(() => searchInputRef.current?.focus(), 100);
+      }
+    };
+
+    // Global keyboard handler for the overlay
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!isOpen) return;
+      
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        handleTab();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleEnter();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('keydown', handleGlobalKeyDown);
+
+    return () => {
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [isOpen, handleTab, handleEnter, onClose]);
+  
+  if (!isOpen) return null;
+  
+  const currentResult = searchResults[0] || null;
+  const previewPath = currentResult ? currentResult.path : overlayPath;
+  
+  return (
+    <>
+      {/* Input for capturing keystrokes - positioned over the overlay */}
+      <Input
+        ref={searchInputRef}
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onFocus={() => {}} // Empty function to avoid console warnings
+        onBlur={() => {
+          // Reset text when input loses focus
+          setSearchText('');
+          setSearchResults([]);
+        }}
+        position="fixed"
+        top="50%"
+        left="50%"
+        transform="translate(-50%, -50%)"
+        zIndex={10000}
+        opacity={0}
+        autoFocus
+        tabIndex={-1}
+        w="1px"
+        h="1px"
+        border="none"
+        outline="none"
+        bg="transparent"
+        pointerEvents="none"
+      />
+      
+      {/* Simple 2-row overlay */}
+      <Box
+        position="fixed"
+        top="50%"
+        left="50%"
+        transform="translate(-50%, -50%)"
+        zIndex={9999}
+        minW="500px"
+        maxW="700px"
+      >
+        {/* Row 1: Current text path */}
+        <Box
+          bg={useColorModeValue('white', 'gray.800')}
+          color={useColorModeValue('gray.800', 'white')}
+          p={2}
+          mb={1}
+          borderRadius="md"
+          fontSize="xs"
+          textAlign="center"
+          border="1px solid"
+          borderColor={useColorModeValue('gray.200', 'gray.600')}
+          boxShadow="lg"
+        >
+          {searchText || 'Type to search...'}
+        </Box>
+        
+        {/* Row 2: Preview navigation path */}
+        <Box
+          bg={useColorModeValue('blue.50', 'blue.900')}
+          color={useColorModeValue('blue.800', 'blue.100')}
+          p={2}
+          borderRadius="md"
+          fontSize="xs"
+          textAlign="center"
+          border="1px solid"
+          borderColor={useColorModeValue('blue.200', 'blue.700')}
+          boxShadow="md"
+        >
+          {previewPath}
+        </Box>
+      </Box>
+    </>
+  );
+};
 
 // Separate component to use context
 const AppContent: React.FC = () => {
@@ -25,12 +269,17 @@ const AppContent: React.FC = () => {
     setStatus,
     addLog,
     isJumpModeActive,
+    setIsJumpModeActive,
+    folderItems,
     // Bring in shortcuts from context
     calculatorShortcut,
   } = useAppContext();
   
   // Calculator state
   const [isCalculatorOpen, setIsCalculatorOpen] = React.useState(false);
+  
+  // Jump mode state
+  const [initialJumpKey, setInitialJumpKey] = useState<string>('');
 
   // Check if this is the settings window
   const isSettingsWindow = window.location.hash === '#settings';
@@ -132,8 +381,8 @@ const AppContent: React.FC = () => {
         return;
       }
       
-      // Debug Enter key handling
-      if (!isInputFocused && !isQuickNavigating && e.key === 'Enter') {
+      // Debug Enter key handling (but allow it to pass through when jump mode is active)
+      if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Enter') {
         console.log('[App] Enter key pressed after navigation, preventing default');
         e.preventDefault();
         return;
@@ -155,10 +404,18 @@ const AppContent: React.FC = () => {
         return;
       }
       
+      // Activate jump mode on any key press when no input is focused and app is active
+      if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        setInitialJumpKey(e.key);
+        setIsJumpModeActive(true);
+        return;
+      }
+      
 
       
-      // Escape key to cancel any ongoing operations (drag, etc.)
-      if (e.key === 'Escape') {
+      // Escape key to cancel any ongoing operations (drag, etc.) - but allow it to pass through when jump mode is active
+      if (!isJumpModeActive && e.key === 'Escape') {
         // Dispatch a custom event that components can listen to for resetting their state
         window.dispatchEvent(new CustomEvent('escape-key-pressed'));
       }
@@ -206,6 +463,21 @@ const AppContent: React.FC = () => {
       <ClientSearchOverlay />
       <SettingsWindow isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+      <JumpModeOverlay
+        isOpen={isJumpModeActive}
+        onClose={() => {
+          setIsJumpModeActive(false);
+          setInitialJumpKey('');
+        }}
+        currentDirectory={currentDirectory}
+        sortedFiles={folderItems}
+        onNavigate={setCurrentDirectory}
+        onOpenFile={(file) => {
+          // Handle file opening - you may need to implement this based on your app's needs
+          console.log('Opening file:', file.path);
+        }}
+        initialKey={initialJumpKey}
+      />
     </Box>;
 };
 
