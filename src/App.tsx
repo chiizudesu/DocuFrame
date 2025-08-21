@@ -27,13 +27,25 @@ const JumpModeOverlay: React.FC<{
   const [searchResults, setSearchResults] = useState<FileItem[]>([]);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null); // Track which segment is "selected" for backspace navigation
   const [isNavigating, setIsNavigating] = useState(false); // Track if we're actively navigating (not just searching)
+  const [overlayWorkingDirectory, setOverlayWorkingDirectory] = useState(currentDirectory); // Track overlay's current working directory context
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Reset overlay when opening
   useEffect(() => {
     if (isOpen) {
       setOverlayPath(currentDirectory);
+      setOverlayWorkingDirectory(currentDirectory); // Reset overlay working directory
+      // Load files from the current directory instead of using sortedFiles from root
+      (window.electronAPI as any).getDirectoryContents(currentDirectory).then((contents: any) => {
+        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
+        setOverlayFiles(files);
+        console.log('Loaded files from current directory:', currentDirectory, 'File count:', files.length);
+        console.log('First 5 items in current directory:', files.slice(0, 5).map((f: any) => ({ name: f.name, path: f.path, type: f.type })));
+      }).catch((error: any) => {
+        console.error('Failed to load directory contents for current directory:', currentDirectory, error);
+        // Fallback to sortedFiles if loading fails
       setOverlayFiles(sortedFiles);
+      });
       setSearchText(initialKey || '');
       setSearchResults([]);
       setSelectedSegmentIndex(null); // Reset selected segment
@@ -46,7 +58,8 @@ const JumpModeOverlay: React.FC<{
       // Reset all state when overlay closes
       setSearchText('');
       setOverlayPath(currentDirectory);
-      setOverlayFiles(sortedFiles);
+      setOverlayWorkingDirectory(currentDirectory); // Reset overlay working directory
+      setOverlayFiles([]); // Clear files when closing
       setSearchResults([]);
       setSelectedSegmentIndex(null); // Reset selected segment
       setIsNavigating(false); // Reset navigation flag
@@ -62,64 +75,48 @@ const JumpModeOverlay: React.FC<{
       // if we're not actively navigating (preserves Tab navigation state)
       if (!isNavigating) {
         setOverlayPath(currentDirectory);
+        setOverlayWorkingDirectory(currentDirectory);
       }
       return;
     }
     
-    // Only reset selected segment when user starts typing AND we're not in backspace navigation mode
+    // Reset selected segment when user starts typing (clears pill indicator)
     if (selectedSegmentIndex !== null) {
-      console.log('Resetting selectedSegmentIndex because user started typing');
       setSelectedSegmentIndex(null);
+      console.log('Cleared segment selection due to typing');
     }
     
     const query = searchText.toLowerCase();
     
-    // Load files from the current overlayPath if they don't match
-    // Also check if overlayPath is valid before trying to load files
-    if (overlayFiles.length === 0 || !overlayFiles.some(file => file.path.startsWith(overlayPath)) || !overlayPath || overlayPath.length < 3 || !overlayPath.includes('\\')) {
-      // If overlayPath is invalid, use currentDirectory instead
-      const pathToLoad = (overlayPath && overlayPath.length >= 3 && overlayPath.includes('\\')) ? overlayPath : currentDirectory;
-      console.log('Loading files for path:', pathToLoad, 'overlayPath was:', overlayPath);
-      console.log('Current overlayFiles:', overlayFiles.map((f: FileItem) => ({ name: f.name, path: f.path, type: f.type })));
+    // Load files from the current directory if overlayFiles is empty or doesn't match current context
+    if (overlayFiles.length === 0) {
+      // Load files from the current overlayPath (which should be the directory we want to search in)
+      const pathToLoad = overlayPath || currentDirectory;
+      
+      console.log('Loading files for search from:', pathToLoad);
       
       // Load files from the valid path
       (window.electronAPI as any).getDirectoryContents(pathToLoad).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-        // Also fix overlayPath if it was corrupted
-        if (!overlayPath || overlayPath.length < 3 || !overlayPath.includes('\\')) {
-          setOverlayPath(pathToLoad);
-          console.log('Fixed corrupted overlayPath from', overlayPath, 'to', pathToLoad);
-        }
-        console.log('Loaded', files.length, 'files for path:', pathToLoad);
-        console.log('Sample files:', files.slice(0, 3).map((f: any) => ({ name: f.name, path: f.path, type: f.type })));
+        console.log('Loaded files for search:', files.length);
       }).catch((error: any) => {
         console.error('Failed to load directory contents for path:', pathToLoad, error);
       });
       return; // Wait for files to load before searching
     }
     
-    // Only search in the current directory level, not in subdirectories
-    // Add safety check for corrupted overlayPath
-    let currentLevelFiles: FileItem[];
-    if (!overlayPath || overlayPath.length < 3 || !overlayPath.includes('\\')) {
-      console.warn('overlayPath is corrupted, using currentDirectory for filtering:', overlayPath);
-      // Use currentDirectory for filtering if overlayPath is corrupted
-      currentLevelFiles = overlayFiles.filter(file => {
-        const fileDir = file.path.substring(0, file.path.lastIndexOf('\\') !== -1 ? file.path.lastIndexOf('\\') : file.path.lastIndexOf('/'));
-        const currentDir = currentDirectory.substring(0, currentDirectory.lastIndexOf('\\') !== -1 ? currentDirectory.lastIndexOf('\\') : currentDirectory.lastIndexOf('/'));
-        return fileDir === currentDir;
-      });
-      console.log('Searching in current level - currentDirectory:', currentDirectory, 'currentLevelFiles count:', currentLevelFiles.length, 'overlayFiles count:', overlayFiles.length);
-    } else {
-      currentLevelFiles = overlayFiles.filter(file => {
-        // Check if the file is at the same directory level as overlayPath
-        const fileDir = file.path.substring(0, file.path.lastIndexOf('\\') !== -1 ? file.path.lastIndexOf('\\') : file.path.lastIndexOf('/'));
-        const overlayDir = overlayPath.substring(0, overlayPath.lastIndexOf('\\') !== -1 ? overlayPath.lastIndexOf('\\') : overlayPath.lastIndexOf('/'));
-        return fileDir === overlayDir;
-      });
-      console.log('Searching in current level - overlayPath:', overlayPath, 'currentLevelFiles count:', currentLevelFiles.length, 'overlayFiles count:', overlayFiles.length);
-    }
+    // Since we're loading files from the correct directory, use all loaded files for searching
+    // No need for complex path filtering since overlayFiles already contains the right files
+    const currentLevelFiles = overlayFiles;
+    
+    console.log('Search filtering debug:', {
+      query,
+      overlayPath,
+      currentDirectory,
+      overlayFilesCount: overlayFiles.length,
+      searchText: searchText
+    });
     
     const matches = currentLevelFiles
       .filter(file => file.name.toLowerCase().includes(query))
@@ -139,33 +136,56 @@ const JumpModeOverlay: React.FC<{
       })
       .slice(0, 1); // Only take first result
     
-    console.log('Search results - query:', query, 'matches:', matches, 'currentLevelFiles count:', currentLevelFiles.length);
+    console.log('Search results debug:', {
+      query,
+      currentLevelFiles: currentLevelFiles.length,
+      matches: matches.map(m => ({ name: m.name, path: m.path, type: m.type }))
+    });
+    
+    // Debug: Show first few files/folders and whether they match the query
+    console.log('First 5 files/folders with match status:');
+    currentLevelFiles.slice(0, 5).forEach((file: any) => {
+      const matchesQuery = file.name.toLowerCase().includes(query);
+      console.log(`- ${file.name} (${file.type}): ${matchesQuery ? 'MATCH' : 'no match'} - query: "${query}"`);
+    });
+    
     setSearchResults(matches);
     
     // Update preview path as user types - this is the key for dynamic preview
     if (matches.length > 0) {
       const match = matches[0];
       
+      console.log('Updating overlayPath with match:', {
+        matchName: match.name,
+        matchPath: match.path,
+        currentOverlayPath: overlayPath
+      });
+      
       // Always update overlayPath to show the preview path
       // This allows users to see what they're about to navigate to
       // Validate that match.path is a proper full path
       if (match.path && match.path.length > 2 && match.path.includes('\\')) {
+        // Only update if the path is actually different to prevent unnecessary re-renders
+        if (overlayPath !== match.path) {
+          console.log('Setting overlayPath to match.path:', match.path);
         setOverlayPath(match.path);
-        console.log('Updating overlayPath to show preview:', match.path);
+        }
       } else {
-        console.warn('Invalid match.path, not updating overlayPath:', match.path);
-        // Fallback to current directory
-        setOverlayPath(currentDirectory);
+        // Fallback to overlay working directory
+        if (overlayPath !== overlayWorkingDirectory) {
+          console.log('Fallback: setting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
+          setOverlayPath(overlayWorkingDirectory);
+        }
       }
     } else {
-      // If no matches, reset to the current directory for clean state
-      // Don't try to manipulate overlayPath if it's corrupted
-      if (overlayPath !== currentDirectory) {
-        setOverlayPath(currentDirectory);
-        console.log('No matches, resetting overlayPath to currentDirectory:', currentDirectory);
+      // If no matches, reset to the overlay working directory (not original currentDirectory)
+      // This preserves navigation state when user clears search or has no matches
+      if (overlayPath !== overlayWorkingDirectory && !isNavigating) {
+        console.log('No matches, resetting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
+        setOverlayPath(overlayWorkingDirectory);
       }
     }
-  }, [searchText, overlayFiles, currentDirectory, isNavigating, selectedSegmentIndex, overlayPath]);
+  }, [searchText, overlayFiles, currentDirectory, overlayWorkingDirectory, isNavigating, selectedSegmentIndex]);
   
   const handleTab = async () => {
     if (searchResults.length === 0) return;
@@ -177,20 +197,28 @@ const JumpModeOverlay: React.FC<{
         const contents = await (window.electronAPI as any).getDirectoryContents(currentResult.path);
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         
-        // Navigate overlay to this folder
+        // Navigate overlay to this folder - update overlay context to this new directory
         setOverlayPath(currentResult.path);
         setOverlayFiles(files);
+        setOverlayWorkingDirectory(currentResult.path); // Update overlay's working directory
         setIsNavigating(true); // Mark that we're actively navigating
         // Reset search text for new directory
         setSearchText('');
         setSearchResults([]);
+        setSelectedSegmentIndex(null); // Reset segment selection
+        
+        console.log('Tab navigation to:', currentResult.path);
+        console.log('Updated overlay working directory to:', currentResult.path);
+        console.log('Loaded files in new directory:', files.length);
       } catch (error) {
         console.error('Failed to load directory contents:', error);
         // Fallback: just update the path
         setOverlayPath(currentResult.path);
+        setOverlayWorkingDirectory(currentResult.path); // Update overlay's working directory
         setIsNavigating(true); // Mark that we're actively navigating
         setSearchText('');
         setSearchResults([]);
+        setSelectedSegmentIndex(null); // Reset segment selection
       }
     } else {
       // Open the file
@@ -200,93 +228,105 @@ const JumpModeOverlay: React.FC<{
   };
   
   const handleBackspace = () => {
+    console.log('Backspace handler called:', {
+      searchTextLength: searchText.length,
+      selectedSegmentIndex,
+      overlayPath
+    });
+    
     if (searchText.length > 0) {
       // Normal backspace behavior - let the input handle it
+      console.log('Backspace: letting input handle text deletion');
       return;
     }
     
-    console.log('handleBackspace called - searchText:', searchText, 'selectedSegmentIndex:', selectedSegmentIndex);
-    
     // Smart backspace navigation when no text
     if (selectedSegmentIndex === null) {
-      // First backspace: highlight the last segment
-      const pathSegments = getRelativePath(overlayPath).split(/[/\\]/);
-      console.log('First backspace - pathSegments:', pathSegments, 'overlayPath:', overlayPath);
+      // First backspace: highlight the last segment (for visual pill indicator)
+      const relativePath = getRelativePath(overlayPath);
+      const pathSegments = relativePath.includes(' / ') ? relativePath.split(' / ') : [relativePath];
+      
+      console.log('First backspace logic:', {
+        relativePath,
+        pathSegments,
+        segmentsLength: pathSegments.length
+      });
       
       if (pathSegments.length > 1) {
-        const newIndex = pathSegments.length - 1;
-        setSelectedSegmentIndex(newIndex);
-        console.log('Setting selectedSegmentIndex to:', newIndex, 'Highlighting segment:', pathSegments[newIndex]);
+        // Highlight the parent segment (second to last), not the current segment
+        const parentIndex = pathSegments.length - 2;
+        setSelectedSegmentIndex(parentIndex);
+        console.log('SETTING SEGMENT INDEX TO:', parentIndex, 'for parent segment:', pathSegments[parentIndex]);
+      } else if (pathSegments.length === 1 && pathSegments[0] !== 'Root') {
+        // If we're one level deep, highlight the current segment to go to Root
+        const currentIndex = 0;
+        setSelectedSegmentIndex(currentIndex);
+        console.log('SETTING SEGMENT INDEX TO:', currentIndex, 'to go to Root from:', pathSegments[currentIndex]);
+      } else {
+        console.log('Cannot highlight segment - already at root');
       }
     } else {
       // Second backspace: navigate up to parent folder
-      const pathSegments = getRelativePath(overlayPath).split(/[/\\]/);
-      if (selectedSegmentIndex > 0) {
-        // Remove the selected segment and navigate up
-        const parentSegments = pathSegments.slice(0, selectedSegmentIndex);
+      const relativePath = getRelativePath(overlayPath);
+      const pathSegments = relativePath.includes(' / ') ? relativePath.split(' / ') : [relativePath];
+      if (selectedSegmentIndex > 0 || (selectedSegmentIndex === 0 && pathSegments[0] !== 'Root')) {
         
-        console.log('Parent segments:', parentSegments, 'selectedSegmentIndex:', selectedSegmentIndex);
-        
-        // Build the parent path properly
+        // Calculate parent path - go up one level from current overlayPath
         let parentPath: string;
-        if (parentSegments.length === 0) {
-          parentPath = 'Root';
-        } else if (parentSegments[0] === 'Root') {
-          // If first segment is 'Root', just use the remaining segments
-          parentPath = parentSegments.slice(1).join('/');
-        } else {
-          parentPath = parentSegments.join('/');
+        if (overlayPath === rootDirectory) {
+          // Already at root, can't go higher
+          console.log('Already at root directory');
+          setSelectedSegmentIndex(null);
+          return;
         }
         
-        console.log('Calculated parentPath:', parentPath);
-        
-        // Convert relative path back to full path
-        if (parentPath === 'Root' || parentPath === '') {
-          setOverlayPath(rootDirectory);
-          console.log('Setting overlayPath to rootDirectory:', rootDirectory);
+        // Get parent directory by removing last path segment
+        const pathParts = overlayPath.replace(/[/\\]+$/, '').split(/[/\\]/);
+        if (pathParts.length > 1) {
+          pathParts.pop(); // Remove last segment
+          parentPath = pathParts.join('\\');
         } else {
-          // Build the correct parent path without duplicating root folder name
-          const fullParentPath = rootDirectory + '/' + parentPath;
-          setOverlayPath(fullParentPath);
-          console.log('Setting overlayPath to fullParentPath:', fullParentPath);
+          parentPath = rootDirectory;
         }
         
-        // Reset search state when navigating up
+        console.log('Backspace navigation:', {
+          from: overlayPath,
+          to: parentPath,
+          segments: pathSegments,
+          selectedIndex: selectedSegmentIndex
+        });
+        
+        // Update overlay state
+        setOverlayPath(parentPath);
         setSearchText('');
         setSearchResults([]);
         setSelectedSegmentIndex(null);
+        setIsNavigating(true); // Mark as navigating to prevent reset to currentDirectory
         
         // Load files for the new parent directory
-        const newPath = parentPath === 'Root' || parentPath === '' ? rootDirectory : rootDirectory + '/' + parentPath;
-        (window.electronAPI as any).getDirectoryContents(newPath).then((contents: any) => {
+        (window.electronAPI as any).getDirectoryContents(parentPath).then((contents: any) => {
           const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
           setOverlayFiles(files);
-          console.log('Loaded', files.length, 'files for new parent path:', newPath);
+          console.log('Loaded files for parent directory:', parentPath, 'count:', files.length);
         }).catch((error: any) => {
-          console.error('Failed to load directory contents for new parent path:', newPath, error);
+          console.error('Failed to load directory contents for parent path:', parentPath, error);
         });
-        
-        console.log('Navigating up to parent:', parentPath);
       }
     }
   };
 
   const handleEnter = () => {
-    console.log('handleEnter called, searchResults:', searchResults, 'overlayPath:', overlayPath); // Debug log
     
     // If we have search results, use the first one
     if (searchResults.length > 0) {
       const currentResult = searchResults[0];
-      console.log('Using search result:', currentResult); // Debug log
       
       if (currentResult.type === 'folder') {
         // Navigate to this folder in the real app
-        console.log('Navigating to folder:', currentResult.path); // Debug log
         onNavigate(currentResult.path);
         onClose();
       } else {
         // Open the file
-        console.log('Opening file:', currentResult.path); // Debug log
         onOpenFile(currentResult);
         onClose();
       }
@@ -295,17 +335,14 @@ const JumpModeOverlay: React.FC<{
     
     // If no search results, check if we can navigate to the current overlayPath
     if (overlayPath && overlayPath !== currentDirectory) {
-      console.log('No search results, trying to navigate to overlayPath:', overlayPath); // Debug log
       
       // Since overlayPath is different from currentDirectory, it's likely a valid path to navigate to
       // We don't need to check overlayFiles because overlayPath represents the target path
-      console.log('Navigating to overlayPath:', overlayPath); // Debug log
       onNavigate(overlayPath);
       onClose();
       return;
     }
     
-    console.log('No action possible - no search results and no valid overlayPath'); // Debug log
   };
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -314,7 +351,6 @@ const JumpModeOverlay: React.FC<{
       handleTab();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      console.log('Enter pressed, calling handleEnter'); // Debug log
       handleEnter();
     } else if (e.key === 'Escape') {
       e.preventDefault();
@@ -366,28 +402,221 @@ const JumpModeOverlay: React.FC<{
     };
   }, [isOpen, handleTab, handleEnter, onClose]);
   
-  // Early return after all hooks
-  if (!isOpen) return null;
+  // Get color mode values at the top level
+  const currentFolderBg = useColorModeValue('gray.600', 'gray.400');
+  const currentFolderColor = useColorModeValue('white', 'gray.900');
+  const selectedSegmentBg = useColorModeValue('orange.400', 'orange.500');
+  const selectedSegmentColor = useColorModeValue('white', 'white');
+  const selectedSegmentBorderColor = useColorModeValue('orange.500', 'orange.400');
+  const separatorColor = useColorModeValue('gray.500', 'gray.400');
+  const inputBg = useColorModeValue('white', 'gray.800');
+  const inputColor = useColorModeValue('gray.800', 'white');
+  const inputBorderColor = useColorModeValue('gray.300', 'gray.600');
+  const pathBg = useColorModeValue('gray.50', 'gray.700');
+  const pathTextColor = useColorModeValue('gray.600', 'gray.300');
   
   // Helper function to get relative path from root
-  const getRelativePath = (fullPath: string) => {
-    if (!rootDirectory || fullPath === rootDirectory) return 'Root';
+  const getRelativePath = React.useCallback((fullPath: string) => {
+    console.log('getRelativePath called with:', { fullPath, rootDirectory });
+    
+    if (!rootDirectory || !fullPath) return 'Root';
     
     // Normalize paths for comparison
     const normRoot = rootDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
     const normPath = fullPath.replace(/\\/g, '/').replace(/\/+$/, '');
     
+    console.log('Normalized paths:', { normRoot, normPath });
+    
+    if (normPath === normRoot) return 'Root';
+    
     if (normPath.startsWith(normRoot)) {
       const relative = normPath.substring(normRoot.length).replace(/^\/+/, '');
       if (!relative) return 'Root';
       
-      // Just return the relative path without prepending root folder name
-      // This prevents the triplication issue
-      return relative;
+      // Split by path separator and return meaningful segments
+      const segments = relative.split('/').filter(Boolean);
+      if (segments.length === 0) return 'Root';
+      
+      const result = segments.join(' / ');
+      console.log('Relative path result:', { relative, segments, result });
+      return result;
     }
     
-    return fullPath;
-  };
+    // If path doesn't start with root, return the last segment of the path
+    const pathParts = fullPath.split(/[/\\]/).filter(Boolean);
+    const result = pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'Root';
+    console.log('Last segment result:', { pathParts, result });
+    return result;
+  }, [rootDirectory]);
+
+  // Memoize the path display to prevent infinite re-renders
+  const pathDisplay = React.useMemo(() => {
+    // Determine which path to display
+    let displayPath = overlayPath;
+    
+    // If no search text and no navigation has happened, show current directory
+    if (!searchText.trim() && overlayPath === currentDirectory) {
+      displayPath = currentDirectory;
+    }
+    
+    // Debug logging to understand the path calculation
+    console.log('Path display debug:', {
+      searchText: searchText.trim(),
+      overlayPath,
+      currentDirectory,
+      overlayWorkingDirectory,
+      displayPath,
+      rootDirectory
+    });
+    
+    // For preview paths, we want to show the path relative to the overlay working directory
+    let pathToDisplay: string;
+    if (searchText.trim() && searchResults.length > 0) {
+      // This is a preview path - show the search result in context
+      const match = searchResults[0];
+      const matchPath = match.path;
+      const matchName = match.name;
+      
+      // Check if the match is in a subdirectory or current directory
+      if (matchPath === overlayWorkingDirectory) {
+        // The match IS the current working directory (self-match), don't add duplicate
+        pathToDisplay = getRelativePath(overlayWorkingDirectory);
+        console.log('Self-match preview (no duplication):', {
+          overlayWorkingDirectory,
+          matchPath,
+          matchName,
+          pathToDisplay
+        });
+      } else if (matchPath.startsWith(overlayWorkingDirectory + '\\') || matchPath.startsWith(overlayWorkingDirectory + '/')) {
+        // The match is in a subdirectory of working directory - show: working + " / " + match
+        const workingDirRelativePath = getRelativePath(overlayWorkingDirectory);
+        pathToDisplay = workingDirRelativePath + " / " + matchName;
+        console.log('Subdirectory match preview:', {
+          overlayWorkingDirectory,
+          matchPath,
+          matchName,
+          workingDirRelativePath,
+          pathToDisplay
+        });
+      } else {
+        // The match is outside current working directory - show full path
+        pathToDisplay = getRelativePath(matchPath);
+        console.log('External match preview:', {
+          overlayWorkingDirectory,
+          matchPath,
+          matchName,
+          pathToDisplay
+        });
+      }
+    } else {
+      // Normal path display - show relative to root
+      pathToDisplay = getRelativePath(displayPath);
+      console.log('Normal path display:', pathToDisplay);
+    }
+    
+    // Split by " / " since getRelativePath returns segments joined with " / "
+    const pathSegments = pathToDisplay.includes(' / ') ? pathToDisplay.split(' / ') : [pathToDisplay];
+    console.log('Final path segments:', pathSegments);
+    
+    return { pathToDisplay, pathSegments };
+  }, [searchText, overlayPath, currentDirectory, overlayWorkingDirectory, rootDirectory, getRelativePath, searchResults]);
+
+  // Memoize the path segments rendering to prevent unnecessary re-renders
+  const pathSegmentsDisplay = React.useMemo(() => {
+    const { pathSegments, pathToDisplay } = pathDisplay;
+    
+    // Comprehensive debug logging for UI rendering
+    console.log('=== UI RENDERING DEBUG ===');
+    console.log('Path Display State:', {
+      searchText,
+      overlayPath,
+      currentDirectory,
+      selectedSegmentIndex,
+      isNavigating,
+      hasSearchResults: searchResults.length > 0
+    });
+    console.log('Path Calculation Result:', {
+      pathToDisplay,
+      pathSegments,
+      segmentCount: pathSegments.length
+    });
+    console.log('Segment Analysis:');
+    pathSegments.forEach((segment, index) => {
+      const isCurrentFolder = index === pathSegments.length - 1;
+      const isSelected = index === selectedSegmentIndex;
+      const isPreview = searchText.trim() && searchResults.length > 0 && isCurrentFolder;
+      console.log(`  [${index}] "${segment}" - current:${isCurrentFolder}, selected:${isSelected}, preview:${isPreview}`);
+    });
+    console.log('selectedSegmentIndex state:', selectedSegmentIndex);
+    console.log('========================');
+    
+    return pathSegments.map((segment, index, array) => {
+      const isCurrentFolder = index === array.length - 1;
+      const isSelected = index === selectedSegmentIndex;
+      const isPreview = searchText.trim() && searchResults.length > 0 && isCurrentFolder;
+      
+      return (
+        <React.Fragment key={index}>
+          {isPreview ? (
+            // Preview pill for search results (different from backspace pill)
+            <Box
+              bg="blue.400"
+              color="white"
+              px={3}
+              py={1}
+              fontSize="sm"
+              fontWeight="bold"
+              borderRadius="full"
+              display="inline-block"
+              border="1px solid"
+              borderColor="blue.500"
+              boxShadow="0 1px 3px rgba(0, 0, 0, 0.1)"
+            >
+              {segment}
+            </Box>
+          ) : isCurrentFolder ? (
+            <Box
+              bg={currentFolderBg}
+              color={currentFolderColor}
+              px={3}
+              py={1}
+              fontSize="sm"
+              fontWeight="bold"
+              borderRadius="md"
+              display="inline-block"
+            >
+              {segment}
+            </Box>
+          ) : isSelected ? (
+            // Backspace navigation pill (transparent with current folder bg color as border)
+            <Box
+              bg="transparent"
+              color={currentFolderBg}
+              px={3}
+              py={1}
+              fontSize="sm"
+              fontWeight="bold"
+              borderRadius="md"
+              display="inline-block"
+              border="2px solid"
+              borderColor={currentFolderBg}
+              transition="all 0.2s ease"
+            >
+              {segment}
+            </Box>
+          ) : (
+            <Text display="inline-block">{segment}</Text>
+          )}
+          {index < array.length - 1 && (
+            <Text mx={2} color={separatorColor} display="inline-block">/</Text>
+          )}
+        </React.Fragment>
+      );
+    });
+  }, [pathDisplay, selectedSegmentIndex, searchText, searchResults, currentFolderBg, currentFolderColor, selectedSegmentBg, selectedSegmentColor, selectedSegmentBorderColor, separatorColor, overlayPath, currentDirectory, isNavigating]);
+  
+  // Early return after all hooks
+  if (!isOpen) return null;
   
   return (
     <>
@@ -441,15 +670,15 @@ const JumpModeOverlay: React.FC<{
       >
         {/* Row 1: Current text input */}
         <Box
-          bg={useColorModeValue('white', 'gray.800')}
-          color={useColorModeValue('gray.800', 'white')}
+          bg={inputBg}
+          color={inputColor}
           px={4}
           py={3}
           fontSize="lg"
           fontWeight="medium"
           textAlign="left"
           border="1px solid"
-          borderColor={useColorModeValue('gray.300', 'gray.600')}
+          borderColor={inputBorderColor}
           borderBottom="none"
         >
           {searchText || 'Type to search...'}
@@ -457,110 +686,14 @@ const JumpModeOverlay: React.FC<{
         
         {/* Row 2: Current directory path */}
         <Box
-          bg={useColorModeValue('gray.50', 'gray.700')}
+          bg={pathBg}
           px={4}
           py={2}
           border="1px solid"
-          borderColor={useColorModeValue('gray.300', 'gray.600')}
+          borderColor={inputBorderColor}
         >
-          <Flex align="center" fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
-            {(() => {
-              // Determine which path to display
-              let displayPath = overlayPath;
-              
-              // If no search text and no navigation has happened, show current directory
-              if (!searchText.trim() && overlayPath === currentDirectory) {
-                displayPath = currentDirectory;
-              }
-              
-              // Debug logging for path display
-              console.log('Path display debug - searchText:', searchText, 'overlayPath:', overlayPath, 'currentDirectory:', currentDirectory, 'displayPath:', displayPath);
-              
-              // For preview paths, we want to show the path relative to the current directory, not the root
-              let pathToDisplay: string;
-              if (searchText.trim() && overlayPath !== currentDirectory) {
-                // This is a preview path - show it relative to current directory
-                if (overlayPath.startsWith(currentDirectory)) {
-                  // If the preview path is within the current directory, show the relative part
-                  const relativePart = overlayPath.substring(currentDirectory.length).replace(/^[/\\]+/, '');
-                  if (relativePart) {
-                    // Extract just the filename/folder name, not the full path
-                    const lastSegment = relativePart.split(/[/\\]/)[0];
-                    // Show: currentDirectory + " / " + lastSegment
-                    pathToDisplay = getRelativePath(currentDirectory) + " / " + lastSegment;
-                  } else {
-                    pathToDisplay = getRelativePath(currentDirectory);
-                  }
-                } else {
-                  // If the preview path is outside current directory, show the full relative path from root
-                  pathToDisplay = getRelativePath(overlayPath);
-                }
-              } else {
-                // Normal path display - show relative to root
-                pathToDisplay = getRelativePath(displayPath);
-              }
-              
-              console.log('Final pathToDisplay:', pathToDisplay);
-              
-              const pathSegments = pathToDisplay.split(/[/\\]/);
-              console.log('Path segments after split:', pathSegments);
-              
-              // Debug logging for highlighting
-              if (selectedSegmentIndex !== null) {
-                console.log('Path display - selectedSegmentIndex:', selectedSegmentIndex, 'pathSegments:', pathSegments, 'overlayPath:', overlayPath, 'displayPath:', displayPath);
-                console.log('Path segments array:', pathSegments.map((seg, i) => `${i}: ${seg}`));
-              }
-              
-              return pathSegments.map((segment, index, array) => {
-                const isCurrentFolder = index === array.length - 1;
-                const isSelected = index === selectedSegmentIndex;
-                
-                // Debug logging for each segment
-                if (selectedSegmentIndex !== null) {
-                  console.log(`Segment ${index}: "${segment}" - isCurrentFolder: ${isCurrentFolder}, isSelected: ${isSelected}`);
-                }
-                
-                return (
-                  <React.Fragment key={index}>
-                    {isCurrentFolder ? (
-                      <Box
-                        bg={useColorModeValue('gray.600', 'gray.400')}
-                        color={useColorModeValue('white', 'gray.900')}
-                        px={3}
-                        py={1}
-                        fontSize="sm"
-                        fontWeight="bold"
-                        borderRadius="md"
-                        display="inline-block"
-                      >
-                        {segment}
-                      </Box>
-                    ) : isSelected ? (
-                      // Highlight the selected segment for backspace navigation
-                      <Box
-                        bg={useColorModeValue('gray.500', 'gray.500')}
-                        color={useColorModeValue('white', 'gray.900')}
-                        px={3}
-                        py={1}
-                        fontSize="sm"
-                        fontWeight="bold"
-                        borderRadius="md"
-                        display="inline-block"
-                        border="2px solid"
-                        borderColor={useColorModeValue('gray.400', 'gray.300')}
-                      >
-                        {segment}
-                      </Box>
-                    ) : (
-                      <Text>{segment}</Text>
-                    )}
-                    {index < array.length - 1 && (
-                      <Text mx={2} color={useColorModeValue('gray.500', 'gray.400')}>/</Text>
-                    )}
-                  </React.Fragment>
-                );
-              });
-            })()}
+          <Flex align="center" fontSize="sm" color={pathTextColor}>
+            {pathSegmentsDisplay}
           </Flex>
         </Box>
       </Box>
