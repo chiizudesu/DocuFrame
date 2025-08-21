@@ -186,14 +186,43 @@ export const FileGrid: React.FC = () => {
   // Track which row is hovered to highlight the entire row in list view
   const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
 
-  // Stable row hover handlers to avoid flicker when moving between cells
+  // Optimized hover handlers with debouncing to prevent excessive state updates
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const handleRowMouseEnter = useCallback((index: number) => {
-    setHoveredRowIndex(index);
-  }, []);
+    // Clear any existing timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    
+    // Only update if different
+    if (hoveredRowIndex !== index) {
+      setHoveredRowIndex(index);
+    }
+  }, [hoveredRowIndex]);
+  
   const handleRowMouseLeave = useCallback((index: number, e: React.MouseEvent) => {
-    const related = e.relatedTarget as HTMLElement | null;
-    if (related && related.closest(`[data-row-index="${index}"]`)) return;
-    setHoveredRowIndex(prev => (prev === index ? null : prev));
+    // Clear any existing timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    
+    // Debounce the hover clear to prevent flickering
+    hoverTimeoutRef.current = setTimeout(() => {
+      const related = e.relatedTarget;
+      // Check if relatedTarget is an Element with closest method
+      if (related && typeof (related as any).closest === 'function' && (related as Element).closest(`[data-row-index="${index}"]`)) return;
+      setHoveredRowIndex(prev => (prev === index ? null : prev));
+    }, 50); // 50ms debounce
+  }, []);
+
+  // Cleanup hover timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Function to reset drag state - can be called by child components
@@ -993,8 +1022,7 @@ export const FileGrid: React.FC = () => {
     setPendingSelectionChange(null);
     
     // Clear any existing folder hover states from previous drag operations
-    setFolderHoverState({});
-    setFolderDragCounter({});
+    clearFolderHoverStates();
     
     // Use Electron's native file drag and drop exactly as documented
     event.preventDefault();
@@ -1243,8 +1271,7 @@ export const FileGrid: React.FC = () => {
         if (current <= 0) {
           setIsDragOver(false);
           // Clear all folder hover states when leaving the entire file grid area
-          setFolderHoverState({});
-          setFolderDragCounter({});
+          clearFolderHoverStates();
           return 0;
         }
         return current;
@@ -1998,31 +2025,13 @@ const renderListView = () => (
           )
         }
 
-        const isFileSelected = selectedFiles.includes(file.name);
-        const isRowHovered = hoveredRowIndex === index;
-        
-        // FIXED: Simplified hover logic for consistent row highlighting
-        const rowBg = isFileSelected 
-          ? rowSelectedBg
-          : (isRowHovered ? rowHoverBg : 'transparent');
-        
-        // FIXED: Folder drop background override
-        const folderDropBg = file.type === 'folder' && folderHoverState[file.path] 
-          ? folderDropBgColor
-          : undefined;
-        
-        const finalBg = folderDropBg || rowBg;
+        const fileState = memoizedFileStates[index];
+        const finalBg = memoizedRowBackgrounds[index];
 
-        // FIXED: Row-level event handlers applied to all cells
-        const createCellHandlers = (isFirstCell: boolean) => ({
-          onMouseEnter: () => setHoveredRowIndex(index),
-          onMouseLeave: (e: React.MouseEvent) => {
-            const relatedTarget = e.relatedTarget as Element;
-            // Only clear hover if truly leaving the row
-            if (!relatedTarget || typeof relatedTarget.closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
-              setHoveredRowIndex(prev => prev === index ? null : prev);
-            }
-          },
+        // Create cell handlers inline to avoid hook violations
+        const cellHandlers = {
+          onMouseEnter: () => handleRowMouseEnter(index),
+          onMouseLeave: (e: React.MouseEvent) => handleRowMouseLeave(index, e),
           onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, file),
           onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
           onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
@@ -2048,23 +2057,18 @@ const renderListView = () => (
             e.stopPropagation();
             setIsDragStarted(false);
             setDraggedFiles(new Set());
-            setFolderHoverState({});
-            setFolderDragCounter({});
+            clearFolderHoverStates();
             try { delete (window as any).__docuframeInternalDrag; } catch {}
             addLog('Drag operation ended');
           }
-        });
+        };
 
-        // FIXED: Folder drop handlers for all cells
+        // Create folder drop handlers inline to avoid hook violations
         const folderDropHandlers = file.type === 'folder' ? {
           onDragEnterCapture: (e: React.DragEvent) => {
             e.preventDefault();
             e.stopPropagation();
-            setFolderHoverState({ [file.path]: true });
-            setFolderDragCounter(prev => ({
-              ...prev,
-              [file.path]: (prev[file.path] || 0) + 1
-            }));
+            handleFolderDragEnter(file.path);
           },
           onDragOverCapture: (e: React.DragEvent) => {
             e.preventDefault();
@@ -2087,16 +2091,14 @@ const renderListView = () => (
             
             // Only clear if truly leaving the row
             if (!relatedTarget || typeof (relatedTarget as any).closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
-              setFolderHoverState(prev => ({ ...prev, [file.path]: false }));
-              setFolderDragCounter(prev => ({ ...prev, [file.path]: 0 }));
+              handleFolderDragLeave(file.path);
             }
           },
           onDropCapture: async (e: React.DragEvent) => {
             e.preventDefault();
             e.stopPropagation();
             
-            setFolderHoverState(prev => ({ ...prev, [file.path]: false }));
-            setFolderDragCounter(prev => ({ ...prev, [file.path]: 0 }));
+            handleFolderDragLeave(file.path);
             
             const hasExternalFiles = e.dataTransfer.types.includes('Files');
             const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
@@ -2207,8 +2209,8 @@ const renderListView = () => (
                   <Box 
                     key={column}
                     {...cellStyles} 
-                    {...createCellHandlers(true)}
-                    {...(file.type === 'folder' ? folderDropHandlers : {})}
+                    {...cellHandlers}
+                    {...folderDropHandlers}
                     data-row-index={index}
                     data-file-index={index}
                   >
@@ -2237,8 +2239,8 @@ const renderListView = () => (
                       color={fileTextColor} 
                       style={{ 
                         userSelect: 'none', 
-                        opacity: isFileCut(file) ? 0.5 : 1, 
-                        fontStyle: isFileCut(file) ? 'italic' : 'normal'
+                        opacity: fileState.isFileCut ? 0.5 : 1, 
+                        fontStyle: fileState.isFileCut ? 'italic' : 'normal'
                       }}
                       overflow="hidden"
                       textOverflow="ellipsis"
@@ -2249,7 +2251,7 @@ const renderListView = () => (
                     </Text>
                     
                     {/* NEW indicator */}
-                    {isFileNew(file) && (
+                    {fileState.isFileNew && (
                       <Box
                         position="absolute"
                         top={1}
@@ -2274,14 +2276,14 @@ const renderListView = () => (
                   <Box 
                     key={column}
                     {...cellStyles}
-                    {...createCellHandlers(true)}
-                    {...(file.type === 'folder' ? folderDropHandlers : {})}
+                    {...cellHandlers}
+                    {...folderDropHandlers}
                     data-row-index={index}
                   >
                     <Text 
                       fontSize="xs" 
                       color={fileSubTextColor}
-                      style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
+                      style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
                     >
                       {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
                     </Text>
@@ -2292,14 +2294,14 @@ const renderListView = () => (
                   <Box 
                     key={column}
                     {...cellStyles}
-                    {...createCellHandlers(true)}
-                    {...(file.type === 'folder' ? folderDropHandlers : {})}
+                    {...cellHandlers}
+                    {...folderDropHandlers}
                     data-row-index={index}
                   >
                     <Text 
                       fontSize="xs" 
                       color={fileSubTextColor}
-                      style={{ userSelect: 'none', opacity: isFileCut(file) ? 0.5 : 1 }}
+                      style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
                     >
                       {file.modified ? formatDate(file.modified) : '-'}
                     </Text>
@@ -2542,9 +2544,50 @@ const renderListView = () => (
   const [dragMousePos, setDragMousePos] = useState<{ x: number; y: number } | null>(null);
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
-  // Add folder drop states
-  const [folderHoverState, setFolderHoverState] = useState<{[key: string]: boolean}>({});
-  const [folderDragCounter, setFolderDragCounter] = useState<{[key: string]: number}>({});
+  // Add folder drop states - optimized with Set for better performance
+  const [folderHoverState, setFolderHoverState] = useState<Set<string>>(new Set());
+  const [folderDragCounter, setFolderDragCounter] = useState<Map<string, number>>(new Map());
+
+  // Optimized folder hover handlers
+  const handleFolderDragEnter = useCallback((filePath: string) => {
+    setFolderHoverState(prev => {
+      if (prev.has(filePath)) return prev;
+      const newSet = new Set(prev);
+      newSet.add(filePath);
+      return newSet;
+    });
+    
+    setFolderDragCounter(prev => {
+      const newMap = new Map(prev);
+      newMap.set(filePath, (newMap.get(filePath) || 0) + 1);
+      return newMap;
+    });
+  }, []);
+
+  const handleFolderDragLeave = useCallback((filePath: string) => {
+    setFolderDragCounter(prev => {
+      const newMap = new Map(prev);
+      const count = newMap.get(filePath) || 0;
+      if (count <= 1) {
+        newMap.delete(filePath);
+        // Only remove from hover state when counter reaches 0
+        setFolderHoverState(prevState => {
+          if (!prevState.has(filePath)) return prevState;
+          const newSet = new Set(prevState);
+          newSet.delete(filePath);
+          return newSet;
+        });
+      } else {
+        newMap.set(filePath, count - 1);
+      }
+      return newMap;
+    });
+  }, []);
+
+  const clearFolderHoverStates = useCallback(() => {
+    setFolderHoverState(new Set());
+    setFolderDragCounter(new Map());
+  }, []);
 
   // Column resize handlers
   const handleResizeStart = (column: string, e: React.MouseEvent) => {
@@ -2649,59 +2692,78 @@ const renderListView = () => (
   }, [resizingColumn, handleResizeMove, handleResizeEnd]);
 
   // Load native icons for files - optimized with batching and error handling
+  const iconLoadingRef = useRef(false);
+  const lastSortedFilesRef = useRef<string>('');
+  
   useEffect(() => {
     const loadNativeIcons = async () => {
-      if (!window.electronAPI?.getFileIcon) return;
+      if (!window.electronAPI?.getFileIcon || iconLoadingRef.current) return;
       
-      // Only load icons for visible files to improve performance
-      const filesToProcess = sortedFiles
-        .filter(file => file.type === 'file' && !nativeIcons.has(file.path))
-        .slice(0, 50); // Limit to first 50 files to prevent overwhelming the system
+      // Create a hash of sorted files to detect actual changes
+      const filesHash = sortedFiles.map(f => `${f.path}:${f.name}`).join('|');
+      if (filesHash === lastSortedFilesRef.current) return;
       
-      if (filesToProcess.length === 0) return;
+      iconLoadingRef.current = true;
+      lastSortedFilesRef.current = filesHash;
       
-      // Process icons in parallel batches for better performance
-      const batchSize = 10;
-      for (let i = 0; i < filesToProcess.length; i += batchSize) {
-        const batch = filesToProcess.slice(i, i + batchSize);
+      try {
+        // Only load icons for visible files to improve performance
+        const filesToProcess = sortedFiles
+          .filter(file => file.type === 'file' && !nativeIcons.has(file.path))
+          .slice(0, 30); // Reduced from 50 to 30 for better performance
         
-        try {
-          const iconPromises = batch.map(async (file) => {
-            try {
-              const iconData = await window.electronAPI.getFileIcon(file.path);
-              return { path: file.path, iconData };
-            } catch (error) {
-              console.warn(`Failed to get icon for ${file.name}:`, error);
-              return null;
-            }
-          });
+        if (filesToProcess.length === 0) return;
+        
+        // Process icons in smaller batches for better performance
+        const batchSize = 5; // Reduced from 10 to 5
+        for (let i = 0; i < filesToProcess.length; i += batchSize) {
+          const batch = filesToProcess.slice(i, i + batchSize);
           
-          const results = await Promise.allSettled(iconPromises);
-          const validResults = results
-            .filter((result): result is PromiseFulfilledResult<{ path: string; iconData: string } | null> => 
-              result.status === 'fulfilled' && result.value !== null
-            )
-            .map(result => result.value)
-            .filter((item): item is { path: string; iconData: string } => item !== null);
-          
-          // Batch update the state to reduce re-renders
-          if (validResults.length > 0) {
-            setNativeIcons(prev => {
-              const newMap = new Map(prev);
-              validResults.forEach(({ path, iconData }) => {
-                newMap.set(path, iconData);
-              });
-              return newMap;
+          try {
+            const iconPromises = batch.map(async (file) => {
+              try {
+                const iconData = await window.electronAPI.getFileIcon(file.path);
+                return { path: file.path, iconData };
+              } catch (error) {
+                console.warn(`Failed to get icon for ${file.name}:`, error);
+                return null;
+              }
             });
+            
+            const results = await Promise.allSettled(iconPromises);
+            const validResults = results
+              .filter((result): result is PromiseFulfilledResult<{ path: string; iconData: string } | null> => 
+                result.status === 'fulfilled' && result.value !== null
+              )
+              .map(result => result.value)
+              .filter((item): item is { path: string; iconData: string } => item !== null);
+            
+            // Batch update the state to reduce re-renders
+            if (validResults.length > 0) {
+              setNativeIcons(prev => {
+                const newMap = new Map(prev);
+                validResults.forEach(({ path, iconData }) => {
+                  newMap.set(path, iconData);
+                });
+                return newMap;
+              });
+            }
+            
+            // Small delay between batches to prevent blocking
+            if (i + batchSize < filesToProcess.length) {
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+          } catch (error) {
+            console.error('Batch icon loading failed:', error);
           }
-        } catch (error) {
-          console.error('Batch icon loading failed:', error);
         }
+      } finally {
+        iconLoadingRef.current = false;
       }
     };
     
     loadNativeIcons();
-  }, [sortedFiles, nativeIcons]);
+  }, [sortedFiles]); // Removed nativeIcons dependency to prevent infinite loops
 
   // Reapply filters when the hideTemporaryFiles setting changes
   useEffect(() => {
@@ -2710,6 +2772,32 @@ const renderListView = () => (
     }
   }, [hideTemporaryFiles, currentDirectory, refreshDirectory]);
 
+  // Memoized expensive computations to prevent recalculation on every render
+  const memoizedFileStates = useMemo(() => {
+    return sortedFiles.map((file, index) => ({
+      isFileSelected: selectedFiles.includes(file.name),
+      isRowHovered: hoveredRowIndex === index,
+      isFileCut: clipboard.operation === 'cut' && clipboard.files.some(f => f.path === file.path),
+      isFileNew: recentlyTransferredFilesSet.set.has(file.path) || recentlyTransferredFilesSet.normalizedSet.has(file.path.replace(/\\/g, '/')),
+      isFileDragged: draggedFiles.has(file.name)
+    }));
+  }, [sortedFiles, selectedFiles, hoveredRowIndex, clipboard, recentlyTransferredFilesSet, draggedFiles]);
+
+  // Memoized row background calculations
+  const memoizedRowBackgrounds = useMemo(() => {
+    return memoizedFileStates.map((fileState, index) => {
+      const file = sortedFiles[index];
+      const rowBg = fileState.isFileSelected 
+        ? rowSelectedBg
+        : (fileState.isRowHovered ? rowHoverBg : 'transparent');
+      
+      const folderDropBg = file.type === 'folder' && folderHoverState.has(file.path) 
+        ? folderDropBgColor
+        : undefined;
+      
+      return folderDropBg || rowBg;
+    });
+  }, [memoizedFileStates, sortedFiles, rowSelectedBg, rowHoverBg, folderHoverState, folderDropBgColor]);
 
   
   return (
