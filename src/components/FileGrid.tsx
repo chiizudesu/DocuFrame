@@ -104,10 +104,30 @@ export const FileGrid: React.FC = () => {
     isQuickNavigating,
     isJumpModeActive,
     setIsJumpModeActive,
-    hideTemporaryFiles // NEW
+    hideTemporaryFiles, // NEW
+    hideDotFiles // NEW
   } = useAppContext()
 
   // Icon functions removed - using native Windows icons instead
+
+  // File filtering function
+  const filterFiles = useCallback((files: any[]) => {
+    if (!Array.isArray(files)) return files;
+    
+    return files.filter((f: any) => {
+      // Filter temporary files (files starting with ~$)
+      if (hideTemporaryFiles && f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')) {
+        return false;
+      }
+      
+      // Filter dot files/folders (files/folders starting with .)
+      if (hideDotFiles && typeof f?.name === 'string' && f.name.startsWith('.')) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [hideTemporaryFiles, hideDotFiles]);
 
   // Memoized file size formatting for better performance
   const formatFileSize = useCallback((size: string | undefined) => {
@@ -355,9 +375,7 @@ export const FileGrid: React.FC = () => {
         const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
         // Normalize shape and apply filters
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : [])
-        const filtered = hideTemporaryFiles
-          ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')))
-          : files
+        const filtered = filterFiles(files)
         setFolderItems(filtered)
         const navEnd = performance.now();
         addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
@@ -370,7 +388,7 @@ export const FileGrid: React.FC = () => {
         isLoadingRef.current = false
       }
     },
-    [addLog, setFolderItems, hideTemporaryFiles]
+    [addLog, setFolderItems, filterFiles]
   );
 
   // Load directory contents when current directory changes with debouncing
@@ -384,6 +402,11 @@ export const FileGrid: React.FC = () => {
 
   // Handle column header click for sorting
   const handleSort = (column: SortColumn) => {
+    // Prevent sorting if a drag operation just occurred
+    if (hasDraggedColumn) {
+      return;
+    }
+    
     if (sortColumn === column) {
       // Toggle direction if same column is clicked
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -458,6 +481,13 @@ export const FileGrid: React.FC = () => {
     file: FileItem,
   ) => {
     e.preventDefault()
+    
+    // If the right-clicked file is not part of the current selection,
+    // clear selection and select only this file
+    if (!selectedFiles.includes(file.name)) {
+      setSelectedFiles([file.name]);
+      setSelectedFile(file.name);
+    }
     
     const position = getSmartMenuPosition(e.clientX, e.clientY, 300);
     
@@ -549,9 +579,7 @@ export const FileGrid: React.FC = () => {
       const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
       {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
-        const filtered = hideTemporaryFiles
-          ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
-          : files;
+        const filtered = filterFiles(files);
         setFolderItems(filtered as any)
       }
       setSelectedFiles([])
@@ -906,9 +934,7 @@ export const FileGrid: React.FC = () => {
       // Accept both array and { files: [] } shapes
       const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
       if (files) {
-        const filtered = hideTemporaryFiles
-          ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')))
-          : files
+        const filtered = filterFiles(files)
         setFolderItems(filtered as any);
         addLog(`Loaded directory: ${formatPathForLog(dirPath)}`);
       } else {
@@ -921,7 +947,7 @@ export const FileGrid: React.FC = () => {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [setFolderItems, addLog, hideTemporaryFiles]);
+  }, [setFolderItems, addLog, filterFiles]);
 
   // Separate refresh function that doesn't show loading state (for background refreshes)
   const refreshDirectory = useCallback(async (dirPath: string) => {
@@ -935,9 +961,7 @@ export const FileGrid: React.FC = () => {
       // Accept both array and { files: [] } shapes
       const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
       if (files) {
-        const filtered = hideTemporaryFiles
-          ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')))
-          : files
+        const filtered = filterFiles(files)
         setFolderItems(filtered as any);
         addLog(`Refreshed directory: ${formatPathForLog(dirPath)}`);
       } else {
@@ -947,7 +971,7 @@ export const FileGrid: React.FC = () => {
       console.error('Failed to refresh directory:', error);
       addLog(`Failed to refresh directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
     }
-  }, [setFolderItems, addLog, hideTemporaryFiles]);
+  }, [setFolderItems, addLog, filterFiles]);
 
   // Add this function for selection on mouse down  
   const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
@@ -1911,7 +1935,7 @@ const renderListView = () => (
         top={0} 
         zIndex={100}
       >
-        {columnOrder.map((column) => {
+        {(draggingColumn ? previewColumnOrder : columnOrder).map((column) => {
           const isName = column === 'name';
           const isSize = column === 'size';
           const isModified = column === 'modified';
@@ -1938,6 +1962,7 @@ const renderListView = () => (
               onMouseDown={(e) => handleColumnDragStart(column, e)}
               opacity={draggingColumn === column ? 0.5 : 1}
               borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
+              transition="all 0.2s ease"
             >
               {isName ? 'Name' : isSize ? 'Size' : 'Modified'}
               {sortColumn === column && (
@@ -2199,7 +2224,7 @@ const renderListView = () => (
 
         return (
           <React.Fragment key={index}>
-            {columnOrder.map((column) => {
+            {(draggingColumn ? previewColumnOrder : columnOrder).map((column) => {
               const isName = column === 'name';
               const isSize = column === 'size';
               const isModified = column === 'modified';
@@ -2315,11 +2340,11 @@ const renderListView = () => (
       })}
 
       {/* Drag ghost preview */}
-      {draggingColumn && dragMousePos && (
+      {draggingColumn && dragMousePos && isDragThresholdMet && (
         <Box
           position="fixed"
-          left={dragMousePos.x - 50}
-          top={dragMousePos.y - 15}
+          left={dragMousePos.x - dragOffset.x}
+          top={dragMousePos.y - dragOffset.y}
           width={`${columnWidths[draggingColumn as keyof typeof columnWidths]}px`}
           height="30px"
           bg={dragGhostBg}
@@ -2337,7 +2362,6 @@ const renderListView = () => (
           zIndex={9999}
           pointerEvents="none"
           boxShadow="lg"
-          transform="rotate(-2deg)"
         >
           {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : 'Modified'}
           <Box
@@ -2538,10 +2562,16 @@ const renderListView = () => (
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
+  const [dragStartY, setDragStartY] = useState(0);
   const [originalColumnOrder, setOriginalColumnOrder] = useState<string[]>([]);
   const [dragTargetColumn, setDragTargetColumn] = useState<string | null>(null);
   // Drag ghost preview and indicator state
   const [dragMousePos, setDragMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [dragInitialPos, setDragInitialPos] = useState<{ x: number; y: number } | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragThresholdMet, setIsDragThresholdMet] = useState(false);
+  const [previewColumnOrder, setPreviewColumnOrder] = useState<string[]>([]);
+  const [hasDraggedColumn, setHasDraggedColumn] = useState(false);
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Add folder drop states - optimized with Set for better performance
@@ -2618,28 +2648,90 @@ const renderListView = () => (
   const handleColumnDragStart = (column: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Get the header element's position
+    const headerElement = e.currentTarget as HTMLElement;
+    const headerRect = headerElement.getBoundingClientRect();
+    
+    // Calculate the offset from the click position to the header's top-left corner
+    const clickOffset = {
+      x: e.clientX - headerRect.left,
+      y: e.clientY - headerRect.top
+    };
+    
     setDraggingColumn(column);
     setOriginalColumnOrder([...columnOrder]);
-    setDragMousePos({ x: e.clientX, y: e.clientY });
+    setPreviewColumnOrder([...columnOrder]);
+    setDragStartX(e.clientX);
+    setDragStartY(e.clientY);
+    setDragOffset(clickOffset);
+    setIsDragThresholdMet(false);
+    setHasDraggedColumn(false);
+    
+    // Store the header's initial position adjusted for where user clicked
+    const initialPos = { 
+      x: headerRect.left + clickOffset.x, 
+      y: headerRect.top + clickOffset.y 
+    };
+    setDragInitialPos(initialPos);
+    setDragMousePos(initialPos);
   };
 
   const handleColumnDragMove = useCallback((e: MouseEvent) => {
-    if (!draggingColumn) return;
+    if (!draggingColumn || !dragInitialPos) return;
     
-    // Just track the target column, don't reorder yet
+    // Calculate movement from initial click position
+    const deltaX = e.clientX - dragStartX;
+    const deltaY = e.clientY - dragStartY;
+    
+    // Check if we've moved enough to start showing the drag preview
+    const dragThreshold = 5; // pixels
+    if (!isDragThresholdMet && (Math.abs(deltaX) > dragThreshold || Math.abs(deltaY) > dragThreshold)) {
+      setIsDragThresholdMet(true);
+      setHasDraggedColumn(true); // Mark that a drag operation has occurred
+    }
+    
+    // Update position relative to initial header position + delta (X-axis only)
+    setDragMousePos({ 
+      x: dragInitialPos.x + deltaX, 
+      y: dragInitialPos.y // Keep Y position fixed
+    });
+    
+    // Track the target column and update preview order in real-time
     const target = e.target as HTMLElement;
     const headerCell = target.closest('[data-column]') as HTMLElement;
     
     if (headerCell) {
       const targetColumn = headerCell.getAttribute('data-column');
-      if (targetColumn && targetColumn !== draggingColumn) {
-        // Store the target for when mouse is released
-        setDragTargetColumn(targetColumn);
+      if (targetColumn) {
+        // Only update if the target column has actually changed
+        if (targetColumn !== dragTargetColumn) {
+          setDragTargetColumn(targetColumn);
+          
+          // Update preview order for visual feedback
+          const newPreviewOrder = [...originalColumnOrder];
+          const dragIndex = newPreviewOrder.indexOf(draggingColumn);
+          const targetIndex = newPreviewOrder.indexOf(targetColumn);
+          
+          // Only reorder if the positions are actually different
+          if (dragIndex !== targetIndex) {
+            // Remove dragged column and insert at target position
+            newPreviewOrder.splice(dragIndex, 1);
+            newPreviewOrder.splice(targetIndex, 0, draggingColumn);
+            
+            setPreviewColumnOrder(newPreviewOrder);
+          } else {
+            // If back to original position, reset to original order
+            setPreviewColumnOrder([...originalColumnOrder]);
+          }
+        }
       }
+    } else {
+      // Reset to original order when not over a valid target
+      setPreviewColumnOrder([...originalColumnOrder]);
+      setDragTargetColumn(null);
     }
-    // Track mouse position for ghost preview
-    setDragMousePos({ x: e.clientX, y: e.clientY });
-  }, [draggingColumn]);
+  }, [draggingColumn, dragInitialPos, dragStartX, dragStartY, isDragThresholdMet, originalColumnOrder]);
 
   const handleColumnDragEnd = useCallback(() => {
     if (draggingColumn && dragTargetColumn && draggingColumn !== dragTargetColumn) {
@@ -2657,6 +2749,14 @@ const renderListView = () => (
     setDraggingColumn(null);
     setDragTargetColumn(null);
     setDragMousePos(null);
+    setDragInitialPos(null);
+    setIsDragThresholdMet(false);
+    setPreviewColumnOrder([]);
+    setDragStartX(0);
+    setDragStartY(0);
+    
+    // Reset the drag flag after a short delay to allow click event to check it
+    setTimeout(() => setHasDraggedColumn(false), 10);
   }, [draggingColumn, dragTargetColumn, columnOrder]);
 
   // Column drag event listeners
@@ -2765,12 +2865,12 @@ const renderListView = () => (
     loadNativeIcons();
   }, [sortedFiles]); // Removed nativeIcons dependency to prevent infinite loops
 
-  // Reapply filters when the hideTemporaryFiles setting changes
+  // Reapply filters when the file filtering settings change
   useEffect(() => {
     if (currentDirectory) {
       refreshDirectory(currentDirectory);
     }
-  }, [hideTemporaryFiles, currentDirectory, refreshDirectory]);
+  }, [hideTemporaryFiles, hideDotFiles, currentDirectory, refreshDirectory]);
 
   // Memoized expensive computations to prevent recalculation on every render
   const memoizedFileStates = useMemo(() => {

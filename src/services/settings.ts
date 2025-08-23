@@ -21,6 +21,7 @@ export interface AppSettings {
   enableClientSearchShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
+  hideDotFiles?: boolean;
   aiEditorInstructions?: string;
 
 }

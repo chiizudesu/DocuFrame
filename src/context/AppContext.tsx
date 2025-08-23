@@ -49,6 +49,8 @@ interface AppContextType {
   setShowOutputLog: (show: boolean) => void;
   hideTemporaryFiles: boolean;
   setHideTemporaryFiles: (hide: boolean) => void;
+  hideDotFiles: boolean;
+  setHideDotFiles: (hide: boolean) => void;
   aiEditorInstructions: string;             // NEW
   setAiEditorInstructions: (instructions: string) => void; // NEW
   // Preview
@@ -117,6 +119,7 @@ export const AppProvider: React.FC<{
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showOutputLog, setShowOutputLog] = useState(true);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
+  const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
@@ -155,8 +158,12 @@ export const AppProvider: React.FC<{
       setShowOutputLog(settings.showOutputLog !== false);
       // NEW: Load hideTemporaryFiles (default true when unset)
       setHideTemporaryFiles(settings.hideTemporaryFiles !== false);
+      // NEW: Load hideDotFiles (default true when unset)
+      setHideDotFiles(settings.hideDotFiles !== false);
       // NEW: Load AI editor instructions (default to current instructions if unset)
-      setAiEditorInstructions(settings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
+      if (settings.aiEditorInstructions !== undefined) {
+        setAiEditorInstructions(settings.aiEditorInstructions);
+      }
       
       // Load all shortcut settings
       if (settings.newTabShortcut) {
@@ -282,6 +289,8 @@ export const AppProvider: React.FC<{
       setShowOutputLog,
       hideTemporaryFiles,
       setHideTemporaryFiles,
+      hideDotFiles,
+      setHideDotFiles,
       aiEditorInstructions,                 // NEW
       setAiEditorInstructions,              // NEW
       previewFiles,

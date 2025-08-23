@@ -74,6 +74,7 @@ interface Settings {
   enableClientSearchShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
+  hideDotFiles?: boolean;
   aiEditorInstructions?: string; // NEW
 
 }
@@ -102,6 +103,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
+  const [hideDotFiles, setHideDotFiles] = useState(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState(''); // NEW
 
   
@@ -111,7 +113,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
   
   const toast = useToast();
-  const { setRootDirectory, showOutputLog, setShowOutputLog, reloadSettings } = useAppContext();
+  const { setRootDirectory, showOutputLog, setShowOutputLog, reloadSettings, setAiEditorInstructions: setContextAiEditorInstructions } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -145,6 +147,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
         // NEW: file grid setting (default true when unset)
         setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
+        setHideDotFiles(loadedSettings.hideDotFiles !== false);
         // NEW: AI editor instructions
         setAiEditorInstructions(loadedSettings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
 
@@ -195,6 +198,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         enableClientSearchShortcut,
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
+        hideDotFiles,
         aiEditorInstructions, // NEW
 
       };
@@ -228,6 +232,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       // Immediately reload settings to update the UI
       await reloadSettings();
       
+      // Immediately update the app context with the new AI editor instructions
+      setContextAiEditorInstructions(aiEditorInstructions);
+      console.log('Settings saved - AI Editor Instructions updated to:', aiEditorInstructions);
+      
       // Force a re-render to show updated shortcuts immediately
       setActivationShortcut(activationShortcut);
       setCalculatorShortcut(calculatorShortcut);
@@ -237,9 +245,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       
       toast({
         title: 'Settings saved',
-        description: `Shortcuts updated: ${activationShortcut}, ${calculatorShortcut}, ${newTabShortcut}, ${closeTabShortcut}, ${clientSearchShortcut}`,
+        description: 'All settings have been updated and applied immediately.',
         status: 'success',
-        duration: 5000,
+        duration: 3000,
         isClosable: true,
       });
       onClose();
@@ -1345,6 +1353,25 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       <Switch
                         isChecked={hideTemporaryFiles}
                         onChange={(e) => setHideTemporaryFiles(e.target.checked)}
+                        colorScheme="blue"
+                        size="sm"
+                      />
+                    </HStack>
+                  </FormControl>
+                </Box>
+
+                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius="sm">
+                  <FormControl>
+                    <HStack justify="space-between">
+                      <VStack align="start" spacing={1}>
+                        <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Hide Dot Files</FormLabel>
+                        <Text fontSize="xs" color={secondaryTextColor}>
+                          Hide files and folders that start with a dot (.), such as .git, .vscode, etc.
+                        </Text>
+                      </VStack>
+                      <Switch
+                        isChecked={hideDotFiles}
+                        onChange={(e) => setHideDotFiles(e.target.checked)}
                         colorScheme="blue"
                         size="sm"
                       />

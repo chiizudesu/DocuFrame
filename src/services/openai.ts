@@ -8,10 +8,13 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
   const apiKey = settings.apiKey;
   if (!apiKey) throw new Error('OpenAI API key not set.');
 
+  // Use custom instructions from settings, fallback to default if not set
+  const prompt = settings.aiEditorInstructions || AI_EDITOR_PROMPT;
+
   const body = {
     model: 'gpt-3.5-turbo',
     messages: [
-      { role: 'system', content: AI_EDITOR_PROMPT },
+      { role: 'system', content: prompt },
       { role: 'user', content: rawBlurb }
     ],
     max_tokens: 800,

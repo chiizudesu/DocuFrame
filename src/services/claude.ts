@@ -8,6 +8,9 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
   const apiKey = settings.claudeApiKey;
   if (!apiKey) throw new Error('Claude API key not set.');
 
+  // Use custom instructions from settings, fallback to default if not set
+  const prompt = settings.aiEditorInstructions || AI_EDITOR_PROMPT;
+
   const client = new Anthropic({
     apiKey: apiKey,
     dangerouslyAllowBrowser: true,
@@ -17,7 +20,7 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
     model: 'claude-3-5-sonnet-20241022',
     max_tokens: 800,
     messages: [
-      { role: 'user', content: `${AI_EDITOR_PROMPT}\n\n${rawBlurb}` }
+      { role: 'user', content: `${prompt}\n\n${rawBlurb}` }
     ],
     temperature: 0.7
   });
