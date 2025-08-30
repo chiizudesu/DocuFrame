@@ -33,6 +33,8 @@ interface ElectronAPI {
   moveFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   readPdfText: (filePath: string) => Promise<string>;
+  readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
+  getPdfPageCount: (filePath: string) => Promise<{ success: boolean; pageCount: number; error?: string }>;
   loadYamlTemplate: (filePath: string) => Promise<any>;
   readTextFile: (filePath: string) => Promise<string>;
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
@@ -73,6 +75,12 @@ interface ElectronAPI {
   // Search methods
   searchInDocuments: (options: { query: string; currentDirectory: string; maxResults?: number }) => Promise<FileItem[]>;
   searchFiles: (options: { query: string; searchPath: string; maxResults?: number; includeFiles?: boolean; includeFolders?: boolean; recursive?: boolean }) => Promise<FileItem[]>;
+  // Additional missing methods
+  onMessage: (channel: string, callback: (event: any, ...args: any[]) => void) => void;
+  removeListener: (channel: string, callback: (event: any, ...args: any[]) => void) => void;
+  openNewWindow: (path: string) => Promise<void>;
+  // PDF file serving
+  convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -156,6 +164,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   readPdfText: async (filePath: string) => {
     return await ipcRenderer.invoke('read-pdf-text', filePath);
+  },
+  readFileAsBuffer: async (filePath: string) => {
+    return await ipcRenderer.invoke('read-file-as-buffer', filePath);
+  },
+  getPdfPageCount: async (filePath: string) => {
+    return await ipcRenderer.invoke('get-pdf-page-count', filePath);
   },
   loadYamlTemplate: async (filePath: string) => {
     return await ipcRenderer.invoke('load-yaml-template', filePath);
@@ -267,7 +281,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   searchFiles: async (options: { query: string; searchPath: string; maxResults?: number; includeFiles?: boolean; includeFolders?: boolean; recursive?: boolean }) => {
     return await ipcRenderer.invoke('search-files', options);
-  }
+  },
+  // Additional missing methods
+  convertFilePathToHttpUrl: async (filePath: string) => {
+    return await ipcRenderer.invoke('convert-file-path-to-http-url', filePath);
+  },
+
 }); 
 
 // Expose the electron API exactly as documented for native file drag and drop

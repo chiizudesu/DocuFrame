@@ -46,6 +46,7 @@ import {
   FileText,
   FileSpreadsheet,
   Search,
+  PanelRightClose,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
@@ -66,7 +67,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -84,6 +85,7 @@ export const FolderInfoBar: React.FC = () => {
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
+
 
   // Helper function to format template name for display
   const formatTemplateName = (templateName: string): string => {
@@ -272,6 +274,13 @@ export const FolderInfoBar: React.FC = () => {
     window.dispatchEvent(new CustomEvent('viewModeChanged', { detail: mode }))
     addLog(`Changed view mode to: ${mode}`)
     setStatus(`Switched to ${mode} view`, 'info')
+  }
+
+  const handlePreviewPaneToggle = () => {
+    setIsPreviewPaneOpen(prev => !prev)
+    const newState = !isPreviewPaneOpen
+    addLog(`Preview pane ${newState ? 'opened' : 'closed'}`)
+    setStatus(`Preview pane ${newState ? 'opened' : 'closed'}`, 'info')
   }
 
   const handleBackClick = () => {
@@ -654,14 +663,14 @@ export const FolderInfoBar: React.FC = () => {
             _hover={{ bg: hoverBgColor }}
           />
           <IconButton
-            icon={<GridIcon size={16} />}
-            aria-label="Grid view"
-            variant={viewMode === 'grid' ? 'solid' : 'ghost'}
+            icon={<PanelRightClose size={16} />}
+            aria-label="Preview pane"
+            variant={isPreviewPaneOpen ? 'solid' : 'ghost'}
             size="sm"
-            onClick={() => handleViewModeChange('grid')}
-            bg={viewMode === 'grid' ? activeButtonBg : undefined}
-            color={viewMode === 'grid' ? activeButtonColor : iconColor}
-            _hover={{ bg: viewMode === 'grid' ? activeButtonBg : hoverBgColor }}
+            onClick={handlePreviewPaneToggle}
+            bg={isPreviewPaneOpen ? activeButtonBg : undefined}
+            color={isPreviewPaneOpen ? activeButtonColor : iconColor}
+            _hover={{ bg: isPreviewPaneOpen ? activeButtonBg : hoverBgColor }}
           />
           <IconButton
             icon={<ListIcon size={16} />}

@@ -56,6 +56,8 @@ interface AppContextType {
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
+  isPreviewPaneOpen: boolean;
+  setIsPreviewPaneOpen: (isOpen: boolean) => void;
   selectAllFiles: () => void;
   setSelectAllFiles: (callback: () => void) => void;
   folderItems: FileItem[];
@@ -123,6 +125,7 @@ export const AppProvider: React.FC<{
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
+  const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
   const [selectAllFilesCallback, setSelectAllFilesCallback] = useState<() => void>(() => () => {});
   const [folderItems, setFolderItems] = useState<FileItem[]>([]);
   // Selected files for function buttons
@@ -295,6 +298,8 @@ export const AppProvider: React.FC<{
       setAiEditorInstructions,              // NEW
       previewFiles,
       setPreviewFiles,
+      isPreviewPaneOpen,
+      setIsPreviewPaneOpen,
       selectAllFiles,
       setSelectAllFiles,
       folderItems,

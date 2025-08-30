@@ -2,26 +2,174 @@
 // Set GitHub token for auto-updates (replace with your actual token)
 // GH_TOKEN should be set via environment variable or .env file
 
-import { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, globalShortcut } from 'electron';
-import * as path from 'path';
+import { app, BrowserWindow, shell, ipcMain, globalShortcut, Menu, dialog, nativeImage, MenuItem, MenuItemConstructorOptions } from 'electron';
+import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, promises as fsPromises } from 'fs';
 import * as fs from 'fs';
-import { promises as fsPromises } from 'fs';
+import express from 'express';
+import path from 'path';
 import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import { spawn, ChildProcess, exec } from 'child_process';
+import { promisify } from 'util';
+import { createHash } from 'crypto';
+import { createReadStream, createWriteStream } from 'fs';
+import { pipeline } from 'stream/promises';
+import { createGzip, createGunzip } from 'zlib';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { PDFDocument } from 'pdf-lib';
+import PDFParser from 'pdf2json';
 import { fileSystemService } from '../src/services/fileSystem';
 import type { Config } from '../src/services/config';
 import { handleCommand } from '../src/main/commandHandler';
 import { transferFiles } from '../src/main/commands/transfer';
-import { PDFDocument } from 'pdf-lib';
-import PDFParser from 'pdf2json';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
-import { spawn, ChildProcess, exec } from 'child_process';
 import { autoUpdaterService } from '../src/main/autoUpdater';
 import * as chokidar from 'chokidar';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Express server for serving PDF files
+let expressApp: express.Application;
+let expressServer: any;
+const EXPRESS_PORT = 3001; // Use port 3001 to avoid conflicts
+
+// Initialize Express server
+const initializeExpressServer = () => {
+  try {
+    expressApp = express();
+    
+    // Add CORS headers to allow iframe loading
+    expressApp.use((req, res, next) => {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+      res.header('X-Content-Type-Options', 'nosniff');
+      
+      // Remove X-Frame-Options to allow iframe embedding from Electron
+      // res.header('X-Frame-Options', 'SAMEORIGIN');
+      
+      if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+      }
+      next();
+    });
+    
+    // Serve static files directly from the Clients directory
+    // This allows us to serve files from the specific directory we need
+    const clientsPath = path.join(process.env.USERPROFILE || 'C:/Users', 'Documents', 'Clients');
+    
+    expressApp.use('/files', (req, res, next) => {
+      // Security: Only block directory traversal attempts
+      const filePath = decodeURIComponent(req.path);
+      if (filePath.includes('..')) {
+        console.warn('[Main] Blocked directory traversal attempt:', filePath);
+        return res.status(403).send('Access denied');
+      }
+      
+      // Set proper content-type headers for different file types
+      const ext = path.extname(filePath).toLowerCase();
+      switch (ext) {
+        case '.pdf':
+          res.set('Content-Type', 'application/pdf');
+          res.set('Content-Disposition', 'inline');
+          console.log(`[Main] Serving PDF with headers:`, {
+            'Content-Type': res.get('Content-Type'),
+            'Content-Disposition': res.get('Content-Disposition'),
+            'Access-Control-Allow-Origin': res.get('Access-Control-Allow-Origin')
+          });
+          break;
+        case '.jpg':
+        case '.jpeg':
+          res.set('Content-Type', 'image/jpeg');
+          break;
+        case '.png':
+          res.set('Content-Type', 'image/png');
+          break;
+        case '.gif':
+          res.set('Content-Type', 'image/gif');
+          break;
+        case '.bmp':
+          res.set('Content-Type', 'image/bmp');
+          break;
+        case '.webp':
+          res.set('Content-Type', 'image/webp');
+          break;
+        case '.svg':
+          res.set('Content-Type', 'image/svg+xml');
+          break;
+      }
+      
+      next();
+    });
+    
+    // Serve files directly from the Clients directory
+    expressApp.use('/files', express.static(clientsPath));
+    
+    // Start the server
+    expressServer = expressApp.listen(EXPRESS_PORT, () => {
+      console.log(`[Main] Express server running on http://localhost:${EXPRESS_PORT}`);
+      console.log(`[Main] Serving files from: ${clientsPath}`);
+    });
+    
+    // Handle server errors
+    expressServer.on('error', (error: any) => {
+      console.error('[Main] Express server error:', error);
+    });
+    
+  } catch (error) {
+    console.error('[Main] Failed to initialize Express server:', error);
+  }
+};
+
+// Cleanup Express server
+const cleanupExpressServer = () => {
+  if (expressServer) {
+    try {
+      expressServer.close();
+      console.log('[Main] Express server stopped');
+    } catch (error) {
+      console.error('[Main] Error stopping Express server:', error);
+    }
+  }
+};
+
+// Convert file path to HTTP URL for PDF viewing
+const convertFilePathToHttpUrl = (filePath: string): string => {
+  try {
+    // Get the Clients directory path
+    const clientsPath = path.join(process.env.USERPROFILE || 'C:/Users', 'Documents', 'Clients');
+    
+    // Check if the file is within the Clients directory
+    if (!filePath.startsWith(clientsPath)) {
+      console.warn('[Main] File is outside Clients directory, cannot serve via Express:', filePath);
+      return filePath; // Fallback to original path
+    }
+    
+    // Get relative path from Clients directory
+    const relativePath = path.relative(clientsPath, filePath);
+    
+    // Convert backslashes to forward slashes and encode individual path segments
+    const normalizedPath = relativePath.replace(/\\/g, '/');
+    const encodedPath = normalizedPath
+      .split('/')
+      .map(segment => encodeURIComponent(segment))
+      .join('/');
+    
+    const httpUrl = `http://localhost:${EXPRESS_PORT}/files/${encodedPath}`;
+    console.log(`[Main] Converted file path: ${filePath} -> ${httpUrl}`);
+    console.log(`[Main] Relative path from Clients: ${relativePath}`);
+    console.log(`[Main] Encoded path: ${encodedPath}`);
+    
+    return httpUrl;
+  } catch (error) {
+    console.error('[Main] Error converting file path to HTTP URL:', error);
+    return filePath; // Fallback to original path
+  }
+};
 
 // Define the development server URL
 const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.NODE_ENV === 'development' 
@@ -250,6 +398,7 @@ const createWindow = () => {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
+      webviewTag: true, // Enable webview tag for PDF viewing
     },
   });
 
@@ -298,6 +447,10 @@ app.whenReady().then(async () => {
   // Load config before creating window
   const config = await loadConfig();
   console.log('[Main] Loaded config on window start:', config);
+  
+  // Initialize Express server for PDF file serving
+  initializeExpressServer();
+  
   createWindow();
   
   // Register global shortcut for app activation
@@ -464,6 +617,8 @@ app.on('quit', () => {
   }
   // Stop all file watchers
   stopAllWatchers();
+  // Cleanup Express server
+  cleanupExpressServer();
 });
 
 app.on('activate', () => {
@@ -533,14 +688,29 @@ ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
       const fullPath = path.join(dirPath, entry.name);
       try {
         const stats = await fsPromises.stat(fullPath);
-        results.push({
+        const fileItem: any = {
           name: entry.name,
           path: fullPath,
           type: entry.isDirectory() ? 'folder' : 'file',
           size: stats.size.toString(),
           modified: stats.mtime.toISOString(),
           extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined
-        });
+        };
+
+        // Add page count for PDF files
+        if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.pdf') {
+          try {
+            const pageCountResult = await getPdfPageCount(fullPath);
+            if (pageCountResult.success) {
+              fileItem.pages = pageCountResult.pageCount;
+            }
+          } catch (error) {
+            console.warn(`Failed to get page count for PDF: ${fullPath}`, error);
+            // Continue without page count
+          }
+        }
+
+        results.push(fileItem);
       } catch (error) {
         // Log and skip busy/locked/inaccessible files
         console.error(`Skipping file (stat error): ${fullPath}`, error);
@@ -1492,6 +1662,57 @@ ipcMain.handle('read-pdf-text', async (_, filePath: string) => {
   }
 });
 
+// Add PDF page counting handler
+ipcMain.handle('get-pdf-page-count', async (_, filePath: string) => {
+  try {
+    console.log(`Getting PDF page count from: ${filePath}`);
+    
+    if (!fs.existsSync(filePath)) {
+      throw new Error('PDF file not found');
+    }
+
+    // Read the PDF file
+    const pdfBuffer = fs.readFileSync(filePath);
+    
+    // Load the PDF document using pdf-lib
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    
+    // Get the page count
+    const pageCount = pdfDoc.getPageCount();
+    
+    console.log(`PDF has ${pageCount} pages`);
+    return { success: true, pageCount };
+    
+  } catch (error) {
+    console.error('Error getting PDF page count:', error);
+    return { success: false, error: error.message, pageCount: 0 };
+  }
+});
+
+ipcMain.handle('read-file-as-buffer', async (_, filePath: string) => {
+  try {
+    console.log(`Reading file as buffer from: ${filePath}`);
+    
+    if (!fs.existsSync(filePath)) {
+      throw new Error('File not found');
+    }
+
+    // Read the file as a buffer
+    const fileBuffer = fs.readFileSync(filePath);
+    
+    // Convert to ArrayBuffer for the renderer process
+    const arrayBuffer = fileBuffer.buffer.slice(
+      fileBuffer.byteOffset,
+      fileBuffer.byteOffset + fileBuffer.byteLength
+    );
+    
+    return arrayBuffer;
+  } catch (error) {
+    console.error('Error reading file as buffer:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('load-yaml-template', async (event, filePath) => {
   const content = fs.readFileSync(filePath, 'utf8');
   return yaml.load(content);
@@ -2424,3 +2645,44 @@ ipcMain.handle('open-settings-window', async () => {
     throw error;
   }
 });
+
+// Convert file path to HTTP URL for PDF viewing
+ipcMain.handle('convert-file-path-to-http-url', async (_, filePath: string) => {
+  try {
+    const httpUrl = convertFilePathToHttpUrl(filePath);
+    return { success: true, url: httpUrl };
+  } catch (error) {
+    console.error('[Main] Error converting file path to HTTP URL:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Note: PDF viewer functionality has been moved to inline preview pane
+// The separate PDF viewer window is no longer needed
+
+// Helper function to get PDF page count
+const getPdfPageCount = async (filePath: string): Promise<{ success: boolean; pageCount: number; error?: string }> => {
+  try {
+    console.log(`Getting PDF page count from: ${filePath}`);
+    
+    if (!fs.existsSync(filePath)) {
+      throw new Error('PDF file not found');
+    }
+
+    // Read the PDF file
+    const pdfBuffer = fs.readFileSync(filePath);
+    
+    // Load the PDF document using pdf-lib
+    const pdfDoc = await PDFDocument.load(pdfBuffer);
+    
+    // Get the page count
+    const pageCount = pdfDoc.getPageCount();
+    
+    console.log(`PDF has ${pageCount} pages`);
+    return { success: true, pageCount };
+    
+  } catch (error) {
+    console.error('Error getting PDF page count:', error);
+    return { success: false, error: error.message, pageCount: 0 };
+  }
+};

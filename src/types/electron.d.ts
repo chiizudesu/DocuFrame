@@ -45,6 +45,10 @@ interface ElectronAPI {
   // CSV reading
   readCsv: (filePath: string) => Promise<any[]>;
   
+  // PDF operations
+  readPdfText: (filePath: string) => Promise<string>;
+  readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
+  
   // Window operations
   minimize: () => void;
   maximize: () => void;

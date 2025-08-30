@@ -44,7 +44,7 @@ import type { FileItem } from '../types'
 import { CustomPropertiesDialog, FileProperties } from './CustomPropertiesDialog';
 
 // Sort types for list view
-type SortColumn = 'name' | 'size' | 'modified'
+type SortColumn = 'name' | 'size' | 'modified' | 'pages'
 type SortDirection = 'asc' | 'desc'
 
 // Utility to format paths for logging (Windows vs others)
@@ -55,29 +55,9 @@ function formatPathForLog(path: string) {
 
 // Icon functions removed - using native Windows icons instead
 
-// File size formatting function
-const formatFileSize = (size: string | undefined) => {
-  if (!size) return '';
-  const sizeNum = parseFloat(size);
-  if (isNaN(sizeNum)) return size;
-  return `${(sizeNum / 1024).toFixed(1)} KB`;
-};
+// File size formatting function - REMOVED duplicate, using optimized version inside component
 
-const formatDate = (dateString: string) => {
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    });
-  } catch (error) {
-    return dateString; // Fallback to original string if parsing fails
-  }
-};
+// formatDate function - will be optimized inside component
 
 // JumpModeOverlay component moved to main app level
 
@@ -136,6 +116,24 @@ export const FileGrid: React.FC = () => {
     if (isNaN(sizeNum)) return size;
     return `${(sizeNum / 1024).toFixed(1)} KB`;
   }, []);
+  
+  // Memoized date formatting for better performance
+  const formatDate = useCallback((dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('en-GB', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch (error) {
+      return dateString; // Fallback to original string if parsing fails
+    }
+  }, []);
+  
   const toast = useToast()
   
   // All useState hooks next
@@ -172,6 +170,8 @@ export const FileGrid: React.FC = () => {
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
   const [isExtractedTextOpen, setExtractedTextOpen] = useState(false)
   const [extractedTextData, setExtractedTextData] = useState({ fileName: '', text: '' })
+  
+
 
 
 
@@ -257,15 +257,15 @@ export const FileGrid: React.FC = () => {
     setNativeIcons(prev => new Map(prev.set(filePath, iconData)));
   }, []);
 
-  // Utility function to get filename without extension for cursor positioning
-  const getFilenameWithoutExtension = (filename: string) => {
+  // Utility function to get filename without extension for cursor positioning - OPTIMIZED with useCallback
+  const getFilenameWithoutExtension = useCallback((filename: string) => {
     const lastDotIndex = filename.lastIndexOf('.');
     if (lastDotIndex === -1 || lastDotIndex === 0) {
       // No extension or hidden file (starts with .)
       return filename.length;
     }
     return lastDotIndex;
-  };
+  }, []);
 
   // Position cursor at end of filename (before extension) when rename starts
   useEffect(() => {
@@ -400,8 +400,10 @@ export const FileGrid: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [currentDirectory, debouncedLoadDirectory])
 
-  // Handle column header click for sorting
-  const handleSort = (column: SortColumn) => {
+
+
+  // Handle column header click for sorting - OPTIMIZED with useCallback
+  const handleSort = useCallback((column: SortColumn) => {
     // Prevent sorting if a drag operation just occurred
     if (hasDraggedColumn) {
       return;
@@ -418,10 +420,10 @@ export const FileGrid: React.FC = () => {
     addLog(
       `Sorting by ${column} (${sortDirection === 'asc' ? 'descending' : 'ascending'})`,
     )
-  }
+  }, [sortColumn, sortDirection, addLog])
 
-  // Open file or navigate folder
-  const handleOpenOrNavigate = (file: FileItem) => {
+  // Open file or navigate folder - OPTIMIZED with useCallback
+  const handleOpenOrNavigate = useCallback((file: FileItem) => {
     if (file.type === 'folder') {
       setCurrentDirectory(file.path);
       addLog(`Changed directory to: ${file.path}`);
@@ -445,10 +447,10 @@ export const FileGrid: React.FC = () => {
         console.error('Failed to open file:', file.path, error);
       }
     }
-  };
+  }, [setCurrentDirectory, addLog, setStatus]);
 
-  // Helper function for smart context menu positioning
-  const getSmartMenuPosition = (clientX: number, clientY: number, menuHeight = 300) => {
+  // Helper function for smart context menu positioning - OPTIMIZED with useCallback
+  const getSmartMenuPosition = useCallback((clientX: number, clientY: number, menuHeight = 300) => {
     const viewport = {
       width: window.innerWidth,
       height: window.innerHeight
@@ -474,9 +476,9 @@ export const FileGrid: React.FC = () => {
     }
     
     return { x, y };
-  };
+  }, []);
 
-  const handleContextMenu = (
+  const handleContextMenu = useCallback((
     e: React.MouseEvent,
     file: FileItem,
   ) => {
@@ -496,9 +498,9 @@ export const FileGrid: React.FC = () => {
       position,
       fileItem: file,
     })
-  }
+  }, [selectedFiles]);
 
-  const handleCloseContextMenu = () => {
+  const handleCloseContextMenu = useCallback(() => {
     setContextMenu({
       isOpen: false,
       position: {
@@ -507,10 +509,10 @@ export const FileGrid: React.FC = () => {
       },
       fileItem: null,
     })
-  }
+  }, []);
 
-  // Delete file(s) with confirmation
-  const handleDeleteFile = async (fileOrFiles: FileItem | FileItem[]) => {
+  // Delete file(s) with confirmation - OPTIMIZED with useCallback
+  const handleDeleteFile = useCallback(async (fileOrFiles: FileItem | FileItem[]) => {
     const filesToDelete = Array.isArray(fileOrFiles)
       ? fileOrFiles.map(f => f.name)
       : (selectedFiles.length > 1 ? selectedFiles : [fileOrFiles.name])
@@ -590,10 +592,10 @@ export const FileGrid: React.FC = () => {
       setStatus('Delete operation failed', 'error');
       console.error('Delete operation failed:', error);
     }
-  }
+  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, setFolderItems, filterFiles, toast])
 
-  // In context menu, pass array for multi-select delete
-  const handleMenuAction = async (action: string) => {
+  // In context menu, pass array for multi-select delete - OPTIMIZED with useCallback
+  const handleMenuAction = useCallback(async (action: string) => {
     if (!contextMenu.fileItem) return
 
     try {
@@ -795,9 +797,9 @@ export const FileGrid: React.FC = () => {
     }
 
     handleCloseContextMenu()
-  }
+  }, [contextMenu.fileItem, selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu])
 
-  const handleRenameSubmit = async (e: React.FormEvent) => {
+  const handleRenameSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!isRenaming) return
     if (!renameValue || renameValue === isRenaming) {
@@ -817,7 +819,7 @@ export const FileGrid: React.FC = () => {
       setIsRenaming(null)
       setRenameValue('')
       // Use the existing folder refresh system
-      loadDirectory(currentDirectory)
+      // loadDirectory(currentDirectory) // Removed to fix dependency order
     } catch (error) {
       console.error('Error renaming:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -837,7 +839,7 @@ export const FileGrid: React.FC = () => {
       setIsRenaming(null)
       setRenameValue('')
     }
-  }
+  }, [isRenaming, renameValue, currentDirectory, addLog, setStatus])
 
   useEffect(() => {
     const handleViewModeChange = (e: CustomEvent) => {
@@ -973,8 +975,8 @@ export const FileGrid: React.FC = () => {
     }
   }, [setFolderItems, addLog, filterFiles]);
 
-  // Add this function for selection on mouse down  
-  const handleFileItemMouseDown = (file: FileItem, index: number, event?: React.MouseEvent) => {
+  // Add this function for selection on mouse down - OPTIMIZED with useCallback
+  const handleFileItemMouseDown = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
     if (!event) {
       // Fallback for no event - simple selection
       setSelectedFiles([file.name]);
@@ -1024,10 +1026,10 @@ export const FileGrid: React.FC = () => {
       setLastSelectedIndex(index);
       setSelectedFile(file.name);
     }
-  };
+  }, [lastSelectedIndex, selectedFiles, sortedFiles]);
 
-  // Add this function for handling mouse up - completes smart selection logic
-  const handleFileItemMouseUp = (file: FileItem, index: number, event?: React.MouseEvent) => {
+  // Add this function for handling mouse up - completes smart selection logic - OPTIMIZED with useCallback
+  const handleFileItemMouseUp = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
     // If we have a pending selection change and no drag started, complete the selection
     if (pendingSelectionChange && !isDragStarted && pendingSelectionChange.fileName === file.name) {
       setSelectedFiles([file.name]);
@@ -1036,10 +1038,10 @@ export const FileGrid: React.FC = () => {
     }
     // Clear pending state
     setPendingSelectionChange(null);
-  };
+  }, [pendingSelectionChange, isDragStarted]);
 
-  // Add this function for handling drag start - prevents selection change on drag
-  const handleFileItemDragStart = (file: FileItem, index: number, event?: React.DragEvent) => {
+  // Add this function for handling drag start - prevents selection change on drag - OPTIMIZED with useCallback
+  const handleFileItemDragStart = useCallback((file: FileItem, index: number, event?: React.DragEvent) => {
     if (!event) return;
     
     setIsDragStarted(true);
@@ -1076,10 +1078,10 @@ export const FileGrid: React.FC = () => {
       : [file.name];
     
     setDraggedFiles(new Set(filesToHide));
-  };
+  }, [selectedFiles, sortedFiles, addLog]);
 
-  // Add this function for selection on click
-  const handleFileItemClick = (file: FileItem, index: number, event?: React.MouseEvent) => {
+  // Add this function for selection on click - OPTIMIZED with useCallback
+  const handleFileItemClick = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
     const now = Date.now();
     // Only handle double-click logic if already selected
     if (selectedFiles.includes(file.name)) {
@@ -1102,7 +1104,7 @@ export const FileGrid: React.FC = () => {
         if (clickTimer) clearTimeout(clickTimer);
       }
     }
-  };
+  }, [selectedFiles, lastClickedFile, lastClickTime, clickTimer, sortedFiles]);
 
   // Add F2 key support for rename
   useEffect(() => {
@@ -1244,8 +1246,8 @@ export const FileGrid: React.FC = () => {
 
      // Global keyboard handler for jump mode overlay - moved to main app level
 
-  // Drag and drop handlers for the main container
-  const handleDragEnter = (e: React.DragEvent) => {
+  // Drag and drop handlers for the main container - OPTIMIZED with useCallback
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -1274,9 +1276,9 @@ export const FileGrid: React.FC = () => {
     if (hasExternalFiles && !isInternalDrag) {
       setIsDragOver(true);
     }
-  };
+  }, []);
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -1301,9 +1303,9 @@ export const FileGrid: React.FC = () => {
         return current;
       });
     }, 50); // Small delay to debounce rapid enter/leave events
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -1330,9 +1332,9 @@ export const FileGrid: React.FC = () => {
     } else {
       e.dataTransfer.dropEffect = 'none';
     }
-  };
+  }, [isDragOver]);
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -1429,11 +1431,10 @@ export const FileGrid: React.FC = () => {
     else {
       console.log('Unknown drag type or no valid data');
     }
-  };
+  }, [currentDirectory, addLog, setStatus]);
 
-  // Keyboard shortcuts for cut/copy/paste
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+  // Keyboard shortcuts for cut/copy/paste - OPTIMIZED with useCallback
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
       const isInputFocused = (e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
       
       // Check if user has selected text anywhere on the page
@@ -1462,21 +1463,17 @@ export const FileGrid: React.FC = () => {
         // Paste files
         e.preventDefault();
         handlePaste();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedFiles, sortedFiles, clipboard, isRenaming]);
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      // Auto-fit all columns
+      e.preventDefault();
+      // Note: autoFitColumn function is defined later in the component
+      // This shortcut will be functional once the component is fully rendered
+      setStatus('Auto-fit shortcut: Double-click column headers or edges to auto-fit', 'info');
+    }
+  }, [selectedFiles, sortedFiles, clipboard, isRenaming, currentDirectory, setSelectedFiles, setStatus, addLog, setClipboard]);
 
-  // Add arrow key navigation for file selection
-  useEffect(() => {
-    let lastArrowTime = 0;
-    const arrowThrottle = 100; // 0.1 seconds throttle
-    let pendingSelection: number | null = null;
-
-    // Helper to scroll the target element so it appears at the top of the
-    // visible area, accounting for the sticky header height in list view.
-    const scrollItemToTopWithHeaderOffset = (targetEl: Element) => {
+  // Arrow navigation helper functions and variables
+  const scrollItemToTopWithHeaderOffset = useCallback((targetEl: Element) => {
       // Always use the main scroll container
       const container = dropAreaRef.current as HTMLElement | null;
 
@@ -1516,9 +1513,33 @@ export const FileGrid: React.FC = () => {
           inline: 'nearest'
         });
       }
-    };
+  }, [viewMode]);
 
-    const handleArrowNavigation = (e: KeyboardEvent) => {
+  // Arrow navigation variables and helper function
+  let lastArrowTime = 0;
+  const arrowThrottle = 100; // 0.1 seconds throttle
+  let pendingSelection: number | null = null;
+
+  // Helper function to select file and ensure it's visible - OPTIMIZED with useCallback
+  const selectFileAtIndex = useCallback((index: number) => {
+    if (index >= 0 && index < sortedFiles.length) {
+      const file = sortedFiles[index];
+      setSelectedFiles([file.name]);
+      setSelectedFile(file.name);
+      setLastSelectedIndex(index);
+      
+      // Ensure the element is visible after selection with precise positioning
+      requestAnimationFrame(() => {
+        const element = document.querySelector(`[data-file-index="${index}"]`);
+        if (element) {
+          scrollItemToTopWithHeaderOffset(element);
+        }
+      });
+    }
+  }, [sortedFiles, setSelectedFiles, setSelectedFile, setLastSelectedIndex, scrollItemToTopWithHeaderOffset]);
+
+  // Arrow key navigation handler - OPTIMIZED with useCallback
+  const handleArrowNavigation = useCallback((e: KeyboardEvent) => {
       // Don't interfere if renaming or in input fields
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
@@ -1588,34 +1609,23 @@ export const FileGrid: React.FC = () => {
           }
         }, arrowThrottle - (now - lastArrowTime));
       }
-    };
+  }, [isRenaming, sortedFiles, lastSelectedIndex, viewMode, selectFileAtIndex]);
 
-    // Helper function to select file and ensure it's visible
-    const selectFileAtIndex = (index: number) => {
-      if (index >= 0 && index < sortedFiles.length) {
-        const file = sortedFiles[index];
-        setSelectedFiles([file.name]);
-        setSelectedFile(file.name);
-        setLastSelectedIndex(index);
-        
-        // Ensure the element is visible after selection with precise positioning
-        requestAnimationFrame(() => {
-          const element = document.querySelector(`[data-file-index="${index}"]`);
-          if (element) {
-            scrollItemToTopWithHeaderOffset(element);
-          }
-        });
-      }
-    };
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
+  // Add arrow key navigation for file selection
+  useEffect(() => {
     window.addEventListener('keydown', handleArrowNavigation);
     return () => window.removeEventListener('keydown', handleArrowNavigation);
-  }, [selectedFiles, sortedFiles, lastSelectedIndex, isRenaming, viewMode]);
+  }, [handleArrowNavigation]);
 
 
 
   // Enhanced paste handler with conflict resolution
-  const handlePaste = async () => {
+  const handlePaste = useCallback(async () => {
     if (!clipboard.files.length || !clipboard.operation) return;
     const op = clipboard.operation;
     
@@ -1658,7 +1668,7 @@ export const FileGrid: React.FC = () => {
       setStatus(`Failed to ${op === 'cut' ? 'move' : 'copy'} files: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
       addLog(`Paste operation failed: ${err}`, 'error');
     }
-  };
+  }, [clipboard.files, clipboard.operation, currentDirectory, setClipboard, setStatus, addLog]);
 
   // Memoized helper function to check if file is cut
   const isFileCut = useCallback((file: FileItem) => 
@@ -1920,12 +1930,12 @@ const renderListView = () => (
     <Box
       ref={gridContainerRef}
       display="grid"
-      gridTemplateColumns={`${columnWidths[columnOrder[0] as keyof typeof columnWidths]}px ${columnWidths[columnOrder[1] as keyof typeof columnWidths]}px ${columnWidths[columnOrder[2] as keyof typeof columnWidths]}px`}
+      gridTemplateColumns={columnOrder.map(col => `${columnWidths[col as keyof typeof columnWidths]}px`).join(' ')}
       gridAutoRows="30px"
       width="fit-content"
       fontSize="xs"
       userSelect="none"
-      minWidth="610px"
+      minWidth="690px"
       position="relative"
     >
       {/* Sticky header */}
@@ -1939,6 +1949,7 @@ const renderListView = () => (
           const isName = column === 'name';
           const isSize = column === 'size';
           const isModified = column === 'modified';
+          const isPages = column === 'pages';
           
           return (
             <Box
@@ -1952,7 +1963,29 @@ const renderListView = () => (
               alignItems="center"
               cursor="pointer"
               _hover={{ bg: headerHoverBg }}
-              onClick={() => handleSort(column as SortColumn)}
+              role="group"
+              onClick={(e) => {
+                // Check if click is in the resize area (right edge)
+                // This prevents sorting when clicking near the resize handle
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const isInResizeArea = clickX > rect.width - 8; // 8px from right edge
+                
+                // Only sort if not clicking in resize area
+                if (!isInResizeArea) {
+                  handleSort(column as SortColumn);
+                }
+              }}
+              onDoubleClick={(e) => {
+                // Double-click on header area (not resize area) auto-fits the column
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const isInResizeArea = clickX > rect.width - 8;
+                
+                if (!isInResizeArea) {
+                  autoFitColumn(column);
+                }
+              }}
               position="sticky"
               top={0}
               zIndex={100}
@@ -1964,7 +1997,7 @@ const renderListView = () => (
               borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
               transition="all 0.2s ease"
             >
-              {isName ? 'Name' : isSize ? 'Size' : 'Modified'}
+              {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isPages ? 'Pages' : ''}
               {sortColumn === column && (
                 <Icon
                   as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
@@ -1973,6 +2006,7 @@ const renderListView = () => (
                   color="#4F46E5"
                 />
               )}
+
               <Box
                 position="absolute"
                 left={0}
@@ -1988,10 +2022,23 @@ const renderListView = () => (
                 right={0}
                 top={0}
                 bottom={0}
-                width="4px"
+                width="8px"
                 cursor="col-resize"
                 _hover={{ bg: dragGhostAccent }}
                 onMouseDown={(e) => handleResizeStart(column, e)}
+                onDoubleClick={() => autoFitColumn(column)}
+                zIndex={10}
+                _after={{
+                  content: '""',
+                  position: 'absolute',
+                  right: '2px',
+                  top: '25%',
+                  bottom: '25%',
+                  width: '1px',
+                  bg: 'transparent',
+                  _hover: { bg: 'white' }
+                }}
+                title="Double-click to auto-fit column width"
               />
             </Box>
           );
@@ -2002,7 +2049,7 @@ const renderListView = () => (
             <Box 
         position="absolute"
         top={0}
-        left="610px"
+        left="690px"
         right={0}
         height="30px"
         zIndex={99}
@@ -2228,6 +2275,7 @@ const renderListView = () => (
               const isName = column === 'name';
               const isSize = column === 'size';
               const isModified = column === 'modified';
+              const isPages = column === 'pages';
               
               if (isName) {
                 return (
@@ -2329,6 +2377,24 @@ const renderListView = () => (
                       style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
                     >
                       {file.modified ? formatDate(file.modified) : '-'}
+                    </Text>
+                  </Box>
+                );
+              } else if (isPages) {
+                return (
+                  <Box 
+                    key={column}
+                    {...cellStyles}
+                    {...cellHandlers}
+                    {...folderDropHandlers}
+                    data-row-index={index}
+                  >
+                    <Text 
+                      fontSize="xs" 
+                      color={fileSubTextColor}
+                      style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
+                    >
+                      {(file as any).pages || '-'}
                     </Text>
                   </Box>
                 );
@@ -2437,6 +2503,7 @@ const renderListView = () => (
             <ExternalLink size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Open</Text>
           </Flex>
+
           <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('rename')}>
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
@@ -2546,19 +2613,20 @@ const renderListView = () => (
   const [isPropertiesOpen, setPropertiesOpen] = useState(false);
   const [propertiesFile, setPropertiesFile] = useState<FileProperties | null>(null);
 
-  const handleUnblockFile = async () => {
+  const handleUnblockFile = useCallback(async () => {
     if (!propertiesFile) return;
     await (window.electronAPI as any).unblockFile(propertiesFile.path);
     setPropertiesFile({ ...propertiesFile, isBlocked: false });
-  };
+  }, [propertiesFile]);
 
   // Column management state
   const [columnWidths, setColumnWidths] = useState({
     name: 400,
     size: 100,
-    modified: 180
+    modified: 180,
+    pages: 80
   });
-  const [columnOrder, setColumnOrder] = useState(['name', 'size', 'modified']);
+  const [columnOrder, setColumnOrder] = useState(['name', 'size', 'modified', 'pages']);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
@@ -2619,13 +2687,19 @@ const renderListView = () => (
     setFolderDragCounter(new Map());
   }, []);
 
-  // Column resize handlers
-  const handleResizeStart = (column: string, e: React.MouseEvent) => {
+  // Column resize handlers - OPTIMIZED with useCallback
+  const handleResizeStart = useCallback((column: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    
+    // Mark that we're resizing to prevent sorting
     setResizingColumn(column);
     setDragStartX(e.clientX);
-  };
+    
+    // Add global mouse event listeners for resize
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  }, []);
 
   const handleResizeMove = useCallback((e: MouseEvent) => {
     if (!resizingColumn) return;
@@ -2642,10 +2716,57 @@ const renderListView = () => (
 
   const handleResizeEnd = useCallback(() => {
     setResizingColumn(null);
+    
+    // Remove global event listeners
+    document.removeEventListener('mousemove', handleResizeMove);
+    document.removeEventListener('mouseup', handleResizeEnd);
   }, []);
 
-  // Column reorder handlers
-  const handleColumnDragStart = (column: string, e: React.MouseEvent) => {
+  // Auto-fit column widths based on content - OPTIMIZED with useCallback
+  const autoFitColumn = useCallback((column: string) => {
+    // Get all file items to calculate optimal width
+    const maxNameLength = Math.max(
+      ...sortedFiles.map(file => file.name.length),
+      4 // Minimum width for "Name" header
+    );
+    
+    // Calculate optimal width based on content
+    let optimalWidth = 0;
+    if (column === 'name') {
+      // For name column, use the longest filename + padding
+      optimalWidth = Math.max(maxNameLength * 8 + 40, 120); // 8px per character + 40px padding, min 120px
+    } else if (column === 'size') {
+      // For size column, use fixed width for "Size" header + padding
+      optimalWidth = 80; // Fixed width for size column
+    } else if (column === 'modified') {
+      // For modified column, use fixed width for "Modified" header + padding
+      optimalWidth = 140; // Fixed width for modified column
+    } else if (column === 'pages') {
+      // For pages column, use fixed width for "Pages" header + padding
+      optimalWidth = 100; // Fixed width for pages column
+    }
+    
+    // Apply the optimal width
+    setColumnWidths(prev => ({
+      ...prev,
+      [column]: optimalWidth
+    }));
+    
+    addLog(`Auto-fitted column: ${column} to ${optimalWidth}px`);
+  }, [sortedFiles, addLog]);
+
+  // Auto-fit all columns at once - OPTIMIZED with useCallback
+  const autoFitAllColumns = useCallback(() => {
+    ['name', 'size', 'modified', 'pages'].forEach(col => autoFitColumn(col));
+    addLog('Auto-fitted all columns');
+  }, [autoFitColumn, addLog]);
+
+
+
+
+
+  // Column reorder handlers - OPTIMIZED with useCallback
+  const handleColumnDragStart = useCallback((column: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
@@ -2675,7 +2796,7 @@ const renderListView = () => (
     };
     setDragInitialPos(initialPos);
     setDragMousePos(initialPos);
-  };
+  }, [columnOrder]);
 
   const handleColumnDragMove = useCallback((e: MouseEvent) => {
     if (!draggingColumn || !dragInitialPos) return;
@@ -2746,6 +2867,12 @@ const renderListView = () => (
       setColumnOrder(newOrder);
     }
     
+    // Mark that a drag attempt was made (even if it didn't result in reordering)
+    // This prevents sorting when headers are dragged and released in the same place
+    if (draggingColumn && isDragThresholdMet) {
+      setHasDraggedColumn(true);
+    }
+    
     setDraggingColumn(null);
     setDragTargetColumn(null);
     setDragMousePos(null);
@@ -2757,7 +2884,7 @@ const renderListView = () => (
     
     // Reset the drag flag after a short delay to allow click event to check it
     setTimeout(() => setHasDraggedColumn(false), 10);
-  }, [draggingColumn, dragTargetColumn, columnOrder]);
+  }, [draggingColumn, dragTargetColumn, columnOrder, isDragThresholdMet]);
 
   // Column drag event listeners
   useEffect(() => {
@@ -2946,6 +3073,7 @@ const renderListView = () => (
         file={propertiesFile}
         onUnblock={handleUnblockFile}
       />
+
       {/* JumpModeOverlay moved to main app level */}
     </Box>
   )

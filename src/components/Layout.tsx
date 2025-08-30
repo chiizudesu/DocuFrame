@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Grid, GridItem, Box, Flex, useColorModeValue, Text, HStack, IconButton } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
+import { PreviewPane } from './PreviewPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
 import { OutputLog } from './OutputLog';
@@ -161,7 +162,7 @@ const CustomTitleBar: React.FC = () => {
 };
 
 export const Layout: React.FC = () => {
-  const { showOutputLog } = useAppContext();
+  const { showOutputLog, isPreviewPaneOpen } = useAppContext();
   const [sidebarWidth, setSidebarWidth] = useState(263);
   const [logHeight, setLogHeight] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -288,10 +289,10 @@ export const Layout: React.FC = () => {
         "ribbon ribbon ribbon"
         "sidebar tabs tabs"
         "sidebar header header"
-        "sidebar main main"
-        ${showOutputLog ? '"sidebar footer footer"' : ''}
+        "sidebar main preview"
+        ${showOutputLog ? '"sidebar footer preview"' : ''}
         "status status status"
-      `} gridTemplateRows={`auto auto auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr 1fr`} h="100%" gap="0" bg={mainBgColor}>
+      `} gridTemplateRows={`auto auto auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
     {/* Custom Title Bar */}
     <GridItem area="titlebar" bg={bgColor} zIndex={100}>
       <CustomTitleBar />
@@ -346,8 +347,31 @@ export const Layout: React.FC = () => {
       <FolderTabSystem onActiveTabChange={handleActiveTabChange} />
     </GridItem>
     {/* Main Content Area */}
-    <GridItem area="main" bg={mainBgColor} overflow="auto" className="enhanced-scrollbar" display="flex" flexDirection="column" minHeight="0">
+    <GridItem 
+      area="main" 
+      bg={mainBgColor} 
+      overflow="auto" 
+      className="enhanced-scrollbar" 
+      display="flex" 
+      flexDirection="column" 
+      minHeight="0"
+    >
       <FileGrid />
+    </GridItem>
+    {/* Preview Pane */}
+    <GridItem 
+      area="preview" 
+      bg={bgColor} 
+      borderLeft="1px" 
+      borderColor={borderColor} 
+      overflow="hidden" 
+      display="flex" 
+      flexDirection="column" 
+      boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
+      visibility={isPreviewPaneOpen ? 'visible' : 'hidden'}
+      width={isPreviewPaneOpen ? 'auto' : '0px'}
+    >
+      <PreviewPane />
     </GridItem>
     {/* Resize Handle for Output Log (only over main content, not sidebar) */}
     {showOutputLog && !logMinimized && (
@@ -357,13 +381,19 @@ export const Layout: React.FC = () => {
         bg={useColorModeValue('#e5e7eb', 'gray.700')}
         h="6px"
         zIndex={10}
-        style={{ gridColumn: '2 / span 2', gridRow: 5 }}
+        style={{ gridColumn: '2 / 3', gridRow: 5 }}
         _hover={{ bg: useColorModeValue('#d1d5db', 'gray.600') }}
       />
     )}
     {/* Output Log */}
     {showOutputLog && (
-      <GridItem area="footer" bg={bgColor} borderTop="1px" borderColor={borderColor} position="relative">
+      <GridItem 
+        area="footer" 
+        bg={bgColor} 
+        borderTop="1px" 
+        borderColor={borderColor} 
+        position="relative"
+      >
         <OutputLog minimized={logMinimized} setMinimized={setLogMinimized} />
       </GridItem>
     )}
