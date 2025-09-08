@@ -6,6 +6,15 @@ import type { FileItem, TransferOptions } from '../types';
 import { joinPath, isAbsolutePath } from '../utils/path'
 import { fileSearchService } from '../services/fileSearch';
 
+// Simple debounce utility function
+function debounce<T extends (...args: any[]) => any>(func: T, wait: number): T {
+  let timeout: NodeJS.Timeout;
+  return ((...args: any[]) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  }) as T;
+}
+
 
 export const QuickNavigateOverlay: React.FC = () => {
   // All useContext hooks first
@@ -205,30 +214,15 @@ export const QuickNavigateOverlay: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Process input changes
-  useEffect(() => {
-    if (isSearchMode) {
-      // Search mode - handle search query
-      if (!searchQuery) {
-        setLocalSearchResults([]);
-        return;
-      }
-      
-      // Debounce search
-      const timeoutId = setTimeout(() => {
-        performSearch(searchQuery);
-      }, 300);
-      
-      return () => clearTimeout(timeoutId);
-    } else {
-      // Command mode - handle command input
-      if (!inputValue) {
+  // Debounced command processing to prevent API calls on every keystroke
+  const debouncedCommandProcessing = useCallback(
+    debounce((commandText: string, inputValue: string) => {
+      if (!commandText) {
         setCommandInfo(null);
-        setPreviewFiles([]); // Clear preview when input is empty
+        setPreviewFiles([]);
         return;
       }
       
-      const commandText = inputValue.trim().toLowerCase();
       handleCommandInfoUpdate(commandText);
       
       // Auto-preview for transfer commands (including mapping commands)
@@ -317,8 +311,37 @@ export const QuickNavigateOverlay: React.FC = () => {
       } else {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
+    }, 300), // 300ms debounce delay
+    [transferMappings, handleTransferMappingPreview, currentDirectory, setPreviewFiles]
+  );
+
+  // Process input changes with debouncing
+  useEffect(() => {
+    if (isSearchMode) {
+      // Search mode - handle search query
+      if (!searchQuery) {
+        setLocalSearchResults([]);
+        return;
+      }
+      
+      // Debounce search
+      const timeoutId = setTimeout(() => {
+        performSearch(searchQuery);
+      }, 300);
+      
+      return () => clearTimeout(timeoutId);
+    } else {
+      // Command mode - handle command input with debouncing
+      if (!inputValue) {
+        setCommandInfo(null);
+        setPreviewFiles([]); // Clear preview when input is empty
+        return;
+      }
+      
+      const commandText = inputValue.trim().toLowerCase();
+      debouncedCommandProcessing(commandText, inputValue);
     }
-  }, [inputValue, searchQuery, isSearchMode, transferMappings, handleTransferMappingPreview, currentDirectory, setPreviewFiles, performSearch]);
+  }, [inputValue, searchQuery, isSearchMode, debouncedCommandProcessing, performSearch]);
 
   // Sync search results to filtered results for display
   useEffect(() => {

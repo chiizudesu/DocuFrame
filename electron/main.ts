@@ -697,18 +697,7 @@ ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
           extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined
         };
 
-        // Add page count for PDF files
-        if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.pdf') {
-          try {
-            const pageCountResult = await getPdfPageCount(fullPath);
-            if (pageCountResult.success) {
-              fileItem.pages = pageCountResult.pageCount;
-            }
-          } catch (error) {
-            console.warn(`Failed to get page count for PDF: ${fullPath}`, error);
-            // Continue without page count
-          }
-        }
+        // PDF page count calculation removed for performance
 
         results.push(fileItem);
       } catch (error) {

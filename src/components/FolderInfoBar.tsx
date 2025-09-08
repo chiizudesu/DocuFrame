@@ -67,7 +67,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -244,6 +244,11 @@ export const FolderInfoBar: React.FC = () => {
         (window.electronAPI as any).getDirectoryContents(currentDirectory),
         new Promise(resolve => setTimeout(resolve, 600)) // Match animation duration
       ])
+      
+      // Reset states on refresh
+      setSelectedFiles([])
+      setSelectedFile(null)
+      setClipboard({ files: [], operation: null })
       
       setFolderItems(contents)
       setStatus('Folder refreshed', 'info')

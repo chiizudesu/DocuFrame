@@ -5,12 +5,6 @@ import {
   Text,
   Icon,
   Flex,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
   Input,
   Image,
   Divider,
@@ -27,7 +21,6 @@ import {
   FileSymlink,
   ChevronUp,
   ChevronDown,
-  ChevronRight,
   FilePlus2,
   Archive,
   Mail,
@@ -44,7 +37,7 @@ import type { FileItem } from '../types'
 import { CustomPropertiesDialog, FileProperties } from './CustomPropertiesDialog';
 
 // Sort types for list view
-type SortColumn = 'name' | 'size' | 'modified' | 'pages'
+type SortColumn = 'name' | 'size' | 'modified'
 type SortDirection = 'asc' | 'desc'
 
 // Utility to format paths for logging (Windows vs others)
@@ -404,11 +397,6 @@ export const FileGrid: React.FC = () => {
 
   // Handle column header click for sorting - OPTIMIZED with useCallback
   const handleSort = useCallback((column: SortColumn) => {
-    // Prevent sorting if a drag operation just occurred
-    if (hasDraggedColumn) {
-      return;
-    }
-    
     if (sortColumn === column) {
       // Toggle direction if same column is clicked
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
@@ -1945,11 +1933,10 @@ const renderListView = () => (
         top={0} 
         zIndex={100}
       >
-        {(draggingColumn ? previewColumnOrder : columnOrder).map((column) => {
+        {columnOrder.map((column) => {
           const isName = column === 'name';
           const isSize = column === 'size';
           const isModified = column === 'modified';
-          const isPages = column === 'pages';
           
           return (
             <Box
@@ -1965,6 +1952,11 @@ const renderListView = () => (
               _hover={{ bg: headerHoverBg }}
               role="group"
               onClick={(e) => {
+                // Prevent sorting if a drag operation just occurred
+                if (hasDraggedColumn) {
+                  return;
+                }
+                
                 // Check if click is in the resize area (right edge)
                 // This prevents sorting when clicking near the resize handle
                 const rect = e.currentTarget.getBoundingClientRect();
@@ -1997,7 +1989,7 @@ const renderListView = () => (
               borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
               transition="all 0.2s ease"
             >
-              {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isPages ? 'Pages' : ''}
+              {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : ''}
               {sortColumn === column && (
                 <Icon
                   as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
@@ -2056,16 +2048,6 @@ const renderListView = () => (
         bg={headerStickyBg}
       />
 
-      {/* Header right edge separator */}
-      <Box
-        position="absolute"
-        top={0}
-        right={0}
-        width="1px"
-        height="30px"
-        bg={headerDividerBg}
-        zIndex={99}
-      />
 
       {/* File rows - FIXED VERSION */}
       {sortedFiles.map((file, index) => {
@@ -2271,11 +2253,10 @@ const renderListView = () => (
 
         return (
           <React.Fragment key={index}>
-            {(draggingColumn ? previewColumnOrder : columnOrder).map((column) => {
+            {columnOrder.map((column) => {
               const isName = column === 'name';
               const isSize = column === 'size';
               const isModified = column === 'modified';
-              const isPages = column === 'pages';
               
               if (isName) {
                 return (
@@ -2380,24 +2361,6 @@ const renderListView = () => (
                     </Text>
                   </Box>
                 );
-              } else if (isPages) {
-                return (
-                  <Box 
-                    key={column}
-                    {...cellStyles}
-                    {...cellHandlers}
-                    {...folderDropHandlers}
-                    data-row-index={index}
-                  >
-                    <Text 
-                      fontSize="xs" 
-                      color={fileSubTextColor}
-                      style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
-                    >
-                      {(file as any).pages || '-'}
-                    </Text>
-                  </Box>
-                );
               }
               return null;
             })}
@@ -2429,7 +2392,7 @@ const renderListView = () => (
           pointerEvents="none"
           boxShadow="lg"
         >
-          {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : 'Modified'}
+          {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : draggingColumn === 'modified' ? 'Modified' : ''}
           <Box
             position="absolute"
             left={0}
@@ -2623,10 +2586,9 @@ const renderListView = () => (
   const [columnWidths, setColumnWidths] = useState({
     name: 400,
     size: 100,
-    modified: 180,
-    pages: 80
+    modified: 180
   });
-  const [columnOrder, setColumnOrder] = useState(['name', 'size', 'modified', 'pages']);
+  const [columnOrder, setColumnOrder] = useState(['name', 'size', 'modified']);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
@@ -2638,7 +2600,6 @@ const renderListView = () => (
   const [dragInitialPos, setDragInitialPos] = useState<{ x: number; y: number } | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragThresholdMet, setIsDragThresholdMet] = useState(false);
-  const [previewColumnOrder, setPreviewColumnOrder] = useState<string[]>([]);
   const [hasDraggedColumn, setHasDraggedColumn] = useState(false);
   const gridContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -2741,9 +2702,6 @@ const renderListView = () => (
     } else if (column === 'modified') {
       // For modified column, use fixed width for "Modified" header + padding
       optimalWidth = 140; // Fixed width for modified column
-    } else if (column === 'pages') {
-      // For pages column, use fixed width for "Pages" header + padding
-      optimalWidth = 100; // Fixed width for pages column
     }
     
     // Apply the optimal width
@@ -2757,7 +2715,7 @@ const renderListView = () => (
 
   // Auto-fit all columns at once - OPTIMIZED with useCallback
   const autoFitAllColumns = useCallback(() => {
-    ['name', 'size', 'modified', 'pages'].forEach(col => autoFitColumn(col));
+    ['name', 'size', 'modified'].forEach(col => autoFitColumn(col));
     addLog('Auto-fitted all columns');
   }, [autoFitColumn, addLog]);
 
@@ -2782,7 +2740,6 @@ const renderListView = () => (
     
     setDraggingColumn(column);
     setOriginalColumnOrder([...columnOrder]);
-    setPreviewColumnOrder([...columnOrder]);
     setDragStartX(e.clientX);
     setDragStartY(e.clientY);
     setDragOffset(clickOffset);
@@ -2818,41 +2775,20 @@ const renderListView = () => (
       y: dragInitialPos.y // Keep Y position fixed
     });
     
-    // Track the target column and update preview order in real-time
+    // Track the target column for position indicator only (no visual reordering)
     const target = e.target as HTMLElement;
     const headerCell = target.closest('[data-column]') as HTMLElement;
     
     if (headerCell) {
       const targetColumn = headerCell.getAttribute('data-column');
-      if (targetColumn) {
-        // Only update if the target column has actually changed
-        if (targetColumn !== dragTargetColumn) {
-          setDragTargetColumn(targetColumn);
-          
-          // Update preview order for visual feedback
-          const newPreviewOrder = [...originalColumnOrder];
-          const dragIndex = newPreviewOrder.indexOf(draggingColumn);
-          const targetIndex = newPreviewOrder.indexOf(targetColumn);
-          
-          // Only reorder if the positions are actually different
-          if (dragIndex !== targetIndex) {
-            // Remove dragged column and insert at target position
-            newPreviewOrder.splice(dragIndex, 1);
-            newPreviewOrder.splice(targetIndex, 0, draggingColumn);
-            
-            setPreviewColumnOrder(newPreviewOrder);
-          } else {
-            // If back to original position, reset to original order
-            setPreviewColumnOrder([...originalColumnOrder]);
-          }
-        }
+      if (targetColumn && targetColumn !== dragTargetColumn) {
+        setDragTargetColumn(targetColumn);
       }
     } else {
-      // Reset to original order when not over a valid target
-      setPreviewColumnOrder([...originalColumnOrder]);
+      // Clear target when not over a valid header
       setDragTargetColumn(null);
     }
-  }, [draggingColumn, dragInitialPos, dragStartX, dragStartY, isDragThresholdMet, originalColumnOrder]);
+  }, [draggingColumn, dragInitialPos, dragStartX, dragStartY, isDragThresholdMet, dragTargetColumn]);
 
   const handleColumnDragEnd = useCallback(() => {
     if (draggingColumn && dragTargetColumn && draggingColumn !== dragTargetColumn) {
@@ -2878,7 +2814,6 @@ const renderListView = () => (
     setDragMousePos(null);
     setDragInitialPos(null);
     setIsDragThresholdMet(false);
-    setPreviewColumnOrder([]);
     setDragStartX(0);
     setDragStartY(0);
     
