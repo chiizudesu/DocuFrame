@@ -26,6 +26,7 @@ import {
   Mail,
   Upload,
   Info,
+  Image as ImageIcon,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, isAbsolutePath } from '../utils/path'
@@ -35,6 +36,7 @@ import { DraggableFileItem } from './DraggableFileItem'
 import { useColorModeValue } from '@chakra-ui/react'
 import type { FileItem } from '../types'
 import { CustomPropertiesDialog, FileProperties } from './CustomPropertiesDialog';
+import { ImagePasteDialog } from './ImagePasteDialog';
 
 // Sort types for list view
 type SortColumn = 'name' | 'size' | 'modified'
@@ -1447,8 +1449,8 @@ export const FileGrid: React.FC = () => {
         // Copy files
         e.preventDefault();
         setClipboard({ files: sortedFiles.filter(f => selectedFiles.includes(f.name)), operation: 'copy' });
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clipboard.files.length > 0) {
-        // Paste files
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        // Paste files or images
         e.preventDefault();
         handlePaste();
     } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
@@ -1614,6 +1616,23 @@ export const FileGrid: React.FC = () => {
 
   // Enhanced paste handler with conflict resolution
   const handlePaste = useCallback(async () => {
+    // First, check if there's an image in the clipboard
+    try {
+      const clipboardItems = await navigator.clipboard.read();
+      
+      for (const item of clipboardItems) {
+        if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
+          // Found an image in clipboard, open the image paste dialog
+          setImagePasteOpen(true);
+          return;
+        }
+      }
+    } catch (err) {
+      // If clipboard read fails, continue with normal file paste logic
+      console.log('Clipboard image check failed, continuing with file paste');
+    }
+
+    // If no image found or clipboard read failed, proceed with normal file paste
     if (!clipboard.files.length || !clipboard.operation) return;
     const op = clipboard.operation;
     
@@ -2545,7 +2564,8 @@ const renderListView = () => (
     clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
     handlePaste: () => void;
     setBlankContextMenu: typeof setBlankContextMenu;
-  }> = ({ blankContextMenu, clipboard, handlePaste, setBlankContextMenu }) => {
+    onPasteImage: () => void;
+  }> = ({ blankContextMenu, clipboard, handlePaste, setBlankContextMenu, onPasteImage }) => {
     const boxBg = useColorModeValue('white', 'gray.800');
     const borderCol = useColorModeValue('gray.200', 'gray.700');
     const hoverBg = useColorModeValue('gray.100', 'gray.700');
@@ -2568,6 +2588,10 @@ const renderListView = () => (
             <FileSymlink size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Paste</Text>
           </Flex>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
+            <ImageIcon size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Paste Image</Text>
+          </Flex>
         </Box>
       </Box>
     );
@@ -2575,12 +2599,30 @@ const renderListView = () => (
 
   const [isPropertiesOpen, setPropertiesOpen] = useState(false);
   const [propertiesFile, setPropertiesFile] = useState<FileProperties | null>(null);
+  const [isImagePasteOpen, setImagePasteOpen] = useState(false);
 
   const handleUnblockFile = useCallback(async () => {
     if (!propertiesFile) return;
     await (window.electronAPI as any).unblockFile(propertiesFile.path);
     setPropertiesFile({ ...propertiesFile, isBlocked: false });
   }, [propertiesFile]);
+
+  const handleImageSaved = useCallback(async (filename: string) => {
+    // Refresh the directory to show the new image
+    await refreshDirectory(currentDirectory);
+    addLog(`Image saved: ${filename}`, 'response');
+    setStatus(`Image saved: ${filename}`, 'success');
+    
+    // Show toast notification on the main app
+    toast({
+      title: 'Image Saved',
+      description: `Successfully saved ${filename}`,
+      status: 'success',
+      duration: 3000,
+      isClosable: true,
+      position: 'top',
+    });
+  }, [refreshDirectory, currentDirectory, addLog, setStatus, toast]);
 
   // Column management state
   const [columnWidths, setColumnWidths] = useState({
@@ -2989,6 +3031,7 @@ const renderListView = () => (
         clipboard={clipboard}
         handlePaste={handlePaste}
         setBlankContextMenu={setBlankContextMenu}
+        onPasteImage={() => setImagePasteOpen(true)}
       />
       <MergePDFDialog 
         isOpen={isMergePDFOpen} 
@@ -3007,6 +3050,12 @@ const renderListView = () => (
         onClose={() => setPropertiesOpen(false)}
         file={propertiesFile}
         onUnblock={handleUnblockFile}
+      />
+      <ImagePasteDialog
+        isOpen={isImagePasteOpen}
+        onClose={() => setImagePasteOpen(false)}
+        currentDirectory={currentDirectory}
+        onImageSaved={handleImageSaved}
       />
 
       {/* JumpModeOverlay moved to main app level */}

@@ -81,6 +81,8 @@ interface ElectronAPI {
   openNewWindow: (path: string) => Promise<void>;
   // PDF file serving
   convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  // Image clipboard methods
+  saveImageFromClipboard: (currentDirectory: string, filename: string, base64Data: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -285,6 +287,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Additional missing methods
   convertFilePathToHttpUrl: async (filePath: string) => {
     return await ipcRenderer.invoke('convert-file-path-to-http-url', filePath);
+  },
+  // Image clipboard methods
+  saveImageFromClipboard: async (currentDirectory: string, filename: string, base64Data: string) => {
+    return await ipcRenderer.invoke('save-image-from-clipboard', currentDirectory, filename, base64Data);
   },
 
 }); 

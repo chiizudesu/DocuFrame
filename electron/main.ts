@@ -1738,6 +1738,36 @@ ipcMain.handle('delete-file', async (_, filePath: string) => {
   }
 });
 
+// Save image from clipboard
+ipcMain.handle('save-image-from-clipboard', async (_, currentDirectory: string, filename: string, base64Data: string) => {
+  try {
+    // Ensure the filename has .png extension
+    const finalFilename = filename.endsWith('.png') ? filename : filename + '.png';
+    const filePath = path.join(currentDirectory, finalFilename);
+    
+    // Check if file already exists
+    if (fs.existsSync(filePath)) {
+      return { 
+        success: false, 
+        error: `File "${finalFilename}" already exists. Please choose a different name.` 
+      };
+    }
+    
+    // Convert base64 to buffer and save
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, imageBuffer);
+    
+    console.log(`[Main] Saved image to: ${filePath}`);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('Error saving image from clipboard:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error occurred while saving image' 
+    };
+  }
+});
+
 // Update-related IPC handlers
 ipcMain.handle('check-for-updates', async () => {
   try {
