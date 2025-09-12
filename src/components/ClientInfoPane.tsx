@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload, Folder } from 'lucide-react';
+import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload, Folder, Star } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 // Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
 import type { FileItem } from '../types';
@@ -753,52 +753,155 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                 flex="1"
                 overflowY="auto"
                 className="enhanced-scrollbar"
-                maxH="240px" // Increased to fit one more folder row
+                maxH="380px" // Increased to fit all folders without scrollbar
                 minH="100px"
               >
                 {loadingQuickAccess ? (
                   <Flex justify="center" align="center" py={3}>
                     <Spinner size="sm" color={accentColor} />
                   </Flex>
-                ) : quickAccessFolders.length > 0 ? (
-                  quickAccessFolders.map((folder, index) => (
+                ) : (
+                  <>
+                    {/* Hard-coded shortcuts at the top */}
                     <Flex
-                      key={folder.path}
                       align="center"
-                      px={3}
-                      py={1}
-                      fontSize="sm" // Reduced font size by 1px
+                      px={4}
+                      py={1.5}
+                      fontSize="sm"
                       _hover={{
                         bg: transferSectionBg
                       }}
                       color={textColor}
                       cursor="pointer"
                       style={{ userSelect: 'none' }}
-                      onClick={() => setCurrentDirectory(folder.path)}
+                      onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents')}
                       borderRadius={0}
+                      position="relative"
                     >
+                      <Icon
+                        as={Star}
+                        boxSize={2.5}
+                        color="yellow.400"
+                        fill="yellow.400"
+                        position="absolute"
+                        left="8px"
+                        top="50%"
+                        transform="translateY(-50%)"
+                        flexShrink={0}
+                      />
                       <Icon
                         as={Folder}
                         boxSize={4}
                         mr={2}
+                        ml={2}
                         color="blue.400"
                         flexShrink={0}
                       />
                       <Text
                         noOfLines={1}
                         color="inherit"
-                        fontWeight="normal" // Not bold
+                        fontWeight="normal"
                       >
-                        {folder.name}
+                        Documents
                       </Text>
                     </Flex>
-                  ))
-                ) : (
-                  <Flex justify="center" align="center" py={3}>
-                    <Text fontSize="sm" color={secondaryTextColor}>
-                      No folders found
-                    </Text>
-                  </Flex>
+                    
+                    <Flex
+                      align="center"
+                      px={4}
+                      py={1.5}
+                      fontSize="sm"
+                      _hover={{
+                        bg: transferSectionBg
+                      }}
+                      color={textColor}
+                      cursor="pointer"
+                      style={{ userSelect: 'none' }}
+                      onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents\\Scripts')}
+                      borderRadius={0}
+                      position="relative"
+                    >
+                      <Icon
+                        as={Star}
+                        boxSize={2.5}
+                        color="yellow.400"
+                        fill="yellow.400"
+                        position="absolute"
+                        left="8px"
+                        top="50%"
+                        transform="translateY(-50%)"
+                        flexShrink={0}
+                      />
+                      <Icon
+                        as={Folder}
+                        boxSize={4}
+                        mr={2}
+                        ml={2}
+                        color="blue.400"
+                        flexShrink={0}
+                      />
+                      <Text
+                        noOfLines={1}
+                        color="inherit"
+                        fontWeight="normal"
+                      >
+                        Scripts
+                      </Text>
+                    </Flex>
+                    
+                    {/* Auto-populated folders from root */}
+                    {quickAccessFolders.length > 0 ? (
+                      quickAccessFolders.map((folder, index) => (
+                        <Flex
+                          key={folder.path}
+                          align="center"
+                          px={4}
+                          py={1.5}
+                          fontSize="sm" // Reduced font size by 1px
+                          _hover={{
+                            bg: transferSectionBg
+                          }}
+                          color={textColor}
+                          cursor="pointer"
+                          style={{ userSelect: 'none' }}
+                          onClick={() => setCurrentDirectory(folder.path)}
+                          borderRadius={0}
+                          position="relative"
+                        >
+                          {/* Invisible placeholder to align with starred items */}
+                          <Box
+                            boxSize={2.5}
+                            position="absolute"
+                            left="8px"
+                            top="50%"
+                            transform="translateY(-50%)"
+                            flexShrink={0}
+                          />
+                          <Icon
+                            as={Folder}
+                            boxSize={4}
+                            mr={2}
+                            ml={2}
+                            color="blue.400"
+                            flexShrink={0}
+                          />
+                          <Text
+                            noOfLines={1}
+                            color="inherit"
+                            fontWeight="normal" // Not bold
+                          >
+                            {folder.name}
+                          </Text>
+                        </Flex>
+                      ))
+                    ) : (
+                      <Flex justify="center" align="center" py={3}>
+                        <Text fontSize="sm" color={secondaryTextColor}>
+                          No folders found
+                        </Text>
+                      </Flex>
+                    )}
+                  </>
                 )}
               </Box>
             </Box>

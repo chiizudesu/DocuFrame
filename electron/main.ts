@@ -1114,6 +1114,30 @@ ipcMain.handle('get-file-icon', async (_, filePath: string) => {
   }
 });
 
+// Open file in Notepad
+ipcMain.handle('open-file-in-notepad', async (_, filePath: string) => {
+  try {
+    const { spawn } = require('child_process');
+    
+    // Use Windows notepad.exe to open the file
+    if (process.platform === 'win32') {
+      spawn('notepad.exe', [filePath], {
+        detached: true,
+        stdio: 'ignore'
+      });
+      return { success: true };
+    } else {
+      // For non-Windows platforms, try to use default text editor
+      const { shell } = require('electron');
+      await shell.openPath(filePath);
+      return { success: true };
+    }
+  } catch (error) {
+    console.error('Failed to open file in Notepad:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Handle file upload via drag and drop
 ipcMain.handle('upload-files', async (_, files: { path: string; name: string }[], targetDirectory: string) => {
   try {

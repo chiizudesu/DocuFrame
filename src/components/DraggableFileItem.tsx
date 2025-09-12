@@ -24,7 +24,7 @@ interface DraggableFileItemProps {
   variant?: 'decorated' | 'plain';
 }
 
-export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
+export const DraggableFileItem = React.forwardRef<HTMLElement, DraggableFileItemProps>(({
   file,
   isSelected,
   children,
@@ -43,7 +43,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   onNativeIconLoaded,
   'data-file-index': dataFileIndex,
   variant = 'decorated',
-}) => {
+}, ref) => {
   const { addLog, currentDirectory, setStatus, setFolderItems } = useAppContext();
   const [isDragging, setIsDragging] = useState(false);
   const [dragImage, setDragImage] = useState<string | null>(null);
@@ -401,7 +401,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
   if (as === 'tr') {
     return (
       <Tr
-        ref={trRef}
+        ref={ref as React.Ref<HTMLTableRowElement>}
         {...commonProps}
         bg={getContainerBackground()}
         _hover={getHoverStyles()}
@@ -415,7 +415,7 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
 
   return (
     <Box
-      ref={boxRef}
+      ref={ref as React.Ref<HTMLDivElement>}
       {...commonProps}
       bg={getContainerBackground()}
       borderRadius={variant === 'decorated' ? 'md' : '0'}
@@ -439,4 +439,4 @@ export const DraggableFileItem: React.FC<DraggableFileItemProps> = ({
       {children}
     </Box>
   );
-};
+});

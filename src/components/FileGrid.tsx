@@ -29,7 +29,7 @@ import {
   Image as ImageIcon,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
-import { joinPath, isAbsolutePath } from '../utils/path'
+import { joinPath, isAbsolutePath, normalizePath } from '../utils/path'
 import { MergePDFDialog } from './MergePDFDialog'
 import { ExtractedTextDialog } from './ExtractedTextDialog'
 import { DraggableFileItem } from './DraggableFileItem'
@@ -352,7 +352,7 @@ export const FileGrid: React.FC = () => {
   // Debounced directory loading to prevent rapid reloads
   const debouncedLoadDirectory = useCallback(
     async (dirPath: string) => {
-      if (!dirPath) return
+      if (!dirPath || dirPath.trim() === '') return
       
       // Prevent concurrent loads
       if (isLoadingRef.current) return
@@ -361,29 +361,42 @@ export const FileGrid: React.FC = () => {
       
       const navStart = performance.now();
       try {
-        const fullPath = dirPath
-        const isValid = await (window.electronAPI as any).validatePath(fullPath)
-        if (!isValid) {
-          addLog(`Invalid path: ${fullPath}`, 'error')
+        // Normalize the path before validation
+        const normalizedPath = normalizePath(dirPath);
+        if (!normalizedPath) {
+          addLog(`Invalid path: ${dirPath}`, 'error')
+          setStatus('Invalid directory path', 'error')
           return
         }
-        const contents = await (window.electronAPI as any).getDirectoryContents(fullPath)
+        
+        // Validate path exists and is accessible
+        const isValid = await (window.electronAPI as any).validatePath(normalizedPath)
+        if (!isValid) {
+          addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error')
+          setStatus(`Cannot access: ${formatPathForLog(normalizedPath)}`, 'error')
+          return
+        }
+        
+        const contents = await (window.electronAPI as any).getDirectoryContents(normalizedPath)
         // Normalize shape and apply filters
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : [])
         const filtered = filterFiles(files)
         setFolderItems(filtered)
         const navEnd = performance.now();
         addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
-        addLog(`Loaded directory: ${formatPathForLog(dirPath)}`)
+        addLog(`Loaded directory: ${formatPathForLog(normalizedPath)}`)
+        setStatus(`Loaded ${filtered.length} items`, 'info')
       } catch (error) {
         console.error('Failed to load directory:', error)
-        addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        addLog(`Failed to load directory: ${errorMessage}`, 'error')
+        setStatus(`Failed to load directory: ${errorMessage}`, 'error')
       } finally {
         setIsLoading(false)
         isLoadingRef.current = false
       }
     },
-    [addLog, setFolderItems, filterFiles]
+    [addLog, setFolderItems, filterFiles, setStatus]
   );
 
   // Load directory contents when current directory changes with debouncing
@@ -762,6 +775,21 @@ export const FileGrid: React.FC = () => {
             }
           }
           break
+        case 'edit_in_notepad':
+          if (contextMenu.fileItem.name.toLowerCase().endsWith('.ahk')) {
+            setStatus(`Opening ${contextMenu.fileItem.name} in Notepad`, 'info')
+            addLog(`Opening AHK file in Notepad: ${contextMenu.fileItem.name}`)
+            try {
+              await (window.electronAPI as any).openFileInNotepad(contextMenu.fileItem.path);
+              addLog(`Successfully opened ${contextMenu.fileItem.name} in Notepad`, 'response')
+              setStatus('File opened in Notepad', 'success')
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+              addLog(`Failed to open file in Notepad: ${errorMessage}`, 'error')
+              setStatus('Failed to open file in Notepad', 'error')
+            }
+          }
+          break
         case 'properties': {
           // Gather file info
           const file = contextMenu.fileItem;
@@ -914,7 +942,7 @@ export const FileGrid: React.FC = () => {
   }, [contextMenu.isOpen, currentDirectory])
 
   const loadDirectory = useCallback(async (dirPath: string) => {
-    if (!dirPath) return;
+    if (!dirPath || dirPath.trim() === '') return;
     
     // Prevent concurrent loads
     if (isLoadingRef.current) return
@@ -922,46 +950,81 @@ export const FileGrid: React.FC = () => {
     setIsLoading(true);
     
     try {
-      const contents = await (window.electronAPI as any).getDirectoryContents(dirPath);
+      // Normalize the path before loading
+      const normalizedPath = normalizePath(dirPath);
+      if (!normalizedPath) {
+        addLog(`Invalid path: ${dirPath}`, 'error');
+        setStatus('Invalid directory path', 'error');
+        return;
+      }
+      
+      // Validate path exists and is accessible
+      const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+      if (!isValid) {
+        addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error');
+        setStatus(`Cannot access: ${formatPathForLog(normalizedPath)}`, 'error');
+        return;
+      }
+      
+      const contents = await (window.electronAPI as any).getDirectoryContents(normalizedPath);
       // Accept both array and { files: [] } shapes
       const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
       if (files) {
         const filtered = filterFiles(files)
         setFolderItems(filtered as any);
-        addLog(`Loaded directory: ${formatPathForLog(dirPath)}`);
+        addLog(`Loaded directory: ${formatPathForLog(normalizedPath)}`);
+        setStatus(`Loaded ${filtered.length} items`, 'info');
       } else {
         addLog(`Warning: Directory refresh returned invalid data`, 'info');
+        setStatus('Invalid directory data received', 'error');
       }
     } catch (error) {
       console.error('Failed to load directory:', error);
-      addLog(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Failed to load directory: ${errorMessage}`, 'error');
+      setStatus(`Failed to load directory: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
       isLoadingRef.current = false;
     }
-  }, [setFolderItems, addLog, filterFiles]);
+  }, [setFolderItems, addLog, filterFiles, setStatus]);
 
   // Separate refresh function that doesn't show loading state (for background refreshes)
   const refreshDirectory = useCallback(async (dirPath: string) => {
-    if (!dirPath) return;
+    if (!dirPath || dirPath.trim() === '') return;
     
     // Prevent concurrent refreshes but don't show loading
     if (isLoadingRef.current) return
     
     try {
-      const contents = await (window.electronAPI as any).getDirectoryContents(dirPath);
+      // Normalize the path before refreshing
+      const normalizedPath = normalizePath(dirPath);
+      if (!normalizedPath) {
+        addLog(`Invalid path: ${dirPath}`, 'error');
+        return;
+      }
+      
+      // Validate path exists and is accessible
+      const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+      if (!isValid) {
+        addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error');
+        return;
+      }
+      
+      const contents = await (window.electronAPI as any).getDirectoryContents(normalizedPath);
       // Accept both array and { files: [] } shapes
       const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
       if (files) {
         const filtered = filterFiles(files)
         setFolderItems(filtered as any);
-        addLog(`Refreshed directory: ${formatPathForLog(dirPath)}`);
+        addLog(`Refreshed directory: ${formatPathForLog(normalizedPath)}`);
       } else {
         addLog(`Warning: Directory refresh returned invalid data`, 'info');
       }
     } catch (error) {
       console.error('Failed to refresh directory:', error);
-      addLog(`Failed to refresh directory: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Failed to refresh directory: ${errorMessage}`, 'error');
     }
   }, [setFolderItems, addLog, filterFiles]);
 
@@ -1801,6 +1864,19 @@ export const FileGrid: React.FC = () => {
                 onFileDragStart={handleFileItemDragStart}
                 onNativeIconLoaded={handleNativeIconLoaded}
                 data-file-index={index}
+                ref={(el: HTMLElement | null) => {
+                  if (file.type === 'file') {
+                    if (el) {
+                      observeFileElement(el, file.path);
+                    } else {
+                      // Element is unmounting, unobserve it
+                      const existingEl = document.querySelector(`[data-file-path="${file.path}"]`) as HTMLElement;
+                      if (existingEl) {
+                        unobserveFileElement(existingEl);
+                      }
+                    }
+                  }
+                }}
             >
               <Flex
             p={4}
@@ -2286,6 +2362,19 @@ const renderListView = () => (
                     {...folderDropHandlers}
                     data-row-index={index}
                     data-file-index={index}
+                    ref={(el: HTMLElement | null) => {
+                      if (file.type === 'file') {
+                        if (el) {
+                          observeFileElement(el, file.path);
+                        } else {
+                          // Element is unmounting, unobserve it
+                          const existingEl = document.querySelector(`[data-file-path="${file.path}"]`) as HTMLElement;
+                          if (existingEl) {
+                            unobserveFileElement(existingEl);
+                          }
+                        }
+                      }
+                    }}
                   >
                     {/* Icon */}
                     {file.type === 'file' && nativeIcons.has(file.path) ? (
@@ -2498,13 +2587,19 @@ const renderListView = () => (
           )}
 
           {/* File-Specific Actions */}
-          {(contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') || showMergePDFs || showExtractZips || showExtractEmls) && (
+          {(contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') || contextMenu.fileItem.name.toLowerCase().endsWith('.ahk') || showMergePDFs || showExtractZips || showExtractEmls) && (
             <>
               <Divider />
               {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
                 <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')}>
                   <FileText size={16} style={{ marginRight: '8px' }} />
                   <Text fontSize="sm">Extract Text</Text>
+                </Flex>
+              )}
+              {contextMenu.fileItem.name.toLowerCase().endsWith('.ahk') && (
+                <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('edit_in_notepad')}>
+                  <Edit2 size={16} style={{ marginRight: '8px' }} />
+                  <Text fontSize="sm">Edit in Notepad</Text>
                 </Flex>
               )}
               {showMergePDFs && (
@@ -2895,70 +2990,114 @@ const renderListView = () => (
     }
   }, [resizingColumn, handleResizeMove, handleResizeEnd]);
 
-  // Load native icons for files - optimized with batching and error handling
+  // Lazy icon loading with Intersection Observer
   const iconLoadingRef = useRef(false);
-  const lastSortedFilesRef = useRef<string>('');
+  const loadingQueue = useRef<Set<string>>(new Set());
+  const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   
+  // Create intersection observer for lazy loading icons
   useEffect(() => {
-    const loadNativeIcons = async () => {
-      if (!window.electronAPI?.getFileIcon || iconLoadingRef.current) return;
-      
-      // Create a hash of sorted files to detect actual changes
-      const filesHash = sortedFiles.map(f => `${f.path}:${f.name}`).join('|');
-      if (filesHash === lastSortedFilesRef.current) return;
-      
+    if (!window.electronAPI?.getFileIcon) return;
+    
+    // Create intersection observer with appropriate options
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const filePath = entry.target.getAttribute('data-file-path');
+            if (filePath && !nativeIcons.has(filePath) && !loadingQueue.current.has(filePath)) {
+              loadIconForFile(filePath);
+            }
+          }
+        });
+      },
+      {
+        root: dropAreaRef.current,
+        rootMargin: '100px', // Start loading icons 100px before they come into view
+        threshold: 0.1
+      }
+    );
+    
+    intersectionObserverRef.current = observer;
+    
+    return () => {
+      if (intersectionObserverRef.current) {
+        intersectionObserverRef.current.disconnect();
+        intersectionObserverRef.current = null;
+      }
+      // Clear loading queue on unmount
+      loadingQueue.current.clear();
+    };
+  }, []);
+  
+  // Function to load icon for a specific file
+  const loadIconForFile = useCallback(async (filePath: string) => {
+    if (loadingQueue.current.has(filePath) || nativeIcons.has(filePath)) return;
+    
+    loadingQueue.current.add(filePath);
+    
+    try {
+      const iconData = await window.electronAPI.getFileIcon(filePath);
+      if (iconData) {
+        setNativeIcons(prev => {
+          // Double-check we don't already have this icon (avoid race conditions)
+          if (prev.has(filePath)) return prev;
+          const newMap = new Map(prev);
+          newMap.set(filePath, iconData);
+          return newMap;
+        });
+      }
+    } catch (error) {
+      console.warn(`Failed to get icon for ${filePath}:`, error);
+      // Don't retry failed icons immediately - they'll be retried on next view
+    } finally {
+      loadingQueue.current.delete(filePath);
+    }
+  }, [nativeIcons]);
+  
+  // Observe file elements when they mount/unmount
+  const observeFileElement = useCallback((element: HTMLElement | null, filePath: string) => {
+    if (!intersectionObserverRef.current) return;
+    
+    if (element) {
+      element.setAttribute('data-file-path', filePath);
+      intersectionObserverRef.current.observe(element);
+    }
+  }, []);
+  
+  const unobserveFileElement = useCallback((element: HTMLElement | null) => {
+    if (!intersectionObserverRef.current || !element) return;
+    intersectionObserverRef.current.unobserve(element);
+  }, []);
+  
+  // Load icons for initially visible files (first batch)
+  useEffect(() => {
+    if (!window.electronAPI?.getFileIcon || iconLoadingRef.current) return;
+    
+    const loadInitialIcons = async () => {
       iconLoadingRef.current = true;
-      lastSortedFilesRef.current = filesHash;
       
       try {
-        // Only load icons for visible files to improve performance
-        const filesToProcess = sortedFiles
+        // Load icons for the first visible files (approximately first screen)
+        const initialFiles = sortedFiles
           .filter(file => file.type === 'file' && !nativeIcons.has(file.path))
-          .slice(0, 30); // Reduced from 50 to 30 for better performance
+          .slice(0, 20); // Load first 20 files immediately
         
-        if (filesToProcess.length === 0) return;
+        if (initialFiles.length === 0) return;
         
-        // Process icons in smaller batches for better performance
-        const batchSize = 5; // Reduced from 10 to 5
-        for (let i = 0; i < filesToProcess.length; i += batchSize) {
-          const batch = filesToProcess.slice(i, i + batchSize);
+        // Process in smaller batches to avoid blocking
+        const batchSize = 5;
+        for (let i = 0; i < initialFiles.length; i += batchSize) {
+          const batch = initialFiles.slice(i, i + batchSize);
           
-          try {
-            const iconPromises = batch.map(async (file) => {
-              try {
-                const iconData = await window.electronAPI.getFileIcon(file.path);
-                return { path: file.path, iconData };
-              } catch (error) {
-                console.warn(`Failed to get icon for ${file.name}:`, error);
-                return null;
-              }
-            });
-            
-            const results = await Promise.allSettled(iconPromises);
-            const validResults = results
-              .filter((result): result is PromiseFulfilledResult<{ path: string; iconData: string } | null> => 
-                result.status === 'fulfilled' && result.value !== null
-              )
-              .map(result => result.value)
-              .filter((item): item is { path: string; iconData: string } => item !== null);
-            
-            // Batch update the state to reduce re-renders
-            if (validResults.length > 0) {
-              setNativeIcons(prev => {
-                const newMap = new Map(prev);
-                validResults.forEach(({ path, iconData }) => {
-                  newMap.set(path, iconData);
-                });
-                return newMap;
-              });
-            }
-            
-            // Small delay between batches to prevent blocking
-            if (i + batchSize < filesToProcess.length) {
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
-          } catch (error) {
-            console.error('Batch icon loading failed:', error);
+          // Process batch in parallel
+          await Promise.allSettled(
+            batch.map(file => loadIconForFile(file.path))
+          );
+          
+          // Small delay between batches
+          if (i + batchSize < initialFiles.length) {
+            await new Promise(resolve => setTimeout(resolve, 50));
           }
         }
       } finally {
@@ -2966,8 +3105,10 @@ const renderListView = () => (
       }
     };
     
-    loadNativeIcons();
-  }, [sortedFiles]); // Removed nativeIcons dependency to prevent infinite loops
+    // Debounce to avoid excessive calls
+    const timeoutId = setTimeout(loadInitialIcons, 100);
+    return () => clearTimeout(timeoutId);
+  }, [sortedFiles, loadIconForFile]);
 
   // Reapply filters when the file filtering settings change
   useEffect(() => {
@@ -2975,6 +3116,14 @@ const renderListView = () => (
       refreshDirectory(currentDirectory);
     }
   }, [hideTemporaryFiles, hideDotFiles, currentDirectory, refreshDirectory]);
+
+  // Clear icons when directory changes to prevent showing stale icons
+  useEffect(() => {
+    // Clear native icons when changing directories
+    setNativeIcons(new Map());
+    // Clear any pending loads
+    loadingQueue.current.clear();
+  }, [currentDirectory]);
 
   // Memoized expensive computations to prevent recalculation on every render
   const memoizedFileStates = useMemo(() => {

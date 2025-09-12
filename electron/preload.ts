@@ -40,6 +40,7 @@ interface ElectronAPI {
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   deleteFile: (filePath: string) => Promise<{ success: boolean }>;
   getFileIcon: (filePath: string) => Promise<string | null>;
+  openFileInNotepad: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   showProperties: (filePath: string) => Promise<{ success: boolean }>;
   // File properties methods
   getFileStats: (filePath: string) => Promise<{ size: number; mtime: Date; ctime: Date; atime: Date; isFile: boolean; isDirectory: boolean }>;
@@ -187,6 +188,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   getFileIcon: async (filePath: string) => {
     return await ipcRenderer.invoke('get-file-icon', filePath);
+  },
+  openFileInNotepad: async (filePath: string) => {
+    return await ipcRenderer.invoke('open-file-in-notepad', filePath);
   },
   showProperties: async (filePath: string) => {
     return await ipcRenderer.invoke('show-properties', filePath);

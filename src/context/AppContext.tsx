@@ -200,6 +200,21 @@ export const AppProvider: React.FC<{
     setRootDirectoryState(path);
     setCurrentDirectory(path);
   };
+  
+  // Enhanced setCurrentDirectory with path normalization
+  const setCurrentDirectoryWithValidation = useCallback((path: string) => {
+    if (!path || path.trim() === '') {
+      console.warn('Attempted to set empty current directory');
+      return;
+    }
+    
+    // Basic client-side validation - the actual validation happens in components
+    try {
+      setCurrentDirectory(path);
+    } catch (error) {
+      console.error('Error setting current directory:', error);
+    }
+  }, []);
 
   // Wrapper for settings open/close with status updates
   const setIsSettingsOpenWithStatus = (isOpen: boolean) => {
@@ -265,7 +280,7 @@ export const AppProvider: React.FC<{
   return (
     <AppContext.Provider value={{
       currentDirectory,
-      setCurrentDirectory,
+      setCurrentDirectory: setCurrentDirectoryWithValidation,
       outputLogs,
       addLog,
       clearLogs,

@@ -49,7 +49,7 @@ import {
   PanelRightClose,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
-import { joinPath, getParentPath, isAbsolutePath } from '../utils/path'
+import { joinPath, getParentPath, isAbsolutePath, normalizePath, isChildPath } from '../utils/path'
 
 declare global {
   interface Window {
@@ -180,20 +180,64 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
-  const handleBlur = () => {
+  const handleBlur = async () => {
     setIsEditing(false)
     if (editValue !== currentDirectory) {
-      setCurrentDirectory(editValue)
-      addLog(`Changed directory to: ${editValue}`)
+      const normalizedPath = normalizePath(editValue);
+      if (normalizedPath) {
+        try {
+          // Validate path before setting it
+          const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+          if (isValid) {
+            setCurrentDirectory(normalizedPath)
+            addLog(`Changed directory to: ${normalizedPath}`)
+            setStatus(`Navigated to ${normalizedPath}`, 'info')
+          } else {
+            addLog(`Invalid path: ${editValue}`, 'error')
+            setStatus(`Invalid path: ${editValue}`, 'error')
+            setEditValue(currentDirectory) // Reset to current directory
+          }
+        } catch (error) {
+          addLog(`Failed to access path: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+          setStatus(`Cannot access path: ${editValue}`, 'error')
+          setEditValue(currentDirectory) // Reset to current directory
+        }
+      } else {
+        addLog(`Invalid path format: ${editValue}`, 'error')
+        setStatus(`Invalid path format`, 'error')
+        setEditValue(currentDirectory) // Reset to current directory
+      }
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = async (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       setIsEditing(false)
       if (editValue !== currentDirectory) {
-        setCurrentDirectory(editValue)
-        addLog(`Changed directory to: ${editValue}`)
+        const normalizedPath = normalizePath(editValue);
+        if (normalizedPath) {
+          try {
+            // Validate path before setting it
+            const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+            if (isValid) {
+              setCurrentDirectory(normalizedPath)
+              addLog(`Changed directory to: ${normalizedPath}`)
+              setStatus(`Navigated to ${normalizedPath}`, 'info')
+            } else {
+              addLog(`Invalid path: ${editValue}`, 'error')
+              setStatus(`Invalid path: ${editValue}`, 'error')
+              setEditValue(currentDirectory) // Reset to current directory
+            }
+          } catch (error) {
+            addLog(`Failed to access path: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+            setStatus(`Cannot access path: ${editValue}`, 'error')
+            setEditValue(currentDirectory) // Reset to current directory
+          }
+        } else {
+          addLog(`Invalid path format: ${editValue}`, 'error')
+          setStatus(`Invalid path format`, 'error')
+          setEditValue(currentDirectory) // Reset to current directory
+        }
       }
     } else if (e.key === 'Escape') {
       setIsEditing(false)
@@ -288,51 +332,139 @@ export const FolderInfoBar: React.FC = () => {
     setStatus(`Preview pane ${newState ? 'opened' : 'closed'}`, 'info')
   }
 
-  const handleBackClick = () => {
+  const handleBackClick = async () => {
     if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1)
-      setCurrentDirectory(history[historyIndex - 1])
-      addLog(`Navigated back to: ${history[historyIndex - 1]}`)
+      const targetPath = history[historyIndex - 1];
+      const normalizedPath = normalizePath(targetPath);
+      
+      try {
+        const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+        if (isValid) {
+          setHistoryIndex(historyIndex - 1)
+          setCurrentDirectory(normalizedPath)
+          addLog(`Navigated back to: ${normalizedPath}`)
+          setStatus(`Navigated back`, 'info')
+        } else {
+          addLog(`Cannot access history path: ${targetPath}`, 'error')
+          setStatus(`Cannot access previous location`, 'error')
+        }
+      } catch (error) {
+        addLog(`Failed to navigate back: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+        setStatus(`Navigation failed`, 'error')
+      }
     } else {
       const parent = getParentPath(currentDirectory)
       if (parent && parent !== currentDirectory) {
-        setCurrentDirectory(parent)
-        addLog(`Navigated back to: ${parent}`)
+        const normalizedParent = normalizePath(parent);
+        try {
+          const isValid = await (window.electronAPI as any).validatePath(normalizedParent);
+          if (isValid) {
+            setCurrentDirectory(normalizedParent)
+            addLog(`Navigated back to: ${normalizedParent}`)
+            setStatus(`Navigated to parent directory`, 'info')
+          } else {
+            addLog(`Cannot access parent directory: ${parent}`, 'error')
+            setStatus(`Cannot access parent directory`, 'error')
+          }
+        } catch (error) {
+          addLog(`Failed to navigate to parent: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+          setStatus(`Navigation failed`, 'error')
+        }
+      } else {
+        setStatus(`Already at root level`, 'info')
       }
     }
   }
 
-  const handleForwardClick = () => {
+  const handleForwardClick = async () => {
     if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1)
-      setCurrentDirectory(history[historyIndex + 1])
-      addLog(`Navigated forward to: ${history[historyIndex + 1]}`)
+      const targetPath = history[historyIndex + 1];
+      const normalizedPath = normalizePath(targetPath);
+      
+      try {
+        const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+        if (isValid) {
+          setHistoryIndex(historyIndex + 1)
+          setCurrentDirectory(normalizedPath)
+          addLog(`Navigated forward to: ${normalizedPath}`)
+          setStatus(`Navigated forward`, 'info')
+        } else {
+          addLog(`Cannot access history path: ${targetPath}`, 'error')
+          setStatus(`Cannot access next location`, 'error')
+        }
+      } catch (error) {
+        addLog(`Failed to navigate forward: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+        setStatus(`Navigation failed`, 'error')
+      }
     } else {
       addLog('No forward history')
+      setStatus('No forward history', 'info')
     }
   }
 
   // Breadcrumbs logic
-  // Show Home icon as root, then each folder as a clickable segment
+  // Show appropriate breadcrumbs based on whether current path is within root or outside
   const getBreadcrumbs = () => {
-    // If at root, show only the root
-    const normRoot = rootDirectory.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '')
-    const normCurrent = currentDirectory.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '')
-    if (normCurrent === normRoot) {
-      return [{ label: rootDirectory.split(/[\\/]/).filter(Boolean).pop() || 'Root', path: rootDirectory }]
+    const normalizedRoot = normalizePath(rootDirectory);
+    const normalizedCurrent = normalizePath(currentDirectory);
+    
+    // If current directory is empty or invalid, show root
+    if (!normalizedCurrent) {
+      return [{ label: normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root', path: normalizedRoot }];
     }
-    // Compute relative path from root
-    let rel = normCurrent.replace(normRoot, '')
-    rel = rel.replace(/^[/\\]+/, '') // Remove leading slashes
-    const segments = rel.split(/[\\/]/).filter(Boolean)
-    const breadcrumbs = []
-    let path = rootDirectory
-    breadcrumbs.push({ label: rootDirectory.split(/[\\/]/).filter(Boolean).pop() || 'Root', path })
-    for (const seg of segments) {
-      path = joinPath(path, seg)
-      breadcrumbs.push({ label: seg, path })
+    
+    // If at root directory, show only the root
+    if (normalizedCurrent === normalizedRoot) {
+      return [{ label: normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root', path: normalizedRoot }];
     }
-    return breadcrumbs
+    
+    // Check if current directory is within the root directory
+    if (isChildPath(normalizedRoot, normalizedCurrent)) {
+      // Current is within root - show root + relative path
+      const relativePath = normalizedCurrent.substring(normalizedRoot.length);
+      const segments = relativePath.split(/[\\/]/).filter(Boolean);
+      const breadcrumbs = [];
+      
+      let path = normalizedRoot;
+      breadcrumbs.push({ label: normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root', path });
+      
+      for (const seg of segments) {
+        path = joinPath(path, seg);
+        breadcrumbs.push({ label: seg, path });
+      }
+      
+      return breadcrumbs;
+    } else {
+      // Current is outside root - show full absolute path
+      const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
+      const parts = normalizedCurrent.split(/[\\/]/).filter(Boolean);
+      const breadcrumbs = [];
+      
+      if (isWindows && parts.length > 0 && /^[a-zA-Z]:$/.test(parts[0])) {
+        // Windows: Start with drive root
+        let path = parts[0] + '\\';
+        breadcrumbs.push({ label: parts[0], path });
+        
+        for (let i = 1; i < parts.length; i++) {
+          path = joinPath(path, parts[i]);
+          breadcrumbs.push({ label: parts[i], path });
+        }
+      } else if (!isWindows) {
+        // Unix: Start with root /
+        breadcrumbs.push({ label: 'Root', path: '/' });
+        
+        let path = '/';
+        for (const part of parts) {
+          path = joinPath(path, part);
+          breadcrumbs.push({ label: part, path });
+        }
+      } else {
+        // Fallback: treat as single segment
+        breadcrumbs.push({ label: normalizedCurrent, path: normalizedCurrent });
+      }
+      
+      return breadcrumbs;
+    }
   }
 
   const breadcrumbs = getBreadcrumbs()
@@ -573,12 +705,24 @@ export const FolderInfoBar: React.FC = () => {
                     cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
                     bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
                     borderRadius="md"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation(); // Prevent triggering the parent's onClick
                       if (idx !== breadcrumbs.length - 1) {
-                        setCurrentDirectory(crumb.path)
-                        addLog(`Changed directory to: ${crumb.path}`)
-                        setStatus(`Navigated to ${crumb.label}`, 'info')
+                        const normalizedPath = normalizePath(crumb.path);
+                        try {
+                          const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+                          if (isValid) {
+                            setCurrentDirectory(normalizedPath)
+                            addLog(`Changed directory to: ${normalizedPath}`)
+                            setStatus(`Navigated to ${crumb.label}`, 'info')
+                          } else {
+                            addLog(`Cannot access path: ${crumb.path}`, 'error')
+                            setStatus(`Cannot access ${crumb.label}`, 'error')
+                          }
+                        } catch (error) {
+                          addLog(`Failed to navigate to ${crumb.path}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+                          setStatus(`Navigation failed`, 'error')
+                        }
                       }
                     }}
                   >
