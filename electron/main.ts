@@ -567,15 +567,19 @@ function activateApp() {
       mainWindow.show();
     }
     
-    // Focus the window
-    mainWindow.focus();
-    
-    // Bring to front on Windows/Linux
-    if (process.platform !== 'darwin') {
-      mainWindow.setAlwaysOnTop(true);
-      setTimeout(() => {
-        mainWindow.setAlwaysOnTop(false);
-      }, 100);
+    // Use a more tiling-manager-friendly approach
+    if (process.platform === 'win32') {
+      // On Windows, use a gentler approach that works better with tiling managers
+      // First try to focus normally
+      mainWindow.focus();
+      
+      // If that doesn't work (window might be behind others), use moveTop
+      if (!mainWindow.isFocused()) {
+        mainWindow.moveTop();
+      }
+    } else {
+      // On other platforms, just focus
+      mainWindow.focus();
     }
     
     console.log('[Main] App activated via global shortcut');
