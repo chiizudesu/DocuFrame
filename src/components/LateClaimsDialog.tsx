@@ -208,8 +208,12 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
     
     const textLower = text.toLowerCase();
     
-    // Find the position of late claims
-    const lateClaimsPos = textLower.search(/late\s+claims/i);
+    // Find the position of late claims WITH a numeric value (not just "late claims included")
+    // This ensures we're looking at the actual late claims entry with the amount
+    const lateClaimsWithAmountMatch = textLower.match(/late\s+claims[:\s]*[\$]?\s*([\d,]+\.?\d*)/i);
+    if (!lateClaimsWithAmountMatch) return 'none';
+    
+    const lateClaimsPos = textLower.indexOf(lateClaimsWithAmountMatch[0]);
     if (lateClaimsPos === -1) return 'none';
     
     // Strategy: Use section headers as the most reliable markers
