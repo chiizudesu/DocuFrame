@@ -23,6 +23,7 @@ export interface AppSettings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   aiEditorInstructions?: string;
+  quickAccessPaths?: string[];
 
 }
 

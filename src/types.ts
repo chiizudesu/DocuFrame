@@ -18,6 +18,8 @@ export interface AppSettings {
   rootPath?: string;
   apiKey?: string;
   transferCommandMappings?: Record<string, string>;
+  clientbasePath?: string;
+  quickAccessPaths?: string[];
 }
 
 export interface TransferOptions {

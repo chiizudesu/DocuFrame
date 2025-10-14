@@ -27,6 +27,7 @@ import {
   Upload,
   Info,
   Image as ImageIcon,
+  Star,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, isAbsolutePath, normalizePath } from '../utils/path'
@@ -80,7 +81,10 @@ export const FileGrid: React.FC = () => {
     isJumpModeActive,
     setIsJumpModeActive,
     hideTemporaryFiles, // NEW
-    hideDotFiles // NEW
+    hideDotFiles, // NEW
+    addQuickAccessPath,
+    removeQuickAccessPath,
+    quickAccessPaths,
   } = useAppContext()
 
   // Icon functions removed - using native Windows icons instead
@@ -619,6 +623,18 @@ export const FileGrid: React.FC = () => {
           setRenameValue(contextMenu.fileItem.name)
           setStatus(`Renaming: ${contextMenu.fileItem.name}`, 'info')
           break
+        case 'pin_quick_access':
+          if (contextMenu.fileItem.type === 'folder') {
+            await addQuickAccessPath(contextMenu.fileItem.path);
+          }
+          handleCloseContextMenu();
+          break
+        case 'unpin_quick_access':
+          if (contextMenu.fileItem.type === 'folder') {
+            await removeQuickAccessPath(contextMenu.fileItem.path);
+          }
+          handleCloseContextMenu();
+          break
         case 'delete':
           if (selectedFiles.length > 1 && selectedFiles.includes(contextMenu.fileItem.name)) {
             setStatus(`Deleting ${selectedFiles.length} files...`, 'info')
@@ -815,7 +831,7 @@ export const FileGrid: React.FC = () => {
     }
 
     handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu])
+  }, [contextMenu.fileItem, selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath])
 
   const handleRenameSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
@@ -2579,6 +2595,19 @@ const renderListView = () => (
             <Edit2 size={16} style={{ marginRight: '8px' }} />
             <Text fontSize="sm">Rename</Text>
           </Flex>
+          {contextMenu.fileItem.type === 'folder' && (
+            quickAccessPaths.includes(contextMenu.fileItem.path) ? (
+              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('unpin_quick_access')}>
+                <Star size={16} style={{ marginRight: '8px' }} />
+                <Text fontSize="sm">Unpin from Quick Access</Text>
+              </Flex>
+            ) : (
+              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('pin_quick_access')}>
+                <Star size={16} style={{ marginRight: '8px' }} />
+                <Text fontSize="sm">Pin to Quick Access</Text>
+              </Flex>
+            )
+          )}
           {contextMenu.fileItem.type === 'folder' && (
             <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('open_new_tab')}>
               <ExternalLink size={16} style={{ marginRight: '8px' }} />

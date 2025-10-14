@@ -95,6 +95,11 @@ interface AppContextType {
   // Jump mode state
   isJumpModeActive: boolean;
   setIsJumpModeActive: (value: boolean) => void;
+  // Quick Access (pinned folders)
+  quickAccessPaths: string[];
+  setQuickAccessPaths: (paths: string[]) => void;
+  addQuickAccessPath: (path: string) => Promise<void>;
+  removeQuickAccessPath: (path: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -145,6 +150,8 @@ export const AppProvider: React.FC<{
 
   // Jump mode state
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
+  // Quick Access (pinned folders)
+  const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
 
   // Settings loading function
   const loadSettings = useCallback(async () => {
@@ -183,6 +190,11 @@ export const AppProvider: React.FC<{
       }
       if (settings.clientSearchShortcut) {
         setClientSearchShortcut(settings.clientSearchShortcut);
+      }
+
+      // Load quick access pinned paths
+      if (Array.isArray(settings.quickAccessPaths)) {
+        setQuickAccessPaths(settings.quickAccessPaths);
       }
 
     } catch (error) {
@@ -277,6 +289,41 @@ export const AppProvider: React.FC<{
     }
   }, []);
 
+  // Persist helpers for quick access
+  const addQuickAccessPath = useCallback(async (path: string) => {
+    const normalized = path?.trim();
+    if (!normalized) return;
+    setQuickAccessPaths(prev => {
+      if (prev.includes(normalized)) return prev;
+      return [...prev, normalized];
+    });
+    try {
+      const current = await settingsService.getSettings();
+      const existing = Array.isArray(current.quickAccessPaths) ? current.quickAccessPaths : [];
+      if (!existing.includes(normalized)) {
+        await settingsService.setSettings({ ...current, quickAccessPaths: [...existing, normalized] });
+      }
+      setStatus('Pinned to Quick Access', 'success');
+    } catch (e) {
+      console.error('Failed to persist quick access:', e);
+    }
+  }, [setStatus]);
+
+  const removeQuickAccessPath = useCallback(async (path: string) => {
+    const normalized = path?.trim();
+    if (!normalized) return;
+    setQuickAccessPaths(prev => prev.filter(p => p !== normalized));
+    try {
+      const current = await settingsService.getSettings();
+      const existing = Array.isArray(current.quickAccessPaths) ? current.quickAccessPaths : [];
+      const updated = existing.filter(p => p !== normalized);
+      await settingsService.setSettings({ ...current, quickAccessPaths: updated });
+      setStatus('Unpinned from Quick Access', 'info');
+    } catch (e) {
+      console.error('Failed to persist quick access removal:', e);
+    }
+  }, [setStatus]);
+
   return (
     <AppContext.Provider value={{
       currentDirectory,
@@ -343,6 +390,10 @@ export const AppProvider: React.FC<{
       reloadSettings: loadSettings,
       isJumpModeActive,
       setIsJumpModeActive,
+      quickAccessPaths,
+      setQuickAccessPaths,
+      addQuickAccessPath,
+      removeQuickAccessPath,
       // Document insights properties removed
     }}>
       {children}

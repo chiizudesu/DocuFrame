@@ -19,6 +19,7 @@ export interface Config {
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   aiEditorInstructions?: string;
+  quickAccessPaths?: string[];
 
 }
 

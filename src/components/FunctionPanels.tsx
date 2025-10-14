@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain, Users } from 'lucide-react';
+import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider, Image } from '@chakra-ui/react';
+import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain, Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -16,6 +16,7 @@ import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
 import { Calculator as CalculatorDialog } from './Calculator';
 import { ClientSearchOverlay } from './ClientSearchOverlay';
+import { DraggableFileItem } from './DraggableFileItem';
 
 import { getAppVersion } from '../utils/version';
 
@@ -156,9 +157,170 @@ export const FunctionPanels: React.FC = () => {
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
+  
+  // File Transfer state
+  const [latestDownloads, setLatestDownloads] = useState<any[]>([]);
+  const [loadingDownloads, setLoadingDownloads] = useState(false);
+  const [downloadsDirectory, setDownloadsDirectory] = useState<string>('');
+  const [currentFileIndex, setCurrentFileIndex] = useState(0);
+  const [nativeIcons, setNativeIcons] = useState<Map<string, string>>(new Map());
 
   // Use client search shortcut hook
   useClientSearchShortcut(setClientSearchOpen);
+
+  // Load latest downloads on mount and set up file watcher
+  useEffect(() => {
+    const loadLatestDownloads = async () => {
+      setLoadingDownloads(true);
+      try {
+        // Use transfer preview to get latest 3 files from downloads
+        // Note: We pass currentDirectory but it doesn't affect which files are shown
+        const previewResult = await window.electronAPI.transfer({ 
+          numFiles: 3,
+          command: 'preview',
+          currentDirectory: currentDirectory
+        });
+        
+        if (previewResult.success && previewResult.files) {
+          setLatestDownloads(previewResult.files.slice(0, 3));
+          // Store downloads directory if available in result
+          if (previewResult.files.length > 0 && previewResult.files[0].path) {
+            const firstFilePath = previewResult.files[0].path;
+            const downloadsDir = firstFilePath.substring(0, firstFilePath.lastIndexOf('\\'));
+            setDownloadsDirectory(downloadsDir);
+          }
+        } else {
+          setLatestDownloads([]);
+        }
+      } catch (error) {
+        console.error('Failed to load latest downloads:', error);
+        setLatestDownloads([]);
+      } finally {
+        setLoadingDownloads(false);
+      }
+    };
+
+    loadLatestDownloads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only load once on mount
+
+  // File watcher for downloads directory (lightweight approach)
+  useEffect(() => {
+    if (!downloadsDirectory) return;
+    
+    let isWatching = false;
+    let idleTimeout: NodeJS.Timeout | undefined;
+
+    const startWatching = async () => {
+      try {
+        if (downloadsDirectory && !isWatching) {
+          // Check if file watching is enabled in settings
+          const config = await (window.electronAPI as any).getConfig();
+          if (config.enableFileWatching === false) {
+            return;
+          }
+
+          const result = await (window.electronAPI as any).startWatchingDirectory(downloadsDirectory);
+          if (result.success) {
+            isWatching = true;
+          }
+        }
+      } catch (error) {
+        console.error('[FunctionPanels] Error starting downloads watcher:', error);
+      }
+    };
+
+    const stopWatching = async () => {
+      try {
+        if (downloadsDirectory && isWatching) {
+          await (window.electronAPI as any).stopWatchingDirectory(downloadsDirectory);
+          isWatching = false;
+        }
+      } catch (error) {
+        console.error('[FunctionPanels] Error stopping downloads watcher:', error);
+      }
+    };
+
+    // Start watching after idle period
+    idleTimeout = setTimeout(() => {
+      startWatching();
+    }, 3000); // 3 second idle delay
+
+    // Cleanup
+    return () => {
+      if (idleTimeout) clearTimeout(idleTimeout);
+      stopWatching();
+    };
+  }, [downloadsDirectory]);
+
+  // Listen for folder contents changed events to refresh downloads
+  useEffect(() => {
+    const handleFolderContentsChanged = async (_event: any, data: { directory: string; newFiles?: string[]; event?: string; filePath?: string }) => {
+      if (data && data.directory === downloadsDirectory) {
+        // Refresh downloads list
+        try {
+          // We need to pass some directory, but it doesn't matter which one for downloads preview
+          const previewResult = await window.electronAPI.transfer({ 
+            numFiles: 3,
+            command: 'preview',
+            currentDirectory: downloadsDirectory
+          });
+          
+          if (previewResult.success && previewResult.files) {
+            setLatestDownloads(previewResult.files.slice(0, 3));
+          }
+        } catch (error) {
+          console.error('Failed to refresh downloads:', error);
+        }
+      }
+    };
+
+    if ((window.electronAPI as any).onFolderContentsChanged) {
+      (window.electronAPI as any).onFolderContentsChanged(handleFolderContentsChanged);
+    }
+
+    return () => {
+      if ((window.electronAPI as any).removeAllListeners) {
+        (window.electronAPI as any).removeAllListeners('folderContentsChanged');
+      }
+    };
+  }, [downloadsDirectory]);
+
+  // Reset current file index when downloads list changes
+  useEffect(() => {
+    if (currentFileIndex >= latestDownloads.length) {
+      setCurrentFileIndex(Math.max(0, latestDownloads.length - 1));
+    }
+  }, [latestDownloads, currentFileIndex]);
+
+  // Load native icon for the current file
+  useEffect(() => {
+    if (latestDownloads.length === 0 || currentFileIndex >= latestDownloads.length) {
+      return;
+    }
+
+    const currentFile = latestDownloads[currentFileIndex];
+    if (!currentFile || !currentFile.path || nativeIcons.has(currentFile.path)) {
+      return;
+    }
+
+    const loadIconForFile = async (filePath: string) => {
+      try {
+        const iconData = await window.electronAPI.getFileIcon(filePath);
+        if (iconData) {
+          setNativeIcons(prev => {
+            const newMap = new Map(prev);
+            newMap.set(filePath, iconData);
+            return newMap;
+          });
+        }
+      } catch (error) {
+        console.warn(`Failed to get icon for ${filePath}:`, error);
+      }
+    };
+
+    loadIconForFile(currentFile.path);
+  }, [latestDownloads, currentFileIndex, nativeIcons]);
 
   const [updateInfo, setUpdateInfo] = useState<{
     currentVersion: string;
@@ -750,6 +912,133 @@ export const FunctionPanels: React.FC = () => {
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   Utilities
+                </Text>
+              </Box>
+              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
+              <Box 
+                p={2} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
+                borderRadius="md" 
+                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
+                minW="600px"
+                maxW="600px"
+              >
+                <Flex direction="column" gap={1}>
+                  {loadingDownloads ? (
+                    <Flex justify="center" align="center" py={2}>
+                      <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')}>Loading...</Text>
+                    </Flex>
+                  ) : latestDownloads.length === 0 ? (
+                    <Flex direction="column" justify="center" align="center" py={2} gap={1}>
+                      <Icon as={Download} boxSize={6} color={useColorModeValue('gray.400', 'gray.500')} />
+                      <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')} textAlign="center" fontWeight="medium">
+                        No files in downloads
+                      </Text>
+                    </Flex>
+                   ) : (
+                    <Flex align="center" justify="center" gap={1.5} minH="60px" mt="13px">
+                      {/* Previous button */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setCurrentFileIndex(prev => Math.max(0, prev - 1))}
+                        isDisabled={currentFileIndex === 0}
+                        _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        px={2}
+                      >
+                        <Icon as={ChevronLeft} boxSize={5} />
+                      </Button>
+
+                      {/* Current file */}
+                      <Box flex={1}>
+                        <DraggableFileItem
+                          file={latestDownloads[currentFileIndex]}
+                          isSelected={false}
+                          onSelect={() => {}}
+                          onContextMenu={() => {}}
+                          index={currentFileIndex}
+                          selectedFiles={[]}
+                          sortedFiles={latestDownloads}
+                          onDragStateReset={() => {}}
+                          isCut={false}
+                          onFileMouseDown={() => {}}
+                          onFileClick={() => {}}
+                          onFileMouseUp={() => {}}
+                           onFileDragStart={() => {}}
+                           onNativeIconLoaded={(filePath, iconData) => {
+                             setNativeIcons(prev => {
+                               const newMap = new Map(prev);
+                               newMap.set(filePath, iconData);
+                               return newMap;
+                             });
+                           }}
+                        >
+                          <Box
+                            px={3}
+                            py={2}
+                            borderRadius="md"
+                            bg={useColorModeValue('white', 'gray.700')}
+                            _hover={{
+                              bg: useColorModeValue('gray.50', 'gray.600'),
+                              transform: 'translateY(-1px)',
+                              boxShadow: 'sm'
+                            }}
+                            cursor="grab"
+                            transition="all 0.2s"
+                            border="1px solid"
+                            borderColor={useColorModeValue('gray.200', 'gray.600')}
+                          >
+                            <Flex align="center" gap={2}>
+                               {nativeIcons.has(latestDownloads[currentFileIndex].path) ? (
+                                 <Image
+                                   src={nativeIcons.get(latestDownloads[currentFileIndex].path)}
+                                   boxSize={4}
+                                   alt={`${latestDownloads[currentFileIndex].name} icon`}
+                                   flexShrink={0}
+                                 />
+                               ) : (
+                                 <Icon as={FileText} boxSize={4} color={useColorModeValue('blue.500', 'blue.300')} flexShrink={0} />
+                               )}
+                              <Box flex={1} minW={0}>
+                                <Text 
+                                  fontSize="sm" 
+                                  fontWeight="medium"
+                                  color={useColorModeValue('gray.800', 'gray.100')}
+                                  noOfLines={1}
+                                  overflow="hidden"
+                                  textOverflow="ellipsis"
+                                >
+                                  {latestDownloads[currentFileIndex].name}
+                                </Text>
+                                <Text 
+                                  fontSize="xs" 
+                                  color={useColorModeValue('gray.500', 'gray.400')}
+                                  mt={0}
+                                >
+                                  {currentFileIndex + 1} of {latestDownloads.length}
+                                </Text>
+                              </Box>
+                            </Flex>
+                          </Box>
+                        </DraggableFileItem>
+                      </Box>
+
+                      {/* Next button */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setCurrentFileIndex(prev => Math.min(latestDownloads.length - 1, prev + 1))}
+                        isDisabled={currentFileIndex === latestDownloads.length - 1}
+                        _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        px={2}
+                      >
+                        <Icon as={ChevronRight} boxSize={5} />
+                      </Button>
+                    </Flex>
+                  )}
+                </Flex>
+                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={2} textAlign="center" fontWeight="medium">
+                  File Transfer
                 </Text>
               </Box>
             </Flex>

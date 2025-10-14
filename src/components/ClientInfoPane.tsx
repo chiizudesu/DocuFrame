@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Spacer, Input, Menu, MenuButton, MenuList, MenuItem, Icon, Portal, Spinner, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, RefreshCw, X, ChevronDown, Upload, Folder, Star } from 'lucide-react';
+import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Icon, Portal, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
+import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, Folder, Star } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 // Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
-import type { FileItem } from '../types';
-import { DraggableFileItem } from './DraggableFileItem';
 
 export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: () => void, isCollapsed?: boolean }> = ({ collapsed = false, onToggleCollapse }) => {
   const {
@@ -12,8 +10,8 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     setCurrentDirectory,
     addLog,
     rootDirectory,
-    setStatus,
-    setFolderItems
+    quickAccessPaths,
+    removeQuickAccessPath,
   } = useAppContext();
 
   // Removed modal state - document insights moved to dedicated dialog
@@ -21,9 +19,6 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   // Removed document insights functionality - now available as a dedicated dialog
 
   const bgColor = useColorModeValue('#f8fafc', 'gray.800');
-  const borderColor = useColorModeValue('#d1d5db', 'gray.700');
-  const accentColor = useColorModeValue('#3b82f6', 'blue.400');
-  const labelColor = useColorModeValue('#64748b', 'gray.400');
   const textColor = useColorModeValue('#334155', 'white');
   const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
   
@@ -37,52 +32,46 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const noClientColor = useColorModeValue('gray.600', 'gray.300');
   const transferBg = useColorModeValue('#ffffff', 'gray.800');
   const transferSectionBg = useColorModeValue('#f8fafc', 'gray.700');
-  const transferBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
-  const transferItemBg = useColorModeValue('white', 'gray.700');
-  const transferItemBorderColor = useColorModeValue('gray.300', 'gray.600');
-  const transferButtonBg = useColorModeValue('blue.600', 'blue.400');
-  const transferSectionBorderColor = useColorModeValue('#f1f5f9', 'gray.700');
 
   // State for loaded client info
   const [clientInfo, setClientInfo] = useState<any | null>(null);
   const [loadingClient, setLoadingClient] = useState(false);
-  const [clientError, setClientError] = useState<string | null>(null);
 
-  // Add at the top, after other useState imports
-  const [clientInfoOpen, setClientInfoOpen] = useState(true);
   // Quick access state
-  const [quickAccessOpen, setQuickAccessOpen] = useState(true);
-  const [quickAccessFolders, setQuickAccessFolders] = useState<FileItem[]>([]);
-  const [loadingQuickAccess, setLoadingQuickAccess] = useState(false);
-  
-  // Transfer Files state
-  const [transferOpen, setTransferOpen] = useState(false);
-  const [transferFileName, setTransferFileName] = useState('');
-  const [transferFileCount, setTransferFileCount] = useState(1);
-  const [transferLoading, setTransferLoading] = useState(false);
-  const [transferPreviewFiles, setTransferPreviewFiles] = useState<FileItem[]>([]);
-  
-  // Auto-update preview when inputs change
+  const [quickAccessOpen] = useState(true);
+  const [rootFolders, setRootFolders] = useState<Array<{ name: string; path: string }>>([]);
+
+  // Load root directory folders for default Quick Access
   useEffect(() => {
-    if (transferOpen && transferFileCount >= 1) {
-      const timeoutId = setTimeout(() => {
-        handleTransferPreview();
-      }, 300); // Debounce to avoid excessive API calls
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [transferFileCount, transferFileName, transferOpen]);
+    const loadRootFolders = async () => {
+      if (!rootDirectory) {
+        setRootFolders([]);
+        return;
+      }
+      try {
+        const entries = await window.electronAPI.getDirectoryContents(rootDirectory);
+        const folders = Array.isArray(entries)
+          ? entries.filter((item: any) => item?.type === 'folder' && typeof item?.name === 'string' && !item.name.startsWith('.'))
+          : [];
+        folders.sort((a: any, b: any) => a.name.localeCompare(b.name));
+        setRootFolders(folders.map((f: any) => ({ name: f.name, path: f.path })));
+      } catch (error) {
+        console.error('Failed to load root folders for Quick Access:', error);
+        setRootFolders([]);
+      }
+    };
+    loadRootFolders();
+  }, [rootDirectory]);
 
   // Extract client name and tax year from path (ensure clientName is always defined)
-  const pathSegments = currentDirectory ? currentDirectory.split(/[/\\]/).filter(segment => segment && segment !== '') : [];
-  const rootSegments = rootDirectory ? rootDirectory.split(/[/\\]/).filter(Boolean) : [];
+  const pathSegments = currentDirectory ? currentDirectory.split(/[\/\\]/).filter(segment => segment && segment !== '') : [];
+  const rootSegments = rootDirectory ? rootDirectory.split(/[\/\\]/).filter(Boolean) : [];
   const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === (rootSegments[rootSegments.length - 1] || '').toLowerCase());
   const taxYear = rootIdx !== -1 && pathSegments.length > rootIdx + 1 ? pathSegments[rootIdx + 1] : '';
   const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 2 ? pathSegments[rootIdx + 2] : '';
 
   // --- Auto-load client info when entering a client folder ---
   useEffect(() => {
-    // Only try to load client info if we have a plausible clientName
     if (clientName) {
       handleLoadClientInfo();
     } else {
@@ -91,249 +80,36 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientName]);
 
-  // --- Fix quick access scan to not run if rootDirectory is empty ---
-  useEffect(() => {
-    if (!rootDirectory) return;
-    const loadFolders = async () => {
-      setLoadingQuickAccess(true);
-      try {
-        const folders = await window.electronAPI.getDirectoryContents(rootDirectory);
-        // Filter only folders, exclude dot folders, and sort alphabetically
-        const sortedFolders = folders
-          .filter((item: FileItem) => item.type === 'folder' && !item.name.startsWith('.'))
-          .sort((a: FileItem, b: FileItem) => a.name.localeCompare(b.name));
-        setQuickAccessFolders(sortedFolders);
-      } catch (error) {
-        console.error('Failed to load quick access folders:', error);
-        addLog('Failed to load quick access folders', 'error');
-      } finally {
-        setLoadingQuickAccess(false);
-      }
-    };
-    loadFolders();
-  }, [rootDirectory]);
-  
-  // Extract document name from current directory
+  // Extract document name from current directory (unused display removed)
   const documentName = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : 'Current Folder';
   
-  // Get file extension if it's a file
   const getFileExtension = (filename: string) => {
     const ext = filename.split('.').pop();
     return ext && ext !== filename ? ext.toLowerCase() : null;
   };
-  
-  const fileExtension = getFileExtension(documentName);
-  const documentDisplayName = fileExtension ? `${documentName}` : documentName;
-
-  // Utility functions for file icons and formatting
-  const getFileIcon = (type: string, name: string) => {
-    if (type === 'folder') {
-      return FileText;
-    }
-    
-    const extension = name.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'pdf':
-        return FileText;
-      case 'doc':
-      case 'docx':
-        return FileText;
-      case 'xls':
-      case 'xlsx':
-      case 'csv':
-        return FileText;
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'bmp':
-      case 'svg':
-        return FileText;
-      case 'zip':
-      case 'rar':
-      case '7z':
-      case 'tar':
-      case 'gz':
-        return FileText;
-      case 'txt':
-      case 'md':
-      case 'json':
-      case 'xml':
-      case 'html':
-      case 'css':
-      case 'js':
-      case 'ts':
-        return FileText;
-      default:
-        return FileText;
-    }
-  };
-
-  const getIconColor = (type: string, name: string) => {
-    if (type === 'folder') return 'blue.400';
-    
-    const extension = name.split('.').pop()?.toLowerCase();
-    switch (extension) {
-      case 'pdf':
-        return 'red.400';
-      case 'doc':
-      case 'docx':
-        return 'blue.400';
-      case 'xls':
-      case 'xlsx':
-      case 'csv':
-        return 'green.400';
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'bmp':
-      case 'svg':
-        return 'purple.400';
-      case 'zip':
-      case 'rar':
-      case '7z':
-      case 'tar':
-      case 'gz':
-        return 'orange.400';
-      case 'txt':
-      case 'md':
-      case 'json':
-      case 'xml':
-      case 'html':
-      case 'css':
-      case 'js':
-      case 'ts':
-        return 'yellow.400';
-      default:
-        return 'gray.400';
-    }
-  };
-
-  // Format file size
-  const formatFileSize = (size: string | undefined) => {
-    if (!size) return '';
-    const sizeNum = parseFloat(size);
-    if (isNaN(sizeNum)) return size;
-    return `${(sizeNum / 1024).toFixed(1)} KB`;
-  };
-
-  // Handler for loading quick access folders
-  const handleLoadQuickAccess = async () => {
-    setLoadingQuickAccess(true);
-    try {
-      const folders = await window.electronAPI.getDirectoryContents(rootDirectory);
-      // Filter only folders and sort alphabetically
-      const sortedFolders = folders
-        .filter((item: FileItem) => item.type === 'folder')
-        .sort((a: FileItem, b: FileItem) => a.name.localeCompare(b.name));
-      setQuickAccessFolders(sortedFolders);
-    } catch (error) {
-      console.error('Failed to load quick access folders:', error);
-      addLog('Failed to load quick access folders', 'error');
-    } finally {
-      setLoadingQuickAccess(false);
-    }
-  };
-
-  // Handler for transfer preview
-  const handleTransferPreview = async () => {
-    if (transferFileCount < 1) {
-      addLog('Number of files must be at least 1', 'error');
-      return;
-    }
-
-    try {
-      const previewResult = await window.electronAPI.transfer({ 
-        numFiles: transferFileCount,
-        command: 'preview',
-        currentDirectory: currentDirectory // Pass current directory
-      });
-      
-      if (previewResult.success && previewResult.files) {
-        setTransferPreviewFiles(previewResult.files.slice(0, 3)); // Limit to 3 files
-        addLog(`Preview: ${previewResult.files.length} files will be transferred`, 'info');
-      } else {
-        addLog(previewResult.message, 'error');
-        setTransferPreviewFiles([]);
-      }
-    } catch (error) {
-      console.error('Error during transfer preview:', error);
-      addLog(`Error during transfer preview: ${error}`, 'error');
-      setTransferPreviewFiles([]);
-    }
-  };
-
-  // Handler for transfer files
-  const handleTransferFiles = async () => {
-    if (transferFileCount < 1) {
-      addLog('Number of files must be at least 1', 'error');
-      return;
-    }
-
-    setTransferLoading(true);
-    try {
-      // Execute the actual transfer
-      const transferResult = await window.electronAPI.transfer({ 
-        numFiles: transferFileCount,
-        command: 'transfer',
-        currentDirectory: currentDirectory, // Pass current directory
-        newName: transferFileName || undefined // Pass new filename if provided
-      });
-      
-      if (transferResult.success) {
-        addLog(transferResult.message, 'response');
-        setStatus('Transfer completed', 'success');
-        // Clear form and preview
-        setTransferFileName('');
-        setTransferFileCount(1);
-        setTransferPreviewFiles([]);
-        // Refresh folder view
-        setStatus('Refreshing folder...', 'info');
-        if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
-          const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
-          if (typeof setFolderItems === 'function') setFolderItems(contents);
-          setStatus('Folder refreshed', 'success');
-        }
-      } else {
-        addLog(transferResult.message, 'error');
-        setStatus('Transfer failed', 'error');
-      }
-    } catch (error) {
-      console.error('Error during transfer:', error);
-      addLog(`Error during transfer: ${error}`, 'error');
-      setStatus('Transfer failed', 'error');
-    } finally {
-      setTransferLoading(false);
-    }
-  };
+  getFileExtension(documentName);
 
   // Handler for loading client info
   const handleLoadClientInfo = async () => {
-    // Log path info for debugging only when loading client info
     addLog(`[ClientInfoPane] pathSegments: ${JSON.stringify(pathSegments)}, rootIdx: ${rootIdx}, rootDirectory: ${rootDirectory}`);
     setLoadingClient(true);
-    setClientError(null);
     // Log the extracted clientName for debugging
     console.log('[ClientInfoPane] Extracted clientName:', clientName);
     addLog(`[ClientInfoPane] Extracted clientName: ${clientName}`);
     if (!clientName) {
-      setClientError('Could not extract client name from path.');
       setClientInfo(null);
       setLoadingClient(false);
       return;
     }
     try {
       const config = await window.electronAPI.getConfig();
-      const csvPath = config.clientbasePath;
+      const csvPath = (config as any).clientbasePath;
       if (!csvPath) {
-        setClientError('Clientbase CSV path not configured');
         setLoadingClient(false);
         return;
       }
       const rows = await window.electronAPI.readCsv(csvPath);
       if (!rows || rows.length === 0) {
-        setClientError('No client data found');
         setLoadingClient(false);
         return;
       }
@@ -349,22 +125,16 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
         return String(row[field]).toLowerCase().includes(clientName.toLowerCase());
       });
       if (!match) {
-        setClientError('No matching client found');
         setClientInfo(null);
         setLoadingClient(false);
         return;
       }
       setClientInfo(match);
     } catch (err: any) {
-      setClientError('Failed to load client info');
       setClientInfo(null);
     }
     setLoadingClient(false);
   };
-
-  // Removed handleBrainIconClick - document analysis moved to dedicated dialog
-
-
 
   // Section header style for all three sections
   const sectionHeaderHoverBg = useColorModeValue('gray.50', 'gray.800');
@@ -753,114 +523,174 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                 flex="1"
                 overflowY="auto"
                 className="enhanced-scrollbar"
-                maxH="380px" // Increased to fit all folders without scrollbar
+                maxH="600px" // Increased height to show more Quick Access folders
                 minH="100px"
               >
-                {loadingQuickAccess ? (
-                  <Flex justify="center" align="center" py={3}>
-                    <Spinner size="sm" color={accentColor} />
+                <>
+                  {/* Hard-coded shortcuts at the top */}
+                  <Flex
+                    align="center"
+                    px={4}
+                    py={1.5}
+                    fontSize="sm"
+                    _hover={{
+                      bg: transferSectionBg
+                    }}
+                    color={textColor}
+                    cursor="pointer"
+                    style={{ userSelect: 'none' }}
+                    onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents')}
+                    borderRadius={0}
+                    position="relative"
+                  >
+                    <Icon
+                      as={Star}
+                      boxSize={2.5}
+                      color="yellow.400"
+                      fill="yellow.400"
+                      position="absolute"
+                      left="8px"
+                      top="50%"
+                      transform="translateY(-50%)"
+                      flexShrink={0}
+                    />
+                    <Icon
+                      as={Folder}
+                      boxSize={4}
+                      mr={2}
+                      ml={2}
+                      color="blue.400"
+                      flexShrink={0}
+                    />
+                    <Text
+                      noOfLines={1}
+                      color="inherit"
+                      fontWeight="normal"
+                    >
+                      Documents
+                    </Text>
                   </Flex>
-                ) : (
-                  <>
-                    {/* Hard-coded shortcuts at the top */}
-                    <Flex
-                      align="center"
-                      px={4}
-                      py={1.5}
-                      fontSize="sm"
-                      _hover={{
-                        bg: transferSectionBg
-                      }}
-                      color={textColor}
-                      cursor="pointer"
-                      style={{ userSelect: 'none' }}
-                      onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents')}
-                      borderRadius={0}
-                      position="relative"
+                  
+                  <Flex
+                    align="center"
+                    px={4}
+                    py={1.5}
+                    fontSize="sm"
+                    _hover={{
+                      bg: transferSectionBg
+                    }}
+                    color={textColor}
+                    cursor="pointer"
+                    style={{ userSelect: 'none' }}
+                    onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents\\Scripts')}
+                    borderRadius={0}
+                    position="relative"
+                  >
+                    <Icon
+                      as={Star}
+                      boxSize={2.5}
+                      color="yellow.400"
+                      fill="yellow.400"
+                      position="absolute"
+                      left="8px"
+                      top="50%"
+                      transform="translateY(-50%)"
+                      flexShrink={0}
+                    />
+                    <Icon
+                      as={Folder}
+                      boxSize={4}
+                      mr={2}
+                      ml={2}
+                      color="blue.400"
+                      flexShrink={0}
+                    />
+                    <Text
+                      noOfLines={1}
+                      color="inherit"
+                      fontWeight="normal"
                     >
-                      <Icon
-                        as={Star}
-                        boxSize={2.5}
-                        color="yellow.400"
-                        fill="yellow.400"
-                        position="absolute"
-                        left="8px"
-                        top="50%"
-                        transform="translateY(-50%)"
-                        flexShrink={0}
-                      />
-                      <Icon
-                        as={Folder}
-                        boxSize={4}
-                        mr={2}
-                        ml={2}
-                        color="blue.400"
-                        flexShrink={0}
-                      />
-                      <Text
-                        noOfLines={1}
-                        color="inherit"
-                        fontWeight="normal"
+                      Scripts
+                    </Text>
+                  </Flex>
+                  
+                  {/* Pinned quick access folders */}
+                  {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 ? (
+                    quickAccessPaths.map((pinnedPath) => (
+                      <Flex
+                        key={pinnedPath}
+                        align="center"
+                        px={4}
+                        py={1.5}
+                        fontSize="sm" // Reduced font size by 1px
+                        _hover={{
+                          bg: transferSectionBg
+                        }}
+                        color={textColor}
+                        cursor="pointer"
+                        style={{ userSelect: 'none' }}
+                        onClick={() => setCurrentDirectory(pinnedPath)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          removeQuickAccessPath(pinnedPath);
+                        }}
+                        borderRadius={0}
+                        position="relative"
                       >
-                        Documents
-                      </Text>
-                    </Flex>
-                    
-                    <Flex
-                      align="center"
-                      px={4}
-                      py={1.5}
-                      fontSize="sm"
-                      _hover={{
-                        bg: transferSectionBg
-                      }}
-                      color={textColor}
-                      cursor="pointer"
-                      style={{ userSelect: 'none' }}
-                      onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents\\Scripts')}
-                      borderRadius={0}
-                      position="relative"
-                    >
-                      <Icon
-                        as={Star}
-                        boxSize={2.5}
-                        color="yellow.400"
-                        fill="yellow.400"
-                        position="absolute"
-                        left="8px"
-                        top="50%"
-                        transform="translateY(-50%)"
-                        flexShrink={0}
-                      />
-                      <Icon
-                        as={Folder}
-                        boxSize={4}
-                        mr={2}
-                        ml={2}
-                        color="blue.400"
-                        flexShrink={0}
-                      />
-                      <Text
-                        noOfLines={1}
-                        color="inherit"
-                        fontWeight="normal"
-                      >
-                        Scripts
-                      </Text>
-                    </Flex>
-                    
-                    {/* Auto-populated folders from root */}
-                    {quickAccessFolders.length > 0 ? (
-                      quickAccessFolders.map((folder, index) => (
+                        {/* Star icon for pinned items */}
+                        <Icon
+                          as={Star}
+                          boxSize={2.5}
+                          color="yellow.400"
+                          fill="yellow.400"
+                          position="absolute"
+                          left="8px"
+                          top="50%"
+                          transform="translateY(-50%)"
+                          flexShrink={0}
+                        />
+                        <Icon
+                          as={Folder}
+                          boxSize={4}
+                          mr={2}
+                          ml={2}
+                          color="blue.400"
+                          flexShrink={0}
+                        />
+                        <Text
+                          noOfLines={1}
+                          color="inherit"
+                          fontWeight="normal" // Not bold
+                        >
+                          {pinnedPath.split(/[/\\]/).filter(Boolean).pop()}
+                        </Text>
+                      </Flex>
+                    ))
+                  ) : null}
+
+                  {/* Separator between pinned and auto-populated when both exist */}
+                  {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 && rootFolders.filter(f => !quickAccessPaths?.includes(f.path)).length > 0 && (
+                    <Divider
+                      my={1}
+                      borderColor={dividerBorderColor}
+                      opacity={0.25}
+                      width="85%"
+                      mx="auto"
+                    />
+                  )}
+
+                  {/* Root path folders (excluding pinned duplicates) */}
+                  {Array.isArray(rootFolders) && rootFolders.length > 0 ? (
+                    rootFolders
+                      .filter(f => !quickAccessPaths?.includes(f.path))
+                      .map((folder) => (
                         <Flex
                           key={folder.path}
                           align="center"
                           px={4}
                           py={1.5}
-                          fontSize="sm" // Reduced font size by 1px
-                          _hover={{
-                            bg: transferSectionBg
-                          }}
+                          fontSize="sm"
+                          _hover={{ bg: transferSectionBg }}
                           color={textColor}
                           cursor="pointer"
                           style={{ userSelect: 'none' }}
@@ -877,32 +707,23 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
                             transform="translateY(-50%)"
                             flexShrink={0}
                           />
-                          <Icon
-                            as={Folder}
-                            boxSize={4}
-                            mr={2}
-                            ml={2}
-                            color="blue.400"
-                            flexShrink={0}
-                          />
-                          <Text
-                            noOfLines={1}
-                            color="inherit"
-                            fontWeight="normal" // Not bold
-                          >
+                          <Icon as={Folder} boxSize={4} mr={2} ml={2} color="blue.400" flexShrink={0} />
+                          <Text noOfLines={1} color="inherit" fontWeight="normal">
                             {folder.name}
                           </Text>
                         </Flex>
                       ))
-                    ) : (
-                      <Flex justify="center" align="center" py={3}>
-                        <Text fontSize="sm" color={secondaryTextColor}>
-                          No folders found
-                        </Text>
-                      </Flex>
-                    )}
-                  </>
-                )}
+                  ) : null}
+
+                  {/* Empty state when neither pinned nor root has items */}
+                  {(!quickAccessPaths || quickAccessPaths.length === 0) && rootFolders.length === 0 && (
+                    <Flex justify="center" align="center" py={3}>
+                      <Text fontSize="sm" color={secondaryTextColor}>
+                        No folders found
+                      </Text>
+                    </Flex>
+                  )}
+                </>
               </Box>
             </Box>
           </Box>
@@ -910,169 +731,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
       </Box>
       {/* Add this separator */}
       <Divider mb={2} borderColor={dividerBorderColor} />
-      {/* Transfer Files Section */}
-      <Box mb={2} flexShrink={0}>
-        <Box {...sectionHeaderStyle}
-          onClick={() => {
-            const newOpen = !transferOpen;
-            setTransferOpen(newOpen);
-            // Auto-preview when expanding
-            if (newOpen && transferFileCount >= 1) {
-              handleTransferPreview();
-            }
-          }}
-        >
-          <Text fontSize="sm" fontWeight="semibold" color={textColor}>
-            TRANSFER FILES
-          </Text>
-          <IconButton
-            aria-label={transferOpen ? 'Collapse' : 'Expand'}
-            icon={<ChevronDown size={18} style={{ transform: transferOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s' }} />}
-            size="xs"
-            variant="ghost"
-            onClick={e => { 
-              e.stopPropagation(); 
-              const newOpen = !transferOpen;
-              setTransferOpen(newOpen);
-              // Auto-preview when expanding
-              if (newOpen && transferFileCount >= 1) {
-                handleTransferPreview();
-              }
-            }}
-            tabIndex={-1}
-          />
-        </Box>
-        {transferOpen && (
-          <Box borderRadius="md" bg="transparent" w="100%" p={3}>
-            <VStack align="stretch" spacing={3}>
-              {/* Number of Files */}
-              <Box>
-                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
-                  Number of Files
-                </Text>
-                <Input
-                  type="number"
-                  value={transferFileCount}
-                  onChange={(e) => {
-                    const newCount = Math.max(1, parseInt(e.target.value) || 1);
-                    setTransferFileCount(newCount);
-                  }}
-                  size="sm"
-                  min={1}
-                  fontSize="sm"
-                  color={textColor}
-                  bg={transferItemBg}
-                  borderColor={transferItemBorderColor}
-                  _focus={{
-                    borderColor: accentColor,
-                    boxShadow: `0 0 0 1px ${accentColor}`
-                  }}
-                />
-              </Box>
-              
-              {/* New File Name */}
-              <Box>
-                <Text fontSize="10px" color={labelColor} fontWeight="semibold" textTransform="uppercase" letterSpacing="0.5px" mb={1}>
-                  New File Name
-                </Text>
-                <Input
-                  placeholder="Enter new filename"
-                  value={transferFileName}
-                  onChange={(e) => setTransferFileName(e.target.value)}
-                  size="sm"
-                  fontSize="sm"
-                  color={textColor}
-                  bg={transferItemBg}
-                  borderColor={transferItemBorderColor}
-                  _focus={{
-                    borderColor: accentColor,
-                    boxShadow: `0 0 0 1px ${accentColor}`
-                  }}
-                  isDisabled={transferFileCount > 1}
-                  opacity={transferFileCount > 1 ? 0.5 : 1}
-                />
-
-              </Box>
-              
-              {/* Transfer Button */}
-              <Button
-                leftIcon={<Upload size={16} />}
-                onClick={handleTransferFiles}
-                isLoading={transferLoading}
-                loadingText="Transferring..."
-                size="sm"
-                colorScheme="blue"
-                fontWeight="medium"
-                _hover={{
-                  bg: transferButtonBg
-                }}
-              >
-                Transfer Files
-              </Button>
-            </VStack>
-            
-            {/* Preview Area */}
-            {transferPreviewFiles.length > 0 && (
-              <Box mt={3} border="1px solid" borderColor={borderColor} borderRadius="md" bg="transparent" w="100%">
-                <Box
-                  bg={transferSectionBg}
-                  borderBottom="1px solid"
-                  borderColor={transferBorderColor}
-                  px={3}
-                  py={2}
-                >
-                  <Flex align="center" fontSize="xs" fontWeight="medium" color={secondaryTextColor}>
-                    <Text>Preview ({transferPreviewFiles.length} files)</Text>
-                  </Flex>
-                </Box>
-                
-                <Box
-                  maxH="120px"
-                  minH="60px"
-                  overflowY="auto"
-                  className="enhanced-scrollbar"
-                >
-                  {transferPreviewFiles.map((file, index) => (
-                    <Flex
-                      key={file.path}
-                      align="flex-start"
-                      px={3}
-                      py={2}
-                      fontSize="xs"
-                      borderBottom={index < transferPreviewFiles.length - 1 ? "1px solid" : "none"}
-                      borderColor={transferSectionBorderColor}
-                      _hover={{
-                        bg: transferSectionBg}
-                      }
-                      color={textColor}
-                      cursor="default"
-                      style={{ userSelect: 'none' }}
-                      borderRadius={0}
-                    >
-                      <Icon
-                        as={getFileIcon(file.type, file.name)}
-                        color={getIconColor(file.type, file.name)}
-                        boxSize={4}
-                        mt={0.5}
-                        flexShrink={0}
-                      />
-                      <Text
-                        noOfLines={transferPreviewFiles.length === 1 ? 2 : 1}
-                        color="inherit"
-                        fontWeight="medium"
-                        ml={2}
-                        wordBreak="break-word"
-                      >
-                        {file.name}
-                      </Text>
-                    </Flex>
-                  ))}
-                </Box>
-              </Box>
-            )}
-          </Box>
-        )}
-      </Box>
+      {/* Transfer Files Section removed */}
 
       {/* Document Insights functionality moved to dedicated dialog */}
 

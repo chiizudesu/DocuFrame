@@ -47,6 +47,7 @@ import {
   FileSpreadsheet,
   Search,
   PanelRightClose,
+  Star,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath, normalizePath, isChildPath } from '../utils/path'
@@ -67,7 +68,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -648,6 +649,17 @@ export const FolderInfoBar: React.FC = () => {
             color={useColorModeValue('#10b981', 'green.200')}
             onClick={handleDownloadsClick}
           />
+          <Tooltip label={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
+            <IconButton
+              icon={<Star size={16} />}
+              aria-label="Pin to quick access"
+              variant={quickAccessPaths.includes(currentDirectory) ? 'solid' : 'ghost'}
+              size="sm"
+              mr={1}
+              color={useColorModeValue('#f59e0b', 'yellow.300')}
+              onClick={() => addQuickAccessPath(currentDirectory)}
+            />
+          </Tooltip>
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
         <Flex flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')} borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag' } as any}>
