@@ -53,6 +53,8 @@ interface AppContextType {
   setHideDotFiles: (hide: boolean) => void;
   aiEditorInstructions: string;             // NEW
   setAiEditorInstructions: (instructions: string) => void; // NEW
+  aiEditorAgent: 'openai' | 'claude';
+  setAiEditorAgent: (agent: 'openai' | 'claude') => void;
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
@@ -128,6 +130,7 @@ export const AppProvider: React.FC<{
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
   const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
+  const [aiEditorAgent, setAiEditorAgent] = useState<'openai' | 'claude'>('openai');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
@@ -173,6 +176,10 @@ export const AppProvider: React.FC<{
       // NEW: Load AI editor instructions (default to current instructions if unset)
       if (settings.aiEditorInstructions !== undefined) {
         setAiEditorInstructions(settings.aiEditorInstructions);
+      }
+      // Load AI editor agent preference (default to 'openai' if unset)
+      if (settings.aiEditorAgent) {
+        setAiEditorAgent(settings.aiEditorAgent);
       }
       
       // Load all shortcut settings
@@ -358,6 +365,8 @@ export const AppProvider: React.FC<{
       setHideDotFiles,
       aiEditorInstructions,                 // NEW
       setAiEditorInstructions,              // NEW
+      aiEditorAgent,
+      setAiEditorAgent,
       previewFiles,
       setPreviewFiles,
       isPreviewPaneOpen,

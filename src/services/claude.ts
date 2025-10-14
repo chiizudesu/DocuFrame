@@ -16,11 +16,13 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
     dangerouslyAllowBrowser: true,
   });
 
+  // Send instructions as system prompt and the user blurb as a separate message
   const response = await client.messages.create({
     model: 'claude-3-5-sonnet-20241022',
     max_tokens: 800,
+    system: prompt,
     messages: [
-      { role: 'user', content: `${prompt}\n\n${rawBlurb}` }
+      { role: 'user', content: [{ type: 'text', text: rawBlurb || '' }] }
     ],
     temperature: 0.7
   });

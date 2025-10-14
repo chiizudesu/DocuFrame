@@ -143,31 +143,48 @@ export const PreviewPane: React.FC = () => {
         ) : (
           <>
             {isImage ? (
-              <VStack spacing={4} align="stretch">
-                <Image
-                  src={pdfHttpUrl || `file://${previewFile.path}`}
-                  alt={previewFile.name}
-                  maxW="100%"
-                  maxH="100%"
-                  objectFit="contain"
+              <VStack spacing={4} align="stretch" height="100%">
+                {/* Scrollable Image Container */}
+                <Box
+                  flex={1}
+                  overflow="auto"
+                  bg={controlBg}
                   borderRadius="md"
-                  shadow="md"
-                  fallback={
-                    <Flex
-                      width="100%"
-                      height="200px"
-                      alignItems="center"
-                      justifyContent="center"
-                      flexDirection="column"
-                      gap={3}
-                    >
-                      <Icon as={FileText} boxSize={8} color={iconColor} />
-                      <Text color={secondaryTextColor} fontSize="sm">
-                        Image loading...
-                      </Text>
-                    </Flex>
-                  }
-                />
+                  border="1px solid"
+                  borderColor={borderColor}
+                  p={4}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="center"
+                >
+                  <Image
+                    src={pdfHttpUrl || `file://${previewFile.path}`}
+                    alt={previewFile.name}
+                    borderRadius="md"
+                    shadow="md"
+                    // Remove size constraints to allow natural image size with scrolling
+                    style={{ 
+                      display: 'block',
+                      minWidth: 'auto',
+                      minHeight: 'auto'
+                    }}
+                    fallback={
+                      <Flex
+                        width="100%"
+                        height="200px"
+                        alignItems="center"
+                        justifyContent="center"
+                        flexDirection="column"
+                        gap={3}
+                      >
+                        <Icon as={FileText} boxSize={8} color={iconColor} />
+                        <Text color={secondaryTextColor} fontSize="sm">
+                          Image loading...
+                        </Text>
+                      </Flex>
+                    }
+                  />
+                </Box>
                 <Button
                   leftIcon={<ExternalLink size={16} />}
                   onClick={openWithSystemDefault}
