@@ -21,9 +21,10 @@ import {
   useColorModeValue,
   Divider,
   Badge,
-  VStack
+  VStack,
+  IconButton
 } from '@chakra-ui/react';
-import { ChevronDown, ChevronRight, Clock, FileText, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, FileText, Trash2, ChevronLeft, Calendar } from 'lucide-react';
 import { Task, taskTimerService } from '../services/taskTimer';
 
 interface TaskTimerSummaryDialogProps {
@@ -35,6 +36,7 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(taskTimerService.getTodayDateString());
   
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -43,15 +45,23 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   
   useEffect(() => {
     if (isOpen) {
-      loadTodaysTasks();
+      // Reset to today's date when dialog opens
+      const today = taskTimerService.getTodayDateString();
+      setSelectedDate(today);
+      loadTasksForDate(today);
     }
   }, [isOpen]);
   
-  const loadTodaysTasks = async () => {
+  useEffect(() => {
+    if (isOpen) {
+      loadTasksForDate(selectedDate);
+    }
+  }, [selectedDate, isOpen]);
+  
+  const loadTasksForDate = async (dateString: string) => {
     setLoading(true);
     try {
-      const today = taskTimerService.getTodayDateString();
-      const result = await (window.electronAPI as any).getTaskLogs(today);
+      const result = await (window.electronAPI as any).getTaskLogs(dateString);
       
       if (result.success && result.tasks) {
         setTasks(result.tasks);
@@ -64,6 +74,47 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     } finally {
       setLoading(false);
     }
+  };
+  
+  const goToPreviousDay = () => {
+    // Parse the date string correctly (YYYY-MM-DD)
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const currentDate = new Date(year, month - 1, day); // month is 0-indexed
+    currentDate.setDate(currentDate.getDate() - 1);
+    
+    // Format back to YYYY-MM-DD
+    const newYear = currentDate.getFullYear();
+    const newMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const newDay = String(currentDate.getDate()).padStart(2, '0');
+    setSelectedDate(`${newYear}-${newMonth}-${newDay}`);
+  };
+  
+  const goToNextDay = () => {
+    // Parse the date string correctly (YYYY-MM-DD)
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const currentDate = new Date(year, month - 1, day); // month is 0-indexed
+    currentDate.setDate(currentDate.getDate() + 1);
+    
+    // Format back to YYYY-MM-DD
+    const newYear = currentDate.getFullYear();
+    const newMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const newDay = String(currentDate.getDate()).padStart(2, '0');
+    const nextDate = `${newYear}-${newMonth}-${newDay}`;
+    
+    const today = taskTimerService.getTodayDateString();
+    
+    // Don't allow going beyond today
+    if (nextDate <= today) {
+      setSelectedDate(nextDate);
+    }
+  };
+  
+  const goToToday = () => {
+    setSelectedDate(taskTimerService.getTodayDateString());
+  };
+  
+  const isToday = () => {
+    return selectedDate === taskTimerService.getTodayDateString();
   };
   
   const toggleTaskExpanded = (taskId: string) => {
@@ -86,12 +137,11 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     e.stopPropagation(); // Prevent row expansion
     
     try {
-      const today = taskTimerService.getTodayDateString();
-      const result = await (window.electronAPI as any).deleteTaskLog(today, taskId);
+      const result = await (window.electronAPI as any).deleteTaskLog(selectedDate, taskId);
       
       if (result.success) {
         // Refresh the tasks list
-        await loadTodaysTasks();
+        await loadTasksForDate(selectedDate);
       }
     } catch (error) {
       console.error('[TaskTimer] Error deleting task:', error);
@@ -100,17 +150,68 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="4xl" scrollBehavior="inside">
-      <ModalOverlay backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor} maxH="80vh" my={6} mx={4}>
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent 
+        bg={bgColor} 
+        maxW="1000px"
+        maxH="85vh" 
+        h="700px"
+        overflow="hidden"
+        my="auto"
+      >
         <ModalHeader borderBottomWidth="1px" borderColor={borderColor} py={3}>
-          <Flex align="center" gap={2}>
-            <Icon as={Clock} boxSize={5} color="blue.500" />
-            <Text fontSize="lg">Task Summary - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+          <Flex align="center" justify="space-between" pr={10}>
+            <Flex align="center" gap={2}>
+              <Icon as={Clock} boxSize={5} color="blue.500" />
+              <Text fontSize="lg">Task Summary</Text>
+            </Flex>
+            
+            {/* Date Navigation */}
+            <Flex align="center" gap={2}>
+              <IconButton
+                aria-label="Previous day"
+                icon={<ChevronLeft size={16} />}
+                size="sm"
+                variant="ghost"
+                onClick={goToPreviousDay}
+              />
+              
+              <Flex align="center" gap={2} minW="280px" justify="center">
+                <Icon as={Calendar} boxSize={4} color="gray.500" />
+                <Text fontSize="sm" fontWeight="medium">
+                  {taskTimerService.formatDate(selectedDate)}
+                </Text>
+                {isToday() && (
+                  <Badge colorScheme="blue" fontSize="xs" ml={1}>Today</Badge>
+                )}
+              </Flex>
+              
+              <IconButton
+                aria-label="Next day"
+                icon={<ChevronRight size={16} />}
+                size="sm"
+                variant="ghost"
+                onClick={goToNextDay}
+                isDisabled={isToday()}
+              />
+              
+              {!isToday() && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={goToToday}
+                  leftIcon={<Calendar size={14} />}
+                  ml={2}
+                >
+                  Today
+                </Button>
+              )}
+            </Flex>
           </Flex>
         </ModalHeader>
         <ModalCloseButton />
         
-        <ModalBody p={0}>
+        <ModalBody p={0} overflow="hidden">
           {loading ? (
             <Flex justify="center" align="center" py={8}>
               <Text color="gray.500">Loading tasks...</Text>
@@ -118,13 +219,13 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
           ) : tasks.length === 0 ? (
             <Flex direction="column" justify="center" align="center" py={8} gap={2}>
               <Icon as={Clock} boxSize={12} color="gray.400" />
-              <Text color="gray.500" fontSize="lg">No tasks logged today</Text>
+              <Text color="gray.500" fontSize="lg">No tasks logged for this date</Text>
               <Text color="gray.400" fontSize="sm">Start a task to begin tracking your work</Text>
             </Flex>
           ) : (
-            <Box>
+            <Box h="100%" overflow="hidden" display="flex" flexDirection="column">
               {/* Summary Stats */}
-              <Flex gap={6} px={4} py={3} bg={detailsBg} borderBottomWidth="1px" borderColor={borderColor}>
+              <Flex gap={6} px={6} py={3} bg={detailsBg} borderBottomWidth="1px" borderColor={borderColor} flexShrink={0}>
                 <Box>
                   <Text fontSize="xs" color="gray.500" fontWeight="medium">Total Tasks</Text>
                   <Text fontSize="xl" fontWeight="bold">{tasks.length}</Text>
@@ -136,19 +237,20 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                 </Box>
               </Flex>
               
-              {/* Tasks Table */}
-              <Table variant="simple" size="sm">
-                <Thead bg={detailsBg}>
-                  <Tr>
-                    <Th width="40px" py={2}></Th>
-                    <Th py={2}>Task Name</Th>
-                    <Th py={2}>Duration</Th>
-                    <Th py={2}>Operations</Th>
-                    <Th py={2}>Started</Th>
-                    <Th width="60px" py={2}></Th>
-                  </Tr>
-                </Thead>
-                <Tbody>
+              {/* Tasks Table - Scrollable */}
+              <Box flex="1" overflowY="auto" px={6} py={4}>
+                <Table variant="simple" size="sm">
+                  <Thead bg={detailsBg} position="sticky" top={0} zIndex={1}>
+                    <Tr>
+                      <Th width="40px" py={2}></Th>
+                      <Th py={2}>Task Name</Th>
+                      <Th py={2}>Duration</Th>
+                      <Th py={2}>Operations</Th>
+                      <Th py={2}>Started</Th>
+                      <Th width="60px" py={2}></Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
                   {tasks.map((task, index) => {
                     const isExpanded = expandedTasks.has(task.id);
                     return (
@@ -245,8 +347,9 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                       </React.Fragment>
                     );
                   })}
-                </Tbody>
-              </Table>
+                  </Tbody>
+                </Table>
+              </Box>
             </Box>
           )}
         </ModalBody>

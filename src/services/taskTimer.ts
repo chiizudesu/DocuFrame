@@ -26,6 +26,7 @@ export interface TimerState {
 
 class TaskTimerService {
   private readonly STORAGE_KEY = 'docuframe_timer_state';
+  private readonly GMT_8_OFFSET_MS = 8 * 60 * 60 * 1000; // GMT+8 in milliseconds
   
   // Get current timer state from localStorage
   getTimerState(): TimerState {
@@ -54,12 +55,12 @@ class TaskTimerService {
     }
   }
   
-  // Start a new task
+  // Start a new task (store actual UTC time)
   startTask(taskName: string): Task {
     const task: Task = {
       id: `task_${Date.now()}`,
       name: taskName,
-      startTime: new Date().toISOString(),
+      startTime: new Date().toISOString(), // Store actual UTC time
       duration: 0,
       fileOperations: [],
       isPaused: false,
@@ -91,10 +92,10 @@ class TaskTimerService {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
   
-  // Log a file operation to the current task
+  // Log a file operation to the current task (store actual UTC time)
   logFileOperation(task: Task, operation: string, details?: string): Task {
     const fileOp: FileOperation = {
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString(), // Store actual UTC time
       operation,
       details
     };
@@ -105,20 +106,38 @@ class TaskTimerService {
     };
   }
   
-  // Get today's date in YYYY-MM-DD format
+  // Get today's date in YYYY-MM-DD format (GMT+8)
   getTodayDateString(): string {
+    // Get current time in GMT+8
     const now = new Date();
-    return now.toISOString().split('T')[0];
+    const gmt8Time = new Date(now.getTime() + this.GMT_8_OFFSET_MS);
+    return gmt8Time.toISOString().split('T')[0];
   }
   
-  // Format timestamp for display
+  // Format timestamp for display (GMT+8) - converts UTC to GMT+8 for display only
   formatTimestamp(isoString: string): string {
     const date = new Date(isoString);
+    
     return date.toLocaleTimeString('en-US', { 
       hour: '2-digit', 
       minute: '2-digit',
       second: '2-digit',
-      hour12: true 
+      hour12: true,
+      timeZone: 'Asia/Manila' // GMT+8 Philippines timezone
+    });
+  }
+  
+  // Format date for display (GMT+8)
+  formatDate(dateString: string): string {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    
+    return date.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric',
+      timeZone: 'Asia/Manila'
     });
   }
 }
