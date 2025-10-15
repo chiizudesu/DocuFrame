@@ -62,6 +62,11 @@ interface ElectronAPI {
   onFolderContentsChanged: (callback: (event: any, data: { directory: string }) => void) => void;
   removeAllListeners: (channel: string) => void;
   startDrag: (filePath: string) => void;
+  
+  // Task Timer operations
+    saveTaskLog: (dateString: string, task: any) => Promise<{ success: boolean; error?: string }>;
+    getTaskLogs: (dateString: string) => Promise<{ success: boolean; tasks: any[]; error?: string }>;
+    deleteTaskLog: (dateString: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {

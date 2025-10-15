@@ -85,6 +85,7 @@ export const FileGrid: React.FC = () => {
     addQuickAccessPath,
     removeQuickAccessPath,
     quickAccessPaths,
+    logFileOperation, // Task Timer integration
   } = useAppContext()
 
   // Icon functions removed - using native Windows icons instead
@@ -905,6 +906,12 @@ export const FileGrid: React.FC = () => {
         if (data.event === 'add' && data.filePath) {
           addRecentlyTransferredFiles([data.filePath]);
           
+          // Log file operation for task timer
+          const fileName = data.filePath.split('\\').pop() || data.filePath;
+          const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+          logFileOperation(`${fileName} transferred to ${dirName}`);
+          console.log('[FileGrid] Logged file operation:', fileName);
+          
           // Set timeout to remove the "new" indicator (15 seconds)
           setTimeout(() => {
             removeRecentlyTransferredFile(data.filePath!);
@@ -915,6 +922,14 @@ export const FileGrid: React.FC = () => {
         if (data.newFiles && data.newFiles.length > 0) {
           console.log('[FileGrid] Adding new files to recently transferred list:', data.newFiles);
           addRecentlyTransferredFiles(data.newFiles);
+          
+          // Log file operations for task timer - one entry per file
+          const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+          data.newFiles.forEach(filePath => {
+            const fileName = filePath.split('\\').pop() || filePath;
+            logFileOperation(`${fileName} transferred to ${dirName}`);
+          });
+          console.log('[FileGrid] Logged file operations for', data.newFiles.length, 'files');
           
           // Set individual timeouts for each file (15 seconds each)
           data.newFiles.forEach(filePath => {

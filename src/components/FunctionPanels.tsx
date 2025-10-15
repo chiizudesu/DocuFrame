@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Heading, Divider, Image } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Receipt, Move, FileSymlink, Clipboard, FileCode, AlertCircle, Settings, Mail, Star, RotateCcw, Copy, Download, BarChart3, CheckCircle2, Eye, Building2, Calculator, Sparkles, FileSearch, Brain, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useTransition } from 'react';
+import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Divider, Image } from '@chakra-ui/react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Copy, Download, CheckCircle2, Eye, Building2, Calculator, Sparkles, Brain, Users, ChevronLeft, ChevronRight, Play, Pause, Square, BarChart } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -17,8 +17,10 @@ import { UpdateDialog } from './UpdateDialog';
 import { Calculator as CalculatorDialog } from './Calculator';
 import { ClientSearchOverlay } from './ClientSearchOverlay';
 import { DraggableFileItem } from './DraggableFileItem';
+import { TaskTimerSummaryDialog } from './TaskTimerSummaryDialog';
 
 import { getAppVersion } from '../utils/version';
+import { taskTimerService, Task, TimerState } from '../services/taskTimer';
 
 // Add client search shortcut functionality
 const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) => {
@@ -93,11 +95,14 @@ const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDire
           setPreview([]);
         }
       })
-      .catch((err: any) => {
+      .catch((_err: any) => {
         setLoading(false);
         setError('Failed to load preview');
       });
   }, [currentDirectory]);
+  
+  // Avoid unused variable warning
+  void error;
 
   if (loading) return <Box p={2} fontSize="sm">Loading preview...</Box>;
   if (error) return <Box p={2} color="red.400" fontSize="sm">{error}</Box>;
@@ -143,7 +148,8 @@ export const FunctionPanels: React.FC = () => {
     currentDirectory,
     setFolderItems,
     folderItems,
-    selectedFiles
+    selectedFiles,
+    setLogFileOperation
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const [isOrgCodesOpen, setOrgCodesOpen] = useState(false);
@@ -157,141 +163,271 @@ export const FunctionPanels: React.FC = () => {
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
+  const [isTaskTimerSummaryOpen, setTaskTimerSummaryOpen] = useState(false);
+  
+  // Task Timer state
+  const [timerState, setTimerState] = useState<TimerState>({ currentTask: null, isRunning: false, isPaused: false });
+  const [taskName, setTaskName] = useState('');
+  const [currentTime, setCurrentTime] = useState(0);
+  const [pauseStartTime, setPauseStartTime] = useState<number | null>(null);
   
   // File Transfer state
   const [latestDownloads, setLatestDownloads] = useState<any[]>([]);
-  const [loadingDownloads, setLoadingDownloads] = useState(false);
-  const [downloadsDirectory, setDownloadsDirectory] = useState<string>('');
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
   const [nativeIcons, setNativeIcons] = useState<Map<string, string>>(new Map());
+  
+  // Use transition to prevent flickering during updates (like VBA's Application.screenupdating = false)
+  const [, startTransition] = useTransition();
 
   // Use client search shortcut hook
   useClientSearchShortcut(setClientSearchOpen);
+  
+  // Load timer state from localStorage on mount
+  useEffect(() => {
+    const savedState = taskTimerService.getTimerState();
+    setTimerState(savedState);
+    
+    if (savedState.currentTask) {
+      setTaskName(savedState.currentTask.name);
+      
+      // Calculate current time if timer is running
+      if (savedState.isRunning && !savedState.isPaused) {
+        const duration = taskTimerService.calculateDuration(savedState.currentTask, false);
+        setCurrentTime(duration);
+      } else if (savedState.isPaused) {
+        const duration = taskTimerService.calculateDuration(savedState.currentTask, true);
+        setCurrentTime(duration);
+      }
+    } else {
+      // Default to current directory name
+      setTaskName(currentDirectory.split('\\').pop() || 'New Task');
+    }
+  }, [currentDirectory]);
+  
+  // Timer tick effect - updates every second when running
+  useEffect(() => {
+    if (!timerState.isRunning || timerState.isPaused || !timerState.currentTask) {
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      const duration = taskTimerService.calculateDuration(timerState.currentTask!, false);
+      setCurrentTime(duration);
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [timerState.isRunning, timerState.isPaused, timerState.currentTask]);
+  
+  // Save timer state to localStorage whenever it changes
+  useEffect(() => {
+    if (timerState.currentTask) {
+      taskTimerService.saveTimerState(timerState);
+    }
+  }, [timerState]);
+  
+  // Task timer functions
+  const handleStartTimer = () => {
+    if (timerState.isRunning && timerState.isPaused) {
+      // Resume from pause
+      const pauseDuration = pauseStartTime ? Math.floor((Date.now() - pauseStartTime) / 1000) : 0;
+      const updatedTask = {
+        ...timerState.currentTask!,
+        pausedDuration: timerState.currentTask!.pausedDuration + pauseDuration,
+        isPaused: false
+      };
+      
+      setTimerState({
+        currentTask: updatedTask,
+        isRunning: true,
+        isPaused: false
+      });
+      setPauseStartTime(null);
+      addLog(`Resumed task: ${taskName}`, 'info');
+    } else if (!timerState.isRunning) {
+      // Start new task
+      const newTask = taskTimerService.startTask(taskName || currentDirectory.split('\\').pop() || 'New Task');
+      setTimerState({
+        currentTask: newTask,
+        isRunning: true,
+        isPaused: false
+      });
+      setCurrentTime(0);
+      addLog(`Started task: ${newTask.name}`, 'info');
+      setStatus(`Task timer started: ${newTask.name}`, 'success');
+    }
+  };
+  
+  const handlePauseTimer = () => {
+    if (timerState.isRunning && !timerState.isPaused) {
+      setPauseStartTime(Date.now());
+      setTimerState({
+        ...timerState,
+        isPaused: true
+      });
+      addLog(`Paused task: ${taskName}`, 'info');
+    }
+  };
+  
+  const handleStopTimer = async () => {
+    if (!timerState.currentTask) return;
+    
+    const pauseDuration = (timerState.isPaused && pauseStartTime) 
+      ? Math.floor((Date.now() - pauseStartTime) / 1000)
+      : 0;
+    
+    const finalTask: Task = {
+      ...timerState.currentTask,
+      endTime: new Date().toISOString(),
+      duration: taskTimerService.calculateDuration(timerState.currentTask, false),
+      pausedDuration: timerState.currentTask.pausedDuration + pauseDuration,
+      isPaused: false
+    };
+    
+    // Save task to daily log
+    try {
+      const today = taskTimerService.getTodayDateString();
+      await (window.electronAPI as any).saveTaskLog(today, finalTask);
+      addLog(`Completed task: ${finalTask.name} (${taskTimerService.formatDuration(finalTask.duration)})`, 'response');
+      setStatus(`Task completed: ${taskTimerService.formatDuration(finalTask.duration)}`, 'success');
+    } catch (error) {
+      console.error('[TaskTimer] Error saving task log:', error);
+      addLog(`Error saving task log: ${error}`, 'error');
+    }
+    
+    // Reset timer state
+    setTimerState({
+      currentTask: null,
+      isRunning: false,
+      isPaused: false
+    });
+    setCurrentTime(0);
+    setPauseStartTime(null);
+    setTaskName(currentDirectory.split('\\').pop() || 'New Task');
+    
+    // Clear localStorage
+    taskTimerService.saveTimerState({
+      currentTask: null,
+      isRunning: false,
+      isPaused: false
+    });
+  };
+  
+  // Function to log file operations (exported via context)
+  const logFileOperation = React.useCallback((operation: string, details?: string) => {
+    console.log('[TaskTimer] logFileOperation called:', {
+      operation,
+      details,
+      isRunning: timerState.isRunning,
+      isPaused: timerState.isPaused,
+      hasTask: !!timerState.currentTask,
+      taskName: timerState.currentTask?.name
+    });
+    
+    if (timerState.isRunning && timerState.currentTask && !timerState.isPaused) {
+      const updatedTask = taskTimerService.logFileOperation(timerState.currentTask, operation, details);
+      setTimerState({
+        ...timerState,
+        currentTask: updatedTask
+      });
+      console.log(`[TaskTimer] ✓ Operation logged successfully:`, operation, 'Total operations:', updatedTask.fileOperations.length);
+    } else {
+      console.log('[TaskTimer] ✗ Operation NOT logged - Timer not running or paused');
+    }
+  }, [timerState]);
+  
+  // Register logFileOperation with context so other components can use it
+  React.useEffect(() => {
+    setLogFileOperation(() => logFileOperation);
+  }, [logFileOperation, setLogFileOperation]);
+
+  // Memoized function to load latest downloads - can be called externally
+  const loadLatestDownloads = React.useCallback(async () => {
+    try {
+      // Use transfer preview to get latest 3 files from downloads
+      const previewResult = await window.electronAPI.transfer({ 
+        numFiles: 3,
+        command: 'preview',
+        currentDirectory: currentDirectory
+      });
+      
+      if (previewResult.success && previewResult.files) {
+        const newFiles = previewResult.files.slice(0, 3);
+        
+        // Compare with current downloads to prevent unnecessary updates (and flickering)
+        const hasChanged = (prev: any[], next: any[]) => {
+          if (prev.length !== next.length) return true;
+          for (let i = 0; i < prev.length; i++) {
+            if (prev[i]?.path !== next[i]?.path || prev[i]?.name !== next[i]?.name) {
+              return true;
+            }
+          }
+          return false;
+        };
+        
+        // Check if data actually changed
+        setLatestDownloads(prev => {
+          if (hasChanged(prev, newFiles)) {
+            return newFiles;
+          }
+          return prev;
+        });
+      } else {
+        setLatestDownloads(prev => {
+          if (prev.length === 0) return prev;
+          return [];
+        });
+      }
+    } catch (error) {
+      console.error('[FileTransfer] Failed to load latest downloads:', error);
+      setLatestDownloads(prev => {
+        if (prev.length === 0) return prev;
+        return [];
+      });
+    }
+  }, [currentDirectory, startTransition]);
 
   // Load latest downloads on mount and set up file watcher
   useEffect(() => {
-    const loadLatestDownloads = async () => {
-      setLoadingDownloads(true);
-      try {
-        // Use transfer preview to get latest 3 files from downloads
-        // Note: We pass currentDirectory but it doesn't affect which files are shown
-        const previewResult = await window.electronAPI.transfer({ 
-          numFiles: 3,
-          command: 'preview',
-          currentDirectory: currentDirectory
-        });
-        
-        if (previewResult.success && previewResult.files) {
-          setLatestDownloads(previewResult.files.slice(0, 3));
-          // Store downloads directory if available in result
-          if (previewResult.files.length > 0 && previewResult.files[0].path) {
-            const firstFilePath = previewResult.files[0].path;
-            const downloadsDir = firstFilePath.substring(0, firstFilePath.lastIndexOf('\\'));
-            setDownloadsDirectory(downloadsDir);
-          }
-        } else {
-          setLatestDownloads([]);
-        }
-      } catch (error) {
-        console.error('Failed to load latest downloads:', error);
-        setLatestDownloads([]);
-      } finally {
-        setLoadingDownloads(false);
-      }
-    };
-
     loadLatestDownloads();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only load once on mount
-
-  // File watcher for downloads directory (lightweight approach)
-  useEffect(() => {
-    if (!downloadsDirectory) return;
     
-    let isWatching = false;
-    let idleTimeout: NodeJS.Timeout | undefined;
-
-    const startWatching = async () => {
-      try {
-        if (downloadsDirectory && !isWatching) {
-          // Check if file watching is enabled in settings
-          const config = await (window.electronAPI as any).getConfig();
-          if (config.enableFileWatching === false) {
-            return;
-          }
-
-          const result = await (window.electronAPI as any).startWatchingDirectory(downloadsDirectory);
-          if (result.success) {
-            isWatching = true;
-          }
-        }
-      } catch (error) {
-        console.error('[FunctionPanels] Error starting downloads watcher:', error);
+    // Set up a fallback auto-refresh interval every 5 seconds
+    const refreshInterval = setInterval(() => {
+      if (!document.hidden) { // Only refresh if tab is visible
+        loadLatestDownloads();
       }
-    };
-
-    const stopWatching = async () => {
-      try {
-        if (downloadsDirectory && isWatching) {
-          await (window.electronAPI as any).stopWatchingDirectory(downloadsDirectory);
-          isWatching = false;
-        }
-      } catch (error) {
-        console.error('[FunctionPanels] Error stopping downloads watcher:', error);
-      }
-    };
-
-    // Start watching after idle period
-    idleTimeout = setTimeout(() => {
-      startWatching();
-    }, 3000); // 3 second idle delay
-
-    // Cleanup
+    }, 5000); // Check every 5 seconds as fallback
+    
     return () => {
-      if (idleTimeout) clearTimeout(idleTimeout);
-      stopWatching();
+      clearInterval(refreshInterval);
     };
-  }, [downloadsDirectory]);
+  }, [loadLatestDownloads]);
 
-  // Listen for folder contents changed events to refresh downloads
+  // File watcher disabled to avoid conflicts with FileGrid watcher
+  // Using 5-second auto-refresh as reliable fallback instead
+  // If needed in future, ensure proper cleanup and coordination with FileGrid watcher
+
+  // Listen for folder refresh events to also refresh downloads
   useEffect(() => {
-    const handleFolderContentsChanged = async (_event: any, data: { directory: string; newFiles?: string[]; event?: string; filePath?: string }) => {
-      if (data && data.directory === downloadsDirectory) {
-        // Refresh downloads list
-        try {
-          // We need to pass some directory, but it doesn't matter which one for downloads preview
-          const previewResult = await window.electronAPI.transfer({ 
-            numFiles: 3,
-            command: 'preview',
-            currentDirectory: downloadsDirectory
-          });
-          
-          if (previewResult.success && previewResult.files) {
-            setLatestDownloads(previewResult.files.slice(0, 3));
-          }
-        } catch (error) {
-          console.error('Failed to refresh downloads:', error);
-        }
-      }
+    const handleFolderRefresh = () => {
+      loadLatestDownloads();
     };
 
-    if ((window.electronAPI as any).onFolderContentsChanged) {
-      (window.electronAPI as any).onFolderContentsChanged(handleFolderContentsChanged);
-    }
-
+    // Listen for custom refresh event
+    window.addEventListener('folderRefresh', handleFolderRefresh);
+    
     return () => {
-      if ((window.electronAPI as any).removeAllListeners) {
-        (window.electronAPI as any).removeAllListeners('folderContentsChanged');
-      }
+      window.removeEventListener('folderRefresh', handleFolderRefresh);
     };
-  }, [downloadsDirectory]);
+  }, [loadLatestDownloads]);
 
   // Reset current file index when downloads list changes
   useEffect(() => {
     if (currentFileIndex >= latestDownloads.length) {
-      setCurrentFileIndex(Math.max(0, latestDownloads.length - 1));
+      startTransition(() => {
+        setCurrentFileIndex(Math.max(0, latestDownloads.length - 1));
+      });
     }
-  }, [latestDownloads, currentFileIndex]);
+  }, [latestDownloads, currentFileIndex, startTransition]);
 
   // Load native icon for the current file
   useEffect(() => {
@@ -348,7 +484,6 @@ export const FunctionPanels: React.FC = () => {
   } | null>(null);
   const bgColor = useColorModeValue('#f8fafc', 'gray.900');
   const headerBgColor = useColorModeValue('#f1f5f9', 'gray.900');
-  const headerTextColor = useColorModeValue('#334155', 'white');
   const buttonHoverBg = useColorModeValue('#e2e8f0', 'gray.700');
   const borderColor = useColorModeValue('#cbd5e1', 'gray.700');
 
@@ -402,6 +537,9 @@ export const FunctionPanels: React.FC = () => {
         if (result.success) {
           addLog(result.message, 'response');
           setStatus('GST Rename completed', 'success');
+          
+          // Log file operation
+          logFileOperation('GST Rename', `Renamed files in ${currentDirectory}`);
           
           // Refresh folder view to show renamed files
           try {
@@ -495,6 +633,9 @@ export const FunctionPanels: React.FC = () => {
           addLog(result.message, 'response');
           setStatus('ZIP extraction completed', 'success');
           
+          // Log file operation
+          logFileOperation('Extract ZIPs', `Extracted ${result.extractedFiles?.length || 0} files from ZIP archives`);
+          
           // Show extraction result dialog
           if (result.extractedFiles && result.extractedFiles.length > 0) {
             setExtractionResult({
@@ -539,6 +680,9 @@ export const FunctionPanels: React.FC = () => {
           addLog(result.message, 'response');
           setStatus('EML extraction completed', 'success');
           
+          // Log file operation
+          logFileOperation('Extract EML', `Extracted ${result.extractedFiles?.length || 0} attachments from EML files`);
+          
           // Show extraction result dialog
           if (result.extractedFiles && result.extractedFiles.length > 0) {
             setExtractionResult({
@@ -579,6 +723,17 @@ export const FunctionPanels: React.FC = () => {
         if (result.success) {
           addLog(result.message, 'response');
           setStatus('Transfer Latest completed', 'success');
+          
+          // Log file operation with renamed filename
+          if (result.files && result.files.length > 0) {
+            const fileName = result.files[0].name;
+            const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+            logFileOperation(`${fileName} transferred to ${dirName}`);
+          }
+          
+          // Refresh downloads panel
+          loadLatestDownloads();
+          
           // Refresh folder view
           setStatus('Refreshing folder...', 'info');
           if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
@@ -924,11 +1079,7 @@ export const FunctionPanels: React.FC = () => {
                 maxW="600px"
               >
                 <Flex direction="column" gap={1}>
-                  {loadingDownloads ? (
-                    <Flex justify="center" align="center" py={2}>
-                      <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')}>Loading...</Text>
-                    </Flex>
-                  ) : latestDownloads.length === 0 ? (
+                  {latestDownloads.length === 0 ? (
                     <Flex direction="column" justify="center" align="center" py={2} gap={1}>
                       <Icon as={Download} boxSize={6} color={useColorModeValue('gray.400', 'gray.500')} />
                       <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')} textAlign="center" fontWeight="medium">
@@ -941,7 +1092,11 @@ export const FunctionPanels: React.FC = () => {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setCurrentFileIndex(prev => Math.max(0, prev - 1))}
+                        onClick={() => {
+                          startTransition(() => {
+                            setCurrentFileIndex(prev => Math.max(0, prev - 1));
+                          });
+                        }}
                         isDisabled={currentFileIndex === 0}
                         _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
                         px={2}
@@ -951,20 +1106,53 @@ export const FunctionPanels: React.FC = () => {
 
                       {/* Current file */}
                       <Box flex={1}>
-                        <DraggableFileItem
-                          file={latestDownloads[currentFileIndex]}
-                          isSelected={false}
-                          onSelect={() => {}}
-                          onContextMenu={() => {}}
-                          index={currentFileIndex}
-                          selectedFiles={[]}
-                          sortedFiles={latestDownloads}
+                         <DraggableFileItem
+                           file={latestDownloads[currentFileIndex]}
+                           isSelected={false}
+                           onSelect={() => {}}
+                           onContextMenu={() => {}}
+                           index={currentFileIndex}
+                           selectedFiles={[]}
+                           sortedFiles={latestDownloads}
                           onDragStateReset={() => {}}
-                          isCut={false}
-                          onFileMouseDown={() => {}}
-                          onFileClick={() => {}}
-                          onFileMouseUp={() => {}}
-                           onFileDragStart={() => {}}
+                           isCut={false}
+                           onFileMouseDown={() => {}}
+                          onFileClick={() => {
+                            // Handle file click - could be used to open the file directly
+                          }}
+                           onFileMouseUp={() => {}}
+                          onFileDragStart={(file, _index, event) => {
+                            // Let the parent know we're dragging this file
+                            addLog(`Dragging ${file.name} from downloads`);
+                            
+                            // Set proper drag effect 
+                            event.dataTransfer.effectAllowed = 'copy';
+                            
+                            // Create a custom ghost image for smoother drag
+                            try {
+                              const dragElement = document.createElement('div');
+                              dragElement.style.position = 'absolute';
+                              dragElement.style.top = '-1000px';
+                              dragElement.style.padding = '4px 8px';
+                              dragElement.style.background = 'white';
+                              dragElement.style.border = '1px solid #3182ce';
+                              dragElement.style.borderRadius = '4px';
+                              dragElement.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
+                              dragElement.style.color = '#1a202c';
+                              dragElement.style.fontSize = '14px';
+                              dragElement.innerText = file.name;
+                              document.body.appendChild(dragElement);
+                              event.dataTransfer.setDragImage(dragElement, 10, 10);
+                              setTimeout(() => document.body.removeChild(dragElement), 0);
+                            } catch (err) {
+                              console.warn('[FileTransfer] Error creating drag ghost:', err);
+                            }
+                            
+                            // Refresh downloads after a short delay (file might be moved)
+                            setTimeout(() => {
+                              loadLatestDownloads();
+                            }, 1000);
+                          }}
                            onNativeIconLoaded={(filePath, iconData) => {
                              setNativeIcons(prev => {
                                const newMap = new Map(prev);
@@ -972,7 +1160,7 @@ export const FunctionPanels: React.FC = () => {
                                return newMap;
                              });
                            }}
-                        >
+                         >
                           <Box
                             px={3}
                             py={2}
@@ -1027,7 +1215,11 @@ export const FunctionPanels: React.FC = () => {
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setCurrentFileIndex(prev => Math.min(latestDownloads.length - 1, prev + 1))}
+                        onClick={() => {
+                          startTransition(() => {
+                            setCurrentFileIndex(prev => Math.min(latestDownloads.length - 1, prev + 1));
+                          });
+                        }}
                         isDisabled={currentFileIndex === latestDownloads.length - 1}
                         _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
                         px={2}
@@ -1039,6 +1231,159 @@ export const FunctionPanels: React.FC = () => {
                 </Flex>
                  <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={2} textAlign="center" fontWeight="medium">
                   File Transfer
+                </Text>
+              </Box>
+              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
+              <Box 
+                p={2} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
+                borderRadius="md" 
+                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
+                minW="260px"
+                maxW="260px"
+              >
+                <Flex direction="column" gap={2} minH="60px" mt="13px">
+                  {/* Task Name - Top, Left Aligned, Bigger */}
+                  <Box>
+                    <Box 
+                      as="input"
+                      type="text"
+                      value={taskName}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        setTaskName(e.target.value);
+                        if (timerState.currentTask) {
+                          setTimerState({
+                            ...timerState,
+                            currentTask: {
+                              ...timerState.currentTask,
+                              name: e.target.value
+                            }
+                          });
+                        }
+                      }}
+                      placeholder="Task name..."
+                      fontSize="md"
+                      fontWeight="bold"
+                      width="100%"
+                      bg="transparent"
+                      border="none"
+                      outline="none"
+                      color={useColorModeValue('gray.800', 'gray.100')}
+                      _placeholder={{ color: useColorModeValue('gray.400', 'gray.500') }}
+                      _hover={{ 
+                        bg: useColorModeValue('gray.50', 'rgba(255,255,255,0.05)'),
+                        borderRadius: 'md'
+                      }}
+                      textAlign="left"
+                      px={1}
+                      py={0.5}
+                      cursor="text"
+                      transition="background 0.15s ease"
+                    />
+                    {/* Line separator */}
+                    <Box 
+                      h="1px" 
+                      bg={useColorModeValue('gray.300', 'gray.600')} 
+                      mt={1}
+                      mb={0.5}
+                    />
+                  </Box>
+                  
+                  {/* Control Buttons & Timer Pill */}
+                  <Flex gap={1} align="center" justify="space-between">
+                    {/* Buttons on left */}
+                    <Flex gap={0.5}>
+                      <Tooltip label={timerState.isRunning && timerState.isPaused ? "Resume" : "Start"} placement="bottom">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={handleStartTimer}
+                          isDisabled={timerState.isRunning && !timerState.isPaused}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        >
+                          <Icon as={Play} boxSize={3.5} />
+                        </Button>
+                      </Tooltip>
+                      
+                      <Tooltip label="Pause" placement="bottom">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={handlePauseTimer}
+                          isDisabled={!timerState.isRunning || timerState.isPaused}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        >
+                          <Icon as={Pause} boxSize={3.5} />
+                        </Button>
+                      </Tooltip>
+                      
+                      <Tooltip label="Stop & Save" placement="bottom">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={handleStopTimer}
+                          isDisabled={!timerState.isRunning}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        >
+                          <Icon as={Square} boxSize={3.5} />
+                        </Button>
+                      </Tooltip>
+                      
+                      <Box mx={1} h="18px" w="1px" bg={useColorModeValue('gray.300', 'gray.600')} />
+                      
+                      <Tooltip label="Show Summary" placement="bottom">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={() => setTaskTimerSummaryOpen(true)}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        >
+                          <Icon as={BarChart} boxSize={3.5} />
+                        </Button>
+                      </Tooltip>
+                    </Flex>
+                    
+                    {/* Timer Pill on right */}
+                    <Flex
+                      px={2}
+                      py={0.5}
+                      borderRadius="full"
+                      bg={timerState.isRunning 
+                        ? (timerState.isPaused ? useColorModeValue('#e5e7eb', '#4b5563') : useColorModeValue('#dbeafe', '#1e3a8a'))
+                        : useColorModeValue('#e5e7eb', '#4b5563')
+                      }
+                      align="center"
+                      justify="center"
+                    >
+                      <Text 
+                        fontSize="xs" 
+                        fontWeight="semibold" 
+                        fontFamily="mono"
+                        color={timerState.isRunning 
+                          ? (timerState.isPaused ? useColorModeValue('#6b7280', '#9ca3af') : useColorModeValue('#1e3a8a', '#60a5fa'))
+                          : useColorModeValue('#6b7280', '#9ca3af')
+                        }
+                        letterSpacing="tight"
+                      >
+                        {taskTimerService.formatDuration(currentTime)}
+                      </Text>
+                    </Flex>
+                  </Flex>
+                </Flex>
+                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={2} textAlign="center" fontWeight="medium">
+                  Task Timer
                 </Text>
               </Box>
             </Flex>
@@ -1083,7 +1428,12 @@ export const FunctionPanels: React.FC = () => {
     </Flex>
     <TransferMappingDialog isOpen={isTransferMappingOpen} onClose={() => setTransferMappingOpen(false)} />
     <OrgCodesDialog isOpen={isOrgCodesOpen} onClose={() => setOrgCodesOpen(false)} />
-    <MergePDFDialog isOpen={isMergePDFOpen} onClose={() => setMergePDFOpen(false)} currentDirectory={currentDirectory} />
+    <MergePDFDialog 
+      isOpen={isMergePDFOpen} 
+      onClose={() => setMergePDFOpen(false)} 
+      currentDirectory={currentDirectory}
+      onFileOperation={logFileOperation}
+    />
     <ExtractionResultDialog 
       isOpen={isExtractionResultOpen} 
       onClose={() => setExtractionResultOpen(false)} 
@@ -1114,6 +1464,10 @@ export const FunctionPanels: React.FC = () => {
     <ClientSearchOverlay 
       isOpen={isClientSearchOpen} 
       onClose={() => setClientSearchOpen(false)} 
+    />
+    <TaskTimerSummaryDialog
+      isOpen={isTaskTimerSummaryOpen}
+      onClose={() => setTaskTimerSummaryOpen(false)}
     />
 
   </>;

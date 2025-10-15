@@ -84,6 +84,10 @@ interface ElectronAPI {
   convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
   // Image clipboard methods
   saveImageFromClipboard: (currentDirectory: string, filename: string, base64Data: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
+  // Task Timer methods
+  saveTaskLog: (dateString: string, task: any) => Promise<{ success: boolean; error?: string }>;
+  getTaskLogs: (dateString: string) => Promise<{ success: boolean; tasks: any[]; error?: string }>;
+  deleteTaskLog: (dateString: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -99,10 +103,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Transfer command
   transfer: async (options: TransferOptions) => {
-    console.log('[Preload] Transfer request:', options);
-    const result = await ipcRenderer.invoke('transfer-files', options);
-    console.log('[Preload] Transfer result:', result);
-    return result;
+    return await ipcRenderer.invoke('transfer-files', options);
   },
   
   // Config management
@@ -295,6 +296,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Image clipboard methods
   saveImageFromClipboard: async (currentDirectory: string, filename: string, base64Data: string) => {
     return await ipcRenderer.invoke('save-image-from-clipboard', currentDirectory, filename, base64Data);
+  },
+  
+  // Task Timer methods
+  saveTaskLog: async (dateString: string, task: any) => {
+    return await ipcRenderer.invoke('save-task-log', dateString, task);
+  },
+  getTaskLogs: async (dateString: string) => {
+    return await ipcRenderer.invoke('get-task-logs', dateString);
+  },
+  deleteTaskLog: async (dateString: string, taskId: string) => {
+    return await ipcRenderer.invoke('delete-task-log', dateString, taskId);
   },
 
 }); 

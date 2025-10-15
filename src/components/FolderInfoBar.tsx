@@ -68,7 +68,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -93,6 +93,25 @@ export const FolderInfoBar: React.FC = () => {
     // Remove file extension and format as "New [filename]"
     const nameWithoutExtension = templateName.replace(/\.[^/.]+$/, '')
     return `New ${nameWithoutExtension}`
+  }
+
+  // File filtering function to match FileGrid behavior
+  const filterFiles = (files: any[]) => {
+    if (!Array.isArray(files)) return files;
+    
+    return files.filter((f: any) => {
+      // Filter temporary files (files starting with ~$)
+      if (hideTemporaryFiles && f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')) {
+        return false;
+      }
+      
+      // Filter dot files/folders (files/folders starting with .)
+      if (hideDotFiles && typeof f?.name === 'string' && f.name.startsWith('.')) {
+        return false;
+      }
+      
+      return true;
+    });
   }
 
   // Optimized color values for consistent light mode appearance
@@ -295,8 +314,13 @@ export const FolderInfoBar: React.FC = () => {
       setSelectedFile(null)
       setClipboard({ files: [], operation: null })
       
-      setFolderItems(contents)
+      // Apply filtering to match FileGrid behavior
+      const filtered = filterFiles(Array.isArray(contents) ? contents : [])
+      setFolderItems(filtered)
       setStatus('Folder refreshed', 'info')
+      
+      // Dispatch custom event to notify other components (like downloads panel) to refresh
+      window.dispatchEvent(new CustomEvent('folderRefresh'));
     } catch (error) {
       // Even on error, wait for the animation to complete
       await new Promise(resolve => setTimeout(resolve, 600))

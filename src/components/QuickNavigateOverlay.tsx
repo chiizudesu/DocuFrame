@@ -35,7 +35,8 @@ export const QuickNavigateOverlay: React.FC = () => {
     setStatus,
     setFolderItems,
     searchResults,
-    setSearchResults
+    setSearchResults,
+    logFileOperation
   } = useAppContext();
 
   // All useState hooks next
@@ -594,6 +595,15 @@ export const QuickNavigateOverlay: React.FC = () => {
               console.log('[QuickNavigate] Transfer successful');
               addLog(transferResult.message, 'response');
               setStatus('Transfer completed', 'success');
+              
+              // Log file operation for task timer with renamed filenames
+              if (transferResult.files && transferResult.files.length > 0) {
+                const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+                transferResult.files.forEach((file: any) => {
+                  logFileOperation(`${file.name} transferred to ${dirName}`);
+                });
+              }
+              
               // Refresh folder view
               setStatus('Refreshing folder...', 'info');
               if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
@@ -679,17 +689,63 @@ export const QuickNavigateOverlay: React.FC = () => {
           setStatus('PDF merge failed', 'error');
         }
       } else {
-        // Handle other commands
-        console.log('[QuickNavigate] Executing non-transfer command');
-        const result = await window.electronAPI.executeCommand(command, currentDirectory);
-        console.log('[QuickNavigate] Command execution result:', result);
+        // Check if this is a transfer mapping command
+        const commandParts = command.split(' ');
+        const commandName = commandParts[0].toLowerCase();
+        const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === commandName);
         
-        if (result.success) {
-          addLog(result.message, 'response');
-          setStatus('Command completed', 'success');
+        if (mappingKey) {
+          // This is a transfer mapping command - use transfer API
+          console.log('[QuickNavigate] Executing transfer mapping command:', mappingKey);
+          try {
+            const transferOptions: TransferOptions = { 
+              numFiles: 1,
+              command: commandName,
+              currentDirectory: currentDirectory
+            };
+            const transferResult = await window.electronAPI.transfer(transferOptions);
+            console.log('[QuickNavigate] Transfer mapping result:', transferResult);
+            
+            if (transferResult.success) {
+              addLog(transferResult.message, 'response');
+              setStatus('Transfer completed', 'success');
+              
+              // Log file operation for task timer with renamed filenames
+              if (transferResult.files && transferResult.files.length > 0) {
+                const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+                transferResult.files.forEach((file: any) => {
+                  logFileOperation(`${file.name} transferred to ${dirName}`);
+                });
+              }
+              
+              // Refresh folder view
+              setStatus('Refreshing folder...', 'info');
+              if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+                const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+                if (typeof setFolderItems === 'function') setFolderItems(contents);
+                setStatus('Folder refreshed', 'success');
+              }
+            } else {
+              addLog(transferResult.message, 'error');
+              setStatus('Transfer failed', 'error');
+            }
+          } catch (error) {
+            console.error('[QuickNavigate] Error during transfer mapping:', error);
+            addLog(`Error during transfer: ${error}`, 'error');
+          }
         } else {
-          addLog(result.message, 'error');
-          setStatus('Command failed', 'error');
+          // Handle other commands
+          console.log('[QuickNavigate] Executing non-transfer command');
+          const result = await window.electronAPI.executeCommand(command, currentDirectory);
+          console.log('[QuickNavigate] Command execution result:', result);
+          
+          if (result.success) {
+            addLog(result.message, 'response');
+            setStatus('Command completed', 'success');
+          } else {
+            addLog(result.message, 'error');
+            setStatus('Command failed', 'error');
+          }
         }
       }
     } catch (error) {

@@ -1,9 +1,13 @@
 import React from 'react';
-import { Box, Text, Flex } from '@chakra-ui/react';
+import { Box, Text } from '@chakra-ui/react';
 import { CommandLine } from './CommandLine';
 import { useAppContext } from '../context/AppContext';
 
-export const CommandPanel: React.FC = () => {
+interface CommandPanelProps {
+  onFileOperation?: (operation: string, details?: string) => void;
+}
+
+export const CommandPanel: React.FC<CommandPanelProps> = ({ onFileOperation }) => {
   const {
     commandHistory,
     previewFiles
@@ -14,7 +18,7 @@ export const CommandPanel: React.FC = () => {
   return (
     <>
       <Box p={2}>
-        <CommandLine />
+        <CommandLine onFileOperation={onFileOperation} />
       </Box>
       {showInfo && (
         <Box p={4} pt={0}>

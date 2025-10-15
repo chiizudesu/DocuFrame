@@ -2693,6 +2693,118 @@ ipcMain.handle('open-settings-window', async () => {
   }
 });
 
+// Task Timer IPC handlers
+ipcMain.handle('save-task-log', async (_, dateString: string, task: any) => {
+  try {
+    console.log('[TaskTimer] Saving task log for date:', dateString);
+    
+    // Get AppData path
+    const appDataPath = app.getPath('appData');
+    const docuFramePath = path.join(appDataPath, 'DocuFrame');
+    const taskLogsPath = path.join(docuFramePath, 'task-logs');
+    
+    // Ensure directories exist
+    if (!fs.existsSync(docuFramePath)) {
+      fs.mkdirSync(docuFramePath, { recursive: true });
+    }
+    if (!fs.existsSync(taskLogsPath)) {
+      fs.mkdirSync(taskLogsPath, { recursive: true });
+    }
+    
+    const logFilePath = path.join(taskLogsPath, `${dateString}.json`);
+    
+    // Load existing logs or create new array
+    let tasks: any[] = [];
+    if (fs.existsSync(logFilePath)) {
+      try {
+        const content = fs.readFileSync(logFilePath, 'utf8');
+        tasks = JSON.parse(content);
+      } catch (error) {
+        console.error('[TaskTimer] Error reading existing log file:', error);
+        tasks = [];
+      }
+    }
+    
+    // Add new task
+    tasks.push(task);
+    
+    // Save updated logs
+    fs.writeFileSync(logFilePath, JSON.stringify(tasks, null, 2), 'utf8');
+    
+    console.log('[TaskTimer] Task log saved successfully:', logFilePath);
+    return { success: true };
+  } catch (error) {
+    console.error('[TaskTimer] Error saving task log:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+ipcMain.handle('get-task-logs', async (_, dateString: string) => {
+  try {
+    console.log('[TaskTimer] Loading task logs for date:', dateString);
+    
+    // Get AppData path
+    const appDataPath = app.getPath('appData');
+    const taskLogsPath = path.join(appDataPath, 'DocuFrame', 'task-logs');
+    const logFilePath = path.join(taskLogsPath, `${dateString}.json`);
+    
+    // Check if file exists
+    if (!fs.existsSync(logFilePath)) {
+      console.log('[TaskTimer] No log file found for date:', dateString);
+      return { success: true, tasks: [] };
+    }
+    
+    // Read and parse log file
+    const content = fs.readFileSync(logFilePath, 'utf8');
+    const tasks = JSON.parse(content);
+    
+    console.log('[TaskTimer] Loaded', tasks.length, 'tasks for date:', dateString);
+    return { success: true, tasks };
+  } catch (error) {
+    console.error('[TaskTimer] Error loading task logs:', error);
+    return { success: false, tasks: [], error: String(error) };
+  }
+});
+
+ipcMain.handle('delete-task-log', async (_, dateString: string, taskId: string) => {
+  try {
+    console.log('[TaskTimer] Deleting task log:', taskId, 'for date:', dateString);
+    
+    // Get AppData path
+    const appDataPath = app.getPath('appData');
+    const taskLogsPath = path.join(appDataPath, 'DocuFrame', 'task-logs');
+    const logFilePath = path.join(taskLogsPath, `${dateString}.json`);
+    
+    // Check if file exists
+    if (!fs.existsSync(logFilePath)) {
+      console.log('[TaskTimer] No log file found for date:', dateString);
+      return { success: false, error: 'Log file not found' };
+    }
+    
+    // Read and parse log file
+    const content = fs.readFileSync(logFilePath, 'utf8');
+    let tasks = JSON.parse(content);
+    
+    // Filter out the task with the given ID
+    const originalLength = tasks.length;
+    tasks = tasks.filter((task: any) => task.id !== taskId);
+    
+    if (tasks.length === originalLength) {
+      console.log('[TaskTimer] Task not found:', taskId);
+      return { success: false, error: 'Task not found' };
+    }
+    
+    // Save updated logs
+    fs.writeFileSync(logFilePath, JSON.stringify(tasks, null, 2), 'utf8');
+    
+    console.log('[TaskTimer] Task deleted successfully:', taskId);
+    return { success: true };
+  } catch (error) {
+    console.error('[TaskTimer] Error deleting task log:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
 // Convert file path to HTTP URL for PDF viewing
 ipcMain.handle('convert-file-path-to-http-url', async (_, filePath: string) => {
   try {

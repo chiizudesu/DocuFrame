@@ -30,13 +30,15 @@ interface MergePDFDialogProps {
   onClose: () => void;
   currentDirectory: string;
   preselectedFiles?: string[];
+  onFileOperation?: (operation: string, details?: string) => void;
 }
 
 export const MergePDFDialog: React.FC<MergePDFDialogProps> = ({
   isOpen,
   onClose,
   currentDirectory,
-  preselectedFiles = []
+  preselectedFiles = [],
+  onFileOperation
 }) => {
   // Memoize preselectedFiles to prevent infinite re-renders
   const memoizedPreselectedFiles = useMemo(() => preselectedFiles, [preselectedFiles?.join(',')]);
@@ -127,6 +129,12 @@ export const MergePDFDialog: React.FC<MergePDFDialogProps> = ({
       if (result.success) {
         addLog(result.message, 'response');
         setStatus('PDFs merged successfully', 'success');
+        
+        // Log file operation for task timer
+        if (onFileOperation) {
+          onFileOperation('Merge PDFs', `Merged ${selectedFiles.length} PDFs into ${filename}`);
+        }
+        
         onClose();
         // Reset state for next use
         setSelectedFiles([]);

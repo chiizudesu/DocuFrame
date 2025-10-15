@@ -3,7 +3,11 @@ import { Flex, Input, IconButton, Text, useColorModeValue } from '@chakra-ui/rea
 import { Send, ArrowUp, ArrowDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
-export const CommandLine: React.FC = () => {
+interface CommandLineProps {
+  onFileOperation?: (operation: string, details?: string) => void;
+}
+
+export const CommandLine: React.FC<CommandLineProps> = ({ onFileOperation }) => {
   const {
     addLog,
     commandHistory,
@@ -15,9 +19,24 @@ export const CommandLine: React.FC = () => {
   } = useAppContext();
   const [command, setCommand] = useState('');
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [transferMappings, setTransferMappings] = useState<{ [key: string]: string }>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const bgColor = useColorModeValue('white', 'gray.900');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
+  
+  // Load transfer mappings on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const config = await (window.electronAPI as any).getConfig();
+        const mappings = config?.transferCommandMappings || {};
+        setTransferMappings(mappings);
+      } catch (error) {
+        console.error('[CommandLine] Error loading transfer mappings:', error);
+        setTransferMappings({});
+      }
+    })();
+  }, []);
 
   const handleSubmit = async () => {
     if (!command.trim()) return;
@@ -61,6 +80,18 @@ export const CommandLine: React.FC = () => {
               console.log('[CommandLine] Transfer successful');
               addLog(transferResult.message, 'response');
               setStatus('Transfer completed', 'success');
+              
+              // Log file operation for task timer with renamed filenames
+              if (onFileOperation && transferResult.files && transferResult.files.length > 0) {
+                const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+                transferResult.files.forEach((file: any) => {
+                  onFileOperation(`${file.name} transferred to ${dirName}`);
+                });
+              }
+              
+              // Dispatch custom event to notify downloads panel to refresh
+              window.dispatchEvent(new CustomEvent('folderRefresh'));
+              
               // Refresh folder view
               setStatus('Refreshing folder...', 'info');
               if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
@@ -91,6 +122,12 @@ export const CommandLine: React.FC = () => {
           console.log('[CommandLine] Finals command successful');
           addLog(result.message, 'response');
           setStatus('Finals completed', 'success');
+          
+          // Log file operation for task timer
+          if (onFileOperation) {
+            onFileOperation('Finals Command', `Executed finals in ${currentDirectory}`);
+          }
+          
           // Refresh folder view to show renamed files
           setStatus('Refreshing folder...', 'info');
           if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
@@ -104,19 +141,67 @@ export const CommandLine: React.FC = () => {
           setStatus('Finals failed', 'error');
         }
       } else {
-        // Handle other commands
-        console.log('[CommandLine] Executing non-transfer command');
-        const result = await window.electronAPI.executeCommand(command, currentDirectory);
-        console.log('[CommandLine] Command execution result:', result);
+        // Check if this is a transfer mapping command
+        const commandParts = command.split(' ');
+        const commandName = commandParts[0].toLowerCase();
+        const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === commandName);
         
-        if (result.success) {
-          console.log('[CommandLine] Command successful');
-          addLog(result.message, 'response');
-          setStatus('Command completed', 'success');
+        if (mappingKey) {
+          // This is a transfer mapping command - use transfer API
+          console.log('[CommandLine] Executing transfer mapping command:', mappingKey);
+          try {
+            const transferResult = await window.electronAPI.transfer({ 
+              numFiles: 1, 
+              command: commandName, 
+              currentDirectory 
+            });
+            console.log('[CommandLine] Transfer mapping result:', transferResult);
+            
+            if (transferResult.success) {
+              addLog(transferResult.message, 'response');
+              setStatus('Transfer completed', 'success');
+              
+              // Log file operation for task timer with renamed filenames
+              if (onFileOperation && transferResult.files && transferResult.files.length > 0) {
+                const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+                transferResult.files.forEach((file: any) => {
+                  onFileOperation(`${file.name} transferred to ${dirName}`);
+                });
+              }
+              
+              // Dispatch custom event to notify downloads panel to refresh
+              window.dispatchEvent(new CustomEvent('folderRefresh'));
+              
+              // Refresh folder view
+              setStatus('Refreshing folder...', 'info');
+              if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
+                const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
+                if (typeof setFolderItems === 'function') setFolderItems(contents);
+                setStatus('Folder refreshed', 'success');
+              }
+            } else {
+              addLog(transferResult.message, 'error');
+              setStatus('Transfer failed', 'error');
+            }
+          } catch (error) {
+            console.error('[CommandLine] Error during transfer mapping:', error);
+            addLog(`Error during transfer: ${error}`, 'error');
+          }
         } else {
-          console.log('[CommandLine] Command failed:', result.message);
-          addLog(result.message, 'error');
-          setStatus('Command failed', 'error');
+          // Handle other commands
+          console.log('[CommandLine] Executing non-transfer command');
+          const result = await window.electronAPI.executeCommand(command, currentDirectory);
+          console.log('[CommandLine] Command execution result:', result);
+          
+          if (result.success) {
+            console.log('[CommandLine] Command successful');
+            addLog(result.message, 'response');
+            setStatus('Command completed', 'success');
+          } else {
+            console.log('[CommandLine] Command failed:', result.message);
+            addLog(result.message, 'error');
+            setStatus('Command failed', 'error');
+          }
         }
       }
     } catch (error) {

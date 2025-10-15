@@ -78,6 +78,9 @@ interface AppContextType {
   // New Tab Shortcut
   newTabShortcut: string;
   setNewTabShortcut: (shortcut: string) => void;
+  // Task Timer file operation logging
+  logFileOperation: (operation: string, details?: string) => void;
+  setLogFileOperation: (fn: (operation: string, details?: string) => void) => void;
   // Close Tab Shortcut
   closeTabShortcut: string;
   setCloseTabShortcut: (shortcut: string) => void;
@@ -155,6 +158,12 @@ export const AppProvider: React.FC<{
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
+  
+  // Task Timer file operation logging
+  const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
+    // Default no-op function
+    console.log('[AppContext] logFileOperation called but not initialized yet');
+  });
 
   // Settings loading function
   const loadSettings = useCallback(async () => {
@@ -403,6 +412,8 @@ export const AppProvider: React.FC<{
       setQuickAccessPaths,
       addQuickAccessPath,
       removeQuickAccessPath,
+      logFileOperation,
+      setLogFileOperation,
       // Document insights properties removed
     }}>
       {children}

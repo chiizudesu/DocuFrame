@@ -459,16 +459,6 @@ const JumpModeOverlay: React.FC<{
       displayPath = currentDirectory;
     }
     
-    // Debug logging to understand the path calculation
-    console.log('Path display debug:', {
-      searchText: searchText.trim(),
-      overlayPath,
-      currentDirectory,
-      overlayWorkingDirectory,
-      displayPath,
-      rootDirectory
-    });
-    
     // For preview paths, we want to show the path relative to the overlay working directory
     let pathToDisplay: string;
     if (searchText.trim() && searchResults.length > 0) {
@@ -481,74 +471,28 @@ const JumpModeOverlay: React.FC<{
       if (matchPath === overlayWorkingDirectory) {
         // The match IS the current working directory (self-match), don't add duplicate
         pathToDisplay = getRelativePath(overlayWorkingDirectory);
-        console.log('Self-match preview (no duplication):', {
-          overlayWorkingDirectory,
-          matchPath,
-          matchName,
-          pathToDisplay
-        });
       } else if (matchPath.startsWith(overlayWorkingDirectory + '\\') || matchPath.startsWith(overlayWorkingDirectory + '/')) {
         // The match is in a subdirectory of working directory - show: working + " / " + match
         const workingDirRelativePath = getRelativePath(overlayWorkingDirectory);
         pathToDisplay = workingDirRelativePath + " / " + matchName;
-        console.log('Subdirectory match preview:', {
-          overlayWorkingDirectory,
-          matchPath,
-          matchName,
-          workingDirRelativePath,
-          pathToDisplay
-        });
       } else {
         // The match is outside current working directory - show full path
         pathToDisplay = getRelativePath(matchPath);
-        console.log('External match preview:', {
-          overlayWorkingDirectory,
-          matchPath,
-          matchName,
-          pathToDisplay
-        });
       }
     } else {
       // Normal path display - show relative to root
       pathToDisplay = getRelativePath(displayPath);
-      console.log('Normal path display:', pathToDisplay);
     }
     
     // Split by " / " since getRelativePath returns segments joined with " / "
     const pathSegments = pathToDisplay.includes(' / ') ? pathToDisplay.split(' / ') : [pathToDisplay];
-    console.log('Final path segments:', pathSegments);
     
     return { pathToDisplay, pathSegments };
   }, [searchText, overlayPath, currentDirectory, overlayWorkingDirectory, rootDirectory, getRelativePath, searchResults]);
 
   // Memoize the path segments rendering to prevent unnecessary re-renders
   const pathSegmentsDisplay = React.useMemo(() => {
-    const { pathSegments, pathToDisplay } = pathDisplay;
-    
-    // Comprehensive debug logging for UI rendering
-    console.log('=== UI RENDERING DEBUG ===');
-    console.log('Path Display State:', {
-      searchText,
-      overlayPath,
-      currentDirectory,
-      selectedSegmentIndex,
-      isNavigating,
-      hasSearchResults: searchResults.length > 0
-    });
-    console.log('Path Calculation Result:', {
-      pathToDisplay,
-      pathSegments,
-      segmentCount: pathSegments.length
-    });
-    console.log('Segment Analysis:');
-    pathSegments.forEach((segment, index) => {
-      const isCurrentFolder = index === pathSegments.length - 1;
-      const isSelected = index === selectedSegmentIndex;
-      const isPreview = searchText.trim() && searchResults.length > 0 && isCurrentFolder;
-      console.log(`  [${index}] "${segment}" - current:${isCurrentFolder}, selected:${isSelected}, preview:${isPreview}`);
-    });
-    console.log('selectedSegmentIndex state:', selectedSegmentIndex);
-    console.log('========================');
+    const { pathSegments } = pathDisplay;
     
     return pathSegments.map((segment, index, array) => {
       const isCurrentFolder = index === array.length - 1;
