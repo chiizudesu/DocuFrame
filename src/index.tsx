@@ -13,6 +13,14 @@ const theme = extendTheme({
   },
 });
 
+// Check if this is the floating timer window and make it transparent
+const isFloatingTimer = window.location.hash === '#floating-timer';
+if (isFloatingTimer) {
+  document.body.style.backgroundColor = 'transparent';
+  document.documentElement.style.backgroundColor = 'transparent';
+  document.body.classList.add('floating-timer');
+}
+
 const container = document.getElementById('root');
 if (!container) throw new Error('Failed to find the root element');
 const root = createRoot(container);

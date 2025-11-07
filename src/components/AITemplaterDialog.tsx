@@ -20,10 +20,12 @@ import {
   AlertIcon,
   FormControl,
   FormLabel,
-  HStack
+  HStack,
+  Input
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Brain } from 'lucide-react';
-import { loadEmailTemplates, generateEmailFromTemplate, AI_AGENTS, type AIAgent } from '../services/aiService';
+import { Copy, Sparkles, Brain, Send } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { loadEmailTemplates, generateEmailFromTemplateStream, AI_AGENTS, type AIAgent } from '../services/aiService';
 
 interface FileItem { name: string; path: string; type: string; }
 
@@ -43,6 +45,8 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AIAgent>('openai');
+  const [followUpInput, setFollowUpInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -58,6 +62,7 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
       setSelectedTemplate(null);
       setSelectedFiles({});
       setSelectedAgent('openai');
+      setIsStreaming(false);
       loadEmailTemplates().then(setTemplates).catch(e => setError(e.message));
       (async () => {
         const items = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
@@ -81,6 +86,7 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
     setError(null);
     setResult('');
     setCopied(false);
+    setIsStreaming(false);
     try {
       // Extract text from selected PDFs
       const extracted: { [cat: string]: string } = {};
@@ -90,13 +96,25 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
         extracted[cat] = await (window.electronAPI as any).readPdfText(filePath);
       }
       
-      // Use the unified AI service with the selected agent
-      const result = await generateEmailFromTemplate(selectedTemplate, extracted, selectedAgent);
-      setResult(result);
+      // Switch to streaming mode
+      setLoading(false);
+      setIsStreaming(true);
+      
+      // Use the streaming version to show real-time generation
+      await generateEmailFromTemplateStream(
+        selectedTemplate, 
+        extracted, 
+        selectedAgent,
+        (chunk: string) => {
+          // Accumulate text as it streams in
+          setResult(prev => prev + chunk);
+        }
+      );
     } catch (err: any) {
       setError(err.message || 'Failed to generate email.');
-    } finally {
       setLoading(false);
+    } finally {
+      setIsStreaming(false);
     }
   };
 
@@ -108,6 +126,51 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
     }
   };
 
+  const handleFollowUp = async () => {
+    if (!followUpInput.trim() || !result) return;
+    
+    setError(null);
+    setIsStreaming(false);
+    
+    try {
+      const followUpPrompt = `Based on the previously generated email:
+
+${result}
+
+User's request: ${followUpInput}
+
+Please modify or enhance the email according to the user's request. Only provide the modified email, no explanations.`;
+
+      // Create a simple template with just the follow-up prompt
+      // No need to re-extract PDFs, just use the existing context
+      const modifiedTemplate = {
+        name: 'Follow-up',
+        template: followUpPrompt,
+        categories: []
+      };
+      
+      // Clear result and switch to streaming mode
+      setResult('');
+      setIsStreaming(true);
+      
+      // Stream the new response with empty extracted data
+      await generateEmailFromTemplateStream(
+        modifiedTemplate, 
+        {}, // No PDF data needed for follow-up
+        selectedAgent,
+        (chunk: string) => {
+          // Accumulate text as it streams in
+          setResult(prev => prev + chunk);
+        }
+      );
+      setFollowUpInput('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to process follow-up request.');
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
   const handleClose = () => {
     setResult('');
     setError(null);
@@ -115,7 +178,9 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
     setSelectedTemplate(null);
     setSelectedFiles({});
     setSelectedAgent('openai');
+    setFollowUpInput('');
     setLoading(false);
+    setIsStreaming(false);
     onClose();
   };
 
@@ -293,9 +358,11 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                 borderWidth="1px" 
                 borderColor={borderColor} 
                 position="relative"
-                h="450px"
+                flex="1"
                 display="flex"
                 flexDirection="column"
+                minH="0"
+                maxH="539px"
               >
                 {loading && (
                   <Flex justify="center" align="center" flex="1">
@@ -308,7 +375,7 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                   </Flex>
                 )}
                 
-                {!loading && !result && (
+                {!loading && !result && !isStreaming && (
                   <Flex justify="center" align="center" flex="1">
                     <Text 
                       fontSize="sm" 
@@ -321,11 +388,32 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                   </Flex>
                 )}
                 
+                {isStreaming && !result && (
+                  <Flex justify="center" align="center" flex="1">
+                    <VStack spacing={2}>
+                      <Text 
+                        fontSize="sm" 
+                        color={useColorModeValue('gray.600', 'gray.300')}
+                        animation="pulse 1.5s ease-in-out infinite"
+                        sx={{
+                          '@keyframes pulse': {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: 0.5 },
+                          }
+                        }}
+                      >
+                        Streaming response...
+                      </Text>
+                    </VStack>
+                  </Flex>
+                )}
+                
                 {result && !loading && (
                   <Box 
                     flex="1"
                     overflowY="auto" 
                     pr={2}
+                    minH="0"
                     css={{
                       '&::-webkit-scrollbar': {
                         width: '6px',
@@ -342,13 +430,59 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                       },
                     }}
                   >
-                    <Text 
-                      whiteSpace="pre-line" 
-                      fontSize="sm"
-                      lineHeight="1.5"
+                    <Box
+                      sx={{
+                        '& h1, & h2, & h3, & h4': {
+                          fontWeight: 'bold',
+                          marginBottom: '0.5rem',
+                          marginTop: '1rem'
+                        },
+                        '& h1': { fontSize: 'lg' },
+                        '& h2': { fontSize: 'md' },
+                        '& h3, & h4': { fontSize: 'sm' },
+                        '& p': {
+                          marginBottom: '0.75rem'
+                        },
+                        '& ul, & ol': {
+                          marginLeft: '1.5rem',
+                          marginBottom: '0.75rem'
+                        },
+                        '& li': {
+                          marginBottom: '0.25rem'
+                        },
+                        '& strong': {
+                          fontWeight: 'bold'
+                        },
+                        '& em': {
+                          fontStyle: 'italic'
+                        },
+                        '& code': {
+                          backgroundColor: useColorModeValue('gray.200', 'gray.600'),
+                          padding: '0.125rem 0.25rem',
+                          borderRadius: '0.25rem',
+                          fontSize: 'xs'
+                        }
+                      }}
                     >
-                      {result}
-                    </Text>
+                      <ReactMarkdown>{result}</ReactMarkdown>
+                      {isStreaming && (
+                        <Box
+                          as="span"
+                          display="inline-block"
+                          w="2px"
+                          h="1em"
+                          bg="yellow.500"
+                          ml={1}
+                          animation="blink 1s step-end infinite"
+                          sx={{
+                            '@keyframes blink': {
+                              '0%, 100%': { opacity: 1 },
+                              '50%': { opacity: 0 },
+                            }
+                          }}
+                        />
+                      )}
+                    </Box>
                   </Box>
                 )}
                 
@@ -366,6 +500,29 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                   style={{ display: result && !loading ? 'flex' : 'none' }}
                 />
               </Box>
+              
+              {/* Follow-up Input */}
+              {result && (
+                <HStack mt={3} spacing={2}>
+                  <Input
+                    placeholder="Ask for changes (e.g., 'make it more concise' or 'add bullet points')"
+                    value={followUpInput}
+                    onChange={(e) => setFollowUpInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && !loading && !isStreaming && handleFollowUp()}
+                    size="sm"
+                    isDisabled={loading || isStreaming}
+                  />
+                  <IconButton
+                    aria-label="Send follow-up"
+                    icon={<Send size={16} />}
+                    onClick={handleFollowUp}
+                    colorScheme="yellow"
+                    size="sm"
+                    isDisabled={!followUpInput.trim() || loading || isStreaming}
+                    isLoading={loading}
+                  />
+                </HStack>
+              )}
             </Box>
           </Flex>
         </ModalBody>

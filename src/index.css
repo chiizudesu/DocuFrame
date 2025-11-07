@@ -75,4 +75,20 @@
 
 * .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.5) !important;
-} 
+}
+
+/* Pulse animation for timer indicator */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Floating timer window transparency */
+body.floating-timer,
+body.floating-timer #root {
+  background: transparent !important;
+}

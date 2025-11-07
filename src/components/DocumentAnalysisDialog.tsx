@@ -31,13 +31,6 @@ import {
   Grid,
   GridItem,
   Heading,
-  Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  Switch,
   Collapse,
   Code,
   Wrap,
@@ -46,9 +39,10 @@ import {
   ScaleFade,
   Center
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Settings, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ChevronDown, ChevronUp, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, analyzePdfDocument } from '../services/aiService';
+import remarkGfm from 'remark-gfm';
+import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, type AIAgent, analyzePdfDocument, analyzePdfDocumentStream } from '../services/aiService';
 
 interface FileItem { 
   name: string; 
@@ -200,9 +194,9 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [customPrompt, setCustomPrompt] = useState('');
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
-  const [showAsTable, setShowAsTable] = useState(false);
-  const [tableData, setTableData] = useState<string[][] | null>(null);
   const [currentStage, setCurrentStage] = useState<'setup' | 'results'>('setup');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const analysisBoxRef = React.useRef<HTMLDivElement>(null);
 
   const toast = useToast();
   const { colorMode } = useColorMode();
@@ -223,11 +217,10 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
       setError(null);
       setDocumentText('');
       setCopied(false);
-      setShowAsTable(false);
-      setTableData(null);
       setSelectedQuickAction(null);
       setCustomPrompt('');
       setCurrentStage('setup');
+      setIsStreaming(false);
       
       // Find all PDF files in current directory and folder items
       const pdfFiles = folderItems.filter(file => 
@@ -294,11 +287,15 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
     console.log('Custom prompt trimmed:', customPrompt.trim());
     console.log('Selected quick action:', selectedQuickAction);
 
-    setLoading(true);
+    // Transition to results stage immediately
+    setCurrentStage('results');
     setError(null);
-    setAnalysis('');
-    setShowAsTable(false);
-    setTableData(null);
+    setAnalysis(''); // Clear to show loading state
+    setIsStreaming(true);
+    setLoading(false);
+    
+    // Set a placeholder immediately so UI switches to results view with loading indicator
+    setAnalysis(' '); // Single space to trigger results display
 
     try {
       // Prepare the analysis prompt with improved logic
@@ -378,38 +375,34 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
       console.log('Selected AI agent:', selectedAgent);
       console.log('PDF file path:', selectedFile.path);
       
-      // Use Claude's native PDF document API
-      console.log('Calling analyzePdfDocument...');
-      const insights = await analyzePdfDocument(selectedFile.path, selectedFile.name, analysisPrompt, selectedAgent);
-      console.log('Received insights length:', insights.length);
-      console.log('Insights preview (first 200 chars):', insights.substring(0, 200));
-      
-      setAnalysis(insights);
+      // Use Claude's native PDF document API with streaming
+      console.log('Calling analyzePdfDocumentStream...');
+      await analyzePdfDocumentStream(
+        selectedFile.path, 
+        selectedFile.name, 
+        analysisPrompt, 
+        selectedAgent,
+        (chunk: string) => {
+          // Accumulate text as it streams in
+          setAnalysis(prev => {
+            const newContent = prev + chunk;
+            // Auto-scroll to bottom during streaming
+            setTimeout(() => {
+              if (analysisBoxRef.current) {
+                analysisBoxRef.current.scrollTop = analysisBoxRef.current.scrollHeight;
+              }
+            }, 0);
+            return newContent;
+          });
+        }
+      );
+      console.log('Streaming complete');
       
       // Store the PDF path for follow-up questions (we'll use the file path, not text)
       setDocumentText(selectedFile.path);
       
-      // Check if this should be displayed as a table
-      const instructionsText = customPrompt.trim() || (activeAction ? activeAction.prompt : '');
-      const shouldShowAsTable = detectTableContent(instructionsText, insights);
-      console.log('Table detection - Instructions:', instructionsText);
-      console.log('Table detection - Should show as table:', shouldShowAsTable);
-      
-      if (shouldShowAsTable) {
-        const parsed = parseMarkdownTable(insights);
-        console.log('Parsed table data rows:', parsed?.length || 0);
-        if (parsed && parsed.length > 0) {
-          setTableData(parsed);
-          setShowAsTable(true);
-          console.log('Table view enabled');
-        }
-      }
-      
       // Clear any existing chat messages when starting fresh analysis
       setChatMessages([]);
-      
-      // Transition to results stage
-      setCurrentStage('results');
       
       const successMessage = promptType === 'CUSTOM' 
         ? 'Custom analysis completed' 
@@ -432,6 +425,7 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       console.error('Error message:', errorMessage);
       setError(`Failed to analyze document: ${errorMessage}`);
+      setAnalysis(''); // Clear placeholder on error
       toast({
         title: 'Analysis Failed',
         description: errorMessage,
@@ -440,7 +434,23 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
         isClosable: true,
       });
     } finally {
+      setIsStreaming(false);
       setLoading(false);
+      
+      // After streaming completes, check if table detection is needed
+      // This runs in finally so it happens whether success or error
+      if (analysis) {
+        const activeAction = selectedQuickAction ? QUICK_ACTIONS.find(a => a.id === selectedQuickAction) : null;
+        const instructionsText = customPrompt.trim() || (activeAction ? activeAction.prompt : '');
+        const shouldShowAsTable = detectTableContent(instructionsText, analysis);
+        console.log('Post-stream table detection:', shouldShowAsTable);
+        
+        if (shouldShowAsTable) {
+          const parsed = parseMarkdownTable(analysis);
+          console.log('Post-stream parsed table rows:', parsed?.length || 0);
+        }
+      }
+      
       console.log('=== ANALYSIS END ===');
     }
   };
@@ -529,11 +539,6 @@ Please provide a helpful, detailed response based on the PDF document content an
       if (shouldShowAsTable) {
         const parsed = parseMarkdownTable(response);
         console.log('Follow-up parsed table rows:', parsed?.length || 0);
-        if (parsed && parsed.length > 0) {
-          setTableData(parsed);
-          setShowAsTable(true);
-          console.log('Follow-up table view enabled');
-        }
       }
 
     } catch (error) {
@@ -565,85 +570,6 @@ Please provide a helpful, detailed response based on the PDF document content an
     });
   };
 
-  const handleCopyTable = () => {
-    if (!tableData) return;
-    
-    // Convert table data to tab-separated values for easy pasting
-    const tsvData = tableData.map(row => row.join('\t')).join('\n');
-    navigator.clipboard.writeText(tsvData);
-    
-    toast({
-      title: 'Table Copied',
-      description: 'Table data copied as tab-separated values - paste into Excel or Google Sheets',
-      status: 'success',
-      duration: 3000,
-      isClosable: true,
-    });
-  };
-
-  const handleForceTableConversion = () => {
-    if (!analysis) return;
-    
-    console.log('Forcing table conversion for analysis...');
-    
-    // Try to parse existing content as table
-    let parsed = parseMarkdownTable(analysis);
-    
-    if (!parsed || parsed.length === 0) {
-      // If no markdown table found, try to create one from structured text
-      console.log('No markdown table found, attempting to parse structured data...');
-      
-      const lines = analysis.split('\n').filter(line => line.trim().length > 0);
-      const dataLines = lines.filter(line => 
-        line.includes(':') || line.includes('$') || /\d+/.test(line)
-      );
-      
-      if (dataLines.length >= 2) {
-        // Create a simple two-column table from structured data
-        const tableRows: string[][] = [['Item', 'Value']]; // Header
-        
-        dataLines.forEach(line => {
-          if (line.includes(':')) {
-            const [key, value] = line.split(':').map(s => s.trim());
-            if (key && value) {
-              tableRows.push([
-                key.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, ''), // Remove bullets/numbers
-                value
-              ]);
-            }
-          } else if (line.includes('$') || /\d+/.test(line)) {
-            // For lines with financial data or numbers
-            tableRows.push([line.trim(), '']);
-          }
-        });
-        
-        if (tableRows.length > 1) {
-          parsed = tableRows;
-          console.log('Created table from structured data:', parsed.length, 'rows');
-        }
-      }
-    }
-    
-    if (parsed && parsed.length > 0) {
-      setTableData(parsed);
-      setShowAsTable(true);
-      toast({
-        title: 'Table Created',
-        description: 'Content converted to table format',
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      });
-    } else {
-      toast({
-        title: 'Table Conversion Failed',
-        description: 'Could not find structured data to convert to table format',
-        status: 'warning',
-        duration: 3000,
-        isClosable: true,
-      });
-    }
-  };
 
   const handleBackToSetup = () => {
     setCurrentStage('setup');
@@ -654,11 +580,10 @@ Please provide a helpful, detailed response based on the PDF document content an
     setChatMessages([]);
     setFollowUpQuestion('');
     setError(null);
-    setShowAsTable(false);
-    setTableData(null);
     setSelectedQuickAction(null);
     setCustomPrompt('');
     setCurrentStage('setup');
+    setIsStreaming(false);
   };
 
   const handleClose = () => {
@@ -672,9 +597,8 @@ Please provide a helpful, detailed response based on the PDF document content an
       setSelectedAgent('claude');
       setCustomPrompt('');
       setSelectedQuickAction(null);
-      setShowAsTable(false);
-      setTableData(null);
       setCurrentStage('setup');
+      setIsStreaming(false);
       onClose();
   };
 
@@ -954,7 +878,7 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                   </Alert>
                 )}
                 
-                {loading && (
+                {loading && !isStreaming && (
                   <Flex flex={1} align="center" justify="center" direction="column" gap={4}>
                     <Spinner size="lg" />
                     <Text color="gray.500">Analyzing document...</Text>
@@ -970,7 +894,14 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                   <VStack flex={1} spacing={0} align="stretch" overflow="hidden" w="100%">
                     {/* Analysis Results Header */}
                     <Flex justify="space-between" align="center" p={4} borderBottom="1px" borderColor={borderColor} flexShrink={0}>
-                      <Heading size="sm">Analysis Results</Heading>
+                      <HStack spacing={2}>
+                        <Heading size="sm">Analysis Results</Heading>
+                        {isStreaming && (
+                          <Badge colorScheme="blue" fontSize="xs" animation="pulse 2s ease-in-out infinite">
+                            Streaming...
+                          </Badge>
+                        )}
+                      </HStack>
                       <HStack spacing={2}>
                         <Button
                           size="sm"
@@ -981,36 +912,6 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                           New Analysis
                         </Button>
                         
-                        {/* Manual table conversion button */}
-                        <IconButton
-                          aria-label="Force table conversion"
-                          icon={<Settings size={14} />}
-                          size="sm"
-                          variant="ghost"
-                          onClick={handleForceTableConversion}
-                          title="Convert to table format"
-                        />
-                        
-                        {tableData && (
-                          <HStack spacing={2}>
-                            <Text fontSize="xs" color="gray.500">Table View</Text>
-                            <Switch 
-                              size="sm" 
-                              isChecked={showAsTable} 
-                              onChange={(e) => setShowAsTable(e.target.checked)}
-                            />
-                            {showAsTable && (
-                              <IconButton
-                                aria-label="Copy table"
-                                icon={<TableIcon size={16} />}
-                                size="sm"
-                                variant="ghost"
-                                onClick={handleCopyTable}
-                                title="Copy table data"
-                              />
-                            )}
-                          </HStack>
-                        )}
                         <IconButton
                           aria-label="Copy analysis"
                           icon={<Copy size={16} />}
@@ -1023,65 +924,48 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                     </Flex>
                     
                     {/* Results Content */}
-                    <Box flex={1} overflowY="auto" p={4} minH="0">
-                      {showAsTable && tableData ? (
-                        <Box
-                          overflowX="auto"
-                          bg={useColorModeValue('white', 'gray.900')}
-                          border="1px solid"
-                          borderColor={useColorModeValue('gray.300', 'gray.700')}
-                          borderRadius="md"
-                          p={2}
-                          mb={2}
+                    <Box 
+                      flex={1} 
+                      overflowY="auto" 
+                      p={6} 
+                      minH="0" 
+                      ref={analysisBoxRef}
+                      bg={useColorModeValue('gray.50', 'gray.900')}
+                    >
+                      <Box
+                          bg={useColorModeValue('white', 'gray.800')}
+                          p={6}
+                          borderRadius="lg"
                           boxShadow={useColorModeValue('sm', 'dark-lg')}
-                        >
-                          <Table variant="simple" size="sm">
-                            <Thead bg={useColorModeValue('gray.100', 'gray.800')} borderBottom="2px solid" borderColor={useColorModeValue('gray.300', 'gray.700')}
-                            >
-                              <Tr>
-                                {tableData[0]?.map((header, index) => (
-                                  <Th key={index} fontSize="xs" borderColor={useColorModeValue('gray.300', 'gray.700')}>
-                                    {header}
-                                  </Th>
-                                ))}
-                              </Tr>
-                            </Thead>
-                            <Tbody>
-                              {tableData.slice(1).map((row, rowIndex) => (
-                                <Tr key={rowIndex}>
-                                  {row.map((cell, cellIndex) => (
-                                    <Td key={cellIndex} fontSize="xs" borderColor={useColorModeValue('gray.200', 'gray.700')}>
-                                      {cell}
-                                    </Td>
-                                  ))}
-                                </Tr>
-                              ))}
-                            </Tbody>
-                          </Table>
-                          <Text fontSize="xs" color="gray.500" mt={2} textAlign="center">
-                            Click the table icon to copy this data to your clipboard
-                          </Text>
-                        </Box>
-                      ) : (
-                        <Box
+                          border="1px solid"
+                          borderColor={useColorModeValue('gray.200', 'gray.700')}
                           sx={{
                             '& h1, & h2, & h3, & h4': {
                               fontWeight: 'bold',
-                              marginBottom: '0.5rem',
-                              marginTop: '1rem'
+                              marginBottom: '0.25rem',
+                              marginTop: '0.5rem',
+                              '&:first-child': {
+                                marginTop: '0'
+                              }
                             },
                             '& h1': { fontSize: 'lg' },
                             '& h2': { fontSize: 'md' },
-                            '& h3, & h4': { fontSize: 'sm' },
+                            '& h3, & h4': { fontSize: 'sm', fontWeight: '600' },
                             '& p': {
-                              marginBottom: '0.75rem'
+                              marginBottom: '0.25rem',
+                              lineHeight: '1.4',
+                              fontSize: 'sm'
                             },
                             '& ul, & ol': {
-                              marginLeft: '1.5rem',
-                              marginBottom: '0.75rem'
+                              marginLeft: '1rem',
+                              marginBottom: '0.25rem',
+                              marginTop: '0.25rem',
+                              paddingLeft: '0.5rem'
                             },
                             '& li': {
-                              marginBottom: '0.25rem'
+                              marginBottom: '0.125rem',
+                              fontSize: 'sm',
+                              lineHeight: '1.4'
                             },
                             '& strong': {
                               fontWeight: 'bold'
@@ -1097,9 +981,66 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                             }
                           }}
                         >
-                          <ReactMarkdown>{analysis}</ReactMarkdown>
+                          <Box 
+                            whiteSpace="pre-wrap"
+                            sx={{
+                              '& table': {
+                                borderCollapse: 'collapse',
+                                width: '100%',
+                                marginTop: '1rem',
+                                marginBottom: '1rem',
+                                border: '1px solid',
+                                borderColor: useColorModeValue('gray.300', 'gray.600'),
+                              },
+                              '& th': {
+                                border: '1px solid',
+                                borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                padding: '0.5rem',
+                                backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                                fontWeight: 'bold',
+                                fontSize: 'sm',
+                                textAlign: 'left'
+                              },
+                              '& td': {
+                                border: '1px solid',
+                                borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                padding: '0.5rem',
+                                fontSize: 'sm'
+                              },
+                              '& tr:nth-of-type(even)': {
+                                backgroundColor: useColorModeValue('gray.50', 'gray.800')
+                              }
+                            }}
+                          >
+                            {analysis.trim() ? (
+                              <>
+                                <ReactMarkdown key={analysis.length} remarkPlugins={[remarkGfm]}>{analysis}</ReactMarkdown>
+                                {isStreaming && (
+                                  <Box
+                                    as="span"
+                                    display="inline-block"
+                                    w="2px"
+                                    h="1em"
+                                    bg="blue.500"
+                                    ml={1}
+                                    animation="blink 1s step-end infinite"
+                                    sx={{
+                                      '@keyframes blink': {
+                                        '0%, 100%': { opacity: 1 },
+                                        '50%': { opacity: 0 },
+                                      }
+                                    }}
+                                  />
+                                )}
+                              </>
+                            ) : isStreaming ? (
+                              <Flex align="center" gap={2} color={useColorModeValue('gray.500', 'gray.400')}>
+                                <Spinner size="sm" />
+                                <Text fontSize="sm">AI is analyzing...</Text>
+                              </Flex>
+                            ) : null}
+                          </Box>
                         </Box>
-                      )}
                       
                       {/* Chat Messages */}
                       {chatMessages.length > 0 && (
@@ -1126,22 +1067,65 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                                 sx={{
                                   '& h1, & h2, & h3, & h4': {
                                     fontWeight: 'bold',
-                                    marginBottom: '0.5rem',
-                                    marginTop: '0.5rem'
+                                    marginBottom: '0.25rem',
+                                    marginTop: '0.5rem',
+                                    '&:first-child': {
+                                      marginTop: '0'
+                                    }
+                                  },
+                                  '& h3, & h4': {
+                                    fontSize: 'sm',
+                                    fontWeight: '600'
                                   },
                                   '& p': {
-                                    marginBottom: '0.5rem'
+                                    marginBottom: '0.25rem',
+                                    lineHeight: '1.4',
+                                    fontSize: 'sm'
                                   },
                                   '& ul, & ol': {
                                     marginLeft: '1rem',
-                                    marginBottom: '0.5rem'
+                                    marginBottom: '0.25rem',
+                                    marginTop: '0.25rem'
+                                  },
+                                  '& li': {
+                                    fontSize: 'sm',
+                                    marginBottom: '0.125rem',
+                                    lineHeight: '1.4'
                                   },
                                   '& strong': {
-                                    fontWeight: 'bold'
+                                    fontWeight: '600'
+                                  },
+                                  '& table': {
+                                    borderCollapse: 'collapse',
+                                    width: '100%',
+                                    marginTop: '1rem',
+                                    marginBottom: '1rem',
+                                    border: '1px solid',
+                                    borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                  },
+                                  '& th': {
+                                    border: '1px solid',
+                                    borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                    padding: '0.5rem',
+                                    backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                                    fontWeight: 'bold',
+                                    fontSize: 'sm',
+                                    textAlign: 'left'
+                                  },
+                                  '& td': {
+                                    border: '1px solid',
+                                    borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                    padding: '0.5rem',
+                                    fontSize: 'sm'
+                                  },
+                                  '& tr:nth-of-type(even)': {
+                                    backgroundColor: useColorModeValue('gray.50', 'gray.800')
                                   }
                                 }}
                               >
-                                <ReactMarkdown>{message.content}</ReactMarkdown>
+                                <Box whiteSpace="pre-wrap">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                                </Box>
                               </Box>
                             </Box>
                           ))}
@@ -1158,7 +1142,7 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                           onChange={(e) => setFollowUpQuestion(e.target.value)}
                           onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendFollowUp()}
                           size="sm"
-                          disabled={loading}
+                          disabled={loading || isStreaming}
                           bg={colorMode === 'dark' ? 'gray.800' : 'white'}
                           color={colorMode === 'dark' ? 'white' : 'gray.900'}
                           borderColor={borderColor}
@@ -1196,7 +1180,7 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                           onClick={handleSendFollowUp}
                           colorScheme="blue"
                           size="sm"
-                          isDisabled={!followUpQuestion.trim() || loading}
+                          isDisabled={!followUpQuestion.trim() || loading || isStreaming}
                           isLoading={loading}
                         />
                       </Flex>

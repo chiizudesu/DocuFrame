@@ -76,6 +76,25 @@ export async function generateEmailFromTemplate(
   }
 }
 
+// Streaming version of generateEmailFromTemplate
+export async function generateEmailFromTemplateStream(
+  template: any,
+  extractedData: { [key: string]: string },
+  selectedAgent: AIAgent = 'claude',
+  onChunk: (text: string) => void
+): Promise<string> {
+  switch (selectedAgent) {
+    case 'claude':
+      return await claudeService.generateEmailFromTemplateStream(template, extractedData, 'sonnet', onChunk);
+    case 'claude-haiku':
+      return await claudeService.generateEmailFromTemplateStream(template, extractedData, 'haiku', onChunk);
+    case 'openai':
+      return await openaiService.generateEmailFromTemplateStream(template, extractedData, onChunk);
+    default:
+      throw new Error(`Unknown AI agent: ${selectedAgent}`);
+  }
+}
+
 // Load email templates (currently only available in OpenAI service)
 export async function loadEmailTemplates(): Promise<Array<{ name: string; description: string; categories: string[]; template: string; filename: string }>> {
   return await openaiService.loadEmailTemplates();
@@ -84,15 +103,35 @@ export async function loadEmailTemplates(): Promise<Array<{ name: string; descri
 // Rewrite email blurb function
 export async function rewriteEmailBlurb(
   rawBlurb: string, 
-  selectedAgent: AIAgent = 'openai'
+  selectedAgent: AIAgent = 'openai',
+  customInstructions?: string
 ): Promise<string> {
   switch (selectedAgent) {
     case 'openai':
-      return await openaiService.rewriteEmailBlurb(rawBlurb);
+      return await openaiService.rewriteEmailBlurb(rawBlurb, customInstructions);
     case 'claude':
-      return await claudeService.rewriteEmailBlurb(rawBlurb, 'sonnet');
+      return await claudeService.rewriteEmailBlurb(rawBlurb, 'sonnet', customInstructions);
     case 'claude-haiku':
-      return await claudeService.rewriteEmailBlurb(rawBlurb, 'haiku');
+      return await claudeService.rewriteEmailBlurb(rawBlurb, 'haiku', customInstructions);
+    default:
+      throw new Error(`Unknown AI agent: ${selectedAgent}`);
+  }
+}
+
+// Rewrite email blurb function with streaming
+export async function rewriteEmailBlurbStream(
+  rawBlurb: string, 
+  selectedAgent: AIAgent = 'openai',
+  customInstructions: string | undefined,
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  switch (selectedAgent) {
+    case 'openai':
+      return await openaiService.rewriteEmailBlurbStream(rawBlurb, customInstructions, onChunk);
+    case 'claude':
+      return await claudeService.rewriteEmailBlurbStream(rawBlurb, 'sonnet', customInstructions, onChunk);
+    case 'claude-haiku':
+      return await claudeService.rewriteEmailBlurbStream(rawBlurb, 'haiku', customInstructions, onChunk);
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }
@@ -131,4 +170,16 @@ export async function analyzePdfDocument(
 ): Promise<string> {
   const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
   return await claudeService.analyzePdfDocument(pdfFilePath, fileName, prompt, model);
+}
+
+// Streaming version for PDF document analysis
+export async function analyzePdfDocumentStream(
+  pdfFilePath: string,
+  fileName: string,
+  prompt: string,
+  selectedAgent: DocumentAIAgent = 'claude',
+  onChunk: (text: string) => void
+): Promise<string> {
+  const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
+  return await claudeService.analyzePdfDocumentStream(pdfFilePath, fileName, prompt, model, onChunk);
 }

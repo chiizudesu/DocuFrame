@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
+import { FloatingTaskTimerWindow } from './components/FloatingTaskTimerWindow';
 import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
@@ -676,6 +677,7 @@ const AppContent: React.FC = () => {
 
   // Check if this is the settings window
   const isSettingsWindow = window.location.hash === '#settings';
+  const isFloatingTimerWindow = window.location.hash === '#floating-timer';
 
   // Handle initial path for new windows
   useEffect(() => {
@@ -848,6 +850,23 @@ const AppContent: React.FC = () => {
       <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
         <SettingsWindow isOpen={true} onClose={() => window.close()} />
       </Box>
+    );
+  }
+  
+  // If this is the floating timer window, render only the timer
+  if (isFloatingTimerWindow) {
+    return (
+      <FloatingTaskTimerWindow 
+        onClose={() => window.close()} 
+        onOpenSummary={async () => {
+          // Open task timer summary in main window
+          try {
+            await (window.electronAPI as any).sendToMainWindow('open-task-timer-summary');
+          } catch (error) {
+            console.error('[FloatingTimer] Error opening summary:', error);
+          }
+        }}
+      />
     );
   }
   

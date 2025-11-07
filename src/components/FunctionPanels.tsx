@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useTransition } from 'react';
 import { Box, Flex, Button, Icon, Text, Tooltip, Tabs, TabList, TabPanels, TabPanel, Tab, Divider, Image } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Copy, Download, CheckCircle2, Eye, Building2, Calculator, Sparkles, Brain, Users, ChevronLeft, ChevronRight, Play, Pause, Square, BarChart } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Copy, Download, CheckCircle2, Eye, Building2, Calculator, Sparkles, Brain, Users, ChevronLeft, ChevronRight, Play, Pause, Square, BarChart, Maximize2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { ThemeToggle } from './ThemeToggle';
 import { useColorModeValue } from '@chakra-ui/react';
@@ -224,6 +224,66 @@ export const FunctionPanels: React.FC = () => {
       taskTimerService.saveTimerState(timerState);
     }
   }, [timerState]);
+  
+  // Listen for storage changes from other windows (sync timer state)
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'docuframe_timer_state' && e.newValue) {
+        try {
+          const newState: TimerState = JSON.parse(e.newValue);
+          console.log('[FunctionPanels] Timer state changed from other window:', newState);
+          setTimerState(newState);
+          
+          if (newState.currentTask) {
+            setTaskName(newState.currentTask.name);
+            const duration = taskTimerService.calculateDuration(newState.currentTask, newState.isPaused);
+            setCurrentTime(duration);
+          } else {
+            setTaskName(currentDirectory.split('\\').pop() || 'New Task');
+            setCurrentTime(0);
+          }
+        } catch (error) {
+          console.error('[FunctionPanels] Error parsing storage change:', error);
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [currentDirectory]);
+  
+  // Hide/show timer panel based on floating timer state
+  const [isFloatingTimerOpen, setIsFloatingTimerOpen] = useState(false);
+  const [isFloatingTimerNearPanel, setIsFloatingTimerNearPanel] = useState(false);
+  
+  useEffect(() => {
+    const handleFloatingTimerOpened = () => {
+      console.log('[FunctionPanels] Floating timer opened - hiding panel timer');
+      setIsFloatingTimerOpen(true);
+    };
+    
+    const handleFloatingTimerClosed = () => {
+      console.log('[FunctionPanels] Floating timer closed - showing panel timer');
+      setIsFloatingTimerOpen(false);
+      setIsFloatingTimerNearPanel(false);
+    };
+    
+    const handleFloatingTimerNearPanel = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('[FunctionPanels] Floating timer near panel:', customEvent.detail?.isNear);
+      setIsFloatingTimerNearPanel(customEvent.detail?.isNear || false);
+    };
+    
+    window.addEventListener('floating-timer-opened', handleFloatingTimerOpened);
+    window.addEventListener('floating-timer-closed', handleFloatingTimerClosed);
+    window.addEventListener('floating-timer-near-panel', handleFloatingTimerNearPanel as EventListener);
+    
+    return () => {
+      window.removeEventListener('floating-timer-opened', handleFloatingTimerOpened);
+      window.removeEventListener('floating-timer-closed', handleFloatingTimerClosed);
+      window.removeEventListener('floating-timer-near-panel', handleFloatingTimerNearPanel as EventListener);
+    };
+  }, []);
   
   // Task timer functions
   const handleStartTimer = () => {
@@ -1233,18 +1293,26 @@ export const FunctionPanels: React.FC = () => {
                   File Transfer
                 </Text>
               </Box>
-              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
-              <Box 
-                p={2} 
-                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
-                borderRadius="md" 
-                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
-                minW="260px"
-                maxW="260px"
-              >
-                <Flex direction="column" gap={2} minH="60px" mt="13px">
-                  {/* Task Name - Top, Left Aligned, Bigger */}
-                  <Box>
+              {(!isFloatingTimerOpen || isFloatingTimerNearPanel) && (
+                <>
+                  <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
+                  <Box 
+                    p={2} 
+                    bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
+                    borderRadius="md" 
+                    boxShadow={isFloatingTimerNearPanel 
+                      ? '0 0 0 3px rgba(96, 165, 250, 0.6), 0 1px 2px rgba(0,0,0,0.08)'
+                      : useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')
+                    }
+                    minW="260px"
+                    maxW="260px"
+                    border={isFloatingTimerNearPanel ? '2px solid' : 'none'}
+                    borderColor="blue.400"
+                    transition="all 0.2s"
+                  >
+                    <Flex direction="column" gap={2} minH="60px" mt="13px">
+                      {/* Task Name - Top, Left Aligned, Bigger */}
+                      <Box>
                     <Box 
                       as="input"
                       type="text"
@@ -1353,6 +1421,26 @@ export const FunctionPanels: React.FC = () => {
                           <Icon as={BarChart} boxSize={3.5} />
                         </Button>
                       </Tooltip>
+                      
+                      <Tooltip label="Pop Out Timer" placement="bottom">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          onClick={async () => {
+                            try {
+                              await (window.electronAPI as any).openFloatingTimer();
+                            } catch (error) {
+                              console.error('[TaskTimer] Error opening floating timer:', error);
+                            }
+                          }}
+                          p={1}
+                          minW="auto"
+                          h="auto"
+                          _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
+                        >
+                          <Icon as={Maximize2} boxSize={3.5} />
+                        </Button>
+                      </Tooltip>
                     </Flex>
                     
                     {/* Timer Pill on right */}
@@ -1386,6 +1474,8 @@ export const FunctionPanels: React.FC = () => {
                   Task Timer
                 </Text>
               </Box>
+                </>
+              )}
             </Flex>
           </TabPanel>
           <TabPanel p={2} bg={bgColor}>

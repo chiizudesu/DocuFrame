@@ -3,13 +3,55 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const AI_EDITOR_PROMPT = `You are an expert writing assistant. When I input a raw email blurb, your task is to rewrite it using clearer, more professional, and polished language — but without making it sound robotic or overly formal. Favor a direct, confident, and forward tone over excessive politeness.\n\nMaintain the following:\n- My original tone, length, and style\n- A human and personable vibe\n- The intent and overall message of the email\n\nAvoid:\n- Adding or removing content unless needed for clarity\n- Over-sanitizing the language\n- Changing the personal feel or casual-professional balance\n\nRewrite the email blurb below accordingly.`;
 
-export async function rewriteEmailBlurb(rawBlurb: string, model: 'sonnet' | 'haiku' = 'sonnet'): Promise<string> {
+// Helper function to retry API calls with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000
+): Promise<T> {
+  let lastError: any;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit or overload error
+      const isRateLimitError = 
+        error?.status === 429 || 
+        error?.status === 529 ||
+        error?.error?.type === 'overloaded_error' ||
+        error?.message?.includes('overloaded') ||
+        error?.message?.includes('rate limit');
+      
+      if (isRateLimitError && attempt < maxRetries) {
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Anthropic API overloaded/rate limited. Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      
+      // For other errors or if we've exhausted retries, throw
+      throw error;
+    }
+  }
+  
+  // If we get here, we've exhausted retries
+  if (lastError?.status === 529 || lastError?.error?.type === 'overloaded_error') {
+    throw new Error('Anthropic servers are currently overloaded. Please try again in a few moments.');
+  }
+  
+  throw lastError;
+}
+
+export async function rewriteEmailBlurb(rawBlurb: string, model: 'sonnet' | 'haiku' = 'sonnet', customInstructions?: string): Promise<string> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.claudeApiKey;
   if (!apiKey) throw new Error('Claude API key not set.');
 
-  // Use custom instructions from settings, fallback to default if not set
-  const prompt = settings.aiEditorInstructions || AI_EDITOR_PROMPT;
+  // Use custom instructions from parameter, fallback to settings, then default
+  const prompt = customInstructions || settings.aiEditorInstructions || AI_EDITOR_PROMPT;
 
   const client = new Anthropic({
     apiKey: apiKey,
@@ -19,14 +61,16 @@ export async function rewriteEmailBlurb(rawBlurb: string, model: 'sonnet' | 'hai
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
   // Send instructions as system prompt and the user blurb as a separate message
-  const response = await client.messages.create({
-    model: modelName,
-    max_tokens: 800,
-    system: prompt,
-    messages: [
-      { role: 'user', content: [{ type: 'text', text: rawBlurb || '' }] }
-    ],
-    temperature: 0.7
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 800,
+      system: prompt,
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: rawBlurb || '' }] }
+      ],
+      temperature: 0.7
+    });
   });
 
   const content = response.content[0];
@@ -35,6 +79,45 @@ export async function rewriteEmailBlurb(rawBlurb: string, model: 'sonnet' | 'hai
   }
   
   throw new Error('Unexpected response format from Claude');
+}
+
+export async function rewriteEmailBlurbStream(
+  rawBlurb: string, 
+  model: 'sonnet' | 'haiku' = 'sonnet', 
+  customInstructions: string | undefined,
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  // Use custom instructions from parameter, fallback to settings, then default
+  const prompt = customInstructions || settings.aiEditorInstructions || AI_EDITOR_PROMPT;
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  return await retryWithBackoff(async () => {
+    const stream = await client.messages.stream({
+      model: modelName,
+      max_tokens: 800,
+      system: prompt,
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: rawBlurb || '' }] }
+      ],
+      temperature: 0.7
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        onChunk(chunk.delta.text);
+      }
+    }
+  });
 }
 
 export async function extractDocumentInsights(documentText: string, fileName: string, model: 'sonnet' | 'haiku' = 'sonnet'): Promise<string> {
@@ -126,13 +209,15 @@ Document to analyze:`;
 
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
-  const response = await client.messages.create({
-    model: modelName,
-    max_tokens: 1200,
-    messages: [
-      { role: 'user', content: messageContent }
-    ],
-    temperature: 0.3
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 1200,
+      messages: [
+        { role: 'user', content: messageContent }
+      ],
+      temperature: 0.3
+    });
   });
 
   const content = response.content[0];
@@ -183,13 +268,15 @@ Document Text to Analyze:`;
 
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
-  const response = await client.messages.create({
-    model: modelName,
-    max_tokens: 1500,
-    messages: [
-      { role: 'user', content: `${PLACEHOLDER_ANALYSIS_PROMPT}\n\n${templateText}` }
-    ],
-    temperature: 0.3
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 1500,
+      messages: [
+        { role: 'user', content: `${PLACEHOLDER_ANALYSIS_PROMPT}\n\n${templateText}` }
+      ],
+      temperature: 0.3
+    });
   });
 
   const content = response.content[0];
@@ -234,13 +321,15 @@ export async function generateEmailFromTemplate(
 
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
-  const response = await client.messages.create({
-    model: modelName,
-    max_tokens: 800,
-    messages: [
-      { role: 'user', content: `${prompt}\n\nFill in the template with the extracted data.` }
-    ],
-    temperature: 0.7
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 800,
+      messages: [
+        { role: 'user', content: `${prompt}\n\nFill in the template with the extracted data.` }
+      ],
+      temperature: 0.7
+    });
   });
 
   const content = response.content[0];
@@ -249,6 +338,93 @@ export async function generateEmailFromTemplate(
   }
   
   throw new Error('Unexpected response format from Claude');
+}
+
+// Streaming version of generateEmailFromTemplate
+export async function generateEmailFromTemplateStream(
+  template: any,
+  extractedData: { [key: string]: string },
+  model: 'sonnet' | 'haiku' = 'sonnet',
+  onChunk: (text: string) => void
+): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  // Prepare prompt for Claude
+  const prompt = `You are an expert accountant. Given the following extracted text from PDFs, fill in the placeholders in the provided email template. Only use information found in the PDFs.\n\nExtracted Data:\n${Object.entries(extractedData).map(([cat, text]) => `--- ${cat} ---\n${text || ''}`).join('\n')}\n\nTemplate:\n${template.template}`;
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  let fullText = '';
+  let lastError: any;
+  const maxRetries = 3;
+  const initialDelay = 1000;
+  
+  // Retry logic for streaming
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const stream = client.messages.stream({
+        model: modelName,
+        max_tokens: 800,
+        messages: [
+          { role: 'user', content: `${prompt}\n\nFill in the template with the extracted data.` }
+        ],
+        temperature: 0.7
+      });
+
+      // Listen for text deltas
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_delta' && 
+            chunk.delta.type === 'text_delta') {
+          const text = chunk.delta.text;
+          fullText += text;
+          onChunk(text);
+        }
+      }
+
+      return fullText.trim();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit or overload error
+      const isRateLimitError = 
+        error?.status === 429 || 
+        error?.status === 529 ||
+        error?.error?.type === 'overloaded_error' ||
+        error?.message?.includes('overloaded') ||
+        error?.message?.includes('Overloaded') ||
+        error?.message?.includes('rate limit');
+      
+      if (isRateLimitError && attempt < maxRetries) {
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Anthropic API overloaded/rate limited during streaming. Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Clear accumulated text before retry
+        fullText = '';
+        continue;
+      }
+      
+      // For other errors or if we've exhausted retries, throw
+      if (attempt === maxRetries) {
+        break;
+      }
+      throw error;
+    }
+  }
+  
+  // If we get here, we've exhausted retries
+  if (lastError?.status === 529 || lastError?.error?.type === 'overloaded_error') {
+    throw new Error('Anthropic servers are currently overloaded. Please try again in a few moments.');
+  }
+  
+  throw lastError;
 }
 
 // Helper function to convert ArrayBuffer to base64
@@ -313,14 +489,16 @@ export async function analyzePdfDocument(
 
   console.log('Sending PDF document to Claude...');
 
-  const response = await client.messages.create({
-    model: modelName,
-    max_tokens: 4000,
-    messages: [
-      { role: 'user', content: messageContent }
-    ],
-    temperature: 0.3
-  });
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 4000,
+      messages: [
+        { role: 'user', content: messageContent }
+      ],
+      temperature: 0.3
+    });
+  }, 3, 2000); // Use longer delays for PDF analysis
 
   const content = response.content[0];
   if (content.type === 'text') {
@@ -330,4 +508,123 @@ export async function analyzePdfDocument(
   }
   
   throw new Error('Unexpected response format from Claude');
+}
+
+// Streaming version of analyzePdfDocument
+export async function analyzePdfDocumentStream(
+  pdfFilePath: string,
+  fileName: string,
+  prompt: string,
+  model: 'sonnet' | 'haiku' = 'sonnet',
+  onChunk: (text: string) => void
+): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  console.log('=== CLAUDE PDF DOCUMENT ANALYSIS (STREAMING) ===');
+  console.log('Model:', model);
+  console.log('PDF file path:', pdfFilePath);
+  console.log('File name:', fileName);
+  console.log('Prompt:', prompt);
+
+  // Read PDF file as buffer and convert to base64
+  const pdfBuffer = await (window.electronAPI as any).readFileAsBuffer(pdfFilePath);
+  const pdfBase64 = arrayBufferToBase64(pdfBuffer);
+
+  console.log('PDF size:', pdfBuffer.byteLength, 'bytes');
+  console.log('Base64 length:', pdfBase64.length);
+
+  const modelName = model === 'haiku' 
+    ? 'claude-haiku-4-5' 
+    : 'claude-sonnet-4-5';
+
+  // Build message content with PDF document block
+  const messageContent: any[] = [
+    {
+      type: 'document',
+      source: {
+        type: 'base64',
+        media_type: 'application/pdf',
+        data: pdfBase64
+      }
+    },
+    {
+      type: 'text',
+      text: prompt
+    }
+  ];
+
+  console.log('Starting PDF document streaming...');
+
+  let fullText = '';
+  let lastError: any;
+  const maxRetries = 3;
+  const initialDelay = 2000;
+  
+  // Retry logic for streaming
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const stream = client.messages.stream({
+        model: modelName,
+        max_tokens: 4000,
+        messages: [
+          { role: 'user', content: messageContent }
+        ],
+        temperature: 0.3
+      });
+
+      // Listen for text deltas
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_delta' && 
+            chunk.delta.type === 'text_delta') {
+          const text = chunk.delta.text;
+          fullText += text;
+          onChunk(text);
+        }
+      }
+
+      console.log('Claude PDF streaming response complete. Length:', fullText.length);
+      return fullText.trim();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit or overload error
+      const isRateLimitError = 
+        error?.status === 429 || 
+        error?.status === 529 ||
+        error?.error?.type === 'overloaded_error' ||
+        error?.message?.includes('overloaded') ||
+        error?.message?.includes('Overloaded') ||
+        error?.message?.includes('rate limit');
+      
+      if (isRateLimitError && attempt < maxRetries) {
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Anthropic API overloaded/rate limited during PDF streaming. Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Clear accumulated text before retry
+        fullText = '';
+        continue;
+      }
+      
+      // For other errors or if we've exhausted retries, throw
+      if (attempt === maxRetries) {
+        break;
+      }
+      throw error;
+    }
+  }
+  
+  // If we get here, we've exhausted retries
+  if (lastError?.status === 529 || lastError?.error?.type === 'overloaded_error') {
+    throw new Error('Anthropic servers are currently overloaded. Please try again in a few moments.');
+  }
+  
+  throw lastError;
 } 

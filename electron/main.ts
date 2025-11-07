@@ -2693,6 +2693,447 @@ ipcMain.handle('open-settings-window', async () => {
   }
 });
 
+// Floating Timer Window
+let floatingTimerWindow: BrowserWindow | null = null;
+
+const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
+  // Don't create multiple instances
+  if (floatingTimerWindow && !floatingTimerWindow.isDestroyed()) {
+    floatingTimerWindow.focus();
+    return { success: true };
+  }
+
+  try {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+
+    floatingTimerWindow = new BrowserWindow({
+      width: 210,
+      height: 120,
+      x: width - 230, // Position near right edge
+      y: 100, // 100px from top
+      frame: false, // Frameless for custom design
+      transparent: true, // Transparent background
+      alwaysOnTop: true, // Always on top of other windows
+      resizable: false,
+      skipTaskbar: false, // Show in taskbar
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: join(__dirname, 'preload.js'),
+      },
+    });
+
+    // Load the floating timer route
+    if (process.env.NODE_ENV === 'development') {
+      await floatingTimerWindow.loadURL('http://localhost:5173/#floating-timer');
+      // Dev tools removed for floating timer
+    } else {
+      await floatingTimerWindow.loadFile(join(__dirname, '../dist/index.html'), {
+        hash: 'floating-timer',
+      });
+    }
+
+    // Listen to window move events and check for snapping
+    let isMoving = false;
+    let lastSnapCorner: string | null = null;
+    
+    floatingTimerWindow.on('will-move', (event, newBounds) => {
+      isMoving = true;
+      
+      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
+      
+      const { screen } = require('electron');
+      // Get the display where the window is currently positioned
+      const currentDisplay = screen.getDisplayNearestPoint({ x: newBounds.x, y: newBounds.y });
+      const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = currentDisplay.workArea;
+      
+      // Use actual window size from the window, not from bounds (bounds may be stale)
+      const [actualWidth, actualHeight] = floatingTimerWindow.getSize();
+      const windowWidth = actualWidth;
+      const windowHeight = actualHeight;
+      
+      const x = newBounds.x - screenX; // Relative to current screen
+      const y = newBounds.y - screenY; // Relative to current screen
+      
+      const SNAP_THRESHOLD = 80;
+      let snappedCorner: string | null = null;
+      
+      // Check for corner snapping
+      const distToTopLeft = Math.sqrt(x * x + y * y);
+      const distToTopRight = Math.sqrt(Math.pow(x + windowWidth - screenWidth, 2) + y * y);
+      const distToBottomLeft = Math.sqrt(x * x + Math.pow(y + windowHeight - screenHeight, 2));
+      const distToBottomRight = Math.sqrt(Math.pow(x + windowWidth - screenWidth, 2) + Math.pow(y + windowHeight - screenHeight, 2));
+      
+      const minDist = Math.min(distToTopLeft, distToTopRight, distToBottomLeft, distToBottomRight);
+      
+      // Check corner snapping FIRST
+      if (minDist < SNAP_THRESHOLD) {
+        if (minDist === distToTopLeft) {
+          snappedCorner = 'top-left';
+        } else if (minDist === distToTopRight) {
+          snappedCorner = 'top-right';
+        } else if (minDist === distToBottomLeft) {
+          snappedCorner = 'bottom-left';
+        } else if (minDist === distToBottomRight) {
+          snappedCorner = 'bottom-right';
+        }
+        
+        // Send indicator during drag
+        if (snappedCorner !== lastSnapCorner) {
+          console.log('[FloatingTimer] Near corner:', snappedCorner);
+          floatingTimerWindow.webContents.send('corner-snapped', snappedCorner);
+          lastSnapCorner = snappedCorner;
+        }
+      } else {
+        // Only check for panel proximity if NOT near a corner
+        let isNearPanel = false;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const floatingCenterX = newBounds.x + windowWidth / 2;
+          const floatingCenterY = newBounds.y + windowHeight / 2;
+          
+          const [mainX, mainY] = mainWindow.getPosition();
+          const [mainWidth, mainHeight] = mainWindow.getSize();
+          
+          // The timer panel is specifically on the right side of the function panel
+          // and the function panel is at the bottom of the main window
+          // Be more specific about the timer panel location (right side, bottom)
+          const timerPanelWidth = 300; // Approximate width of timer panel area
+          const panelAreaTop = mainY + mainHeight - 120; // Panel area (bottom area of main window)
+          const panelAreaBottom = mainY + mainHeight + 50; // Allow some overshoot
+          const panelAreaLeft = mainX + mainWidth - timerPanelWidth - 50; // Right side of window
+          const panelAreaRight = mainX + mainWidth + 50;
+          
+          // Only trigger if we're specifically near the timer panel area (right side, bottom)
+          isNearPanel = (floatingCenterX >= panelAreaLeft && floatingCenterX <= panelAreaRight) &&
+                        (floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom);
+        }
+        
+        if (isNearPanel) {
+          snappedCorner = 'panel';
+          if (snappedCorner !== lastSnapCorner) {
+            console.log('[FloatingTimer] Near function panel');
+            floatingTimerWindow.webContents.send('corner-snapped', 'panel');
+            // Also notify main window to show visual indicator
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.executeJavaScript(`
+                window.dispatchEvent(new CustomEvent('floating-timer-near-panel', { detail: { isNear: true } }));
+              `);
+            }
+            lastSnapCorner = snappedCorner;
+          }
+        } else {
+          if (lastSnapCorner !== null) {
+            floatingTimerWindow.webContents.send('corner-snapped', null);
+            // Also notify main window that it's no longer near panel
+            if (lastSnapCorner === 'panel' && mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.executeJavaScript(`
+                window.dispatchEvent(new CustomEvent('floating-timer-near-panel', { detail: { isNear: false } }));
+              `);
+            }
+            lastSnapCorner = null;
+          }
+        }
+      }
+    });
+    
+    floatingTimerWindow.on('moved', () => {
+      if (!isMoving) return;
+      isMoving = false;
+      
+      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
+      
+      const [windowX, windowY] = floatingTimerWindow.getPosition();
+      const { screen } = require('electron');
+      // Get the display where the window is currently positioned
+      const currentDisplay = screen.getDisplayNearestPoint({ x: windowX, y: windowY });
+      const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = currentDisplay.workArea;
+      const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
+      
+      // First check if we're near the function panel
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const floatingCenterX = windowX + windowWidth / 2;
+        const floatingCenterY = windowY + windowHeight / 2;
+        
+        const [mainX, mainY] = mainWindow.getPosition();
+        const [mainWidth, mainHeight] = mainWindow.getSize();
+        
+        // The timer panel is specifically on the right side of the function panel
+        const timerPanelWidth = 300;
+        const panelAreaTop = mainY + mainHeight - 120;
+        const panelAreaBottom = mainY + mainHeight + 50;
+        const panelAreaLeft = mainX + mainWidth - timerPanelWidth - 50;
+        const panelAreaRight = mainX + mainWidth + 50;
+        
+        const isNearPanel = (floatingCenterX >= panelAreaLeft && floatingCenterX <= panelAreaRight) &&
+                            (floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom);
+        
+        if (isNearPanel) {
+          console.log('[FloatingTimer] Docking to function panel, closing window');
+          // Signal to close the floating timer - it will dock back to function panel
+          floatingTimerWindow.webContents.send('dock-to-panel');
+          return;
+        }
+      }
+      
+      // Window position relative to current screen
+      const relX = windowX - screenX;
+      const relY = windowY - screenY;
+      
+      const SNAP_THRESHOLD = 80;
+      
+      // Check for corner snapping based on window edges
+      const distToTopLeft = Math.sqrt(relX * relX + relY * relY);
+      const distToTopRight = Math.sqrt(Math.pow(relX + windowWidth - screenWidth, 2) + relY * relY);
+      const distToBottomLeft = Math.sqrt(relX * relX + Math.pow(relY + windowHeight - screenHeight, 2));
+      const distToBottomRight = Math.sqrt(Math.pow(relX + windowWidth - screenWidth, 2) + Math.pow(relY + windowHeight - screenHeight, 2));
+      
+      const minDist = Math.min(distToTopLeft, distToTopRight, distToBottomLeft, distToBottomRight);
+      
+      if (minDist < SNAP_THRESHOLD) {
+        let finalX = windowX; // Keep as absolute position
+        let finalY = windowY; // Keep as absolute position
+        
+        if (minDist === distToTopLeft) {
+          finalX = screenX;
+          finalY = screenY;
+        } else if (minDist === distToTopRight) {
+          finalX = screenX + screenWidth - windowWidth;
+          finalY = screenY;
+        } else if (minDist === distToBottomLeft) {
+          finalX = screenX;
+          finalY = screenY + screenHeight - windowHeight;
+        } else if (minDist === distToBottomRight) {
+          finalX = screenX + screenWidth - windowWidth;
+          finalY = screenY + screenHeight - windowHeight;
+        }
+        
+        console.log('[FloatingTimer] Window size:', windowWidth, 'x', windowHeight);
+        console.log('[FloatingTimer] Snapping to absolute position:', finalX, finalY, 'on screen', currentDisplay.id);
+        floatingTimerWindow.setPosition(Math.round(finalX), Math.round(finalY));
+      }
+      
+      // Clear indicator after snap
+      setTimeout(() => {
+        if (floatingTimerWindow && !floatingTimerWindow.isDestroyed()) {
+          floatingTimerWindow.webContents.send('corner-snapped', null);
+          lastSnapCorner = null;
+        }
+      }, 500);
+    });
+    
+    // Clean up reference when window is closed
+    floatingTimerWindow.on('closed', () => {
+      console.log('[FloatingTimer] Window closed, broadcasting to main window');
+      // Broadcast to main window that floating timer is closed
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.executeJavaScript(`
+          window.dispatchEvent(new Event('floating-timer-closed'));
+        `);
+      }
+      floatingTimerWindow = null;
+    });
+
+    console.log('[FloatingTimer] Window created successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error creating floating timer window:', error);
+    floatingTimerWindow = null;
+    throw error;
+  }
+};
+
+// Floating timer IPC handler
+ipcMain.handle('open-floating-timer', async () => {
+  try {
+    return await createFloatingTimerWindow();
+  } catch (error) {
+    console.error('[Main] Error opening floating timer:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// Handle window position updates with snapping
+ipcMain.handle('update-floating-timer-position', async (_, x: number, y: number) => {
+  console.log('[Main] update-floating-timer-position called with:', x, y);
+  
+  if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) {
+    console.log('[Main] No floating timer window available');
+    return { success: false, snappedCorner: null };
+  }
+
+  try {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
+    
+    console.log('[Main] Screen size:', screenWidth, 'x', screenHeight);
+    console.log('[Main] Window size:', windowWidth, 'x', windowHeight);
+    
+    const SNAP_THRESHOLD = 80; // Increased threshold for easier snapping
+    let snappedCorner: string | null = null;
+    let finalX = x;
+    let finalY = y;
+    
+    // Check for corner snapping
+    const distToTopLeft = Math.sqrt(x * x + y * y);
+    const distToTopRight = Math.sqrt(Math.pow(x + windowWidth - screenWidth, 2) + y * y);
+    const distToBottomLeft = Math.sqrt(x * x + Math.pow(y + windowHeight - screenHeight, 2));
+    const distToBottomRight = Math.sqrt(Math.pow(x + windowWidth - screenWidth, 2) + Math.pow(y + windowHeight - screenHeight, 2));
+    
+    console.log('[Main] Distances to corners:', {
+      topLeft: distToTopLeft,
+      topRight: distToTopRight,
+      bottomLeft: distToBottomLeft,
+      bottomRight: distToBottomRight
+    });
+    
+    // Find closest corner
+    const minDist = Math.min(distToTopLeft, distToTopRight, distToBottomLeft, distToBottomRight);
+    console.log('[Main] Minimum distance:', minDist, 'threshold:', SNAP_THRESHOLD);
+    
+    if (minDist < SNAP_THRESHOLD) {
+      if (minDist === distToTopLeft) {
+        finalX = 0;
+        finalY = 0;
+        snappedCorner = 'top-left';
+      } else if (minDist === distToTopRight) {
+        finalX = screenWidth - windowWidth;
+        finalY = 0;
+        snappedCorner = 'top-right';
+      } else if (minDist === distToBottomLeft) {
+        finalX = 0;
+        finalY = screenHeight - windowHeight;
+        snappedCorner = 'bottom-left';
+      } else if (minDist === distToBottomRight) {
+        finalX = screenWidth - windowWidth;
+        finalY = screenHeight - windowHeight;
+        snappedCorner = 'bottom-right';
+      }
+      console.log('[Main] SNAPPED to corner:', snappedCorner);
+    }
+    
+    console.log('[Main] Setting window position to:', finalX, finalY);
+    floatingTimerWindow.setPosition(Math.round(finalX), Math.round(finalY));
+    
+    return { success: true, snappedCorner, x: finalX, y: finalY };
+  } catch (error) {
+    console.error('[Main] Error updating floating timer position:', error);
+    return { success: false, snappedCorner: null };
+  }
+});
+
+// Get screen info for snapping calculations
+ipcMain.handle('get-screen-info', async () => {
+  try {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    return {
+      success: true,
+      workArea: primaryDisplay.workAreaSize
+    };
+  } catch (error) {
+    console.error('[Main] Error getting screen info:', error);
+    return { success: false };
+  }
+});
+
+// Resize floating timer window
+ipcMain.handle('resize-floating-timer', async (_, width: number, height: number) => {
+  try {
+    if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) {
+      console.log('[Main] No floating timer window to resize');
+      return;
+    }
+    
+    // Get current position to keep it centered
+    const [currentX, currentY] = floatingTimerWindow.getPosition();
+    const [currentWidth, currentHeight] = floatingTimerWindow.getSize();
+    
+    // Calculate offset to keep window centered when resizing
+    const offsetX = Math.floor((currentWidth - width) / 2);
+    const offsetY = Math.floor((currentHeight - height) / 2);
+    
+    floatingTimerWindow.setSize(width, height);
+    floatingTimerWindow.setPosition(currentX + offsetX, currentY + offsetY);
+    
+    console.log('[Main] Resized floating timer to', width, 'x', height);
+  } catch (error) {
+    console.error('[Main] Error resizing floating timer:', error);
+  }
+});
+
+// Check if floating timer is near the function panel position
+ipcMain.handle('check-panel-proximity', async () => {
+  try {
+    if (!floatingTimerWindow || floatingTimerWindow.isDestroyed() || !mainWindow || mainWindow.isDestroyed()) {
+      return { isNearPanel: false };
+    }
+    
+    const [floatingX, floatingY] = floatingTimerWindow.getPosition();
+    const [floatingWidth, floatingHeight] = floatingTimerWindow.getSize();
+    const floatingCenterX = floatingX + floatingWidth / 2;
+    const floatingCenterY = floatingY + floatingHeight / 2;
+    
+    const [mainX, mainY] = mainWindow.getPosition();
+    const [mainWidth, mainHeight] = mainWindow.getSize();
+    
+    // Function panel is at the bottom of the main window
+    // Check if any part of the floating timer overlaps with the main window's bottom area
+    const panelAreaTop = mainY + mainHeight - 200; // Bottom 200px of main window
+    const panelAreaBottom = mainY + mainHeight;
+    const panelAreaLeft = mainX;
+    const panelAreaRight = mainX + mainWidth;
+    
+    // Check if floating timer center is within the panel area
+    const isInHorizontalRange = floatingCenterX >= panelAreaLeft && floatingCenterX <= panelAreaRight;
+    const isInVerticalRange = floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom;
+    
+    // Also check if floating timer is close to the main window (within 100px)
+    const distanceToMainWindow = Math.min(
+      Math.abs(floatingCenterX - mainX), // Distance to left edge
+      Math.abs(floatingCenterX - (mainX + mainWidth)), // Distance to right edge
+      Math.abs(floatingCenterY - mainY), // Distance to top edge
+      Math.abs(floatingCenterY - (mainY + mainHeight)) // Distance to bottom edge
+    );
+    
+    const isNearPanel = (isInHorizontalRange && isInVerticalRange) || (distanceToMainWindow < 100);
+    
+    console.log('[Main] Panel proximity check:', {
+      floatingPos: { x: floatingCenterX, y: floatingCenterY },
+      mainWindow: { x: mainX, y: mainY, width: mainWidth, height: mainHeight },
+      panelArea: { top: panelAreaTop, bottom: panelAreaBottom, left: panelAreaLeft, right: panelAreaRight },
+      isNearPanel,
+      distanceToMainWindow
+    });
+    
+    return { isNearPanel };
+  } catch (error) {
+    console.error('[Main] Error checking panel proximity:', error);
+    return { isNearPanel: false };
+  }
+});
+
+// Handle messages from floating timer to main window
+ipcMain.on('send-to-main-window', (event, channel, ...args) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, ...args);
+    
+    // Broadcast floating timer state changes
+    if (channel === 'floating-timer-opened') {
+      mainWindow.webContents.executeJavaScript(`
+        window.dispatchEvent(new Event('floating-timer-opened'));
+      `);
+    } else if (channel === 'floating-timer-closed') {
+      mainWindow.webContents.executeJavaScript(`
+        window.dispatchEvent(new Event('floating-timer-closed'));
+      `);
+    }
+  }
+});
+
 // Task Timer IPC handlers
 ipcMain.handle('save-task-log', async (_, dateString: string, task: any) => {
   try {

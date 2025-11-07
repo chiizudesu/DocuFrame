@@ -3,13 +3,13 @@ import yaml from 'js-yaml';
 
 const AI_EDITOR_PROMPT = `You are an expert writing assistant. When I input a raw email blurb, your task is to rewrite it using clearer, more professional, and polished language — but without making it sound robotic or overly formal. Favor a direct, confident, and forward tone over excessive politeness.\n\nMaintain the following:\n- My original tone, length, and style\n- A human and personable vibe\n- The intent and overall message of the email\n\nAvoid:\n- Adding or removing content unless needed for clarity\n- Over-sanitizing the language\n- Changing the personal feel or casual-professional balance\n\nRewrite the email blurb below accordingly.`;
 
-export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
+export async function rewriteEmailBlurb(rawBlurb: string, customInstructions?: string): Promise<string> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.apiKey;
   if (!apiKey) throw new Error('OpenAI API key not set.');
 
-  // Use custom instructions from settings, fallback to default if not set
-  const prompt = settings.aiEditorInstructions || AI_EDITOR_PROMPT;
+  // Use custom instructions from parameter, fallback to settings, then default
+  const prompt = customInstructions || settings.aiEditorInstructions || AI_EDITOR_PROMPT;
 
   const body = {
     model: 'gpt-4o-mini',
@@ -37,6 +37,74 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
 
   const data = await response.json();
   return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+export async function rewriteEmailBlurbStream(
+  rawBlurb: string, 
+  customInstructions: string | undefined,
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.apiKey;
+  if (!apiKey) throw new Error('OpenAI API key not set.');
+
+  // Use custom instructions from parameter, fallback to settings, then default
+  const prompt = customInstructions || settings.aiEditorInstructions || AI_EDITOR_PROMPT;
+
+  const body = {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: rawBlurb }
+    ],
+    max_tokens: 800,
+    temperature: 0.7,
+    stream: true
+  };
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || 'Failed to get response from OpenAI');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.trim() === '' || line.trim() === 'data: [DONE]') continue;
+      if (line.startsWith('data: ')) {
+        try {
+          const json = JSON.parse(line.slice(6));
+          const content = json.choices?.[0]?.delta?.content;
+          if (content) {
+            onChunk(content);
+          }
+        } catch (e) {
+          console.error('Failed to parse streaming chunk:', e);
+        }
+      }
+    }
+  }
 }
 
 export async function extractDocumentInsights(documentText: string, fileName: string): Promise<string> {
@@ -254,4 +322,88 @@ export async function loadEmailTemplates(): Promise<Array<{ name: string; descri
     }
   }
   return templates;
+}
+
+// Streaming version for email template generation
+export async function generateEmailFromTemplateStream(
+  template: any,
+  extractedData: { [key: string]: string },
+  onChunk: (text: string) => void
+): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.apiKey;
+  if (!apiKey) throw new Error('OpenAI API key not set.');
+
+  // Prepare prompt for OpenAI
+  const prompt = `You are an expert accountant. Given the following extracted text from PDFs, fill in the placeholders in the provided email template. Only use information found in the PDFs.\n\nExtracted Data:\n${Object.entries(extractedData).map(([cat, text]) => `--- ${cat} ---\n${text || ''}`).join('\n')}\n\nTemplate:\n${template.template}`;
+
+  const body = {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'user', content: `${prompt}\n\nFill in the template with the extracted data.` }
+    ],
+    max_tokens: 800,
+    temperature: 0.7,
+    stream: true
+  };
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || 'Failed to get response from OpenAI');
+  }
+
+  let fullText = '';
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (!reader) {
+    throw new Error('Failed to get response stream from OpenAI');
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      
+      if (done) break;
+      
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter(line => line.trim() !== '');
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          
+          if (data === '[DONE]') {
+            break;
+          }
+          
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            
+            if (content) {
+              fullText += content;
+              onChunk(content);
+            }
+          } catch (e) {
+            // Skip invalid JSON chunks
+            console.warn('Failed to parse streaming chunk:', e);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return fullText.trim();
 } 

@@ -1,0 +1,20 @@
+name: PlaceMe Management Report
+description: Template for PlaceMe Management Report
+categories:
+  - monthly_report
+template: |-
+  Good morning Matt & Sarah
+
+  I hope you're both keeping well.  Attached is a copy of the {{current_month_year}} Management Report for your records.
+
+  The key takeaways are:
+
+  {{current_month}} generated a net profit of {{current_month_net_profit}}, which is a significant increase from {{last_month}}'s {{previous_month_net_profit}}, mainly due to increased contractor income and improved margins
+  Net margin improved substantially to {{current_month_net_margin}} in {{current_month}}, up from {{last_month}}'s {{previous_month_net_margin}}
+  Permanent placements invoiced in {{current_month}} were {{current_month_permanent_placements_invoiced}}, representing an {{permanent_placements_increase_percentage}} increase from {{last_month}}'s {{previous_month_permanent_placements_invoiced}}
+  Contractor income increased to {{current_month_contractor_income}} from {{last_month}}'s {{previous_month_contractor_income}} (+{{contractor_income_increase_percentage}}), net contractor payments received were {{net_contractor_payments_received}} 
+  Overheads decreased to {{current_month_overheads}} from {{last_month}}'s {{previous_month_overheads}} ({{overheads_decrease_percentage}}), with salaries at {{current_month_salaries}}, down from September's {{previous_month_salaries}}. The main expense categories were salaries ({{current_month_salaries}}), rent ({{current_month_rent}}), and motor vehicle expenses ({{current_month_motor_vehicle_expenses}}) 
+  Debtors' days improved to {{current_month_debtors_days}} compared to {{last_month}}'s {{previous_month_debtors_days}}, which is fantastic and assists with cashflow 
+  The year to date net profit of {{year_to_date_net_profit}} represents a {{year_to_date_increase_percentage}} increase from prior year's {{prior_year_net_profit}} and demonstrates continued strong performance through the first 7 months of the financial year 
+  Cash balance increased by {{cash_balance_increase_percentage}} to {{current_month_cash_balance}} from {{last_month}}'s {{previous_month_cash_balance}}, reflecting strong operational cash generation during the month
+created: '2025-11-07'

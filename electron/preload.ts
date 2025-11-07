@@ -88,6 +88,12 @@ interface ElectronAPI {
   saveTaskLog: (dateString: string, task: any) => Promise<{ success: boolean; error?: string }>;
   getTaskLogs: (dateString: string) => Promise<{ success: boolean; tasks: any[]; error?: string }>;
   deleteTaskLog: (dateString: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
+  openFloatingTimer: () => Promise<{ success: boolean }>;
+  sendToMainWindow: (channel: string, ...args: any[]) => void;
+  updateFloatingTimerPosition: (x: number, y: number) => Promise<{ success: boolean; snappedCorner: string | null; x: number; y: number }>;
+  getScreenInfo: () => Promise<{ success: boolean; workArea?: { width: number; height: number } }>;
+  resizeFloatingTimer: (width: number, height: number) => Promise<void>;
+  checkPanelProximity: () => Promise<{ isNearPanel: boolean }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -307,6 +313,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteTaskLog: async (dateString: string, taskId: string) => {
     return await ipcRenderer.invoke('delete-task-log', dateString, taskId);
+  },
+  openFloatingTimer: async () => {
+    return await ipcRenderer.invoke('open-floating-timer');
+  },
+  sendToMainWindow: (channel: string, ...args: any[]) => {
+    ipcRenderer.send('send-to-main-window', channel, ...args);
+  },
+  updateFloatingTimerPosition: async (x: number, y: number) => {
+    return await ipcRenderer.invoke('update-floating-timer-position', x, y);
+  },
+  getScreenInfo: async () => {
+    return await ipcRenderer.invoke('get-screen-info');
+  },
+  resizeFloatingTimer: async (width: number, height: number) => {
+    return await ipcRenderer.invoke('resize-floating-timer', width, height);
+  },
+  checkPanelProximity: async () => {
+    return await ipcRenderer.invoke('check-panel-proximity');
   },
 
 }); 

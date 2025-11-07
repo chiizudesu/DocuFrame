@@ -38,7 +38,8 @@ import {
   AlertDialogContent,
   AlertDialogOverlay
 } from '@chakra-ui/react';
-import { FileText, Plus, Edit2, Trash2, Save, Download, Upload, RefreshCw } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, Save, Download, Upload, RefreshCw, Send, Bot, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import * as yaml from 'js-yaml';
 import { settingsService } from '../services/settings';
 
@@ -74,11 +75,20 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
   const [rawText, setRawText] = useState('');
   const [detectedPlaceholders, setDetectedPlaceholders] = useState<{original: string, suggested: string, accepted: boolean}[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [createStep, setCreateStep] = useState<'input' | 'placeholders' | 'yaml'>('input');
+  const [createStep, setCreateStep] = useState<'input' | 'placeholders' | 'categories' | 'yaml'>('input');
+  const [categories, setCategories] = useState<string[]>([]);
+  const [newCategory, setNewCategory] = useState('');
+  
+  // AI Chat for placeholder refinement
+  const [chatInput, setChatInput] = useState('');
+  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'assistant', content: string}[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
   
   // Edit state
   const [editedTemplate, setEditedTemplate] = useState<any>(null);
   const [editedRawYaml, setEditedRawYaml] = useState('');
+  const [activePlaceholder, setActivePlaceholder] = useState<string | null>(null);
+  const [editingPlaceholders, setEditingPlaceholders] = useState<{[key: string]: string}>({});
   
   // Delete confirmation
   const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
@@ -300,6 +310,12 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
   };
 
   const handleConfirmPlaceholders = () => {
+    // Move to categories step instead of generating YAML immediately
+    setCreateStep('categories');
+    setSuccess('Great! Now specify the PDF categories needed for this template.');
+  };
+
+  const handleConfirmCategories = () => {
     let processedText = rawText;
     
     detectedPlaceholders.forEach(placeholder => {
@@ -310,14 +326,10 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
     });
     
     try {
-      const acceptedPlaceholders = detectedPlaceholders
-        .filter(p => p.accepted)
-        .map(p => p.suggested);
-      
       const yamlObject = {
         name: newTemplateName,
         description: newTemplateDescription.trim() || `Template for ${newTemplateName}`,
-        categories: acceptedPlaceholders.length > 0 ? acceptedPlaceholders : ['document'],
+        categories: categories.length > 0 ? categories : ['document'],
         template: processedText,
         created: new Date().toISOString().split('T')[0]
       };
@@ -330,9 +342,168 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
 
       setNewTemplateContent(yamlString);
       setCreateStep('yaml');
-      setSuccess('Template processed! Review the YAML before saving.');
+      setSuccess('Template generated! Review the YAML before saving.');
     } catch (err) {
       setError(`Failed to generate YAML: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleAddCategory = () => {
+    if (newCategory.trim() && !categories.includes(newCategory.trim())) {
+      setCategories([...categories, newCategory.trim()]);
+      setNewCategory('');
+    }
+  };
+
+  const handleRemoveCategory = (index: number) => {
+    setCategories(categories.filter((_, i) => i !== index));
+  };
+
+  const handleAIChatSubmit = async () => {
+    if (!chatInput.trim()) return;
+    
+    setIsStreaming(true);
+    setError(null);
+    
+    // Add user message to history
+    const userMessage = { role: 'user' as const, content: chatInput };
+    setChatHistory(prev => [...prev, userMessage]);
+    setChatInput('');
+    
+    try {
+      const context = `You are helping a user refine placeholder extraction for an email template.
+
+Current placeholders detected:
+${detectedPlaceholders.map((p, i) => `${i + 1}. "${p.original}" → {{${p.suggested}}} (${p.accepted ? 'accepted' : 'rejected'})`).join('\n')}
+
+Original text snippet:
+${rawText.substring(0, 500)}${rawText.length > 500 ? '...' : ''}
+
+User request: ${chatInput}
+
+Provide helpful advice and ACTIONABLE COMMANDS. Format commands like this:
+- To add a new placeholder: ADD|"exact text from original"|variable_name
+- To rename: RENAME|old_variable_name|new_variable_name
+- To accept: ACCEPT|variable_name
+- To reject: REJECT|variable_name
+- To remove: REMOVE|variable_name
+
+You can include multiple commands. Commands should be on their own lines starting with the action verb.
+
+Example response:
+"I noticed the date '2024-03-15' should be a placeholder. Here's what I suggest:
+
+ADD|"2024-03-15"|reporting_date
+RENAME|amount|total_amount
+ACCEPT|client_name
+REJECT|page_number
+
+This will make the template more flexible and accurate."`;
+
+      let assistantResponse = '';
+      
+      // Create a temporary assistant message
+      setChatHistory(prev => [...prev, { role: 'assistant', content: '' }]);
+      
+      const { generateEmailFromTemplateStream } = await import('../services/aiService');
+      
+      await generateEmailFromTemplateStream(
+        { template: context },
+        {},
+        'claude',
+        (chunk: string) => {
+          assistantResponse += chunk;
+          setChatHistory(prev => {
+            const newHistory = [...prev];
+            newHistory[newHistory.length - 1] = { role: 'assistant', content: assistantResponse };
+            return newHistory;
+          });
+        }
+      );
+      
+      // After streaming completes, parse and apply commands
+      parseAndApplyAICommands(assistantResponse);
+      
+    } catch (err: any) {
+      setError(`AI chat failed: ${err.message || 'Unknown error'}`);
+      // Remove the empty assistant message on error
+      setChatHistory(prev => prev.slice(0, -1));
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const parseAndApplyAICommands = (response: string) => {
+    const lines = response.split('\n');
+    let updatedPlaceholders = [...detectedPlaceholders];
+    let changesMade = false;
+    
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      
+      // ADD command: ADD|"original text"|variable_name
+      if (trimmed.startsWith('ADD|')) {
+        const parts = trimmed.substring(4).split('|');
+        if (parts.length >= 2) {
+          const original = parts[0].replace(/^["']|["']$/g, '').trim();
+          const suggested = parts[1].trim();
+          
+          // Check if this placeholder doesn't already exist
+          if (!updatedPlaceholders.some(p => p.suggested === suggested || p.original === original)) {
+            updatedPlaceholders.push({
+              original: original,
+              suggested: suggested,
+              accepted: true
+            });
+            changesMade = true;
+          }
+        }
+      }
+      
+      // RENAME command: RENAME|old_name|new_name
+      else if (trimmed.startsWith('RENAME|')) {
+        const parts = trimmed.substring(7).split('|');
+        if (parts.length >= 2) {
+          const oldName = parts[0].trim();
+          const newName = parts[1].trim();
+          
+          updatedPlaceholders = updatedPlaceholders.map(p => 
+            p.suggested === oldName ? { ...p, suggested: newName } : p
+          );
+          changesMade = true;
+        }
+      }
+      
+      // ACCEPT command: ACCEPT|variable_name
+      else if (trimmed.startsWith('ACCEPT|')) {
+        const varName = trimmed.substring(7).trim();
+        updatedPlaceholders = updatedPlaceholders.map(p => 
+          p.suggested === varName ? { ...p, accepted: true } : p
+        );
+        changesMade = true;
+      }
+      
+      // REJECT command: REJECT|variable_name
+      else if (trimmed.startsWith('REJECT|')) {
+        const varName = trimmed.substring(7).trim();
+        updatedPlaceholders = updatedPlaceholders.map(p => 
+          p.suggested === varName ? { ...p, accepted: false } : p
+        );
+        changesMade = true;
+      }
+      
+      // REMOVE command: REMOVE|variable_name
+      else if (trimmed.startsWith('REMOVE|')) {
+        const varName = trimmed.substring(7).trim();
+        updatedPlaceholders = updatedPlaceholders.filter(p => p.suggested !== varName);
+        changesMade = true;
+      }
+    });
+    
+    if (changesMade) {
+      setDetectedPlaceholders(updatedPlaceholders);
+      setSuccess('AI suggestions applied to placeholders!');
+      setTimeout(() => setSuccess(null), 3000);
     }
   };
 
@@ -382,6 +553,11 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
       setNewTemplateContent('');
       setRawText('');
       setDetectedPlaceholders([]);
+      setCategories([]);
+      setNewCategory('');
+      setChatInput('');
+      setChatHistory([]);
+      setIsStreaming(false);
       setCreateStep('input');
       
       // Switch to browse tab to show the new template
@@ -410,6 +586,113 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
     }));
   };
 
+  const handlePlaceholderClick = (placeholderName: string) => {
+    setActivePlaceholder(placeholderName);
+    // Scroll to the placeholder in the left panel if needed
+  };
+
+  const handlePlaceholderRename = (oldName: string, newName: string) => {
+    if (!editedTemplate || oldName === newName) return;
+    
+    // Update template content - replace all instances of the old placeholder with the new one
+    const updatedContent = editedTemplate.template.replace(
+      new RegExp(`\\{\\{${oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'g'),
+      `{{${newName}}}`
+    );
+    
+    setEditedTemplate({
+      ...editedTemplate,
+      template: updatedContent
+    });
+    
+    // Update the editing state
+    const newEditingState = { ...editingPlaceholders };
+    delete newEditingState[oldName];
+    if (newName !== oldName) {
+      newEditingState[newName] = newName;
+    }
+    setEditingPlaceholders(newEditingState);
+    
+    // Update active placeholder
+    if (activePlaceholder === oldName) {
+      setActivePlaceholder(newName);
+    }
+  };
+
+  const startEditingPlaceholder = (placeholderName: string) => {
+    setEditingPlaceholders({
+      ...editingPlaceholders,
+      [placeholderName]: placeholderName
+    });
+    setActivePlaceholder(placeholderName);
+  };
+
+  const finishEditingPlaceholder = (originalName: string) => {
+    const newName = editingPlaceholders[originalName];
+    if (newName && newName !== originalName) {
+      handlePlaceholderRename(originalName, newName);
+    }
+    const newState = { ...editingPlaceholders };
+    delete newState[originalName];
+    setEditingPlaceholders(newState);
+  };
+
+  const renderTemplateContentWithPills = (content: string) => {
+    if (!content) return null;
+    
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    const placeholderRegex = /\{\{([^}]+)\}\}/g;
+    let match;
+    
+    while ((match = placeholderRegex.exec(content)) !== null) {
+      const placeholderName = match[1].trim();
+      const matchStart = match.index;
+      const matchEnd = match.index + match[0].length;
+      
+      // Add text before the placeholder
+      if (matchStart > lastIndex) {
+        parts.push(
+          <Text as="span" key={`text-${lastIndex}`} whiteSpace="pre-wrap">
+            {content.substring(lastIndex, matchStart)}
+          </Text>
+        );
+      }
+      
+      // Add the placeholder as a pill
+      parts.push(
+        <Badge
+          key={`placeholder-${matchStart}`}
+          colorScheme={activePlaceholder === placeholderName ? 'blue' : 'yellow'}
+          fontSize="xs"
+          px={2}
+          py={1}
+          borderRadius="md"
+          cursor="pointer"
+          _hover={{ transform: 'scale(1.05)', boxShadow: 'md' }}
+          transition="all 0.2s"
+          onClick={() => handlePlaceholderClick(placeholderName)}
+          fontFamily="mono"
+        >
+          {`{{${placeholderName}}}`}
+        </Badge>
+      );
+      
+      lastIndex = matchEnd;
+    }
+    
+    // Add remaining text
+    if (lastIndex < content.length) {
+      parts.push(
+        <Text as="span" key={`text-${lastIndex}`} whiteSpace="pre-wrap">
+          {content.substring(lastIndex)}
+        </Text>
+      );
+    }
+    
+    return <Box>{parts}</Box>;
+  };
+
   const handleClose = () => {
     setSelectedTemplate(null);
     setEditedTemplate(null);
@@ -421,6 +704,13 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
     setRawText('');
     setDetectedPlaceholders([]);
     setCreateStep('input');
+    setCategories([]);
+    setNewCategory('');
+    setChatInput('');
+    setChatHistory([]);
+    setIsStreaming(false);
+    setActivePlaceholder(null);
+    setEditingPlaceholders({});
     setActiveTab(0);
     setError(null);
     setSuccess(null);
@@ -435,12 +725,12 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={handleClose} size="5xl" isCentered>
+      <Modal isOpen={isOpen} onClose={handleClose} size="6xl" isCentered>
         <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
         <ModalContent 
-          maxH="90vh"
-          maxW="85vw"
-          w="900px"
+          maxH="95vh"
+          maxW="90vw"
+          w="1200px"
           bg={bgColor}
           borderRadius="lg"
           boxShadow="xl"
@@ -461,7 +751,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
           <ModalCloseButton top={4} right={4} />
           
           <ModalBody p={0}>
-            <Tabs index={activeTab} onChange={setActiveTab} variant="line" colorScheme="blue" height="550px" display="flex" flexDirection="column">
+            <Tabs index={activeTab} onChange={setActiveTab} variant="line" colorScheme="blue" height="650px" display="flex" flexDirection="column">
               <TabList px={4} pt={3} borderBottom="1px solid" borderColor={borderColor}>
                 <Tab>Browse Templates</Tab>
                 <Tab isDisabled={!selectedTemplate}>Edit Template</Tab>
@@ -663,6 +953,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
                               {/* Left Panel - Form Fields */}
                               <Box
                                 w="300px"
+                                minW="415px"
                                 p={4}
                                 borderRight="1px solid"
                                 borderColor={borderColor}
@@ -723,39 +1014,83 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
                                     {(() => {
                                       const templateContent = editedTemplate?.template || '';
                                       const placeholderMatches = templateContent.match(/\{\{([^}]+)\}\}/g) || [];
-                                      const placeholders = [...new Set(placeholderMatches.map((match: string) => match.slice(2, -2).trim()))];
+                                      const extractedPlaceholders = placeholderMatches.map((match: string) => match.slice(2, -2).trim());
+                                      const placeholders: string[] = [...new Set<string>(extractedPlaceholders)];
                                       
-                                                                             return placeholders.length > 0 ? (
+                                      return placeholders.length > 0 ? (
                                          <VStack spacing={2} align="stretch">
                                            {placeholders.map((placeholder, index) => (
                                              <Box 
                                                key={index}
                                                p={2} 
-                                               bg={useColorModeValue('white', 'gray.700')} 
+                                               bg={activePlaceholder === placeholder ? useColorModeValue('blue.50', 'blue.900') : useColorModeValue('white', 'gray.700')} 
                                                borderRadius="md"
-                                               border="1px solid"
-                                               borderColor={useColorModeValue('gray.200', 'gray.600')}
+                                               border="2px solid"
+                                               borderColor={activePlaceholder === placeholder ? 'blue.400' : useColorModeValue('gray.200', 'gray.600')}
+                                               transition="all 0.2s"
+                                               cursor="pointer"
+                                               onClick={() => handlePlaceholderClick(placeholder)}
+                                               _hover={{ borderColor: 'blue.300' }}
                                              >
+                                               <VStack align="stretch" spacing={1}>
                                                <HStack>
                                                  <Box 
                                                    w={2} 
                                                    h={2} 
-                                                   bg="blue.400" 
+                                                     bg={activePlaceholder === placeholder ? 'blue.500' : 'blue.400'} 
                                                    borderRadius="full" 
                                                    flexShrink={0}
                                                  />
+                                                   <Text fontSize="xs" fontWeight="semibold" color="gray.500">
+                                                     Variable Name
+                                                   </Text>
+                                                 </HStack>
+                                                 
+                                                 {editingPlaceholders[placeholder] !== undefined ? (
+                                                   <Input
+                                                     value={editingPlaceholders[placeholder]}
+                                                     onChange={(e) => setEditingPlaceholders({
+                                                       ...editingPlaceholders,
+                                                       [placeholder]: e.target.value
+                                                     })}
+                                                     onBlur={() => finishEditingPlaceholder(placeholder)}
+                                                     onKeyDown={(e) => {
+                                                       if (e.key === 'Enter') {
+                                                         finishEditingPlaceholder(placeholder);
+                                                       } else if (e.key === 'Escape') {
+                                                         const newState = { ...editingPlaceholders };
+                                                         delete newState[placeholder];
+                                                         setEditingPlaceholders(newState);
+                                                       }
+                                                     }}
+                                                     size="sm"
+                                                     fontFamily="mono"
+                                                     fontSize="xs"
+                                                     autoFocus
+                                                   />
+                                                 ) : (
                                                  <Code 
                                                    fontSize="xs" 
                                                    bg="transparent" 
-                                                   p={0}
+                                                     p={1}
                                                    wordBreak="break-all"
                                                    whiteSpace="pre-wrap"
-                                                   overflow="hidden"
-                                                   textOverflow="ellipsis"
-                                                 >
-                                                   {`{{${placeholder}}}`}
+                                                     cursor="text"
+                                                     onClick={(e) => {
+                                                       e.stopPropagation();
+                                                       startEditingPlaceholder(placeholder);
+                                                     }}
+                                                     _hover={{ bg: useColorModeValue('gray.100', 'gray.600') }}
+                                                     borderRadius="sm"
+                                                   >
+                                                     {placeholder}
                                                  </Code>
-                                               </HStack>
+                                                 )}
+                                                 
+                                                 <Text fontSize="xs" color="gray.400" fontStyle="italic">
+                                                   Click to edit name
+                                                 </Text>
+                                               </VStack>
                                              </Box>
                                            ))}
                                          </VStack>
@@ -781,28 +1116,44 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
                               
                               {/* Right Panel - Template Content */}
                               <Box flex="1" p={4} display="flex" flexDirection="column">
-                                <Text fontSize="md" fontWeight="semibold" mb={3} color={useColorModeValue('gray.800', 'white')}>
+                                <HStack justify="space-between" mb={3}>
+                                  <Text fontSize="md" fontWeight="semibold" color={useColorModeValue('gray.800', 'white')}>
                                   Template Content
                                 </Text>
-                                <FormControl flex="1" display="flex" flexDirection="column">
-                                  <Textarea
-                                    value={editedTemplate?.template || ''}
-                                    onChange={(e) => updateTemplateField('template', e.target.value)}
-                                    placeholder="Enter your template content with placeholders like {{client_name}}, {{date}}, etc..."
-                                    fontFamily="mono"
-                                    fontSize="sm"
-                                    resize="none"
+                                  <Badge colorScheme="blue" fontSize="xs">
+                                    Click placeholders to edit
+                                  </Badge>
+                                </HStack>
+                                <Box
                                     flex="1"
+                                  p={4}
                                     bg={useColorModeValue('gray.50', 'gray.900')}
                                     border="1px solid"
                                     borderColor={useColorModeValue('gray.300', 'gray.600')}
                                     borderRadius="md"
-                                    _focus={{
-                                      borderColor: 'blue.400',
-                                      boxShadow: '0 0 0 1px blue.400'
-                                    }}
-                                  />
-                                </FormControl>
+                                  overflowY="auto"
+                                  fontFamily="mono"
+                                  fontSize="sm"
+                                  lineHeight="tall"
+                                  css={{
+                                    '&::-webkit-scrollbar': {
+                                      width: '8px',
+                                    },
+                                    '&::-webkit-scrollbar-track': {
+                                      background: 'transparent',
+                                    },
+                                    '&::-webkit-scrollbar-thumb': {
+                                      background: useColorModeValue('#CBD5E0', '#4A5568'),
+                                      borderRadius: '4px',
+                                    },
+                                  }}
+                                >
+                                  {renderTemplateContentWithPills(editedTemplate?.template || '')}
+                                </Box>
+                                
+                                <Text fontSize="xs" color="gray.500" mt={2}>
+                                  💡 Tip: Click any placeholder pill (yellow/blue) to select it, then edit its name in the left panel
+                                </Text>
                               </Box>
                             </Flex>
                           ) : (
@@ -938,39 +1289,51 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
                     )}
                     
                     {createStep === 'placeholders' && (
-                      <>
+                      <Flex direction="row" gap={4} flex="1" minH="0">
+                        {/* Left: Placeholders List */}
+                        <VStack flex="1" spacing={3} align="stretch" minH="0">
                         <Text fontWeight="bold" fontSize="sm">Detected Placeholders</Text>
                         <Text fontSize="xs" color="gray.500">
-                          Review the detected values and choose which ones to convert to placeholders:
+                            Review and modify the detected values. Use AI chat if you need help!
                         </Text>
+                          
+                          {success && (
+                            <Alert status="success" borderRadius="md" py={2}>
+                              <AlertIcon />
+                              <Text fontSize="sm">{success}</Text>
+                            </Alert>
+                          )}
+                          
                         {detectedPlaceholders.length === 0 ? (
                           <Alert status="info" borderRadius="md" py={2}>
                             <AlertIcon />
-                            <Text fontSize="sm">No placeholders were automatically detected. You can manually add them in the YAML step.</Text>
+                              <Text fontSize="sm">No placeholders detected. Use AI chat to add them!</Text>
                           </Alert>
                         ) : (
                           <Alert status="success" borderRadius="md" py={2}>
                             <AlertIcon />
-                            <Text fontSize="sm">Found {detectedPlaceholders.length} potential placeholder{detectedPlaceholders.length > 1 ? 's' : ''} using AI analysis!</Text>
+                              <Text fontSize="sm">Found {detectedPlaceholders.length} placeholder{detectedPlaceholders.length > 1 ? 's' : ''}!</Text>
                           </Alert>
                         )}
                         
-                        <Box flex="1" overflowY="auto" minH="0">
+                          <Box flex="1" overflowY="auto" minH="0" pr={2}>
                           <VStack spacing={2} align="stretch">
                             {detectedPlaceholders.map((placeholder, index) => (
-                              <HStack key={index} p={2} bg={itemBgColor} borderRadius="md">
+                                <HStack key={index} p={2} bg={itemBgColor} borderRadius="md" border="1px solid" borderColor={borderColor}>
                                 <Checkbox
                                   isChecked={placeholder.accepted}
                                   onChange={(e) => updatePlaceholder(index, 'accepted', e.target.checked)}
                                   size="sm"
                                 />
-                                <Code fontSize="xs" flex="1">{placeholder.original}</Code>
+                                  <Code fontSize="xs" flex="1" wordBreak="break-word">{placeholder.original}</Code>
                                 <Text fontSize="xs" color="gray.500">→</Text>
                                 <Input
                                   value={placeholder.suggested}
                                   onChange={(e) => updatePlaceholder(index, 'suggested', e.target.value)}
                                   size="sm"
-                                  w="180px"
+                                    w="200px"
+                                    fontFamily="mono"
+                                    fontSize="xs"
                                 />
                               </HStack>
                             ))}
@@ -987,7 +1350,234 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
                               onClick={handleConfirmPlaceholders}
                               size="sm"
                             >
-                              Generate Template
+                                Next: Categories
+                              </Button>
+                            </HStack>
+                          </Box>
+                        </VStack>
+                        
+                        {/* Right: AI Chat */}
+                        <Box 
+                          w="450px"
+                          borderLeft="1px solid"
+                          borderColor={borderColor}
+                          pl={4}
+                          display="flex"
+                          flexDirection="column"
+                          minH="0"
+                        >
+                          <HStack mb={3}>
+                            <Bot size={16} />
+                            <Text fontWeight="bold" fontSize="sm">AI Assistant</Text>
+                          </HStack>
+                          
+                          <Text fontSize="xs" color="gray.500" mb={3}>
+                            Ask AI to help refine placeholders. The AI will automatically apply changes to the list on the left!
+                          </Text>
+                          
+                          <Alert status="success" size="sm" borderRadius="md" py={1} mb={3}>
+                            <AlertIcon boxSize={3} />
+                            <Text fontSize="xs">
+                              AI suggestions are applied automatically ✨
+                            </Text>
+                          </Alert>
+                          
+                          {/* Chat History */}
+                          <Box
+                            flex="1"
+                            overflowY="auto"
+                            mb={3}
+                            p={2}
+                            bg={useColorModeValue('gray.50', 'gray.900')}
+                            borderRadius="md"
+                            minH="200px"
+                          >
+                            {chatHistory.length === 0 ? (
+                              <VStack spacing={3} justify="center" h="full" p={3}>
+                                <Bot size={32} color="gray" />
+                                <Text fontSize="xs" textAlign="center" color="gray.500" fontWeight="bold">
+                                  Ask AI to help refine placeholders
+                                </Text>
+                                <VStack spacing={1} align="stretch" w="full">
+                                  <Text fontSize="xs" color="gray.400">Try asking:</Text>
+                                  <Code fontSize="xs" p={2} borderRadius="md">"Add a placeholder for the company address"</Code>
+                                  <Code fontSize="xs" p={2} borderRadius="md">"Rename 'amount' to 'total_amount'"</Code>
+                                  <Code fontSize="xs" p={2} borderRadius="md">"Did I miss any important values?"</Code>
+                                  <Code fontSize="xs" p={2} borderRadius="md">"Remove the page number placeholder"</Code>
+                                </VStack>
+                              </VStack>
+                            ) : (
+                              <VStack spacing={3} align="stretch">
+                                {chatHistory.map((msg, index) => (
+                                  <Box
+                                    key={index}
+                                    p={2}
+                                    bg={msg.role === 'user' ? useColorModeValue('blue.50', 'blue.900') : useColorModeValue('white', 'gray.800')}
+                                    borderRadius="md"
+                                    fontSize="xs"
+                                    border="1px solid"
+                                    borderColor={msg.role === 'user' ? 'blue.200' : borderColor}
+                                  >
+                                    <Text fontWeight="bold" mb={1} color={msg.role === 'user' ? 'blue.600' : 'green.600'}>
+                                      {msg.role === 'user' ? 'You' : 'AI Assistant'}
+                                    </Text>
+                                    {msg.role === 'user' ? (
+                                      <Text whiteSpace="pre-wrap">{msg.content}</Text>
+                                    ) : (
+                                      <Box
+                                        sx={{
+                                          '& p': { marginBottom: '0.5rem' },
+                                          '& ul, & ol': { marginLeft: '1rem', marginBottom: '0.5rem' },
+                                          '& li': { marginBottom: '0.25rem' },
+                                          '& strong': { fontWeight: 'bold' },
+                                          '& code': {
+                                            backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                                            padding: '0.125rem 0.25rem',
+                                            borderRadius: '0.25rem',
+                                            fontSize: 'xs'
+                                          }
+                                        }}
+                                      >
+                                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                        {isStreaming && index === chatHistory.length - 1 && (
+                                          <Box
+                                            as="span"
+                                            display="inline-block"
+                                            w="2px"
+                                            h="1em"
+                                            bg="green.500"
+                                            ml={1}
+                                            animation="blink 1s step-end infinite"
+                                            sx={{
+                                              '@keyframes blink': {
+                                                '0%, 100%': { opacity: 1 },
+                                                '50%': { opacity: 0 },
+                                              }
+                                            }}
+                                          />
+                                        )}
+                                      </Box>
+                                    )}
+                                  </Box>
+                                ))}
+                              </VStack>
+                            )}
+                          </Box>
+                          
+                          {/* Chat Input */}
+                          <HStack>
+                            <Input
+                              placeholder="Ask AI about placeholders..."
+                              value={chatInput}
+                              onChange={(e) => setChatInput(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && !isStreaming && handleAIChatSubmit()}
+                              size="sm"
+                              isDisabled={isStreaming}
+                            />
+                            <IconButton
+                              aria-label="Send message"
+                              icon={<Send size={16} />}
+                              onClick={handleAIChatSubmit}
+                              colorScheme="blue"
+                              size="sm"
+                              isDisabled={!chatInput.trim() || isStreaming}
+                              isLoading={isStreaming}
+                            />
+                          </HStack>
+                        </Box>
+                      </Flex>
+                    )}
+                    
+                    {createStep === 'categories' && (
+                      <>
+                        <Text fontWeight="bold" fontSize="sm">Define PDF Categories</Text>
+                        <Text fontSize="xs" color="gray.500" mb={3}>
+                          Categories represent the types of PDF documents needed to fill this template.
+                          For example: "financial_statement", "tax_return", "invoice", etc.
+                        </Text>
+                        
+                        <Alert status="info" borderRadius="md" py={2} mb={3}>
+                          <AlertIcon />
+                          <Box flex="1">
+                            <Text fontSize="xs" fontWeight="bold" mb={1}>What are categories?</Text>
+                            <Text fontSize="xs">
+                              Categories are NOT placeholders! They define which PDF documents the user must select when generating an email from this template.
+                              Each category will appear as a file picker in the AI Templater.
+                            </Text>
+                          </Box>
+                        </Alert>
+                        
+                        <FormControl>
+                          <FormLabel fontSize="sm">Add Category</FormLabel>
+                          <HStack>
+                            <Input
+                              value={newCategory}
+                              onChange={(e) => setNewCategory(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
+                              placeholder="e.g., financial_statement, tax_return..."
+                              size="sm"
+                            />
+                            <Button
+                              leftIcon={<Plus size={14} />}
+                              onClick={handleAddCategory}
+                              size="sm"
+                              colorScheme="blue"
+                              isDisabled={!newCategory.trim() || categories.includes(newCategory.trim())}
+                            >
+                              Add
+                            </Button>
+                          </HStack>
+                        </FormControl>
+                        
+                        <Box>
+                          <Text fontSize="sm" fontWeight="semibold" mb={2}>
+                            Categories ({categories.length})
+                          </Text>
+                          {categories.length === 0 ? (
+                            <Box p={4} bg={itemBgColor} borderRadius="md" textAlign="center">
+                              <Text fontSize="xs" color="gray.500">
+                                No categories added yet. Add at least one to continue.
+                              </Text>
+                            </Box>
+                          ) : (
+                            <VStack spacing={2} align="stretch">
+                              {categories.map((cat, index) => (
+                                <HStack 
+                                  key={index} 
+                                  p={2} 
+                                  bg={itemBgColor} 
+                                  borderRadius="md"
+                                  border="1px solid"
+                                  borderColor={borderColor}
+                                >
+                                  <FileText size={14} />
+                                  <Code fontSize="xs" flex="1">{cat}</Code>
+                                  <IconButton
+                                    aria-label="Remove category"
+                                    icon={<X size={14} />}
+                                    size="xs"
+                                    variant="ghost"
+                                    colorScheme="red"
+                                    onClick={() => handleRemoveCategory(index)}
+                                  />
+                                </HStack>
+                              ))}
+                            </VStack>
+                          )}
+                        </Box>
+                        
+                        <Box pt={2}>
+                          <HStack>
+                            <Button variant="ghost" onClick={() => setCreateStep('placeholders')} size="sm">
+                              Back
+                            </Button>
+                            <Button
+                              colorScheme="blue"
+                              onClick={handleConfirmCategories}
+                              size="sm"
+                              isDisabled={categories.length === 0}
+                            >
+                              Generate YAML
                             </Button>
                           </HStack>
                         </Box>
@@ -1013,7 +1603,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
                         
                         <Box pt={2}>
                           <HStack>
-                            <Button variant="ghost" onClick={() => setCreateStep('placeholders')} size="sm">
+                            <Button variant="ghost" onClick={() => setCreateStep('categories')} size="sm">
                               Back
                             </Button>
                             <Button

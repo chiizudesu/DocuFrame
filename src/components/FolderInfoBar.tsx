@@ -351,8 +351,8 @@ export const FolderInfoBar: React.FC = () => {
   }
 
   const handlePreviewPaneToggle = () => {
-    setIsPreviewPaneOpen(prev => !prev)
     const newState = !isPreviewPaneOpen
+    setIsPreviewPaneOpen(newState)
     addLog(`Preview pane ${newState ? 'opened' : 'closed'}`)
     setStatus(`Preview pane ${newState ? 'opened' : 'closed'}`, 'info')
   }
