@@ -20,9 +20,13 @@ import {
   AlertIcon,
   FormControl,
   FormLabel,
-  HStack
+  HStack,
+  Input,
+  InputGroup,
+  InputRightElement
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Brain } from 'lucide-react';
+import { Copy, Sparkles, Brain, Send } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { loadEmailTemplates, generateEmailFromTemplate, AI_AGENTS, type AIAgent } from '../services/aiService';
 
 interface FileItem { name: string; path: string; type: string; }
@@ -42,7 +46,11 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [selectedAgent, setSelectedAgent] = useState<AIAgent>('openai');
+  const [selectedAgent, setSelectedAgent] = useState<AIAgent>('claude-sonnet');
+  const [refinementInput, setRefinementInput] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
+  const [extractedData, setExtractedData] = useState<{ [key: string]: string } | null>(null);
+  const [progressMessage, setProgressMessage] = useState<string>('');
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -57,7 +65,9 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
       setCopied(false);
       setSelectedTemplate(null);
       setSelectedFiles({});
-      setSelectedAgent('openai');
+      setSelectedAgent('claude-sonnet');
+      setRefinementInput('');
+      setExtractedData(null);
       loadEmailTemplates().then(setTemplates).catch(e => setError(e.message));
       (async () => {
         const items = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
@@ -76,27 +86,97 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
     setSelectedFiles(prev => ({ ...prev, [cat]: file.path }));
   };
 
+  // Helper to get category names (supports both old and new formats)
+  const getCategoryNames = (template: any): string[] => {
+    if (Array.isArray(template.categories)) {
+      return template.categories;
+    } else if (typeof template.categories === 'object') {
+      return Object.keys(template.categories);
+    }
+    return [];
+  };
+
   const handleGenerate = async () => {
     setLoading(true);
     setError(null);
     setResult('');
     setCopied(false);
+    setProgressMessage('Reading PDF files...');
+    
     try {
       // Extract text from selected PDFs
       const extracted: { [cat: string]: string } = {};
-      for (const cat of selectedTemplate.categories as string[]) {
+      const categoryNames = getCategoryNames(selectedTemplate);
+      
+      for (const cat of categoryNames) {
         const filePath = selectedFiles[cat];
         if (!filePath) throw new Error(`No file selected for ${cat}`);
+        setProgressMessage(`📖 Reading ${cat}...`);
         extracted[cat] = await (window.electronAPI as any).readPdfText(filePath);
       }
       
-      // Use the unified AI service with the selected agent
-      const result = await generateEmailFromTemplate(selectedTemplate, extracted, selectedAgent);
+      // Store extracted data for refinements
+      setExtractedData(extracted);
+      
+      // Use the unified AI service with the selected agent and progress callback
+      const result = await generateEmailFromTemplate(
+        selectedTemplate, 
+        extracted, 
+        selectedAgent,
+        (message: string) => setProgressMessage(message)
+      );
+      
       setResult(result);
+      setProgressMessage('');
     } catch (err: any) {
       setError(err.message || 'Failed to generate email.');
+      setProgressMessage('');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefinement = async () => {
+    if (!refinementInput.trim() || !result || !extractedData) return;
+    
+    setIsRefining(true);
+    setError(null);
+    
+    try {
+      // Create a refinement prompt
+      const refinementPrompt = `You are an expert accountant. I have the following email that was generated from a template. Please refine it based on the user's request.
+
+Current Email:
+${result}
+
+User Request:
+${refinementInput}
+
+Extracted Data Context:
+${Object.entries(extractedData).map(([cat, text]) => `--- ${cat} ---\n${text || ''}`).join('\n')}
+
+Please provide the refined email, maintaining the same professional tone and structure. Only use information from the extracted data.`;
+
+      // Use the same agent for refinement
+      const refined = await generateEmailFromTemplate(
+        { ...selectedTemplate, template: refinementPrompt }, 
+        {}, 
+        selectedAgent
+      );
+      
+      setResult(refined);
+      setRefinementInput('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to refine email.');
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
+  const handleRefinementKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleRefinement();
     }
   };
 
@@ -114,8 +194,11 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
     setCopied(false);
     setSelectedTemplate(null);
     setSelectedFiles({});
-    setSelectedAgent('openai');
+    setSelectedAgent('claude-sonnet');
+    setRefinementInput('');
+    setExtractedData(null);
     setLoading(false);
+    setIsRefining(false);
     onClose();
   };
 
@@ -197,10 +280,15 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
 
                 {/* PDF Selection Area - Scrollable */}
                 <Box flex="1" minH="0" display="flex" flexDirection="column">
-                  {selectedTemplate && (selectedTemplate.categories as string[]).map((cat: string) => (
+                  {selectedTemplate && getCategoryNames(selectedTemplate).map((cat: string) => (
                     <FormControl key={cat} mb={4} flex="1" display="flex" flexDirection="column">
                       <FormLabel fontSize="sm">
                         Select PDF for {cat.replace(/_/g, ' ')}
+                        {selectedTemplate.categories[cat]?.description && (
+                          <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')} fontWeight="normal" mt={0.5}>
+                            {selectedTemplate.categories[cat].description}
+                          </Text>
+                        )}
                       </FormLabel>
                       <Box 
                         flex="1"
@@ -249,8 +337,8 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                   colorScheme="yellow"
                   onClick={handleGenerate}
                   isLoading={loading}
-                  loadingText="Generating..."
-                  isDisabled={loading || !selectedTemplate || (selectedTemplate.categories as string[]).some((cat: string) => !selectedFiles[cat])}
+                  loadingText={progressMessage || "Generating..."}
+                  isDisabled={loading || !selectedTemplate || getCategoryNames(selectedTemplate).some((cat: string) => !selectedFiles[cat])}
                   size="sm"
                   w="full"
                   mt={3}
@@ -302,7 +390,7 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                     <VStack spacing={3}>
                       <Spinner size="md" color="yellow.500" />
                       <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.300')}>
-                        Generating email...
+                        {progressMessage || 'Generating email...'}
                       </Text>
                     </VStack>
                   </Flex>
@@ -341,13 +429,136 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
                         background: useColorModeValue('#A0AEC0', '#2D3748'),
                       },
                     }}
+                    sx={{
+                      '& h1': {
+                        fontSize: '1.5em',
+                        fontWeight: 'bold',
+                        marginTop: '0.5em',
+                        marginBottom: '0.5em',
+                      },
+                      '& h2': {
+                        fontSize: '1.3em',
+                        fontWeight: 'bold',
+                        marginTop: '0.5em',
+                        marginBottom: '0.5em',
+                      },
+                      '& h3': {
+                        fontSize: '1.1em',
+                        fontWeight: 'bold',
+                        marginTop: '0.5em',
+                        marginBottom: '0.5em',
+                      },
+                      '& p': {
+                        marginBottom: '0.75em',
+                        lineHeight: '1.6',
+                      },
+                      '& strong': {
+                        fontWeight: 'bold',
+                        color: useColorModeValue('gray.800', 'yellow.200'),
+                      },
+                      '& ul, & ol': {
+                        paddingLeft: '1.5em',
+                        marginBottom: '0.75em',
+                      },
+                      '& li': {
+                        marginBottom: '0.25em',
+                      },
+                      '& code': {
+                        backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                        padding: '0.1em 0.3em',
+                        borderRadius: '3px',
+                        fontSize: '0.9em',
+                      },
+                      '& pre': {
+                        backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                        padding: '0.75em',
+                        borderRadius: '5px',
+                        overflowX: 'auto',
+                        marginBottom: '0.75em',
+                      },
+                    }}
                   >
-                    <Text 
-                      whiteSpace="pre-line" 
-                      fontSize="sm"
-                      lineHeight="1.5"
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => (
+                          <Text fontSize="sm" mb={2}>
+                            {children}
+                          </Text>
+                        ),
+                        h1: ({ children }) => (
+                          <Text fontSize="xl" fontWeight="bold" mt={3} mb={2}>
+                            {children}
+                          </Text>
+                        ),
+                        h2: ({ children }) => (
+                          <Text fontSize="lg" fontWeight="bold" mt={3} mb={2}>
+                            {children}
+                          </Text>
+                        ),
+                        h3: ({ children }) => (
+                          <Text fontSize="md" fontWeight="bold" mt={2} mb={1}>
+                            {children}
+                          </Text>
+                        ),
+                        ul: ({ children }) => (
+                          <VStack align="start" spacing={1} pl={4} mb={2}>
+                            {children}
+                          </VStack>
+                        ),
+                        ol: ({ children }) => (
+                          <VStack align="start" spacing={1} pl={4} mb={2}>
+                            {children}
+                          </VStack>
+                        ),
+                        li: ({ children }) => (
+                          <Text fontSize="sm" display="list-item">
+                            {children}
+                          </Text>
+                        ),
+                        strong: ({ children }) => (
+                          <Text as="strong" fontWeight="bold" color={useColorModeValue('gray.800', 'yellow.200')}>
+                            {children}
+                          </Text>
+                        ),
+                      }}
                     >
                       {result}
+                    </ReactMarkdown>
+                  </Box>
+                )}
+                
+                {/* Chat Input for Refinements */}
+                {result && !loading && (
+                  <Box mt={3} pt={3} borderTop="1px solid" borderColor={borderColor}>
+                    <InputGroup size="sm">
+                      <Input
+                        placeholder="Ask for refinements... (e.g., 'Make it more concise' or 'Add emphasis on tax savings')"
+                        value={refinementInput}
+                        onChange={(e) => setRefinementInput(e.target.value)}
+                        onKeyPress={handleRefinementKeyPress}
+                        isDisabled={isRefining}
+                        bg={useColorModeValue('white', 'gray.800')}
+                        borderColor={borderColor}
+                        _focus={{
+                          borderColor: useColorModeValue('yellow.400', 'yellow.500'),
+                          boxShadow: `0 0 0 1px ${useColorModeValue('#ECC94B', '#D69E2E')}`
+                        }}
+                        pr="2.5rem"
+                      />
+                      <InputRightElement width="2.5rem">
+                        <IconButton
+                          aria-label="Send refinement"
+                          icon={isRefining ? <Spinner size="xs" /> : <Send size={14} />}
+                          size="xs"
+                          onClick={handleRefinement}
+                          isDisabled={!refinementInput.trim() || isRefining}
+                          colorScheme="yellow"
+                          variant="ghost"
+                        />
+                      </InputRightElement>
+                    </InputGroup>
+                    <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')} mt={1}>
+                      Press Enter to send, Shift+Enter for new line
                     </Text>
                   </Box>
                 )}

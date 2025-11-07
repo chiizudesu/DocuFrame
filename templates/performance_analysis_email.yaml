@@ -1,38 +1,99 @@
 name: 2025 Annual Accounts Company
 description: Email template for summarizing company performance and tax return for the year.
+
+# Enhanced two-stage extraction format
 categories:
-  - financial_statements
-  - tax_return
+  financial_statements:
+    description: "Current and prior year financial statements showing P&L and Balance Sheet"
+    extractions:
+      - name: revenue_2025
+        instruction: "Extract the total revenue/sales for the year ending March 2025. Return only the numeric amount."
+        
+      - name: revenue_2024
+        instruction: "Extract the total revenue/sales for the year ending March 2024. Return only the numeric amount."
+      
+      - name: revenue_change_direction
+        instruction: "Based on the revenue figures, determine if there was an 'increase', 'decrease', or 'no change' from 2024 to 2025."
+      
+      - name: revenue_change_percent
+        instruction: "Calculate the percentage change in revenue from 2024 to 2025. Return just the number."
+      
+      - name: revenue_reason
+        instruction: "Analyze the revenue change and provide a brief business reason for the increase/decrease/no change (e.g., 'increased sales activity', 'market downturn', 'new contracts secured')."
+      
+      - name: direct_costs_direction
+        instruction: "Determine if direct costs 'increased', 'decreased', 'remained at nil', or 'remained stable' from 2024 to 2025."
+      
+      - name: gross_profit_2024
+        instruction: "Extract or calculate the gross profit margin percentage for 2024. Return just the number."
+      
+      - name: gross_profit_2025
+        instruction: "Extract or calculate the gross profit margin percentage for 2025. Return just the number."
+      
+      - name: gross_profit_direction
+        instruction: "Determine if the gross profit margin 'improved', 'declined', 'remained stable', or 'remained at 0%' from 2024 to 2025."
+      
+      - name: gross_profit_reason
+        instruction: "Provide a brief reason for the change in gross profit margin (e.g., 'better cost management', 'increased material costs', 'pricing adjustments')."
+      
+      - name: overheads_direction
+        instruction: "Determine if overhead expenses (before shareholder salaries) 'increased' or 'decreased' from 2024 to 2025."
+      
+      - name: overheads_movement
+        instruction: "Calculate the dollar amount change in overheads from 2024 to 2025. Return just the number."
+      
+      - name: overheads_movement_percent
+        instruction: "Calculate the percentage change in overheads from 2024 to 2025. Return just the number."
+      
+      - name: has_comparatives
+        instruction: "Determine if the financial statements include prior year (2024) comparative figures. Answer 'yes' or 'no'."
+      
+      - name: expense_movements
+        instruction: |
+          Extract the top 5-7 overhead expense categories (excluding shareholder salaries) with movements.
+          For each expense line item, include:
+          - Expense name (e.g., 'Bank Fees', 'Consulting & Accounting')
+          - Direction (increased/decreased)
+          - Dollar change
+          - Percentage change
+          Format as a bulleted list ready to insert in email, like:
+          - Bank Fees increased by $500 or 25%
+          - Legal Expenses decreased by $1,200 or 50%
+      
+      - name: overheads_total
+        instruction: "If no comparatives exist, extract the total overhead expenses (excluding shareholder salaries) for 2025. Return just the number."
+
+  tax_return:
+    description: "Company tax return showing taxable income and tax calculations"
+    extractions:
+      - name: taxable_income
+        instruction: "Extract the taxable income for the company. Return just the numeric amount."
+      
+      - name: tax_amount
+        instruction: "Extract the tax amount calculated on the taxable income. Return just the numeric amount."
+      
+      - name: tax_refund_or_payable
+        instruction: "After accounting for tax credits and provisional tax, determine if the company will receive a 'refund' or has 'tax to pay'."
+      
+      - name: tax_final_amount
+        instruction: "Extract the final refund or tax payable amount after credits and provisional tax. Return just the numeric amount."
+      
+      - name: tax_due_date
+        instruction: "Extract the tax payment or refund due date. If not found, use '7 April 2026'."
+
 template: |
-  Company Annual Accounts
+  # Company Annual Accounts
 
-  For the 12 months ending March 2025, revenue was ${{revenue}} – this is an overall {{revenue_change_direction}} of {{revenue_change_percent}}% from the year ending March 2024. This was largely due to {{revenue_reason}}.
+  For the 12 months ending March 2025, revenue was $**{{revenue_2025}}** – this is an overall **{{revenue_change_direction}}** of **{{revenue_change_percent}}%** from the year ending March 2024. This was largely due to **{{revenue_reason}}**.
 
-  Direct costs have naturally {{direct_costs_direction}} alongside sales, and the gross profit margin has {{gross_profit_direction}} from the 2024 year at {{gross_profit_2024}}% to last year at {{gross_profit_2025}}%. This was largely due to {{gross_profit_reason}}.
+  Direct costs have naturally **{{direct_costs_direction}}** alongside sales, and the gross profit margin has **{{gross_profit_direction}}** from the 2024 year at **{{gross_profit_2024}}%** to last year at **{{gross_profit_2025}}%**. This was largely due to **{{gross_profit_reason}}**.
 
-  Overheads have seen a reasonable {{overheads_direction}} of ${{overheads_movement}} or {{overheads_movement_percent}}%. Key movements for the year were:
+  Overheads before shareholder salaries have seen a reasonable **{{overheads_direction}}** of $**{{overheads_movement}}** or **{{overheads_movement_percent}}%**. Key movements for the year were:
 
-  - {{expenses_1}} increased / decreased by ${{expenses_1_amount}} or {{expenses_1_percent}}%
-  - {{expenses_2}} increased / decreased by ${{expenses_2_amount}} or {{expenses_2_percent}}%
-  - {{expenses_3}} increased / decreased by ${{expenses_3_amount}} or {{expenses_3_percent}}%
-  - {{expenses_4}} increased / decreased by ${{expenses_4_amount}} or {{expenses_4_percent}}%
-  - {{expenses_5}} increased / decreased by ${{expenses_5_amount}} or {{expenses_5_percent}}%
-  - {{expenses_6}} increased / decreased by ${{expenses_6_amount}} or {{expenses_6_percent}}%
-  - {{expenses_7}} increased / decreased by ${{expenses_7_amount}} increased / decreased or {{expenses_7_percent}}%
-    {{fill any other expense here if needed}}
-
-  {{OR if no comparatives
-  Overheads (excluding shareholder salaries) for the year totalled ${{overheads_total_less_shareholder_salariesl}}. A majority of the overhead expenses were made up of: 
-  - {{expenses_1}} by ${{expenses_1_amount}} or {{expenses_1_percent}}%
-  - {{expenses_2}} by ${{expenses_2_amount}} or {{expenses_2_percent}}%
-  - {{expenses_3}} by ${{expenses_3_amount}} or {{expenses_3_percent}}%
-  - {{expenses_4}} by ${{expenses_4_amount}} or {{expenses_4_percent}}%
-  - {{expenses_5}} by ${{expenses_5_amount}} or {{expenses_5_percent}}%
-  - {{expenses_6}} by ${{expenses_6_amount}} or {{expenses_6_percent}}%
-  - {{expenses_7}} by ${{expenses_7_amount}} or {{expenses_7_percent}}% }}
+  {{expense_movements}}
 
   [Check internal queries for any points to add to the final email]
 
-  Company tax return
+  ## Company tax return
 
-  From a tax perspective, there is taxable income in the Company of ${{taxable_income}}. Tax on this amount is ${{tax_amount}}. After accounting for tax credits on investment income and provisional tax paid during the year, the Company is due to receive a refund of ${{tax_refund}}/has tax to pay of ${{tax_payable}}. This is due for payment on 7 April 2026 and we will be in touch closer to the due date with our standard reminder letter. 
+  From a tax perspective, there is taxable income in the Company of $**{{taxable_income}}**. Tax on this amount is $**{{tax_amount}}**. After accounting for tax credits on investment income and provisional tax paid during the year, the Company is due to receive a refund of $**{{tax_final_amount}}**/has tax to pay of $**{{tax_final_amount}}**. This is due for payment on {{tax_due_date}} and we will be in touch closer to the due date with our standard reminder letter. 

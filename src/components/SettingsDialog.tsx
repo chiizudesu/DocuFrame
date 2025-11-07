@@ -30,9 +30,6 @@ import {
   AlertIcon,
   AlertTitle,
   AlertDescription,
-  Card,
-  CardBody,
-  CardHeader,
   Heading,
   Spacer,
   Kbd,
@@ -103,7 +100,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const cardBg = useColorModeValue('gray.50', 'gray.700');
   const textColor = useColorModeValue('gray.800', 'white');
   const secondaryTextColor = useColorModeValue('gray.600', 'gray.300');
 

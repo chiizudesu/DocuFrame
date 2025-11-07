@@ -23,7 +23,7 @@ export interface AppSettings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   aiEditorInstructions?: string;
-  aiEditorAgent?: 'openai' | 'claude';
+  aiEditorAgent?: 'openai' | 'claude' | 'claude-sonnet' | 'claude-haiku'; // Support old and new formats
   quickAccessPaths?: string[];
 
 }

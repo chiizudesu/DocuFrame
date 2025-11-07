@@ -1,5 +1,6 @@
 import React, { useEffect, useState, createContext, useContext, useCallback, ReactNode } from 'react';
 import { settingsService } from '../services/settings';
+import type { AIAgent } from '../services/aiService';
 
 interface FileItem {
   name: string;
@@ -53,8 +54,8 @@ interface AppContextType {
   setHideDotFiles: (hide: boolean) => void;
   aiEditorInstructions: string;             // NEW
   setAiEditorInstructions: (instructions: string) => void; // NEW
-  aiEditorAgent: 'openai' | 'claude';
-  setAiEditorAgent: (agent: 'openai' | 'claude') => void;
+  aiEditorAgent: AIAgent;
+  setAiEditorAgent: (agent: AIAgent) => void;
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
@@ -133,7 +134,7 @@ export const AppProvider: React.FC<{
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
   const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
-  const [aiEditorAgent, setAiEditorAgent] = useState<'openai' | 'claude'>('openai');
+  const [aiEditorAgent, setAiEditorAgent] = useState<AIAgent>('openai');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
@@ -187,8 +188,10 @@ export const AppProvider: React.FC<{
         setAiEditorInstructions(settings.aiEditorInstructions);
       }
       // Load AI editor agent preference (default to 'openai' if unset)
+      // Handle backward compatibility: 'claude' -> 'claude-sonnet'
       if (settings.aiEditorAgent) {
-        setAiEditorAgent(settings.aiEditorAgent);
+        const agent = settings.aiEditorAgent === 'claude' ? 'claude-sonnet' : settings.aiEditorAgent as AIAgent;
+        setAiEditorAgent(agent);
       }
       
       // Load all shortcut settings

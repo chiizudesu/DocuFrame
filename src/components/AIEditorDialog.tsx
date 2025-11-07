@@ -73,7 +73,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleAgentChange = async (agent: 'openai' | 'claude') => {
+  const handleAgentChange = async (agent: AIAgent) => {
     try {
       setAiEditorAgent(agent);
       const settings = await settingsService.getSettings();
@@ -127,7 +127,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
               </Text>
               <Select
                 value={aiEditorAgent}
-                onChange={(e) => handleAgentChange(e.target.value as 'openai' | 'claude')}
+                onChange={(e) => handleAgentChange(e.target.value as AIAgent)}
                 size="sm"
                 maxW="200px"
                 borderColor={borderColor}

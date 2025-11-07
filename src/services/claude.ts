@@ -1,9 +1,18 @@
 import { settingsService } from './settings';
 import Anthropic from '@anthropic-ai/sdk';
 
+// Helper function to get Claude model string from agent type
+function getClaudeModelString(agent?: 'claude-sonnet' | 'claude-haiku'): string {
+  if (agent === 'claude-haiku') {
+    return 'claude-3-5-haiku-latest';
+  }
+  // Default to Sonnet 4.5
+  return 'claude-sonnet-4-5';
+}
+
 const AI_EDITOR_PROMPT = `You are an expert writing assistant. When I input a raw email blurb, your task is to rewrite it using clearer, more professional, and polished language — but without making it sound robotic or overly formal. Favor a direct, confident, and forward tone over excessive politeness.\n\nMaintain the following:\n- My original tone, length, and style\n- A human and personable vibe\n- The intent and overall message of the email\n\nAvoid:\n- Adding or removing content unless needed for clarity\n- Over-sanitizing the language\n- Changing the personal feel or casual-professional balance\n\nRewrite the email blurb below accordingly.`;
 
-export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
+export async function rewriteEmailBlurb(rawBlurb: string, agent?: 'claude-sonnet' | 'claude-haiku'): Promise<string> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.claudeApiKey;
   if (!apiKey) throw new Error('Claude API key not set.');
@@ -17,8 +26,9 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
   });
 
   // Send instructions as system prompt and the user blurb as a separate message
+  const model = getClaudeModelString(agent);
   const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: model,
     max_tokens: 800,
     system: prompt,
     messages: [
@@ -35,7 +45,7 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
   throw new Error('Unexpected response format from Claude');
 }
 
-export async function extractDocumentInsights(documentText: string, fileName: string): Promise<string> {
+export async function extractDocumentInsights(documentText: string, fileName: string, agent?: 'claude-sonnet' | 'claude-haiku'): Promise<string> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.claudeApiKey;
   if (!apiKey) throw new Error('Claude API key not set.');
@@ -121,8 +131,9 @@ Document to analyze:`;
   console.log('Final message content length:', messageContent.length);
   console.log('Final message preview:', messageContent.substring(0, 300));
 
+  const model = getClaudeModelString(agent);
   const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: model,
     max_tokens: 1200,
     messages: [
       { role: 'user', content: messageContent }
@@ -140,7 +151,7 @@ Document to analyze:`;
   throw new Error('Unexpected response format from Claude');
 }
 
-export async function analyzeTemplateForPlaceholders(templateText: string, templateName: string): Promise<Array<{original: string, suggested: string, accepted: boolean}>> {
+export async function analyzeTemplateForPlaceholders(templateText: string, templateName: string, agent?: 'claude-sonnet' | 'claude-haiku'): Promise<Array<{original: string, suggested: string, accepted: boolean}>> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.claudeApiKey;
   if (!apiKey) throw new Error('Claude API key not set.');
@@ -176,8 +187,9 @@ Only return the JSON array, no other text or explanation.
 Template Name: ${templateName}
 Document Text to Analyze:`;
 
+  const model = getClaudeModelString(agent);
   const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: model,
     max_tokens: 1500,
     messages: [
       { role: 'user', content: `${PLACEHOLDER_ANALYSIS_PROMPT}\n\n${templateText}` }
@@ -208,9 +220,42 @@ Document Text to Analyze:`;
   }
 }
 
+// Extract structured data using targeted prompts
+export async function extractStructuredData(
+  extractionPrompt: string,
+  agent?: 'claude-sonnet' | 'claude-haiku'
+): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const model = getClaudeModelString(agent);
+  const response = await client.messages.create({
+    model: model,
+    max_tokens: 2000,
+    messages: [
+      { role: 'user', content: extractionPrompt }
+    ],
+    temperature: 0.2  // Lower temperature for more accurate extraction
+  });
+
+  const content = response.content[0];
+  if (content.type === 'text') {
+    return content.text.trim();
+  }
+  
+  throw new Error('Unexpected response format from Claude');
+}
+
 export async function generateEmailFromTemplate(
   template: any,
-  extractedData: { [key: string]: string }
+  extractedData: { [key: string]: string },
+  agent?: 'claude-sonnet' | 'claude-haiku'
 ): Promise<string> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.claudeApiKey;
@@ -224,8 +269,9 @@ export async function generateEmailFromTemplate(
   // Prepare prompt for Claude
   const prompt = `You are an expert accountant. Given the following extracted text from PDFs, fill in the placeholders in the provided email template. Only use information found in the PDFs.\n\nExtracted Data:\n${Object.entries(extractedData).map(([cat, text]) => `--- ${cat} ---\n${text || ''}`).join('\n')}\n\nTemplate:\n${template.template}`;
 
+  const model = getClaudeModelString(agent);
   const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: model,
     max_tokens: 800,
     messages: [
       { role: 'user', content: `${prompt}\n\nFill in the template with the extracted data.` }

@@ -6,7 +6,7 @@ interface ElectronAPI {
   getConfig: () => Promise<AppSettings>;
   setConfig: (config: AppSettings) => Promise<AppSettings>;
   validatePath: (path: string) => Promise<boolean>;
-  getDirectoryContents: (path: string) => Promise<FileItem[]>;
+  getDirectoryContents: (path: string, options?: { offset?: number; limit?: number; sortBy?: 'name' | 'size' | 'modified'; sortDirection?: 'asc' | 'desc' }) => Promise<{ items: FileItem[]; total: number; hasMore: boolean } | FileItem[]>;
   getDownloadsPath: () => Promise<string>;
   createDirectory: (path: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
@@ -121,8 +121,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFile: async (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
     return await ipcRenderer.invoke('select-file', options);
   },
-  getDirectoryContents: async (dirPath: string) => {
-    return await ipcRenderer.invoke('get-directory-contents', dirPath);
+  getDirectoryContents: async (dirPath: string, options?: { offset?: number; limit?: number; sortBy?: 'name' | 'size' | 'modified'; sortDirection?: 'asc' | 'desc' }) => {
+    return await ipcRenderer.invoke('get-directory-contents', dirPath, options);
   },
   getDownloadsPath: async () => {
     return await ipcRenderer.invoke('get-downloads-path');

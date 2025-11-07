@@ -684,33 +684,72 @@ ipcMain.handle('set-config', async (_, config: Config) => {
   }
 });
 
-ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
+ipcMain.handle('get-directory-contents', async (_, dirPath: string, options?: { offset?: number; limit?: number; sortBy?: 'name' | 'size' | 'modified'; sortDirection?: 'asc' | 'desc' }) => {
   try {
     const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
-    const results: any[] = [];
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      try {
-        const stats = await fsPromises.stat(fullPath);
-        const fileItem: any = {
-          name: entry.name,
-          path: fullPath,
-          type: entry.isDirectory() ? 'folder' : 'file',
-          size: stats.size.toString(),
-          modified: stats.mtime.toISOString(),
-          extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined
-        };
+    const total = entries.length;
 
-        // PDF page count calculation removed for performance
-
-        results.push(fileItem);
-      } catch (error) {
-        // Log and skip busy/locked/inaccessible files
-        console.error(`Skipping file (stat error): ${fullPath}`, error);
-        continue;
-      }
+    // Backward compatibility: if no options provided, return legacy array of all items
+    if (!options || (options.offset === undefined && options.limit === undefined)) {
+      const results: any[] = await Promise.all(
+        entries.map(async (entry) => {
+          const fullPath = path.join(dirPath, entry.name);
+          try {
+            const stats = await fsPromises.stat(fullPath);
+            return {
+              name: entry.name,
+              path: fullPath,
+              type: entry.isDirectory() ? 'folder' : 'file',
+              size: stats.size.toString(),
+              modified: stats.mtime.toISOString(),
+              extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined,
+            };
+          } catch (error) {
+            console.error(`Skipping file (stat error): ${fullPath}`, error);
+            return null;
+          }
+        })
+      ).then(items => items.filter((x): x is NonNullable<typeof x> => x !== null));
+      return results;
     }
-    return results;
+
+    const offset = Math.max(0, options.offset ?? 0);
+    const limit = Math.min(options.limit ?? total, total - offset);
+
+    // Slice entries for pagination BEFORE stat calls (lazy enumeration)
+    const paginatedEntries = entries.slice(offset, offset + limit);
+
+    // Stat only the requested page in parallel
+    const items = (
+      await Promise.all(
+        paginatedEntries.map(async (entry) => {
+          const fullPath = path.join(dirPath, entry.name);
+          try {
+            const stats = await fsPromises.stat(fullPath);
+            return {
+              name: entry.name,
+              path: fullPath,
+              type: entry.isDirectory() ? 'folder' : 'file',
+              size: stats.size.toString(),
+              modified: stats.mtime.toISOString(),
+              extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined,
+            };
+          } catch (error) {
+            // Skip busy/locked/inaccessible files
+            console.error(`Skipping file (stat error): ${fullPath}`, error);
+            return null;
+          }
+        })
+      )
+    ).filter((x): x is NonNullable<typeof x> => x !== null);
+
+    // Note: Sorting across the full set would require statting all items.
+    // We return unsorted page results; the renderer can sort if needed.
+    return {
+      items,
+      total,
+      hasMore: offset + limit < total,
+    };
   } catch (error) {
     console.error('Error getting directory contents:', error);
     throw error;

@@ -39,8 +39,8 @@ const JumpModeOverlay: React.FC<{
       (window.electronAPI as any).getDirectoryContents(currentDirectory).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-        console.log('Loaded files from current directory:', currentDirectory, 'File count:', files.length);
-        console.log('First 5 items in current directory:', files.slice(0, 5).map((f: any) => ({ name: f.name, path: f.path, type: f.type })));
+        // console.log('Loaded files from current directory:', currentDirectory, 'File count:', files.length);
+        // console.log('First 5 items in current directory:', files.slice(0, 5).map((f: any) => ({ name: f.name, path: f.path, type: f.type })));
       }).catch((error: any) => {
         console.error('Failed to load directory contents for current directory:', currentDirectory, error);
         // Fallback to sortedFiles if loading fails
@@ -83,7 +83,7 @@ const JumpModeOverlay: React.FC<{
     // Reset selected segment when user starts typing (clears pill indicator)
     if (selectedSegmentIndex !== null) {
       setSelectedSegmentIndex(null);
-      console.log('Cleared segment selection due to typing');
+      // console.log('Cleared segment selection due to typing');
     }
     
     const query = searchText.toLowerCase();
@@ -93,13 +93,13 @@ const JumpModeOverlay: React.FC<{
       // Load files from the current overlayPath (which should be the directory we want to search in)
       const pathToLoad = overlayPath || currentDirectory;
       
-      console.log('Loading files for search from:', pathToLoad);
+      // console.log('Loading files for search from:', pathToLoad);
       
       // Load files from the valid path
       (window.electronAPI as any).getDirectoryContents(pathToLoad).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-        console.log('Loaded files for search:', files.length);
+        // console.log('Loaded files for search:', files.length);
       }).catch((error: any) => {
         console.error('Failed to load directory contents for path:', pathToLoad, error);
       });
@@ -110,13 +110,6 @@ const JumpModeOverlay: React.FC<{
     // No need for complex path filtering since overlayFiles already contains the right files
     const currentLevelFiles = overlayFiles;
     
-    console.log('Search filtering debug:', {
-      query,
-      overlayPath,
-      currentDirectory,
-      overlayFilesCount: overlayFiles.length,
-      searchText: searchText
-    });
     
     const matches = currentLevelFiles
       .filter(file => file.name.toLowerCase().includes(query))
@@ -136,44 +129,26 @@ const JumpModeOverlay: React.FC<{
       })
       .slice(0, 1); // Only take first result
     
-    console.log('Search results debug:', {
-      query,
-      currentLevelFiles: currentLevelFiles.length,
-      matches: matches.map(m => ({ name: m.name, path: m.path, type: m.type }))
-    });
-    
-    // Debug: Show first few files/folders and whether they match the query
-    console.log('First 5 files/folders with match status:');
-    currentLevelFiles.slice(0, 5).forEach((file: any) => {
-      const matchesQuery = file.name.toLowerCase().includes(query);
-      console.log(`- ${file.name} (${file.type}): ${matchesQuery ? 'MATCH' : 'no match'} - query: "${query}"`);
-    });
-    
     setSearchResults(matches);
     
     // Update preview path as user types - this is the key for dynamic preview
     if (matches.length > 0) {
       const match = matches[0];
       
-      console.log('Updating overlayPath with match:', {
-        matchName: match.name,
-        matchPath: match.path,
-        currentOverlayPath: overlayPath
-      });
-      
+
       // Always update overlayPath to show the preview path
       // This allows users to see what they're about to navigate to
       // Validate that match.path is a proper full path
       if (match.path && match.path.length > 2 && match.path.includes('\\')) {
         // Only update if the path is actually different to prevent unnecessary re-renders
         if (overlayPath !== match.path) {
-          console.log('Setting overlayPath to match.path:', match.path);
+          // console.log('Setting overlayPath to match.path:', match.path);
         setOverlayPath(match.path);
         }
       } else {
         // Fallback to overlay working directory
         if (overlayPath !== overlayWorkingDirectory) {
-          console.log('Fallback: setting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
+          // console.log('Fallback: setting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
           setOverlayPath(overlayWorkingDirectory);
         }
       }
@@ -181,7 +156,7 @@ const JumpModeOverlay: React.FC<{
       // If no matches, reset to the overlay working directory (not original currentDirectory)
       // This preserves navigation state when user clears search or has no matches
       if (overlayPath !== overlayWorkingDirectory && !isNavigating) {
-        console.log('No matches, resetting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
+        // console.log('No matches, resetting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
         setOverlayPath(overlayWorkingDirectory);
       }
     }
@@ -207,9 +182,9 @@ const JumpModeOverlay: React.FC<{
         setSearchResults([]);
         setSelectedSegmentIndex(null); // Reset segment selection
         
-        console.log('Tab navigation to:', currentResult.path);
-        console.log('Updated overlay working directory to:', currentResult.path);
-        console.log('Loaded files in new directory:', files.length);
+        // console.log('Tab navigation to:', currentResult.path);
+        // console.log('Updated overlay working directory to:', currentResult.path);
+        // console.log('Loaded files in new directory:', files.length);
       } catch (error) {
         console.error('Failed to load directory contents:', error);
         // Fallback: just update the path
@@ -228,15 +203,9 @@ const JumpModeOverlay: React.FC<{
   };
   
   const handleBackspace = () => {
-    console.log('Backspace handler called:', {
-      searchTextLength: searchText.length,
-      selectedSegmentIndex,
-      overlayPath
-    });
-    
     if (searchText.length > 0) {
       // Normal backspace behavior - let the input handle it
-      console.log('Backspace: letting input handle text deletion');
+      // console.log('Backspace: letting input handle text deletion');
       return;
     }
     
@@ -246,24 +215,18 @@ const JumpModeOverlay: React.FC<{
       const relativePath = getRelativePath(overlayPath);
       const pathSegments = relativePath.includes(' / ') ? relativePath.split(' / ') : [relativePath];
       
-      console.log('First backspace logic:', {
-        relativePath,
-        pathSegments,
-        segmentsLength: pathSegments.length
-      });
-      
       if (pathSegments.length > 1) {
         // Highlight the parent segment (second to last), not the current segment
         const parentIndex = pathSegments.length - 2;
         setSelectedSegmentIndex(parentIndex);
-        console.log('SETTING SEGMENT INDEX TO:', parentIndex, 'for parent segment:', pathSegments[parentIndex]);
+        // console.log('SETTING SEGMENT INDEX TO:', parentIndex, 'for parent segment:', pathSegments[parentIndex]);
       } else if (pathSegments.length === 1 && pathSegments[0] !== 'Root') {
         // If we're one level deep, highlight the current segment to go to Root
         const currentIndex = 0;
         setSelectedSegmentIndex(currentIndex);
-        console.log('SETTING SEGMENT INDEX TO:', currentIndex, 'to go to Root from:', pathSegments[currentIndex]);
+        // console.log('SETTING SEGMENT INDEX TO:', currentIndex, 'to go to Root from:', pathSegments[currentIndex]);
       } else {
-        console.log('Cannot highlight segment - already at root');
+        // console.log('Cannot highlight segment - already at root');
       }
     } else {
       // Second backspace: navigate up to parent folder
@@ -275,7 +238,7 @@ const JumpModeOverlay: React.FC<{
         let parentPath: string;
         if (overlayPath === rootDirectory) {
           // Already at root, can't go higher
-          console.log('Already at root directory');
+          // console.log('Already at root directory');
           setSelectedSegmentIndex(null);
           return;
         }
@@ -289,13 +252,6 @@ const JumpModeOverlay: React.FC<{
           parentPath = rootDirectory;
         }
         
-        console.log('Backspace navigation:', {
-          from: overlayPath,
-          to: parentPath,
-          segments: pathSegments,
-          selectedIndex: selectedSegmentIndex
-        });
-        
         // Update overlay state
         setOverlayPath(parentPath);
         setSearchText('');
@@ -307,7 +263,7 @@ const JumpModeOverlay: React.FC<{
         (window.electronAPI as any).getDirectoryContents(parentPath).then((contents: any) => {
           const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
           setOverlayFiles(files);
-          console.log('Loaded files for parent directory:', parentPath, 'count:', files.length);
+          // console.log('Loaded files for parent directory:', parentPath, 'count:', files.length);
         }).catch((error: any) => {
           console.error('Failed to load directory contents for parent path:', parentPath, error);
         });
@@ -417,15 +373,11 @@ const JumpModeOverlay: React.FC<{
   
   // Helper function to get relative path from root
   const getRelativePath = React.useCallback((fullPath: string) => {
-    console.log('getRelativePath called with:', { fullPath, rootDirectory });
-    
     if (!rootDirectory || !fullPath) return 'Root';
     
     // Normalize paths for comparison
     const normRoot = rootDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
     const normPath = fullPath.replace(/\\/g, '/').replace(/\/+$/, '');
-    
-    console.log('Normalized paths:', { normRoot, normPath });
     
     if (normPath === normRoot) return 'Root';
     
@@ -438,14 +390,12 @@ const JumpModeOverlay: React.FC<{
       if (segments.length === 0) return 'Root';
       
       const result = segments.join(' / ');
-      console.log('Relative path result:', { relative, segments, result });
       return result;
     }
     
     // If path doesn't start with root, return the last segment of the path
     const pathParts = fullPath.split(/[/\\]/).filter(Boolean);
     const result = pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'Root';
-    console.log('Last segment result:', { pathParts, result });
     return result;
   }, [rootDirectory]);
 
@@ -683,14 +633,14 @@ const AppContent: React.FC = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const initialPath = urlParams.get('initialPath');
     if (initialPath) {
-      console.log('[App] Setting initial path from URL:', initialPath);
+      // console.log('[App] Setting initial path from URL:', initialPath);
       setCurrentDirectory(initialPath);
       setStatus(`Opened new window at: ${initialPath}`, 'info');
     }
 
     // Listen for initial path from main process (production mode)
     const handleSetInitialPath = (_event: any, path: string) => {
-      console.log('[App] Setting initial path from main process:', path);
+      // console.log('[App] Setting initial path from main process:', path);
       setCurrentDirectory(path);
       setStatus(`Opened new window at: ${path}`, 'info');
     };
@@ -761,7 +711,7 @@ const AppContent: React.FC = () => {
 
       // Backspace to go up one directory level (only when jump mode is not active)
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Backspace') {
-        console.log('[App] Backspace navigation triggered:', { isInputFocused, isQuickNavigating, isJumpModeActive });
+        // console.log('[App] Backspace navigation triggered:', { isInputFocused, isQuickNavigating, isJumpModeActive });
         e.preventDefault();
         const parentPath = getParentDirectory(currentDirectory);
         if (parentPath && parentPath !== currentDirectory) {
@@ -776,7 +726,7 @@ const AppContent: React.FC = () => {
       
       // Debug Enter key handling (but allow it to pass through when jump mode is active)
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Enter') {
-        console.log('[App] Enter key pressed after navigation, preventing default');
+        // console.log('[App] Enter key pressed after navigation, preventing default');
         e.preventDefault();
         return;
       }
@@ -871,7 +821,7 @@ const AppContent: React.FC = () => {
             // Open file using electron API
             if (window.electronAPI && typeof (window.electronAPI as any).openFile === 'function') {
               await (window.electronAPI as any).openFile(file.path);
-              console.log('Opened file:', file.path);
+              // console.log('Opened file:', file.path);
             } else {
               console.error('Electron API not available for file opening');
             }
