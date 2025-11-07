@@ -12,7 +12,7 @@ export async function rewriteEmailBlurb(rawBlurb: string): Promise<string> {
   const prompt = settings.aiEditorInstructions || AI_EDITOR_PROMPT;
 
   const body = {
-    model: 'gpt-3.5-turbo',
+    model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: prompt },
       { role: 'user', content: rawBlurb }
@@ -82,7 +82,7 @@ ADDITIONAL INSTRUCTION: If your response contains structured data, present it as
     }
     
     body = {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'user', content: finalContent }
       ],
@@ -123,7 +123,7 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
 Document to analyze:`;
 
     body = {
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: INSIGHTS_PROMPT },
         { role: 'user', content: `Document: ${fileName}\n\nContent:\n${documentText}` }

@@ -1,21 +1,41 @@
 import * as openaiService from './openai';
 import * as claudeService from './claude';
 
-// Define available AI agents
+// Define available AI agents (for AI Editor, Templater, etc.)
 export const AI_AGENTS = [
   {
     value: 'openai' as const,
-    label: 'OpenAI GPT-4',
+    label: 'OpenAI GPT-4o',
     description: 'Fast and reliable for most tasks'
   },
   {
     value: 'claude' as const,
-    label: 'Claude 3.5 Sonnet',
+    label: 'Claude Sonnet 4.5',
     description: 'Excellent for detailed analysis and reasoning'
+  },
+  {
+    value: 'claude-haiku' as const,
+    label: 'Claude Haiku 4.5',
+    description: 'Fast and cost-effective for quick analysis'
+  }
+];
+
+// Define available AI agents specifically for document analysis (Claude only)
+export const DOCUMENT_AI_AGENTS = [
+  {
+    value: 'claude' as const,
+    label: 'Claude Sonnet 4.5',
+    description: 'Excellent for detailed analysis and reasoning'
+  },
+  {
+    value: 'claude-haiku' as const,
+    label: 'Claude Haiku 4.5',
+    description: 'Fast and cost-effective for quick analysis'
   }
 ];
 
 export type AIAgent = typeof AI_AGENTS[number]['value'];
+export type DocumentAIAgent = typeof DOCUMENT_AI_AGENTS[number]['value'];
 
 
 
@@ -29,7 +49,9 @@ export async function analyzeTemplateForPlaceholders(
     case 'openai':
       return await openaiService.analyzeTemplateForPlaceholders(templateText, templateName);
     case 'claude':
-      return await claudeService.analyzeTemplateForPlaceholders(templateText, templateName);
+      return await claudeService.analyzeTemplateForPlaceholders(templateText, templateName, 'sonnet');
+    case 'claude-haiku':
+      return await claudeService.analyzeTemplateForPlaceholders(templateText, templateName, 'haiku');
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }
@@ -43,10 +65,12 @@ export async function generateEmailFromTemplate(
 ): Promise<string> {
   switch (selectedAgent) {
     case 'claude':
-      return await claudeService.generateEmailFromTemplate(template, extractedData);
+      return await claudeService.generateEmailFromTemplate(template, extractedData, 'sonnet');
+    case 'claude-haiku':
+      return await claudeService.generateEmailFromTemplate(template, extractedData, 'haiku');
     case 'openai':
       // OpenAI service doesn't have this function yet, so we'll use Claude as fallback
-      return await claudeService.generateEmailFromTemplate(template, extractedData);
+      return await claudeService.generateEmailFromTemplate(template, extractedData, 'sonnet');
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }
@@ -66,13 +90,16 @@ export async function rewriteEmailBlurb(
     case 'openai':
       return await openaiService.rewriteEmailBlurb(rawBlurb);
     case 'claude':
-      return await claudeService.rewriteEmailBlurb(rawBlurb);
+      return await claudeService.rewriteEmailBlurb(rawBlurb, 'sonnet');
+    case 'claude-haiku':
+      return await claudeService.rewriteEmailBlurb(rawBlurb, 'haiku');
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }
 }
 
-// Unified function to extract document insights
+// Unified function to extract document insights (legacy - for text-based analysis)
+// For PDF analysis, use analyzePdfDocument instead
 export async function extractDocumentInsights(
   documentText: string, 
   fileName: string, 
@@ -87,8 +114,21 @@ export async function extractDocumentInsights(
     case 'openai':
       return await openaiService.extractDocumentInsights(documentText, fileName);
     case 'claude':
-      return await claudeService.extractDocumentInsights(documentText, fileName);
+      return await claudeService.extractDocumentInsights(documentText, fileName, 'sonnet');
+    case 'claude-haiku':
+      return await claudeService.extractDocumentInsights(documentText, fileName, 'haiku');
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }
+}
+
+// New function specifically for PDF document analysis (Claude only)
+export async function analyzePdfDocument(
+  pdfFilePath: string,
+  fileName: string,
+  prompt: string,
+  selectedAgent: DocumentAIAgent = 'claude'
+): Promise<string> {
+  const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
+  return await claudeService.analyzePdfDocument(pdfFilePath, fileName, prompt, model);
 }

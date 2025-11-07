@@ -48,7 +48,7 @@ import {
 } from '@chakra-ui/react';
 import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Settings, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { extractDocumentInsights, AI_AGENTS, type AIAgent } from '../services/aiService';
+import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, analyzePdfDocument } from '../services/aiService';
 
 interface FileItem { 
   name: string; 
@@ -187,7 +187,7 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   selectedFiles, 
   folderItems 
 }) => {
-  const [selectedAgent, setSelectedAgent] = useState<AIAgent>('openai');
+  const [selectedAgent, setSelectedAgent] = useState<DocumentAIAgent>('claude');
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [availableFiles, setAvailableFiles] = useState<FileItem[]>([]);
   const [analysis, setAnalysis] = useState('');
@@ -301,16 +301,6 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
     setTableData(null);
 
     try {
-      // Read PDF content using the file path
-      const pdfText = await window.electronAPI.readPdfText(selectedFile.path);
-      
-      if (!pdfText || pdfText.trim().length === 0) {
-        throw new Error('Failed to extract text from PDF or PDF is empty');
-      }
-
-      console.log('PDF text length:', pdfText.length);
-      setDocumentText(pdfText);
-      
       // Prepare the analysis prompt with improved logic
       let analysisPrompt = '';
       let promptType = '';
@@ -329,15 +319,9 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
 IMPORTANT: When presenting tabular data, format it as a proper markdown table using | symbols for columns and --- for separators. Example:
 | Column 1 | Column 2 | Column 3 |
 |----------|----------|----------|
-| Data 1   | Data 2   | Data 3   |
-
-Document to analyze:
-${pdfText}`;
+| Data 1   | Data 2   | Data 3   |`;
         } else {
-          analysisPrompt = `${instructions}
-
-Document to analyze:
-${pdfText}`;
+          analysisPrompt = instructions;
         }
       } else if (activeAction) {
         // Quick action selected
@@ -350,21 +334,41 @@ ${pdfText}`;
 IMPORTANT: When presenting tabular data, format it as a proper markdown table using | symbols for columns and --- for separators. Example:
 | Column 1 | Column 2 | Column 3 |
 |----------|----------|----------|
-| Data 1   | Data 2   | Data 3   |
-
-Document to analyze:
-${pdfText}`;
+| Data 1   | Data 2   | Data 3   |`;
         } else {
-          analysisPrompt = `${activeAction.prompt}
-
-Document to analyze:
-${pdfText}`;
+          analysisPrompt = activeAction.prompt;
         }
       } else {
         // Default analysis
         promptType = 'DEFAULT';
         console.log('Using DEFAULT analysis');
-        analysisPrompt = pdfText;
+        analysisPrompt = `You are an expert business document analyst with deep expertise in accounting, legal, and business documents. Analyze this PDF document thoughtfully and provide insights that would be genuinely useful to someone working with it.
+
+Please provide a conversational, intelligent analysis covering:
+
+**📋 Document Overview**
+- What type of document is this and why was it likely created?
+- Who would typically use this and for what purpose?
+
+**💰 Financial & Business Insights**
+- Key financial figures, metrics, or business indicators
+- Any interesting trends, patterns, or anomalies you notice
+- Risk factors or opportunities highlighted
+
+**📅 Important Dates & Deadlines**
+- Critical dates, periods, or time-sensitive information
+- Filing deadlines, compliance dates, or milestone dates
+
+**✅ Action Items & Next Steps**
+- What actions does this document require or suggest?
+- Any compliance requirements, follow-ups, or decisions needed
+
+**🔍 Notable Observations**
+- Anything unusual, interesting, or particularly important
+- Context that might not be immediately obvious
+- Professional insights based on document patterns
+
+Please be conversational and insightful - imagine you're briefing a colleague who needs to understand this document quickly but thoroughly. Feel free to ask clarifying questions at the end if there are aspects that would benefit from follow-up discussion.`;
       }
       
       console.log('=== PROMPT ANALYSIS ===');
@@ -372,14 +376,18 @@ ${pdfText}`;
       console.log('Final prompt length:', analysisPrompt.length);
       console.log('Final prompt preview (first 300 chars):', analysisPrompt.substring(0, 300));
       console.log('Selected AI agent:', selectedAgent);
+      console.log('PDF file path:', selectedFile.path);
       
-      // Get insights from selected AI agent
-      console.log('Calling extractDocumentInsights...');
-      const insights = await extractDocumentInsights(analysisPrompt, selectedFile.name, selectedAgent);
+      // Use Claude's native PDF document API
+      console.log('Calling analyzePdfDocument...');
+      const insights = await analyzePdfDocument(selectedFile.path, selectedFile.name, analysisPrompt, selectedAgent);
       console.log('Received insights length:', insights.length);
       console.log('Insights preview (first 200 chars):', insights.substring(0, 200));
       
       setAnalysis(insights);
+      
+      // Store the PDF path for follow-up questions (we'll use the file path, not text)
+      setDocumentText(selectedFile.path);
       
       // Check if this should be displayed as a table
       const instructionsText = customPrompt.trim() || (activeAction ? activeAction.prompt : '');
@@ -475,37 +483,34 @@ ${pdfText}`;
 
       if (originalInstructions) {
         // Preserve the original custom instructions in the follow-up
-        conversationalPrompt = `You are continuing to analyze the document "${selectedFile.name}" based on these original instructions:
+        conversationalPrompt = `You are continuing to analyze the PDF document "${selectedFile.name}" based on these original instructions:
 
 ORIGINAL INSTRUCTIONS: ${originalInstructions}
-
-Here's the document content:
-${documentText}
 
 Previous conversation:
 ${conversationHistory}
 
 User's new question: ${question}
 
-Please respond to the user's new question while maintaining the context of the original instructions. If the user is asking for modifications to the previous analysis (like converting to a table, adding more details, etc.), please fulfill their request based on the document content.`;
+Please respond to the user's new question while maintaining the context of the original instructions. If the user is asking for modifications to the previous analysis (like converting to a table, adding more details, etc.), please fulfill their request based on the PDF document content.`;
       } else {
         // Default conversational prompt
-        conversationalPrompt = `You are analyzing the document "${selectedFile.name}". Here's the document content:
-        
-        ${documentText}
-        
-        Previous conversation:
-        ${conversationHistory}
-        
-        User's new question: ${question}
-        
-        Please provide a helpful, detailed response based on the document content and conversation context.`;
+        conversationalPrompt = `You are analyzing the PDF document "${selectedFile.name}".
+
+Previous conversation:
+${conversationHistory}
+
+User's new question: ${question}
+
+Please provide a helpful, detailed response based on the PDF document content and conversation context.`;
       }
 
       console.log('Follow-up prompt length:', conversationalPrompt.length);
       console.log('Follow-up prompt preview:', conversationalPrompt.substring(0, 300));
+      console.log('PDF file path:', documentText);
 
-      const response = await extractDocumentInsights(conversationalPrompt, 'Conversation', selectedAgent);
+      // Use PDF document API for follow-up questions
+      const response = await analyzePdfDocument(documentText, selectedFile.name, conversationalPrompt, selectedAgent);
       
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -657,20 +662,20 @@ Please respond to the user's new question while maintaining the context of the o
   };
 
   const handleClose = () => {
-    setSelectedFile(null);
-    setAnalysis('');
-    setChatMessages([]);
-    setFollowUpQuestion('');
-    setError(null);
-    setDocumentText('');
-    setCopied(false);
-    setSelectedAgent('openai');
-    setCustomPrompt('');
-    setSelectedQuickAction(null);
-    setShowAsTable(false);
-    setTableData(null);
-    setCurrentStage('setup');
-    onClose();
+      setSelectedFile(null);
+      setAnalysis('');
+      setChatMessages([]);
+      setFollowUpQuestion('');
+      setError(null);
+      setDocumentText('');
+      setCopied(false);
+      setSelectedAgent('claude');
+      setCustomPrompt('');
+      setSelectedQuickAction(null);
+      setShowAsTable(false);
+      setTableData(null);
+      setCurrentStage('setup');
+      onClose();
   };
 
   return (
@@ -835,17 +840,17 @@ Please respond to the user's new question while maintaining the context of the o
                         <FormLabel fontSize="sm" fontWeight="medium">AI Agent</FormLabel>
                         <Select
                           value={selectedAgent}
-                          onChange={(e) => setSelectedAgent(e.target.value as AIAgent)}
+                          onChange={(e) => setSelectedAgent(e.target.value as DocumentAIAgent)}
                           size="sm"
                         >
-                          {AI_AGENTS.map(agent => (
+                          {DOCUMENT_AI_AGENTS.map(agent => (
                             <option key={agent.value} value={agent.value}>
                               {agent.label}
                             </option>
                           ))}
                         </Select>
                         <Text fontSize="xs" color="gray.500" mt={1}>
-                          {AI_AGENTS.find(a => a.value === selectedAgent)?.description}
+                          {DOCUMENT_AI_AGENTS.find(a => a.value === selectedAgent)?.description}
                         </Text>
                       </FormControl>
                     </Box>
