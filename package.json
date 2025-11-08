@@ -6,6 +6,7 @@
   "type": "commonjs",
   "main": "dist-electron/main.js",
   "scripts": {
+    "clean-electron": "node -e \"const fs=require('fs');const path=require('path');const dir='dist-electron';if(fs.existsSync(dir)){fs.readdirSync(dir).forEach(f=>{if(f.match(/^(main|index)-[A-Za-z0-9-]+\\.js$/)){fs.unlinkSync(path.join(dir,f));console.log('Deleted:',f);}});console.log('Cleaned old electron build artifacts');}\"",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "build-safe": "tsc --noEmit --skipLibCheck && vite build",
@@ -48,6 +49,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "framer-motion": "^11.0.5",
+    "get-windows": "^9.2.3",
     "js-yaml": "^4.1.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.513.0",

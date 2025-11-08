@@ -7,6 +7,11 @@ export interface FileOperation {
   details?: string;
 }
 
+export interface WindowTitleLog {
+  timestamp: string;
+  windowTitle: string;
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -14,6 +19,7 @@ export interface Task {
   endTime?: string;
   duration: number; // in seconds
   fileOperations: FileOperation[];
+  windowTitles: WindowTitleLog[]; // Track active window titles during task
   isPaused: boolean;
   pausedDuration: number; // total time spent paused in seconds
 }
@@ -63,6 +69,7 @@ class TaskTimerService {
       startTime: new Date().toISOString(), // Store actual UTC time
       duration: 0,
       fileOperations: [],
+      windowTitles: [],
       isPaused: false,
       pausedDuration: 0
     };
@@ -103,6 +110,33 @@ class TaskTimerService {
     return {
       ...task,
       fileOperations: [...task.fileOperations, fileOp]
+    };
+  }
+  
+  // Log a window title to the current task (store actual UTC time)
+  logWindowTitle(task: Task, windowTitle: string): Task {
+    // Log window title if it's different from the last one, or if it's been more than 10 seconds since last log
+    const lastLog = task.windowTitles[task.windowTitles.length - 1];
+    const now = new Date();
+    
+    if (lastLog) {
+      const lastTimestamp = new Date(lastLog.timestamp);
+      const secondsSinceLastLog = (now.getTime() - lastTimestamp.getTime()) / 1000;
+      
+      // Only skip if it's the same window AND less than 10 seconds have passed
+      if (lastLog.windowTitle === windowTitle && secondsSinceLastLog < 10) {
+        return task;
+      }
+    }
+    
+    const windowLog: WindowTitleLog = {
+      timestamp: now.toISOString(),
+      windowTitle
+    };
+    
+    return {
+      ...task,
+      windowTitles: [...task.windowTitles, windowLog]
     };
   }
   

@@ -19,8 +19,12 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron',
+            emptyOutDir: false, // Don't empty - would delete preload.js
             rollupOptions: {
-              external: ['electron']
+              external: [
+                'electron',
+                'get-windows' // Native module - must not be bundled
+              ]
             }
           }
         }
@@ -30,8 +34,12 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron',
+            emptyOutDir: false, // Don't empty - would delete main.js
             rollupOptions: {
-              external: ['electron']
+              external: [
+                'electron',
+                'get-windows' // Native module - must not be bundled
+              ]
             }
           }
         },

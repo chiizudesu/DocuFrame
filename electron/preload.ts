@@ -88,6 +88,7 @@ interface ElectronAPI {
   saveTaskLog: (dateString: string, task: any) => Promise<{ success: boolean; error?: string }>;
   getTaskLogs: (dateString: string) => Promise<{ success: boolean; tasks: any[]; error?: string }>;
   deleteTaskLog: (dateString: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
+  getActiveWindowTitle: () => Promise<{ success: boolean; title: string }>;
   openFloatingTimer: () => Promise<{ success: boolean }>;
   sendToMainWindow: (channel: string, ...args: any[]) => void;
   updateFloatingTimerPosition: (x: number, y: number) => Promise<{ success: boolean; snappedCorner: string | null; x: number; y: number }>;
@@ -313,6 +314,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   deleteTaskLog: async (dateString: string, taskId: string) => {
     return await ipcRenderer.invoke('delete-task-log', dateString, taskId);
+  },
+  getActiveWindowTitle: async () => {
+    return await ipcRenderer.invoke('get-active-window-title');
+  },
+  analyzeWindowActivity: async (windowActivityData: string) => {
+    return await ipcRenderer.invoke('analyze-window-activity', windowActivityData);
   },
   openFloatingTimer: async () => {
     return await ipcRenderer.invoke('open-floating-timer');

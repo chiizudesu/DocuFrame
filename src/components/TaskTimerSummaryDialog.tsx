@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -22,10 +22,16 @@ import {
   Divider,
   Badge,
   VStack,
-  IconButton
+  IconButton,
+  Textarea,
+  useDisclosure,
+  Spinner
 } from '@chakra-ui/react';
-import { ChevronDown, ChevronRight, Clock, FileText, Trash2, ChevronLeft, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, FileText, Trash2, ChevronLeft, Calendar, Sparkles, Copy } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Task, taskTimerService } from '../services/taskTimer';
+import { analyzeWindowActivityStream } from '../services/claude';
 
 interface TaskTimerSummaryDialogProps {
   isOpen: boolean;
@@ -37,6 +43,11 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>(taskTimerService.getTodayDateString());
+  const [aiAnalysis, setAiAnalysis] = useState<string>('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const analysisBoxRef = useRef<HTMLDivElement>(null);
+  const { isOpen: isAnalysisOpen, onOpen: onAnalysisOpen, onClose: onAnalysisClose } = useDisclosure();
   
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -64,7 +75,12 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
       const result = await (window.electronAPI as any).getTaskLogs(dateString);
       
       if (result.success && result.tasks) {
-        setTasks(result.tasks);
+        // Migrate old tasks that don't have windowTitles field
+        const migratedTasks = result.tasks.map((task: any) => ({
+          ...task,
+          windowTitles: task.windowTitles || []
+        }));
+        setTasks(migratedTasks);
       } else {
         setTasks([]);
       }
@@ -148,23 +164,103 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     }
   };
   
+  const generateAIAnalysis = async () => {
+    setIsAnalyzing(true);
+    setIsStreaming(true);
+    onAnalysisOpen();
+    
+    // Set a placeholder immediately so UI switches to results view
+    setAiAnalysis(' '); // Single space to trigger results display
+    
+    try {
+      // Compile all window title logs from all tasks
+      let analysisText = `Window Activity Analysis for ${taskTimerService.formatDate(selectedDate)}\n\n`;
+      analysisText += `Please analyze the following window activity data and provide insights about:\n`;
+      analysisText += `1. What applications/tools were used most frequently\n`;
+      analysisText += `2. Work patterns and focus areas\n`;
+      analysisText += `3. Time distribution across different activities\n`;
+      analysisText += `4. Any notable distractions or context switches\n\n`;
+      analysisText += `=== WINDOW ACTIVITY DATA ===\n\n`;
+      
+      tasks.forEach((task, index) => {
+        analysisText += `Task ${index + 1}: ${task.name}\n`;
+        analysisText += `Duration: ${taskTimerService.formatDuration(task.duration)}\n`;
+        analysisText += `Started: ${taskTimerService.formatTimestamp(task.startTime)}\n\n`;
+        
+        if (task.windowTitles && task.windowTitles.length > 0) {
+          analysisText += `Window Activity Log (${task.windowTitles.length} entries):\n`;
+          task.windowTitles.forEach((log) => {
+            analysisText += `  [${taskTimerService.formatTimestamp(log.timestamp)}] ${log.windowTitle}\n`;
+          });
+        } else {
+          analysisText += `No window activity recorded for this task.\n`;
+        }
+        
+        analysisText += `\n---\n\n`;
+      });
+      
+      // Use streaming version directly from renderer (like AIEditorDialog)
+      let accumulatedText = '';
+      await analyzeWindowActivityStream(
+        analysisText,
+        'haiku',
+        (chunk) => {
+          accumulatedText += chunk;
+          setAiAnalysis(accumulatedText);
+          
+          // Auto-scroll to bottom
+          setTimeout(() => {
+            if (analysisBoxRef.current) {
+              analysisBoxRef.current.scrollTop = analysisBoxRef.current.scrollHeight;
+            }
+          }, 0);
+        }
+      );
+    } catch (error: any) {
+      console.error('[TaskTimer] Error generating AI analysis:', error);
+      setAiAnalysis(`Error: ${error.message || 'Failed to analyze window activity'}`);
+    } finally {
+      setIsAnalyzing(false);
+      setIsStreaming(false);
+    }
+  };
+  
+  const copyAnalysisToClipboard = () => {
+    navigator.clipboard.writeText(aiAnalysis);
+  };
+  
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="4xl" scrollBehavior="inside">
-      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent 
-        bg={bgColor} 
-        maxW="1000px"
-        maxH="85vh" 
-        h="700px"
-        overflow="hidden"
-        my="auto"
-      >
-        <ModalHeader borderBottomWidth="1px" borderColor={borderColor} py={3}>
-          <Flex align="center" justify="space-between" pr={10}>
-            <Flex align="center" gap={2}>
-              <Icon as={Clock} boxSize={5} color="blue.500" />
-              <Text fontSize="lg">Task Summary</Text>
-            </Flex>
+    <>
+      <Modal isOpen={isOpen} onClose={onClose} size="4xl" scrollBehavior="inside">
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <ModalContent 
+          bg={bgColor} 
+          maxW="1000px"
+          maxH="85vh" 
+          h="700px"
+          overflow="hidden"
+          my="auto"
+        >
+          <ModalHeader borderBottomWidth="1px" borderColor={borderColor} py={3}>
+            <Flex align="center" justify="space-between" pr={10}>
+              <Flex align="center" gap={2}>
+                <Icon as={Clock} boxSize={5} color="blue.500" />
+                <Text fontSize="lg">Task Summary</Text>
+                
+                {/* AI Analysis Button */}
+                {tasks.length > 0 && (
+                  <Button
+                    size="sm"
+                    leftIcon={<Sparkles size={14} />}
+                    colorScheme="purple"
+                    variant="outline"
+                    onClick={generateAIAnalysis}
+                    ml={4}
+                  >
+                    AI Analysis
+                  </Button>
+                )}
+              </Flex>
             
             {/* Date Navigation */}
             <Flex align="center" gap={2}>
@@ -355,6 +451,150 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
         </ModalBody>
       </ModalContent>
     </Modal>
+    
+    {/* AI Analysis Modal */}
+    <Modal isOpen={isAnalysisOpen} onClose={onAnalysisClose} size="3xl">
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent bg={bgColor} maxH="80vh">
+        <ModalHeader borderBottomWidth="1px" borderColor={borderColor}>
+          <Flex align="center" justify="space-between" pr={10}>
+            <Flex align="center" gap={2}>
+              <Icon as={Sparkles} boxSize={5} color="purple.500" />
+              <Text fontSize="lg">AI Window Activity Analysis</Text>
+            </Flex>
+            <Button
+              size="sm"
+              leftIcon={<Copy size={14} />}
+              onClick={copyAnalysisToClipboard}
+              colorScheme="blue"
+              variant="outline"
+            >
+              Copy
+            </Button>
+          </Flex>
+        </ModalHeader>
+        <ModalCloseButton />
+        
+        <ModalBody py={4}>
+          <Text fontSize="sm" color="gray.500" mb={3}>
+            {isAnalyzing ? 'Analyzing your window activity...' : 'AI-generated summary of your window activity:'}
+          </Text>
+          <Box
+            ref={analysisBoxRef}
+            maxH="60vh"
+            overflowY="auto"
+            bg={detailsBg}
+            borderRadius="lg"
+            p={4}
+            border="1px solid"
+            borderColor={borderColor}
+            minH="500px"
+          >
+            {!aiAnalysis.trim() && isAnalyzing && (
+              <Flex align="center" justify="center" h="100%" direction="column" gap={4}>
+                <Spinner size="lg" />
+                <Text color="gray.500">Analyzing window activity...</Text>
+              </Flex>
+            )}
+            {aiAnalysis.trim() && (
+              <Box
+                bg={bgColor}
+                p={4}
+                borderRadius="lg"
+                boxShadow={useColorModeValue('sm', 'dark-lg')}
+                border="1px solid"
+                borderColor={useColorModeValue('gray.200', 'gray.700')}
+                sx={{
+                  '& h1, & h2, & h3, & h4': {
+                    fontWeight: 'bold',
+                    marginBottom: '0.25rem',
+                    marginTop: '0.5rem',
+                    '&:first-child': { marginTop: '0' }
+                  },
+                  '& h1': { fontSize: 'lg' },
+                  '& h2': { fontSize: 'md' },
+                  '& h3, & h4': { fontSize: 'sm', fontWeight: '600' },
+                  '& p': {
+                    marginBottom: '0.25rem',
+                    lineHeight: '1.4',
+                    fontSize: 'sm'
+                  },
+                  '& ul, & ol': {
+                    marginLeft: '1rem',
+                    marginBottom: '0.25rem',
+                    marginTop: '0.25rem',
+                    paddingLeft: '0.5rem'
+                  },
+                  '& li': {
+                    marginBottom: '0.125rem',
+                    fontSize: 'sm',
+                    lineHeight: '1.4'
+                  },
+                  '& strong': { fontWeight: '600' },
+                  '& table': {
+                    borderCollapse: 'collapse',
+                    width: '100%',
+                    marginTop: '1rem',
+                    marginBottom: '1rem',
+                    border: '1px solid',
+                    borderColor: useColorModeValue('gray.300', 'gray.600')
+                  },
+                  '& th': {
+                    border: '1px solid',
+                    borderColor: useColorModeValue('gray.300', 'gray.600'),
+                    padding: '0.5rem',
+                    backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                    fontWeight: 'bold',
+                    fontSize: 'sm',
+                    textAlign: 'left'
+                  },
+                  '& td': {
+                    border: '1px solid',
+                    borderColor: useColorModeValue('gray.300', 'gray.600'),
+                    padding: '0.5rem',
+                    fontSize: 'sm'
+                  },
+                  '& tr:nth-of-type(even)': {
+                    backgroundColor: useColorModeValue('gray.50', 'gray.800')
+                  }
+                }}
+              >
+                <Box whiteSpace="pre-wrap">
+                  {aiAnalysis.trim() ? (
+                    <>
+                      <ReactMarkdown key={aiAnalysis.length} remarkPlugins={[remarkGfm]}>{aiAnalysis}</ReactMarkdown>
+                      {isStreaming && (
+                        <Box
+                          as="span"
+                          display="inline-block"
+                          w="2px"
+                          h="1em"
+                          bg="purple.500"
+                          ml={1}
+                          animation="blink 1s step-end infinite"
+                          sx={{
+                            '@keyframes blink': {
+                              '0%, 100%': { opacity: 1 },
+                              '50%': { opacity: 0 },
+                            }
+                          }}
+                        />
+                      )}
+                    </>
+                  ) : isStreaming ? (
+                    <Flex align="center" gap={2} color={useColorModeValue('gray.500', 'gray.400')}>
+                      <Spinner size="sm" />
+                      <Text fontSize="sm">AI is analyzing...</Text>
+                    </Flex>
+                  ) : null}
+                </Box>
+              </Box>
+            )}
+          </Box>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+    </>
   );
 };
 

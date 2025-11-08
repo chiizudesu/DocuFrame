@@ -15,11 +15,9 @@ interface FileInfo {
 
 export async function transferFiles(options: TransferOptions): Promise<{ success: boolean; message: string; files?: FileItem[] }> {
   try {
-    console.log('Transfer options:', options);
     
     // Get downloads folder path
     const downloadsPath = path.join(app.getPath('downloads'));
-    console.log('Downloads path:', downloadsPath);
     
     // Check if downloads directory exists
     if (!fs.existsSync(downloadsPath)) {
@@ -49,13 +47,11 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
     let filenameTemplate: string | undefined;
     if (options.command && options.command !== 'transfer' && options.command !== 'preview') {
       const transferCommandMappings = await getConfig('transferCommandMappings');
-      console.log('[Transfer] transferCommandMappings:', transferCommandMappings);
       if (transferCommandMappings && options.command) {
         const mappingKey = Object.keys(transferCommandMappings)
           .find(key => key.toLowerCase() === options.command!.toLowerCase());
         filenameTemplate = mappingKey ? transferCommandMappings[mappingKey] : undefined;
       }
-      console.log('Filename template:', filenameTemplate);
     }
 
     // Map to FileItem[] with proper naming logic
@@ -90,7 +86,6 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
     });
     
     if (options.preview || options.command === 'preview') {
-      console.log('Returning preview:', previewFiles);
       return {
         success: true,
         message: `Preview of ${previewFiles.length} file(s) to transfer`,
@@ -100,12 +95,10 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
 
     // Use provided current directory or fallback to cwd
     const targetDirectory = options.currentDirectory || process.cwd();
-    console.log('Target directory:', targetDirectory);
 
     // Note: filenameTemplate is already determined above for preview
 
     // Process each file
-    console.log('Starting file transfer...');
     const results = filesToPreview.map(({ file, stats }, i) => {
       const srcPath = path.join(downloadsPath, file);
       let destName: string;
@@ -128,7 +121,6 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
       }
 
       const destPath = path.join(targetDirectory, destName);
-      console.log(`Transferring ${file} to ${destPath}`);
 
       try {
         // First check if destination directory exists
@@ -154,7 +146,6 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
         // Delete the original file
         fs.unlinkSync(srcPath);
         
-        console.log(`Successfully transferred ${file} to ${destPath}`);
         return { success: true, file: destName };
       } catch (error) {
         console.error(`Failed to transfer ${file}:`, error);
@@ -191,7 +182,6 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
       message += `\nFailed to transfer ${failed.length} file(s): ${failed.map(r => r.file).join(', ')}`;
     }
 
-    console.log('Transfer complete:', message);
 
     // Emit a custom event to refresh the folder view
     if (successful.length > 0) {
@@ -202,8 +192,6 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
           directory: targetDirectory,
           newFiles: transferredFilePaths // Include info about new files
         });
-        console.log(`[Transfer] Triggered folder refresh for directory: ${targetDirectory}`);
-        console.log(`[Transfer] New files transferred: ${transferredFilePaths.join(', ')}`);
       }
     }
 

@@ -553,10 +553,9 @@ function convertToElectronShortcut(shortcut: string): string {
 }
 
 function activateApp() {
-  const windows = BrowserWindow.getAllWindows();
-  if (windows.length > 0) {
-    const mainWindow = windows[0];
-    
+  // Use the stored mainWindow variable instead of getting all windows
+  // This ensures we activate the main window, not the floating timer
+  if (mainWindow && !mainWindow.isDestroyed()) {
     // Handle minimized state first
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
@@ -583,6 +582,20 @@ function activateApp() {
     }
     
     console.log('[Main] App activated via global shortcut');
+  } else {
+    // Fallback: if mainWindow is not available, try to find it
+    const windows = BrowserWindow.getAllWindows();
+    const foundMainWindow = windows.find(win => win !== floatingTimerWindow && !win.isDestroyed());
+    if (foundMainWindow) {
+      if (foundMainWindow.isMinimized()) {
+        foundMainWindow.restore();
+      }
+      if (!foundMainWindow.isVisible()) {
+        foundMainWindow.show();
+      }
+      foundMainWindow.focus();
+      console.log('[Main] App activated via global shortcut (fallback)');
+    }
   }
 }
 
@@ -648,9 +661,7 @@ ipcMain.handle('execute-command', async (_, command: string, currentDirectory?: 
 
 ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName?: string; command?: string; currentDirectory?: string }) => {
   try {
-    console.log('[Main] Received transfer request:', options);
     const result = await transferFiles(options);
-    console.log('[Main] Transfer result:', result);
     return result;
   } catch (error) {
     console.error('[Main] Error transferring files:', error);
@@ -2695,6 +2706,7 @@ ipcMain.handle('open-settings-window', async () => {
 
 // Floating Timer Window
 let floatingTimerWindow: BrowserWindow | null = null;
+let floatingTimerIsMinimized = false; // Track minimized state for proper snapping
 
 const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
   // Don't create multiple instances
@@ -2711,12 +2723,16 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
     floatingTimerWindow = new BrowserWindow({
       width: 210,
       height: 120,
+      minWidth: 60, // Allow shrinking to minimized size
+      minHeight: 60, // Allow shrinking to minimized size
+      maxWidth: 500, // Reasonable maximum
+      maxHeight: 500, // Reasonable maximum
       x: width - 230, // Position near right edge
       y: 100, // 100px from top
       frame: false, // Frameless for custom design
       transparent: true, // Transparent background
       alwaysOnTop: true, // Always on top of other windows
-      resizable: false,
+      resizable: false, // No manual resizing by user
       skipTaskbar: false, // Show in taskbar
       webPreferences: {
         nodeIntegration: false,
@@ -2760,7 +2776,7 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       const SNAP_THRESHOLD = 80;
       let snappedCorner: string | null = null;
       
-      // Check for corner snapping
+      // Calculate distance from window edges to screen edges (consistent for both minimized and normal)
       const distToTopLeft = Math.sqrt(x * x + y * y);
       const distToTopRight = Math.sqrt(Math.pow(x + windowWidth - screenWidth, 2) + y * y);
       const distToBottomLeft = Math.sqrt(x * x + Math.pow(y + windowHeight - screenHeight, 2));
@@ -2784,6 +2800,14 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         if (snappedCorner !== lastSnapCorner) {
           console.log('[FloatingTimer] Near corner:', snappedCorner);
           floatingTimerWindow.webContents.send('corner-snapped', snappedCorner);
+          
+          // Clear panel indicator on main window when corner is detected
+          if (lastSnapCorner === 'panel' && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.executeJavaScript(`
+              window.dispatchEvent(new CustomEvent('floating-timer-near-panel', { detail: { isNear: false } }));
+            `);
+          }
+          
           lastSnapCorner = snappedCorner;
         }
       } else {
@@ -2797,15 +2821,15 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
           const [mainWidth, mainHeight] = mainWindow.getSize();
           
           // The timer panel is specifically on the right side of the function panel
-          // and the function panel is at the bottom of the main window
-          // Be more specific about the timer panel location (right side, bottom)
+          // and the function panel is at the top of the main window
+          // Be more specific about the timer panel location (right side, top)
           const timerPanelWidth = 300; // Approximate width of timer panel area
-          const panelAreaTop = mainY + mainHeight - 120; // Panel area (bottom area of main window)
-          const panelAreaBottom = mainY + mainHeight + 50; // Allow some overshoot
-          const panelAreaLeft = mainX + mainWidth - timerPanelWidth - 50; // Right side of window
+          const panelAreaTop = mainY - 30; // Allow some overshoot above window (moved down by 20px)
+          const panelAreaBottom = mainY + 140; // Panel area (top area of main window, moved down by 20px)
+          const panelAreaLeft = mainX + mainWidth - timerPanelWidth - 100; // Right side of window (moved left by 50px)
           const panelAreaRight = mainX + mainWidth + 50;
           
-          // Only trigger if we're specifically near the timer panel area (right side, bottom)
+          // Only trigger if we're specifically near the timer panel area (right side, top)
           isNearPanel = (floatingCenterX >= panelAreaLeft && floatingCenterX <= panelAreaRight) &&
                         (floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom);
         }
@@ -2851,39 +2875,13 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = currentDisplay.workArea;
       const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
       
-      // First check if we're near the function panel
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        const floatingCenterX = windowX + windowWidth / 2;
-        const floatingCenterY = windowY + windowHeight / 2;
-        
-        const [mainX, mainY] = mainWindow.getPosition();
-        const [mainWidth, mainHeight] = mainWindow.getSize();
-        
-        // The timer panel is specifically on the right side of the function panel
-        const timerPanelWidth = 300;
-        const panelAreaTop = mainY + mainHeight - 120;
-        const panelAreaBottom = mainY + mainHeight + 50;
-        const panelAreaLeft = mainX + mainWidth - timerPanelWidth - 50;
-        const panelAreaRight = mainX + mainWidth + 50;
-        
-        const isNearPanel = (floatingCenterX >= panelAreaLeft && floatingCenterX <= panelAreaRight) &&
-                            (floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom);
-        
-        if (isNearPanel) {
-          console.log('[FloatingTimer] Docking to function panel, closing window');
-          // Signal to close the floating timer - it will dock back to function panel
-          floatingTimerWindow.webContents.send('dock-to-panel');
-          return;
-        }
-      }
-      
       // Window position relative to current screen
       const relX = windowX - screenX;
       const relY = windowY - screenY;
       
       const SNAP_THRESHOLD = 80;
       
-      // Check for corner snapping based on window edges
+      // Calculate distance from window edges to screen edges (consistent for both minimized and normal)
       const distToTopLeft = Math.sqrt(relX * relX + relY * relY);
       const distToTopRight = Math.sqrt(Math.pow(relX + windowWidth - screenWidth, 2) + relY * relY);
       const distToBottomLeft = Math.sqrt(relX * relX + Math.pow(relY + windowHeight - screenHeight, 2));
@@ -2891,27 +2889,58 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       
       const minDist = Math.min(distToTopLeft, distToTopRight, distToBottomLeft, distToBottomRight);
       
+      // Check corner snapping FIRST - it takes priority over panel docking
       if (minDist < SNAP_THRESHOLD) {
         let finalX = windowX; // Keep as absolute position
         let finalY = windowY; // Keep as absolute position
         
+        // No padding for both minimized and normal windows - snap flush to corners
+        const padding = 0;
+        
         if (minDist === distToTopLeft) {
-          finalX = screenX;
-          finalY = screenY;
+          finalX = screenX + padding;
+          finalY = screenY + padding;
         } else if (minDist === distToTopRight) {
-          finalX = screenX + screenWidth - windowWidth;
-          finalY = screenY;
+          finalX = screenX + screenWidth - windowWidth - padding;
+          finalY = screenY + padding;
         } else if (minDist === distToBottomLeft) {
-          finalX = screenX;
-          finalY = screenY + screenHeight - windowHeight;
+          finalX = screenX + padding;
+          finalY = screenY + screenHeight - windowHeight - padding;
         } else if (minDist === distToBottomRight) {
-          finalX = screenX + screenWidth - windowWidth;
-          finalY = screenY + screenHeight - windowHeight;
+          finalX = screenX + screenWidth - windowWidth - padding;
+          finalY = screenY + screenHeight - windowHeight - padding;
         }
         
-        console.log('[FloatingTimer] Window size:', windowWidth, 'x', windowHeight);
+        console.log('[FloatingTimer] Window size:', windowWidth, 'x', windowHeight, 'minimized:', floatingTimerIsMinimized);
         console.log('[FloatingTimer] Snapping to absolute position:', finalX, finalY, 'on screen', currentDisplay.id);
         floatingTimerWindow.setPosition(Math.round(finalX), Math.round(finalY));
+      } else {
+        // Only check panel proximity if NOT snapping to a corner
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          const floatingCenterX = windowX + windowWidth / 2;
+          const floatingCenterY = windowY + windowHeight / 2;
+          
+          const [mainX, mainY] = mainWindow.getPosition();
+          const [mainWidth, mainHeight] = mainWindow.getSize();
+          
+          // The timer panel is specifically on the right side of the function panel
+          // and the function panel is at the top of the main window
+          const timerPanelWidth = 300;
+          const panelAreaTop = mainY - 30; // Allow some overshoot above window (moved down by 20px)
+          const panelAreaBottom = mainY + 140; // Panel area (top area of main window, moved down by 20px)
+          const panelAreaLeft = mainX + mainWidth - timerPanelWidth - 100; // Right side of window (moved left by 50px)
+          const panelAreaRight = mainX + mainWidth + 50;
+          
+          const isNearPanel = (floatingCenterX >= panelAreaLeft && floatingCenterX <= panelAreaRight) &&
+                              (floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom);
+          
+          if (isNearPanel) {
+            console.log('[FloatingTimer] Docking to function panel, closing window');
+            // Signal to close the floating timer - it will dock back to function panel
+            floatingTimerWindow.webContents.send('dock-to-panel');
+            return;
+          }
+        }
       }
       
       // Clear indicator after snap
@@ -2933,6 +2962,7 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         `);
       }
       floatingTimerWindow = null;
+      floatingTimerIsMinimized = false; // Reset minimized state
     });
 
     console.log('[FloatingTimer] Window created successfully');
@@ -3048,18 +3078,38 @@ ipcMain.handle('resize-floating-timer', async (_, width: number, height: number)
       return;
     }
     
-    // Get current position to keep it centered
+    // Get current position and size
     const [currentX, currentY] = floatingTimerWindow.getPosition();
     const [currentWidth, currentHeight] = floatingTimerWindow.getSize();
+    
+    console.log('[Main] Resizing from', currentWidth, 'x', currentHeight, 'to', width, 'x', height);
     
     // Calculate offset to keep window centered when resizing
     const offsetX = Math.floor((currentWidth - width) / 2);
     const offsetY = Math.floor((currentHeight - height) / 2);
     
-    floatingTimerWindow.setSize(width, height);
-    floatingTimerWindow.setPosition(currentX + offsetX, currentY + offsetY);
+    // Ensure we allow resizing programmatically
+    floatingTimerWindow.setResizable(true);
     
-    console.log('[Main] Resized floating timer to', width, 'x', height);
+    // Set the new size (this actually changes the window dimensions)
+    floatingTimerWindow.setSize(width, height, true); // animate = true for smooth transition
+    
+    // Update position to keep centered
+    floatingTimerWindow.setPosition(currentX + offsetX, currentY + offsetY, true);
+    
+    // Disable manual resizing again
+    floatingTimerWindow.setResizable(false);
+    
+    // Track if window is minimized (100x100 indicates minimized state)
+    floatingTimerIsMinimized = width === 100 && height === 100;
+    
+    // Verify the size was actually set
+    const [newWidth, newHeight] = floatingTimerWindow.getSize();
+    console.log('[Main] Resized floating timer. Requested:', width, 'x', height, '| Actual:', newWidth, 'x', newHeight, '| Minimized:', floatingTimerIsMinimized);
+    
+    if (newWidth !== width || newHeight !== height) {
+      console.warn('[Main] WARNING: Window size does not match requested size!');
+    }
   } catch (error) {
     console.error('[Main] Error resizing floating timer:', error);
   }
@@ -3080,10 +3130,10 @@ ipcMain.handle('check-panel-proximity', async () => {
     const [mainX, mainY] = mainWindow.getPosition();
     const [mainWidth, mainHeight] = mainWindow.getSize();
     
-    // Function panel is at the bottom of the main window
-    // Check if any part of the floating timer overlaps with the main window's bottom area
-    const panelAreaTop = mainY + mainHeight - 200; // Bottom 200px of main window
-    const panelAreaBottom = mainY + mainHeight;
+    // Function panel is at the top of the main window
+    // Check if any part of the floating timer overlaps with the main window's top area
+    const panelAreaTop = mainY - 30; // Allow some overshoot above window (moved down by 20px)
+    const panelAreaBottom = mainY + 220; // Top 220px of main window (moved down by 20px)
     const panelAreaLeft = mainX;
     const panelAreaRight = mainX + mainWidth;
     
@@ -3134,6 +3184,54 @@ ipcMain.on('send-to-main-window', (event, channel, ...args) => {
   }
 });
 
+// Get active window title using get-windows (replacement for deprecated active-win)
+// Note: get-windows is ESM-only and a native module - must be externalized and use dynamic import()
+ipcMain.handle('get-active-window-title', async () => {
+  try {
+    console.log('[Main] 🔍 Getting active window title...');
+    
+    // Use dynamic import() for ESM-only native module (not bundled, loaded at runtime)
+    const { activeWindow } = await import('get-windows');
+    
+    // activeWindow() returns a Promise<object> - must await it
+    const win = await activeWindow();
+    
+    if (!win) {
+      console.log('[Main] ⚠️ No active window found');
+      return { success: true, title: '' };
+    }
+    
+    // get-windows returns a plain object with title, owner, etc. properties
+    const title = win.title;
+    
+    console.log('[Main] ✅ Active window:', {
+      title: title,
+      app: win.owner?.name || 'unknown',
+      processId: win.owner?.processId || 'unknown'
+    });
+    
+    // Filter out our own app windows
+    const owner = win.owner;
+    const isOurApp = title?.includes('DocuFrame') || 
+                     owner?.name?.toLowerCase().includes('electron') || 
+                     owner?.name?.includes('DocuFrame');
+    
+    if (isOurApp) {
+      console.log('[Main] ⏭️ Skipping - this is DocuFrame itself');
+      return { success: true, title: '' };
+    }
+    
+    if (title) {
+      return { success: true, title };
+    }
+    
+    return { success: true, title: '' };
+  } catch (error: any) {
+    console.error('[Main] ❌ Error getting active window title:', error);
+    return { success: false, title: '', error: error.message };
+  }
+});
+
 // Task Timer IPC handlers
 ipcMain.handle('save-task-log', async (_, dateString: string, task: any) => {
   try {
@@ -3166,8 +3264,19 @@ ipcMain.handle('save-task-log', async (_, dateString: string, task: any) => {
       }
     }
     
-    // Add new task
-    tasks.push(task);
+    // Check if task already exists (prevent duplicates)
+    const existingTaskIndex = tasks.findIndex((t: any) => t.id === task.id);
+    if (existingTaskIndex >= 0) {
+      console.log('[TaskTimer] ⚠️ Task already exists, updating instead of adding duplicate:', task.id);
+      tasks[existingTaskIndex] = task;
+    } else {
+      console.log('[TaskTimer] ➕ Adding new task:', task.id);
+      tasks.push(task);
+    }
+    
+    // Log what we're saving
+    console.log('[TaskTimer] Saving task with', task.windowTitles?.length || 0, 'window titles');
+    console.log('[TaskTimer] Total tasks in file:', tasks.length);
     
     // Save updated logs
     fs.writeFileSync(logFilePath, JSON.stringify(tasks, null, 2), 'utf8');
@@ -3243,6 +3352,34 @@ ipcMain.handle('delete-task-log', async (_, dateString: string, taskId: string) 
   } catch (error) {
     console.error('[TaskTimer] Error deleting task log:', error);
     return { success: false, error: String(error) };
+  }
+});
+
+// Analyze window activity using Claude Haiku
+ipcMain.handle('analyze-window-activity', async (_, windowActivityData: string) => {
+  try {
+    console.log('[TaskTimer] Analyzing window activity with Claude Haiku...');
+    
+    // Get config directly in main process (settingsService doesn't work here)
+    const config = await loadConfig();
+    const apiKey = (config as any).claudeApiKey;
+    
+    if (!apiKey) {
+      console.error('[TaskTimer] Claude API key not found in config');
+      return { success: false, error: 'Claude API key not set. Please configure it in Settings.' };
+    }
+    
+    // Dynamically import the claude service
+    const { analyzeWindowActivity } = await import('../src/services/claude');
+    
+    // Pass the API key directly since we're in main process
+    const summary = await analyzeWindowActivity(windowActivityData, 'haiku', apiKey);
+    
+    console.log('[TaskTimer] Window activity analysis complete');
+    return { success: true, summary };
+  } catch (error: any) {
+    console.error('[TaskTimer] Error analyzing window activity:', error);
+    return { success: false, error: error.message || String(error) };
   }
 });
 

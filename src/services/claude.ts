@@ -627,4 +627,150 @@ export async function analyzePdfDocumentStream(
   }
   
   throw lastError;
-} 
+}
+
+// Analyze window activity data and provide insights
+export async function analyzeWindowActivity(
+  windowActivityData: string,
+  model: 'sonnet' | 'haiku' = 'haiku',
+  apiKey?: string // Optional API key - if not provided, will try to get from settings
+): Promise<string> {
+  // If API key not provided, try to get from settings (works in renderer process)
+  let finalApiKey = apiKey;
+  if (!finalApiKey) {
+    try {
+      const settings = await settingsService.getSettings();
+      finalApiKey = settings.claudeApiKey;
+    } catch (error) {
+      // If settingsService fails (e.g., in main process), apiKey must be provided
+      if (!finalApiKey) {
+        throw new Error('Claude API key not set. Please provide API key or ensure settings are accessible.');
+      }
+    }
+  }
+  
+  if (!finalApiKey) {
+    throw new Error('Claude API key not set.');
+  }
+
+  const client = new Anthropic({
+    apiKey: finalApiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and provide a summary in a specific format.
+
+IMPORTANT: Your response must be formatted as a table with exactly 3 columns:
+1. Task name
+2. Duration spent (in HH:MM format)
+3. Brief summary of time spent for this specific task (1-2 sentences describing what applications/tools were used and the main activities)
+
+Format the output as a markdown table with headers: "Task Name | Duration | Summary"
+
+For each task, analyze the window activity logs to understand:
+- What applications/tools were used most frequently
+- The main work activities performed
+- Any notable patterns or focus areas
+
+Keep the summary for each task concise (1-2 sentences) but informative.`;
+
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [
+        { 
+          role: 'user', 
+          content: [{ 
+            type: 'text', 
+            text: `Please analyze the following window activity data:\n\n${windowActivityData}` 
+          }] 
+        }
+      ],
+      temperature: 0.7
+    });
+  });
+
+  const content = response.content[0];
+  if (content.type === 'text') {
+    return content.text.trim();
+  }
+  
+  throw new Error('Unexpected response format from Claude');
+}
+
+// Streaming version of analyzeWindowActivity
+export async function analyzeWindowActivityStream(
+  windowActivityData: string,
+  model: 'sonnet' | 'haiku' = 'haiku',
+  onChunk: (chunk: string) => void,
+  apiKey?: string // Optional API key - if not provided, will try to get from settings
+): Promise<void> {
+  // If API key not provided, try to get from settings (works in renderer process)
+  let finalApiKey = apiKey;
+  if (!finalApiKey) {
+    try {
+      const settings = await settingsService.getSettings();
+      finalApiKey = settings.claudeApiKey;
+    } catch (error) {
+      // If settingsService fails (e.g., in main process), apiKey must be provided
+      if (!finalApiKey) {
+        throw new Error('Claude API key not set. Please provide API key or ensure settings are accessible.');
+      }
+    }
+  }
+  
+  if (!finalApiKey) {
+    throw new Error('Claude API key not set.');
+  }
+
+  const client = new Anthropic({
+    apiKey: finalApiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and provide a summary in a specific format.
+
+IMPORTANT: Your response must be formatted as a table with exactly 3 columns:
+1. Task name
+2. Duration spent (in HH:MM format)
+3. Brief summary of time spent for this specific task (1-2 sentences describing what applications/tools were used and the main activities)
+
+Format the output as a markdown table with headers: "Task Name | Duration | Summary"
+
+For each task, analyze the window activity logs to understand:
+- What applications/tools were used most frequently
+- The main work activities performed
+- Any notable patterns or focus areas
+
+Keep the summary for each task concise (1-2 sentences) but informative.`;
+
+  return await retryWithBackoff(async () => {
+    const stream = await client.messages.stream({
+      model: modelName,
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [
+        { 
+          role: 'user', 
+          content: [{ 
+            type: 'text', 
+            text: `Please analyze the following window activity data:\n\n${windowActivityData}` 
+          }] 
+        }
+      ],
+      temperature: 0.7
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        onChunk(chunk.delta.text);
+      }
+    }
+  });
+}
