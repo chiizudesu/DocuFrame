@@ -174,6 +174,19 @@ class TaskTimerService {
       timeZone: 'Asia/Manila'
     });
   }
+  
+  // Check if a task's start time is from a different day (GMT+8)
+  isTaskFromDifferentDay(task: Task | null): boolean {
+    if (!task || !task.startTime) return false;
+    
+    const taskStartDate = new Date(task.startTime);
+    const taskDateGMT8 = new Date(taskStartDate.getTime() + this.GMT_8_OFFSET_MS);
+    const taskDateString = taskDateGMT8.toISOString().split('T')[0];
+    
+    const todayDateString = this.getTodayDateString();
+    
+    return taskDateString !== todayDateString;
+  }
 }
 
 export const taskTimerService = new TaskTimerService();

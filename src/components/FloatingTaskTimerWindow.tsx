@@ -10,14 +10,276 @@ import {
   CircularProgressLabel,
   Tooltip,
   Badge,
+  VStack,
+  Progress,
 } from '@chakra-ui/react';
-import { Play, Pause, Square, BarChart, X, GripVertical, Minimize2 } from 'lucide-react';
+import { Play, Pause, Square, BarChart, X, GripVertical, Minimize2, Maximize2, Circle, Clock } from 'lucide-react';
 import { taskTimerService, Task, TimerState } from '../services/taskTimer';
+import { settingsService } from '../services/settings';
 
 interface FloatingTaskTimerWindowProps {
   onClose: () => void;
   onOpenSummary: () => void;
 }
+
+// Work Shift Infographic Component
+const WorkShiftInfographic: React.FC = () => {
+  const [workShiftStart, setWorkShiftStart] = useState('06:00');
+  const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
+  const [productivityTarget, setProductivityTarget] = useState(27000); // 7:30 hours in seconds
+  const [todayTimeWorked, setTodayTimeWorked] = useState(0);
+  const [currentTimeInShift, setCurrentTimeInShift] = useState(0);
+  const [shiftProgress, setShiftProgress] = useState(0);
+  const [currentTimePosition, setCurrentTimePosition] = useState(0); // Position of current time line (0-100)
+  const [currentTimeGMT8, setCurrentTimeGMT8] = useState('');
+
+  // GMT+8 offset (Philippines timezone)
+  const GMT_8_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+  useEffect(() => {
+    const loadWorkShift = async () => {
+      try {
+        const settings = await settingsService.getSettings() as any;
+        if (settings.workShiftStart) setWorkShiftStart(settings.workShiftStart);
+        if (settings.workShiftEnd) setWorkShiftEnd(settings.workShiftEnd);
+        if (settings.productivityTargetHours) {
+          // Convert hours (e.g., 7.5) to seconds
+          setProductivityTarget(Math.round(settings.productivityTargetHours * 3600));
+        }
+      } catch (error) {
+        console.error('Error loading work shift:', error);
+      }
+    };
+
+    const calculateTodayTime = async () => {
+      try {
+        // Use GMT+8 date string like the timer service does
+        const now = new Date();
+        const gmt8Time = new Date(now.getTime() + GMT_8_OFFSET_MS);
+        const todayString = gmt8Time.toISOString().split('T')[0];
+        const result = await (window.electronAPI as any).getTaskLogs(todayString);
+        if (result.success && result.tasks) {
+          const totalSeconds = result.tasks.reduce((sum: number, task: any) => {
+            return sum + (task.duration || 0);
+          }, 0);
+          setTodayTimeWorked(totalSeconds);
+        }
+      } catch (error) {
+        console.error('Error calculating today time:', error);
+      }
+    };
+
+    const calculateShiftProgress = () => {
+      // Get current time in GMT+8 (Philippines timezone) - same method as timer service
+      const now = new Date();
+      
+      // Format current time in GMT+8 for display using Intl API (same as timer service)
+      const gmt8TimeString = now.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Manila'
+      });
+      setCurrentTimeGMT8(gmt8TimeString);
+      
+      // Get current time components in GMT+8
+      const gmt8Hours = parseInt(gmt8TimeString.split(':')[0]);
+      const gmt8Minutes = parseInt(gmt8TimeString.split(':')[1]);
+      const currentMinutes = gmt8Hours * 60 + gmt8Minutes;
+      
+      const [startHour, startMin] = workShiftStart.split(':').map(Number);
+      const [endHour, endMin] = workShiftEnd.split(':').map(Number);
+      const startMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+      
+      // Calculate progress based on minutes of day
+      const shiftDurationMinutes = endMinutes - startMinutes;
+      const elapsedMinutes = currentMinutes - startMinutes;
+      
+      // Calculate position of current time line (0-100%)
+      let timePosition = 0;
+      if (currentMinutes < startMinutes) {
+        setCurrentTimeInShift(0);
+        setShiftProgress(0);
+        timePosition = 0;
+      } else if (currentMinutes > endMinutes) {
+        setCurrentTimeInShift(shiftDurationMinutes * 60);
+        setShiftProgress(100);
+        timePosition = 100;
+      } else {
+        setCurrentTimeInShift(elapsedMinutes * 60);
+        setShiftProgress((elapsedMinutes / shiftDurationMinutes) * 100);
+        timePosition = (elapsedMinutes / shiftDurationMinutes) * 100;
+      }
+      setCurrentTimePosition(timePosition);
+    };
+
+    loadWorkShift();
+    calculateTodayTime();
+    calculateShiftProgress();
+    
+    const interval = setInterval(() => {
+      calculateShiftProgress();
+      calculateTodayTime(); // Also refresh today's time
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [workShiftStart, workShiftEnd, productivityTarget]);
+
+  const formatTime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <Flex
+      direction="column"
+      w="280px"
+      px={4}
+      py={4}
+      bg="gray.800"
+      borderLeft="1px solid"
+      borderColor="whiteAlpha.100"
+      gap={4}
+    >
+      {/* Work Shift Progress */}
+      <Box>
+        <Flex align="center" gap={2} mb={2}>
+          <Icon as={Clock} boxSize={4} color="gray.400" />
+          <Text fontSize="11px" fontWeight="600" color="gray.300" textTransform="uppercase" letterSpacing="0.05em">
+            Work Shift
+          </Text>
+        </Flex>
+        <Flex align="center" justify="space-between" mb={2}>
+          <Text fontSize="10px" color="gray.500">
+            {workShiftStart} - {workShiftEnd}
+          </Text>
+          <Text fontSize="10px" color="green.400" fontWeight="600">
+            {currentTimeGMT8}
+          </Text>
+        </Flex>
+        <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="md" overflow="visible">
+          {/* Progress Bar Background */}
+          <Box
+            position="absolute"
+            left="0"
+            top="0"
+            h="100%"
+            w="100%"
+            bg="whiteAlpha.100"
+            borderRadius="md"
+          />
+          {/* Progress Fill */}
+          <Box
+            position="absolute"
+            left="0"
+            top="0"
+            h="100%"
+            w={`${Math.min(100, Math.max(0, shiftProgress))}%`}
+            bg={shiftProgress >= 100 ? 'red.500' : shiftProgress >= 80 ? 'orange.500' : 'cyan.500'}
+            transition="width 0.3s ease"
+            borderRadius={shiftProgress >= 100 ? "md" : "md 0 0 md"}
+            overflow="hidden"
+          />
+          {/* Current Time Indicator Line */}
+          {currentTimePosition > 0 && (
+            <Box
+              position="absolute"
+              left={currentTimePosition >= 100 ? "calc(100% - 3px)" : `${currentTimePosition}%`}
+              top="-4px"
+              w="2px"
+              h="32px"
+              bg="green.400"
+              borderRadius="full"
+              zIndex={10}
+              boxShadow="0 0 8px rgba(72, 187, 120, 0.8)"
+              transform={currentTimePosition >= 100 ? "none" : "translateX(-50%)"}
+              sx={{
+                '@keyframes pulse': {
+                  '0%, 100%': {
+                    opacity: 1,
+                    boxShadow: '0 0 8px rgba(72, 187, 120, 0.8)',
+                  },
+                  '50%': {
+                    opacity: 0.7,
+                    boxShadow: '0 0 12px rgba(72, 187, 120, 1)',
+                  },
+                },
+                animation: 'pulse 2s ease-in-out infinite',
+              }}
+            />
+          )}
+          {/* Percentage Text */}
+          <Flex
+            position="absolute"
+            left="0"
+            top="0"
+            w="100%"
+            h="100%"
+            align="center"
+            justify="center"
+            zIndex={2}
+            pointerEvents="none"
+          >
+            <Text fontSize="9px" fontWeight="600" color="white" textShadow="0 1px 2px rgba(0,0,0,0.5)">
+              {shiftProgress.toFixed(0)}%
+            </Text>
+          </Flex>
+        </Box>
+        <Text fontSize="9px" color="gray.400" mt={1}>
+          {formatTime(currentTimeInShift)} elapsed
+        </Text>
+      </Box>
+
+      {/* Today's Time Worked */}
+      <Box>
+        <Flex align="center" justify="space-between" mb={2}>
+          <Text fontSize="11px" fontWeight="600" color="gray.300" textTransform="uppercase" letterSpacing="0.05em">
+            Today's Time
+          </Text>
+          <Text fontSize="9px" color="gray.500">
+            Target: {formatTime(productivityTarget)}
+          </Text>
+        </Flex>
+        <Text fontSize="2xl" fontWeight="700" color="white" fontFamily="'Helvetica Neue', 'Helvetica', 'Arial', sans-serif" letterSpacing="0.02em" mb={2}>
+          {formatTime(todayTimeWorked)}
+        </Text>
+        {/* Productivity Progress Bar */}
+        <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="md" overflow="hidden" mb={1}>
+          <Box
+            position="absolute"
+            left="0"
+            top="0"
+            h="100%"
+            w={`${Math.min(100, (todayTimeWorked / productivityTarget) * 100)}%`}
+            bg={todayTimeWorked >= productivityTarget ? 'green.500' : todayTimeWorked >= productivityTarget * 0.8 ? 'cyan.500' : 'blue.500'}
+            transition="width 0.3s ease"
+            borderRadius="md"
+          />
+          <Flex
+            position="absolute"
+            left="0"
+            top="0"
+            w="100%"
+            h="100%"
+            align="center"
+            justify="center"
+            zIndex={1}
+            pointerEvents="none"
+          >
+            <Text fontSize="9px" fontWeight="600" color="white" textShadow="0 1px 2px rgba(0,0,0,0.5)">
+              {((todayTimeWorked / productivityTarget) * 100).toFixed(0)}%
+            </Text>
+          </Flex>
+        </Box>
+        <Text fontSize="9px" color="gray.400">
+          {todayTimeWorked >= productivityTarget ? 'Target achieved!' : `${formatTime(Math.max(0, productivityTarget - todayTimeWorked))} remaining`}
+        </Text>
+      </Box>
+    </Flex>
+  );
+};
 
 export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = ({
   onClose,
@@ -34,10 +296,49 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [clickTimeout, setClickTimeout] = useState<NodeJS.Timeout | null>(null);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
   const [currentWindowTitle, setCurrentWindowTitle] = useState<string>('');
+  const [isExpanded, setIsExpanded] = useState(false);
   
   // Load timer state from localStorage on mount
   useEffect(() => {
     const savedState = taskTimerService.getTimerState();
+    
+    // Check if task is from a different day - if so, auto-stop and clear
+    if (savedState.currentTask && taskTimerService.isTaskFromDifferentDay(savedState.currentTask)) {
+      console.log('[FloatingTimer] Task is from a different day, auto-stopping and clearing...');
+      
+      // Auto-save the task if it was running (save it to yesterday's log)
+      if (savedState.isRunning) {
+        const taskStartDate = new Date(savedState.currentTask.startTime);
+        const taskDateGMT8 = new Date(taskStartDate.getTime() + (8 * 60 * 60 * 1000));
+        const taskDateString = taskDateGMT8.toISOString().split('T')[0];
+        
+        const finalTask: Task = {
+          ...savedState.currentTask,
+          endTime: new Date(savedState.currentTask.startTime).toISOString(), // End at start of next day
+          duration: taskTimerService.calculateDuration(savedState.currentTask, false),
+          isPaused: false
+        };
+        
+        // Save to the task's original date
+        (window.electronAPI as any).saveTaskLog(taskDateString, finalTask).catch((error: any) => {
+          console.error('[TaskTimer] Error auto-saving task from previous day:', error);
+        });
+      }
+      
+      // Clear timer state
+      const clearedState = {
+        currentTask: null,
+        isRunning: false,
+        isPaused: false
+      };
+      taskTimerService.saveTimerState(clearedState);
+      setTimerState(clearedState);
+      setTaskName('New Task');
+      setCurrentTime(0);
+      setPauseStartTime(null);
+      return;
+    }
+    
     setTimerState(savedState);
     
     if (savedState.currentTask) {
@@ -57,6 +358,12 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   // Listen for corner snap events from main process
   useEffect(() => {
     const handleCornerSnapped = (_event: any, corner: string | null) => {
+      // Don't handle 'top' snap anymore - we use expand button instead
+      if (corner === 'top') {
+        setSnapIndicator(null);
+        return;
+      }
+      
       setSnapIndicator(corner);
       
       // If panel snap detected, show panel indicator
@@ -185,9 +492,13 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         if (!result.success) {
           console.error('[FloatingTimer] ❌ Failed to get window title. Check MAIN TERMINAL for error details!');
           console.error('[FloatingTimer] Error:', result.error || 'Unknown error');
+          return;
         }
         
-        if (result.success && result.title) {
+        // Check if title exists and is not empty (handle empty strings properly)
+        const hasTitle = result.title && typeof result.title === 'string' && result.title.trim().length > 0;
+        
+        if (hasTitle) {
           console.log('[FloatingTimer] ✅ Active window detected:', result.title);
           setCurrentWindowTitle(result.title);
           
@@ -209,7 +520,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             setTimerState(newState);
           }
         } else {
-          console.log('[FloatingTimer] ⏭️ Skipped - no active window (might be DocuFrame itself)');
+          console.log('[FloatingTimer] ⏭️ Skipped - no active window title (title is empty, might be DocuFrame itself or API issue)');
+          console.log('[FloatingTimer] Debug - result.title value:', result.title, 'type:', typeof result.title);
           setCurrentWindowTitle('(DocuFrame)');
         }
       } catch (error) {
@@ -266,16 +578,19 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     }, 100);
   };
   
-  // Resize window when minimized state changes
+  // Resize window when minimized or expanded state changes
   useEffect(() => {
     if (window.electronAPI && (window.electronAPI as any).resizeFloatingTimer) {
       if (isMinimized) {
-        (window.electronAPI as any).resizeFloatingTimer(100, 100);
+        (window.electronAPI as any).resizeFloatingTimer(122, 122); // Reduced by 15%: 143 * 0.85 = 122
+      } else if (isExpanded) {
+        // Expanded mode - optimized for 1068x300 when snapped
+        (window.electronAPI as any).resizeFloatingTimer(1068, 300);
       } else {
         (window.electronAPI as any).resizeFloatingTimer(210, 120);
       }
     }
-  }, [isMinimized]);
+  }, [isMinimized, isExpanded]);
   
   // Reset panel indicator when minimized state changes
   useEffect(() => {
@@ -393,32 +708,42 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   
   // Minimized icon view
   if (isMinimized) {
+    const minutes = Math.floor(currentTime / 60);
+    const seconds = currentTime % 60;
+    
     return (
       <Box
-        w="100px"
-        h="100px"
+        w="122px"
+        h="122px"
         bg="transparent"
         display="flex"
         alignItems="center"
         justifyContent="center"
         position="relative"
       >
-        {/* Drag ring - outer ring only (24px border for clearer separation) */}
+        {/* Progress circle as outer circle */}
         <Box
           position="absolute"
-          w="90px"
-          h="90px"
-          borderRadius="full"
-          border="20px solid transparent"
+          w="122px"
+          h="122px"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
           cursor="move"
           pointerEvents="auto"
-          transition="all 0.2s"
           zIndex={1}
-          _hover={{
-            boxShadow: "0 0 0 2px rgba(96, 165, 250, 0.3), inset 0 0 20px rgba(96, 165, 250, 0.2)",
-          }}
-        />
+        >
+          <CircularProgress
+            value={progressPercent}
+            size="122px"
+            thickness="6px"
+            color={timerState.isRunning 
+              ? (timerState.isPaused ? 'yellow.400' : timerColor)
+              : 'gray.600'
+            }
+            trackColor="whiteAlpha.200"
+            capIsRound
+            pointerEvents="none"
+          />
+        </Box>
         
         {/* Clickable bubble in center */}
         <Box
@@ -428,7 +753,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             ? "0 0 0 8px rgba(96, 165, 250, 0.5), 0 0 20px rgba(96, 165, 250, 0.8), 0 4px 16px rgba(0,0,0,0.5)"
             : "0 2px 8px rgba(0,0,0,0.5)"
           }
-          border="3px solid"
+          border="4px solid"
           borderColor={isDraggingToPanel
             ? 'blue.400'
             : timerState.isRunning 
@@ -447,9 +772,10 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               },
             },
           }}
-          w="52px"
-          h="52px"
+          w="98px"
+          h="98px"
           display="flex"
+          flexDirection="column"
           alignItems="center"
           justifyContent="center"
           cursor="pointer"
@@ -501,35 +827,41 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             }
           }}
         >
-          <CircularProgress
-            value={progressPercent}
-            size="40px"
-            thickness="3px"
-            color={timerState.isRunning 
-              ? (timerState.isPaused ? 'yellow.400' : timerColor)
-              : 'gray.600'
-            }
-            trackColor="whiteAlpha.200"
-            capIsRound
+          {/* MM:SS Display - MM bold, SS as subtext - bigger to fit circle */}
+          <VStack spacing={0} align="center">
+            <Text 
+              fontSize="36px" 
+              fontWeight="bold" 
+              color="white" 
+              fontFamily="mono" 
+              lineHeight="1"
             pointerEvents="none"
           >
-            <CircularProgressLabel>
-              <Text fontSize="8px" fontWeight="bold" color="white" fontFamily="mono" pointerEvents="none">
-                {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{(currentTime % 60).toString().padStart(2, '0')}
+              {minutes.toString().padStart(2, '0')}
               </Text>
-            </CircularProgressLabel>
-          </CircularProgress>
+            <Text 
+              fontSize="18px" 
+              fontWeight="medium" 
+              color="gray.400" 
+              fontFamily="mono" 
+              lineHeight="1"
+              pointerEvents="none"
+              mt="-3px"
+            >
+              {seconds.toString().padStart(2, '0')}
+            </Text>
+          </VStack>
           
           {/* Hour counter badge */}
           {currentHour > 0 && (
             <Box
               position="absolute"
-              top="-3px"
-              left="-3px"
+              top="-4px"
+              left="-4px"
               bg={isOddHour ? 'purple.500' : 'cyan.500'}
               borderRadius="full"
-              w="16px"
-              h="16px"
+              w="22px"
+              h="22px"
               display="flex"
               alignItems="center"
               justifyContent="center"
@@ -538,7 +870,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               pointerEvents="none"
               zIndex={10}
             >
-              <Text fontSize="8px" fontWeight="bold" color="white" fontFamily="mono" pointerEvents="none">
+              <Text fontSize="10px" fontWeight="bold" color="white" fontFamily="mono" pointerEvents="none">
                 {currentHour}
               </Text>
             </Box>
@@ -547,21 +879,23 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         {/* Corner Snap Indicators for minimized view */}
         {snapIndicator && snapIndicator !== 'panel' && (
           <>
-            <Box position="absolute" top="0" left="0" w="20px" h="20px" borderLeft="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-left' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderTopLeftRadius="4px" />
-            <Box position="absolute" top="0" right="0" w="20px" h="20px" borderRight="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-right' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderTopRightRadius="4px" />
-            <Box position="absolute" bottom="0" left="0" w="20px" h="20px" borderLeft="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-left' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderBottomLeftRadius="4px" />
-            <Box position="absolute" bottom="0" right="0" w="20px" h="20px" borderRight="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-right' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderBottomRightRadius="4px" />
+            <Box position="absolute" top="0" left="0" w="26px" h="26px" borderLeft="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-left' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderTopLeftRadius="4px" />
+            <Box position="absolute" top="0" right="0" w="26px" h="26px" borderRight="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-right' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderTopRightRadius="4px" />
+            <Box position="absolute" bottom="0" left="0" w="26px" h="26px" borderLeft="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-left' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderBottomLeftRadius="4px" />
+            <Box position="absolute" bottom="0" right="0" w="26px" h="26px" borderRight="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-right' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderBottomRightRadius="4px" />
           </>
         )}
       </Box>
     );
   }
   
-  // Full window view - Compact design
+  // Full window view - Compact design (flexible when expanded)
   return (
+    <React.Fragment>
     <Box
-      w="210px"
-      h="120px"
+      w={isExpanded ? "100%" : "210px"}
+      h={isExpanded ? "300px" : "120px"}
+      maxH={isExpanded ? "300px" : "none"}
       bg="transparent"
       display="flex"
       alignItems="center"
@@ -571,11 +905,11 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     >
       <Box
         bg={bgColor}
-        borderRadius="12px"
+        borderRadius={isExpanded ? "0" : "12px"}
         boxShadow="0 4px 16px rgba(0,0,0,0.4)"
         overflow="hidden"
-        w="206px"
-        h="116px"
+        w={isExpanded ? "100%" : "206px"}
+        h={isExpanded ? "300px" : "116px"}
       >
         {/* Compact Header */}
         <Flex
@@ -584,6 +918,9 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           align="center"
           justify="space-between"
           cursor="grab"
+          bg={isExpanded ? "gray.800" : "transparent"}
+          borderBottom={isExpanded ? "1px solid" : "none"}
+          borderColor={isExpanded ? "whiteAlpha.100" : "transparent"}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <Flex align="center" gap={1}>
@@ -593,6 +930,21 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             </Text>
           </Flex>
           <Flex gap={1}>
+            <Tooltip label={isExpanded ? "Collapse" : "Expand"}>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => setIsExpanded(!isExpanded)}
+                p={0.5}
+                minW="auto"
+                h="auto"
+                _hover={{ bg: 'whiteAlpha.200' }}
+                color="gray.400"
+                style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+              >
+                <Icon as={isExpanded ? Minimize2 : Maximize2} boxSize={3.5} />
+              </Button>
+            </Tooltip>
             <Tooltip label="Minimize">
               <Button
                 size="xs"
@@ -605,7 +957,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 color="gray.400"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               >
-                <Icon as={Minimize2} boxSize={3.5} />
+                <Icon as={Circle} boxSize={3.5} fill="none" strokeWidth={2} />
               </Button>
             </Tooltip>
             <Tooltip label="Close">
@@ -626,8 +978,223 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           </Flex>
         </Flex>
         
-        {/* Main Content - Side by Side */}
-        <Flex px={2} pb={2} gap={2} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {/* Main Content - Different layout for expanded vs compact */}
+        {isExpanded ? (
+          // Expanded layout optimized for 1068x300 - Timer as central piece with left sidebar
+          <Flex 
+            direction="row"
+            h="100%"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            {/* Left Sidebar - Control Buttons (Icons Only) */}
+            <Flex
+              direction="column"
+              align="center"
+              justify="flex-start"
+              gap={3}
+              px={3}
+              py={4}
+              bg="gray.800"
+              borderRight="1px solid"
+              borderColor="whiteAlpha.100"
+              minW="60px"
+            >
+              <Tooltip label="Start" placement="right">
+                <Button
+                  size="md"
+                  onClick={handleStartTimer}
+                  isDisabled={timerState.isRunning && !timerState.isPaused}
+                  bg={timerState.isRunning && !timerState.isPaused ? "whiteAlpha.200" : "whiteAlpha.100"}
+                  color="white"
+                  _hover={{ bg: 'whiteAlpha.300' }}
+                  _disabled={{ opacity: 0.4 }}
+                  w="44px"
+                  h="44px"
+                  p={0}
+                  borderRadius="md"
+                >
+                  <Icon as={Play} boxSize={5} />
+                </Button>
+              </Tooltip>
+              
+              <Tooltip label="Pause" placement="right">
+                <Button
+                  size="md"
+                  onClick={handlePauseTimer}
+                  isDisabled={!timerState.isRunning || timerState.isPaused}
+                  bg={timerState.isRunning && !timerState.isPaused ? "whiteAlpha.200" : "whiteAlpha.100"}
+                  color="white"
+                  _hover={{ bg: 'whiteAlpha.300' }}
+                  _disabled={{ opacity: 0.4 }}
+                  w="44px"
+                  h="44px"
+                  p={0}
+                  borderRadius="md"
+                >
+                  <Icon as={Pause} boxSize={5} />
+                </Button>
+              </Tooltip>
+              
+              <Tooltip label="Stop" placement="right">
+                <Button
+                  size="md"
+                  onClick={handleStopTimer}
+                  isDisabled={!timerState.isRunning}
+                  bg="whiteAlpha.100"
+                  color="white"
+                  _hover={{ bg: 'whiteAlpha.300' }}
+                  _disabled={{ opacity: 0.4 }}
+                  w="44px"
+                  h="44px"
+                  p={0}
+                  borderRadius="md"
+                >
+                  <Icon as={Square} boxSize={5} />
+                </Button>
+              </Tooltip>
+              
+              <Box w="32px" h="1px" bg="whiteAlpha.200" my={1} />
+              
+              <Tooltip label="Summary" placement="right">
+                <Button
+                  size="md"
+                  variant="ghost"
+                  onClick={onOpenSummary}
+                  color="gray.300"
+                  _hover={{ bg: 'whiteAlpha.100', color: 'white' }}
+                  w="44px"
+                  h="44px"
+                  p={0}
+                  borderRadius="md"
+                >
+                  <Icon as={BarChart} boxSize={5} />
+                </Button>
+              </Tooltip>
+            </Flex>
+            
+            {/* Main Content Area - Split into center and right */}
+            <Flex 
+              direction="row"
+              flex={1}
+              bg="gray.900"
+            >
+              {/* Center Section - Timer */}
+              <Flex 
+                direction="column"
+                flex={1}
+                px={8}
+                py={6}
+                gap={3}
+                align="center"
+                justify="center"
+                position="relative"
+              >
+                {/* Task Name Input - Compact, positioned above timer */}
+                <Box 
+                  as="input"
+                  type="text"
+                  value={taskName}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    if (!timerState.isRunning) {
+                      setTaskName(e.target.value);
+                      if (timerState.currentTask) {
+                        setTimerState({
+                          ...timerState,
+                          currentTask: {
+                            ...timerState.currentTask,
+                            name: e.target.value
+                          }
+                        });
+                      }
+                    }
+                  }}
+                  placeholder="Task name..."
+                  fontSize="13px"
+                  fontWeight="medium"
+                  width="100%"
+                  maxW="500px"
+                  bg="whiteAlpha.100"
+                  border="1px solid"
+                  borderColor="whiteAlpha.200"
+                  borderRadius="sm"
+                  outline="none"
+                  color="white"
+                  _placeholder={{ color: 'gray.500' }}
+                  _hover={{ borderColor: timerState.isRunning ? 'whiteAlpha.200' : 'whiteAlpha.300' }}
+                  _focus={{ borderColor: timerState.isRunning ? 'whiteAlpha.200' : timerColor, boxShadow: timerState.isRunning ? 'none' : `0 0 0 2px ${timerColor}40` }}
+                  textAlign="center"
+                  px={3}
+                  py={1.5}
+                  cursor={timerState.isRunning ? "not-allowed" : "text"}
+                  transition="all 0.2s"
+                  position="absolute"
+                  top="20px"
+                  readOnly={timerState.isRunning}
+                  opacity={timerState.isRunning ? 0.7 : 1}
+                />
+                
+                {/* Central Timer Display - Centered Vertically */}
+                <VStack spacing={3} align="center" justify="center" flex={1}>
+                  <Text 
+                    fontSize="7xl" 
+                    fontWeight="700" 
+                    fontFamily="'Helvetica Neue', 'Helvetica', 'Arial', sans-serif"
+                    color="white"
+                    lineHeight="1"
+                    textAlign="center"
+                    letterSpacing="0.02em"
+                    textShadow="0 2px 8px rgba(0,0,0,0.3)"
+                  >
+                    {taskTimerService.formatDuration(currentTime)}
+                  </Text>
+                  
+                  {/* Progress Bar - Horizontal */}
+                  <Box w="100%" maxW="600px">
+                    <Progress
+                      value={progressPercent}
+                      size="md"
+                      colorScheme={timerState.isRunning 
+                        ? (timerState.isPaused ? 'yellow' : isOddHour ? 'purple' : 'cyan')
+                        : 'gray'
+                      }
+                      bg="whiteAlpha.200"
+                      borderRadius="full"
+                      hasStripe={timerState.isRunning && !timerState.isPaused}
+                      isAnimated={timerState.isRunning && !timerState.isPaused}
+                    />
+                  </Box>
+                  
+                  {/* Window Tracking Indicator */}
+                  {timerState.isRunning && !timerState.isPaused && (
+                    <Flex align="center" justify="center" gap={2}>
+                      <Text fontSize="11px" color="gray.400" maxW="400px" isTruncated title={currentWindowTitle || 'Tracking...'}>
+                        {currentWindowTitle || 'Tracking...'}
+                      </Text>
+                      {timerState.currentTask?.windowTitles && timerState.currentTask.windowTitles.length > 0 && (
+                        <Badge colorScheme="purple" fontSize="9px" px={1.5} py={0.5}>
+                          {timerState.currentTask.windowTitles.length}
+                        </Badge>
+                      )}
+                    </Flex>
+                  )}
+                </VStack>
+              </Flex>
+              
+              {/* Right Section - Infographic */}
+              <WorkShiftInfographic />
+            </Flex>
+          </Flex>
+        ) : (
+          // Compact layout - Original side-by-side design
+          <Flex 
+            px={2} 
+            pb={2} 
+            gap={2} 
+            direction="row"
+            align="center"
+            justify="flex-start"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
           {/* Left side: Timer and Controls */}
           <Flex direction="column" flex={1} gap={1}>
             {/* Task Name Input */}
@@ -636,15 +1203,17 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               type="text"
               value={taskName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                setTaskName(e.target.value);
-                if (timerState.currentTask) {
-                  setTimerState({
-                    ...timerState,
-                    currentTask: {
-                      ...timerState.currentTask,
-                      name: e.target.value
-                    }
-                  });
+                if (!timerState.isRunning) {
+                  setTaskName(e.target.value);
+                  if (timerState.currentTask) {
+                    setTimerState({
+                      ...timerState,
+                      currentTask: {
+                        ...timerState.currentTask,
+                        name: e.target.value
+                      }
+                    });
+                  }
                 }
               }}
               placeholder="Task..."
@@ -656,13 +1225,15 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               outline="none"
               color="gray.400"
               _placeholder={{ color: 'gray.600' }}
-              _hover={{ color: 'gray.300' }}
-              _focus={{ color: 'white' }}
+              _hover={{ color: timerState.isRunning ? 'gray.400' : 'gray.300' }}
+              _focus={{ color: timerState.isRunning ? 'gray.400' : 'white' }}
               textAlign="center"
               px={1}
               py={0.5}
-              cursor="text"
+              cursor={timerState.isRunning ? "not-allowed" : "text"}
               transition="all 0.2s"
+              readOnly={timerState.isRunning}
+              opacity={timerState.isRunning ? 0.7 : 1}
             />
             
             {/* Window Tracking Indicator */}
@@ -765,7 +1336,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           </Flex>
           
           {/* Right side: Circular Progress */}
-          <Flex align="center" justify="center" position="relative">
+          <Flex align="center" justify="center" position="relative" flex="0 0 auto">
             <CircularProgress
               value={progressPercent}
               size="70px"
@@ -838,18 +1409,21 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             )}
           </Flex>
         </Flex>
+        )}
       </Box>
       
-      {/* Corner Snap Indicators for full view */}
-      {snapIndicator && snapIndicator !== 'panel' && (
-        <>
-          <Box position="absolute" top="0" left="0" w="40px" h="40px" borderLeft="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-left' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderTopLeftRadius="6px" />
-          <Box position="absolute" top="0" right="0" w="40px" h="40px" borderRight="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-right' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderTopRightRadius="6px" />
-          <Box position="absolute" bottom="0" left="0" w="40px" h="40px" borderLeft="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-left' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderBottomLeftRadius="6px" />
-          <Box position="absolute" bottom="0" right="0" w="40px" h="40px" borderRight="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-right' ? 1 : 0.3} pointerEvents="none" transition="all 0.2s" borderBottomRightRadius="6px" />
-        </>
+      {/* Corner Snap Indicators for full view - Disabled when expanded to allow FancyZones */}
+      {!isExpanded && snapIndicator && snapIndicator !== 'panel' && snapIndicator !== 'top' && (
+        <Box position="absolute" top="0" left="0" right="0" bottom="0" pointerEvents="none">
+          <Box position="absolute" top="0" left="0" w="40px" h="40px" borderLeft="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-left' ? 1 : 0.3} transition="all 0.2s" borderTopLeftRadius="6px" />
+          <Box position="absolute" top="0" right="0" w="40px" h="40px" borderRight="2px solid" borderTop="2px solid" borderColor={snapIndicator === 'top-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'top-right' ? 1 : 0.3} transition="all 0.2s" borderTopRightRadius="6px" />
+          <Box position="absolute" bottom="0" left="0" w="40px" h="40px" borderLeft="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-left' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-left' ? 1 : 0.3} transition="all 0.2s" borderBottomLeftRadius="6px" />
+          <Box position="absolute" bottom="0" right="0" w="40px" h="40px" borderRight="2px solid" borderBottom="2px solid" borderColor={snapIndicator === 'bottom-right' ? 'cyan.400' : 'whiteAlpha.300'} opacity={snapIndicator === 'bottom-right' ? 1 : 0.3} transition="all 0.2s" borderBottomRightRadius="6px" />
+        </Box>
       )}
     </Box>
+    
+    </React.Fragment>
   );
 };
 

@@ -185,13 +185,35 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
       tasks.forEach((task, index) => {
         analysisText += `Task ${index + 1}: ${task.name}\n`;
         analysisText += `Duration: ${taskTimerService.formatDuration(task.duration)}\n`;
-        analysisText += `Started: ${taskTimerService.formatTimestamp(task.startTime)}\n\n`;
+        analysisText += `Started: ${taskTimerService.formatTimestamp(task.startTime)}\n`;
+        if (task.endTime) {
+          analysisText += `Ended: ${taskTimerService.formatTimestamp(task.endTime)}\n`;
+        }
+        analysisText += `\n`;
         
         if (task.windowTitles && task.windowTitles.length > 0) {
-          analysisText += `Window Activity Log (${task.windowTitles.length} entries):\n`;
-          task.windowTitles.forEach((log) => {
-            analysisText += `  [${taskTimerService.formatTimestamp(log.timestamp)}] ${log.windowTitle}\n`;
-          });
+          analysisText += `Window Activity Log (${task.windowTitles.length} entries) with time spent:\n`;
+          
+          // Calculate time spent in each window
+          for (let i = 0; i < task.windowTitles.length; i++) {
+            const log = task.windowTitles[i];
+            const logTime = new Date(log.timestamp).getTime();
+            
+            // Calculate time spent: difference to next log, or to task end, or to now if still running
+            let timeSpent = 0;
+            if (i < task.windowTitles.length - 1) {
+              // Time until next window switch
+              const nextLogTime = new Date(task.windowTitles[i + 1].timestamp).getTime();
+              timeSpent = Math.floor((nextLogTime - logTime) / 1000); // in seconds
+            } else {
+              // Last window - time until task end or now
+              const endTime = task.endTime ? new Date(task.endTime).getTime() : Date.now();
+              timeSpent = Math.floor((endTime - logTime) / 1000); // in seconds
+            }
+            
+            const timeSpentFormatted = taskTimerService.formatDuration(timeSpent);
+            analysisText += `  [${taskTimerService.formatTimestamp(log.timestamp)}] ${log.windowTitle} (${timeSpentFormatted})\n`;
+          }
         } else {
           analysisText += `No window activity recorded for this task.\n`;
         }
@@ -227,6 +249,192 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   
   const copyAnalysisToClipboard = () => {
     navigator.clipboard.writeText(aiAnalysis);
+  };
+  
+  const tableBg = useColorModeValue('gray.50', 'gray.800');
+  const tableBorder = useColorModeValue('gray.300', 'gray.600');
+  
+  // Parse AI analysis table and format with timestamps
+  const parseAndDisplayAnalysis = (analysis: string, tasks: Task[]) => {
+    // Extract table from markdown
+    const tableMatch = analysis.match(/\|.*\|/g);
+    if (!tableMatch || tableMatch.length < 2) {
+      // Fallback to markdown rendering if no table found
+      return (
+        <Box
+          bg={bgColor}
+          p={4}
+          borderRadius="lg"
+          boxShadow="sm"
+          border="1px solid"
+          borderColor={borderColor}
+          sx={{
+            '& h1, & h2, & h3, & h4': {
+              fontWeight: 'bold',
+              marginBottom: '0.25rem',
+              marginTop: '0.5rem',
+              '&:first-child': { marginTop: '0' }
+            },
+            '& h1': { fontSize: 'lg' },
+            '& h2': { fontSize: 'md' },
+            '& h3, & h4': { fontSize: 'sm', fontWeight: '600' },
+            '& p': {
+              marginBottom: '0.5rem',
+              '&:last-child': { marginBottom: '0' }
+            },
+            '& ul, & ol': {
+              marginLeft: '1.5rem',
+              marginBottom: '0.5rem'
+            },
+            '& li': {
+              marginBottom: '0.25rem'
+            },
+            '& code': {
+              bg: useColorModeValue('gray.100', 'gray.800'),
+              px: '0.25rem',
+              py: '0.125rem',
+              borderRadius: '0.25rem',
+              fontSize: '0.875em'
+            },
+            '& pre': {
+              bg: useColorModeValue('gray.100', 'gray.800'),
+              p: '0.75rem',
+              borderRadius: '0.5rem',
+              overflow: 'auto',
+              marginBottom: '0.5rem'
+            },
+            '& table': {
+              width: '100%',
+              borderCollapse: 'collapse',
+              marginBottom: '1rem'
+            },
+            '& th, & td': {
+              border: `1px solid ${useColorModeValue('#e2e8f0', '#4a5568')}`,
+              padding: '0.5rem',
+              textAlign: 'left'
+            },
+            '& th': {
+              fontWeight: 'bold',
+              bg: useColorModeValue('gray.50', 'gray.700')
+            }
+          }}
+        >
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysis}</ReactMarkdown>
+        </Box>
+      );
+    }
+    
+    // Parse table rows (skip header)
+    const rows = tableMatch.slice(2).filter(row => !row.match(/^\|[\s-:]+\|$/)); // Skip separator rows
+    const summaryMatch = analysis.match(/Total time spent:.*/);
+    
+    // Create a map of task names to tasks for timestamp lookup
+    const taskMap = new Map<string, Task>();
+    tasks.forEach(task => taskMap.set(task.name, task));
+    
+    // Calculate totals
+    let totalDuration = 0;
+    let totalProductive = 0;
+    
+    return (
+      <Box>
+        <Table variant="simple" size="sm" colorScheme="blue">
+          <Thead>
+            <Tr>
+              <Th>Task Name</Th>
+              <Th>Total Duration</Th>
+              <Th>Productive Time</Th>
+              <Th>Achievements</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            {rows.map((row, idx) => {
+              const cells = row.split('|').map(c => c.trim()).filter(c => c);
+              if (cells.length < 4) return null;
+              
+              const taskName = cells[0];
+              const durationStr = cells[1];
+              const productiveStr = cells[2];
+              const achievements = cells[3];
+              
+              // Parse duration (HH:MM format)
+              const parseDuration = (str: string): number => {
+                const match = str.match(/(\d+):(\d+)/);
+                if (match) {
+                  return parseInt(match[1]) * 3600 + parseInt(match[2]) * 60;
+                }
+                return 0;
+              };
+              
+              const duration = parseDuration(durationStr);
+              const productive = parseDuration(productiveStr);
+              totalDuration += duration;
+              totalProductive += productive;
+              
+              // Get task for timestamp lookup
+              const task = taskMap.get(taskName);
+              
+              // Format achievements with timestamps
+              const formatAchievements = (text: string): JSX.Element[] => {
+                // Split by bullet points
+                const bullets = text.split(/[•\-\*]/).filter(b => b.trim());
+                return bullets.map((bullet, i) => {
+                  const trimmed = bullet.trim();
+                  if (!trimmed) return null;
+                  
+                  // Try to match achievement to window title and get timestamp
+                  let timestamp = '';
+                  if (task && task.windowTitles) {
+                    const matchingLog = task.windowTitles.find(log => 
+                      log.windowTitle.toLowerCase().includes(trimmed.toLowerCase().substring(0, 20)) ||
+                      trimmed.toLowerCase().includes(log.windowTitle.toLowerCase().substring(0, 20))
+                    );
+                    if (matchingLog) {
+                      const date = new Date(matchingLog.timestamp);
+                      const hours = date.getHours().toString().padStart(2, '0');
+                      const minutes = date.getMinutes().toString().padStart(2, '0');
+                      const seconds = date.getSeconds().toString().padStart(2, '0');
+                      timestamp = `${hours}:${minutes}:${seconds}`;
+                    }
+                  }
+                  
+                  return (
+                    <Text key={i} fontSize="xs" mb={i < bullets.length - 1 ? 1 : 0} lineHeight="1.6">
+                      {timestamp ? `•${timestamp} - ${trimmed}` : `•${trimmed}`}
+                    </Text>
+                  );
+                }).filter(Boolean) as JSX.Element[];
+              };
+              
+              return (
+                <Tr key={idx}>
+                  <Td fontWeight="medium">{taskName}</Td>
+                  <Td>{durationStr}</Td>
+                  <Td>{productiveStr}</Td>
+                  <Td>
+                    <VStack align="start" spacing={0.5}>
+                      {formatAchievements(achievements)}
+                    </VStack>
+                  </Td>
+                </Tr>
+              );
+            })}
+            {/* Total row */}
+            <Tr bg={tableBg} fontWeight="bold">
+              <Td>Total</Td>
+              <Td>{taskTimerService.formatDuration(totalDuration)}</Td>
+              <Td>{taskTimerService.formatDuration(totalProductive)}</Td>
+              <Td></Td>
+            </Tr>
+          </Tbody>
+        </Table>
+        {summaryMatch && (
+          <Text mt={4} fontSize="sm" color="gray.400" fontStyle="italic">
+            {summaryMatch[0]}
+          </Text>
+        )}
+      </Box>
+    );
   };
   
   return (
@@ -504,90 +712,25 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                 boxShadow={useColorModeValue('sm', 'dark-lg')}
                 border="1px solid"
                 borderColor={useColorModeValue('gray.200', 'gray.700')}
-                sx={{
-                  '& h1, & h2, & h3, & h4': {
-                    fontWeight: 'bold',
-                    marginBottom: '0.25rem',
-                    marginTop: '0.5rem',
-                    '&:first-child': { marginTop: '0' }
-                  },
-                  '& h1': { fontSize: 'lg' },
-                  '& h2': { fontSize: 'md' },
-                  '& h3, & h4': { fontSize: 'sm', fontWeight: '600' },
-                  '& p': {
-                    marginBottom: '0.25rem',
-                    lineHeight: '1.4',
-                    fontSize: 'sm'
-                  },
-                  '& ul, & ol': {
-                    marginLeft: '1rem',
-                    marginBottom: '0.25rem',
-                    marginTop: '0.25rem',
-                    paddingLeft: '0.5rem'
-                  },
-                  '& li': {
-                    marginBottom: '0.125rem',
-                    fontSize: 'sm',
-                    lineHeight: '1.4'
-                  },
-                  '& strong': { fontWeight: '600' },
-                  '& table': {
-                    borderCollapse: 'collapse',
-                    width: '100%',
-                    marginTop: '1rem',
-                    marginBottom: '1rem',
-                    border: '1px solid',
-                    borderColor: useColorModeValue('gray.300', 'gray.600')
-                  },
-                  '& th': {
-                    border: '1px solid',
-                    borderColor: useColorModeValue('gray.300', 'gray.600'),
-                    padding: '0.5rem',
-                    backgroundColor: useColorModeValue('gray.100', 'gray.700'),
-                    fontWeight: 'bold',
-                    fontSize: 'sm',
-                    textAlign: 'left'
-                  },
-                  '& td': {
-                    border: '1px solid',
-                    borderColor: useColorModeValue('gray.300', 'gray.600'),
-                    padding: '0.5rem',
-                    fontSize: 'sm'
-                  },
-                  '& tr:nth-of-type(even)': {
-                    backgroundColor: useColorModeValue('gray.50', 'gray.800')
-                  }
-                }}
               >
-                <Box whiteSpace="pre-wrap">
-                  {aiAnalysis.trim() ? (
-                    <>
-                      <ReactMarkdown key={aiAnalysis.length} remarkPlugins={[remarkGfm]}>{aiAnalysis}</ReactMarkdown>
-                      {isStreaming && (
-                        <Box
-                          as="span"
-                          display="inline-block"
-                          w="2px"
-                          h="1em"
-                          bg="purple.500"
-                          ml={1}
-                          animation="blink 1s step-end infinite"
-                          sx={{
-                            '@keyframes blink': {
-                              '0%, 100%': { opacity: 1 },
-                              '50%': { opacity: 0 },
-                            }
-                          }}
-                        />
-                      )}
-                    </>
-                  ) : isStreaming ? (
-                    <Flex align="center" gap={2} color={useColorModeValue('gray.500', 'gray.400')}>
-                      <Spinner size="sm" />
-                      <Text fontSize="sm">AI is analyzing...</Text>
-                    </Flex>
-                  ) : null}
-                </Box>
+                {parseAndDisplayAnalysis(aiAnalysis, tasks)}
+                {isStreaming && (
+                  <Box
+                    as="span"
+                    display="inline-block"
+                    w="2px"
+                    h="1em"
+                    bg="purple.500"
+                    ml={1}
+                    animation="blink 1s step-end infinite"
+                    sx={{
+                      '@keyframes blink': {
+                        '0%, 100%': { opacity: 1 },
+                        '50%': { opacity: 0 },
+                      }
+                    }}
+                  />
+                )}
               </Box>
             )}
           </Box>

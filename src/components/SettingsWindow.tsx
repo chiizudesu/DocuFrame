@@ -76,6 +76,9 @@ interface Settings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   aiEditorInstructions?: string; // NEW
+  workShiftStart?: string;
+  workShiftEnd?: string;
+  productivityTargetHours?: number;
 
 }
 
@@ -105,6 +108,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
   const [hideDotFiles, setHideDotFiles] = useState(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState(''); // NEW
+  const [workShiftStart, setWorkShiftStart] = useState('06:00');
+  const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
+  const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
 
   
   // Keyboard recorder state
@@ -150,6 +156,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setHideDotFiles(loadedSettings.hideDotFiles !== false);
         // NEW: AI editor instructions
         setAiEditorInstructions(loadedSettings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
+        // Work shift settings
+        setWorkShiftStart(loadedSettings.workShiftStart || '06:00');
+        setWorkShiftEnd(loadedSettings.workShiftEnd || '15:00');
+        setProductivityTargetHours(loadedSettings.productivityTargetHours || 7.5);
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -200,6 +210,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         hideTemporaryFiles,
         hideDotFiles,
         aiEditorInstructions, // NEW
+        workShiftStart,
+        workShiftEnd,
+        productivityTargetHours,
 
       };
       
@@ -1309,6 +1322,64 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     </HStack>
   </FormControl>
 </Box>
+
+                  <Divider my={3.5} />
+
+                  <Box pb={3.5}>
+                    <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
+                      Work Shift
+                    </Heading>
+                    <Text fontSize="sm" color={secondaryTextColor} mb={2}>
+                      Configure your work shift hours for the timer infographic
+                    </Text>
+                    <VStack spacing={2.5} align="stretch">
+                      <FormControl>
+                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Shift Start Time</FormLabel>
+                        <Input
+                          type="time"
+                          value={workShiftStart}
+                          onChange={(e) => setWorkShiftStart(e.target.value)}
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                          borderRadius="sm"
+                          fontSize="xs"
+                          h="31px"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Shift End Time</FormLabel>
+                        <Input
+                          type="time"
+                          value={workShiftEnd}
+                          onChange={(e) => setWorkShiftEnd(e.target.value)}
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                          borderRadius="sm"
+                          fontSize="xs"
+                          h="31px"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Productivity Target (hours)</FormLabel>
+                        <Text fontSize="xs" color={secondaryTextColor} mb={1}>
+                          Daily target for time worked (e.g., 7.5 for 7 hours 30 minutes)
+                        </Text>
+                        <Input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          max="24"
+                          value={productivityTargetHours}
+                          onChange={(e) => setProductivityTargetHours(parseFloat(e.target.value) || 0)}
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                          borderRadius="sm"
+                          fontSize="xs"
+                          h="31px"
+                        />
+                      </FormControl>
+                    </VStack>
+                  </Box>
                 </VStack>
               </VStack>
             </TabPanel>

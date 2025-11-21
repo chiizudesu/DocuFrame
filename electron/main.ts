@@ -2760,15 +2760,26 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       
       if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
       
-      const { screen } = require('electron');
-      // Get the display where the window is currently positioned
-      const currentDisplay = screen.getDisplayNearestPoint({ x: newBounds.x, y: newBounds.y });
-      const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = currentDisplay.workArea;
-      
       // Use actual window size from the window, not from bounds (bounds may be stale)
       const [actualWidth, actualHeight] = floatingTimerWindow.getSize();
       const windowWidth = actualWidth;
       const windowHeight = actualHeight;
+      
+      // Skip snapping when expanded (1068x300) to allow FancyZones to handle it
+      const isExpanded = windowWidth >= 1000 && windowHeight >= 250 && windowHeight <= 350;
+      if (isExpanded) {
+        // Clear any existing snap indicators
+        if (lastSnapCorner !== null) {
+          floatingTimerWindow.webContents.send('corner-snapped', null);
+          lastSnapCorner = null;
+        }
+        return; // Don't perform snapping when expanded
+      }
+      
+      const { screen } = require('electron');
+      // Get the display where the window is currently positioned
+      const currentDisplay = screen.getDisplayNearestPoint({ x: newBounds.x, y: newBounds.y });
+      const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = currentDisplay.workArea;
       
       const x = newBounds.x - screenX; // Relative to current screen
       const y = newBounds.y - screenY; // Relative to current screen
@@ -2868,12 +2879,26 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       
       if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
       
+      const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
+      
+      // Skip snapping when expanded (1068x300) to allow FancyZones to handle it
+      const isExpanded = windowWidth >= 1000 && windowHeight >= 250 && windowHeight <= 350;
+      if (isExpanded) {
+        // Clear any existing snap indicators
+        setTimeout(() => {
+          if (floatingTimerWindow && !floatingTimerWindow.isDestroyed()) {
+            floatingTimerWindow.webContents.send('corner-snapped', null);
+            lastSnapCorner = null;
+          }
+        }, 100);
+        return; // Don't perform snapping when expanded
+      }
+      
       const [windowX, windowY] = floatingTimerWindow.getPosition();
       const { screen } = require('electron');
       // Get the display where the window is currently positioned
       const currentDisplay = screen.getDisplayNearestPoint({ x: windowX, y: windowY });
       const { x: screenX, y: screenY, width: screenWidth, height: screenHeight } = currentDisplay.workArea;
-      const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
       
       // Window position relative to current screen
       const relX = windowX - screenX;
@@ -3201,13 +3226,22 @@ ipcMain.handle('get-active-window-title', async () => {
       return { success: true, title: '' };
     }
     
+    // Debug: Log all properties of win object to see what's available
+    console.log('[Main] 🔍 Full window object keys:', Object.keys(win));
+    console.log('[Main] 🔍 Full window object:', JSON.stringify(win, null, 2));
+    
     // get-windows returns a plain object with title, owner, etc. properties
-    const title = win.title;
+    // Try multiple possible property names (using type assertion for properties that might exist)
+    const winAny = win as any;
+    const title = win.title || winAny.name || winAny.windowTitle || '';
     
     console.log('[Main] ✅ Active window:', {
       title: title,
+      titleRaw: win.title,
+      name: winAny.name,
       app: win.owner?.name || 'unknown',
-      processId: win.owner?.processId || 'unknown'
+      processId: win.owner?.processId || 'unknown',
+      ownerFull: win.owner
     });
     
     // Filter out our own app windows
@@ -3221,13 +3255,16 @@ ipcMain.handle('get-active-window-title', async () => {
       return { success: true, title: '' };
     }
     
-    if (title) {
-      return { success: true, title };
+    // Return title if it exists and is not empty
+    if (title && title.trim().length > 0) {
+      return { success: true, title: title.trim() };
     }
     
+    console.log('[Main] ⚠️ Window title is empty or undefined');
     return { success: true, title: '' };
   } catch (error: any) {
     console.error('[Main] ❌ Error getting active window title:', error);
+    console.error('[Main] ❌ Error stack:', error.stack);
     return { success: false, title: '', error: error.message };
   }
 });

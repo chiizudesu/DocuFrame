@@ -1,0 +1,48 @@
+name: 2025 Company Annual Accounts Modified
+description: Template for 2025 Company Annual Accounts Modified
+categories:
+  - Financial_Statements
+  - Tax_Return
+template: |
+  name: 2025 Annual Accounts Company
+  description: Email template for summarizing company performance and tax return for the year.
+  categories:
+    - financial_statements
+    - tax_return
+  template: |
+    Company Annual Accounts
+
+    For the 12 months ending {{report_end_date}}, revenue was {{revenue}} – this is an overall {{revenue_change_direction}} of {{revenue_change_percent}} from the year ending March 2024. This was largely due to {{revenue_reason}}.
+
+    Direct costs have naturally {{direct_costs_direction}} alongside sales, and the gross profit margin has {{gross_profit_direction}} from the 2024 year at {{gross_profit_2024}} to last year at {{gross_profit_2025}}. This was largely due to {{gross_profit_reason}}.
+
+    Overheads have seen a reasonable {{overheads_direction}} of {{overheads_movement}} or {{overheads_movement_percent}}. Key movements for the year were:
+
+    - {{expense_1_name}} increased / decreased by {{expense_1_amount}} or {{expense_1_percent}}
+    - {{expense_2_name}} increased / decreased by {{expense_2_amount}} or {{expense_2_percent}}
+    - {{expense_3_name}} increased / decreased by {{expense_3_amount}} or {{expense_3_percent}}
+    - {{expense_4_name}} increased / decreased by {{expense_4_amount}} or {{expense_4_percent}}
+    - {{expense_5_name}} increased / decreased by {{expense_5_amount}} or {{expense_5_percent}}
+    - {{expense_6_name}} increased / decreased by {{expense_6_amount}} or {{expense_6_percent}}
+    - {{expense_7_name}} increased / decreased by {{expense_7_amount}} increased / decreased or {{expense_7_percent}}
+      {{fill any other expense here if needed}}
+
+    {{OR if no comparatives
+    Overheads (excluding shareholder salaries) for the year totalled ${{overheads_total_less_shareholder_salariesl}}. A majority of the overhead expenses were made up of: 
+    - {{expense_1_name}} by {{expense_1_amount}} or {{expense_1_percent}}
+    - {{expense_2_name}} by {{expense_2_amount}} or {{expense_2_percent}}
+    - {{expense_3_name}} by {{expense_3_amount}} or {{expense_3_percent}}
+    - {{expense_4_name}} by {{expense_4_amount}} or {{expense_4_percent}}
+    - {{expense_5_name}} by {{expense_5_amount}} or {{expense_5_percent}}
+    - {{expense_6_name}} by {{expense_6_amount}} or {{expense_6_percent}}
+    - {{expense_7_name}} by {{expense_7_amount}} or {{expense_7_percent}} }}
+
+    [Check internal queries for any points to add to the final email]
+
+    Company tax return
+
+    From a tax perspective, there is taxable income in the Company of {{taxable_income}}. Tax on this amount is {{tax_amount}}. After accounting for tax credits on investment income and provisional tax paid during the year, the Company is due to receive a refund of {{tax_refund}}/has tax to pay of {{tax_payable}}. This is due for payment on {{tax_due_date}} and we will be in touch closer to the due date with our standard reminder letter. 
+
+
+  (use this if losses) From a tax perspective, the Company has generated substantial losses of {{total_losses_current_year}}.  Alongside prior year losses of {{total_losses_prior_year}}, the Company has total losses to carry forward of {{total_losses_carry_forward}}.
+created: '2025-11-09'

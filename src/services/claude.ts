@@ -662,19 +662,27 @@ export async function analyzeWindowActivity(
 
   const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and provide a summary in a specific format.
 
-IMPORTANT: Your response must be formatted as a table with exactly 3 columns:
+IMPORTANT: Your response must be formatted as a markdown table with exactly 4 columns:
 1. Task name
-2. Duration spent (in HH:MM format)
-3. Brief summary of time spent for this specific task (1-2 sentences describing what applications/tools were used and the main activities)
+2. Total Duration (in HH:MM format)
+3. Productive Time (in HH:MM format) - time spent on productive work activities
+4. Achievements (bullet points only, no narrative)
 
-Format the output as a markdown table with headers: "Task Name | Duration | Summary"
+Format the output as a markdown table with headers: "Task Name | Total Duration | Productive Time | Achievements"
 
-For each task, analyze the window activity logs to understand:
-- What applications/tools were used most frequently
-- The main work activities performed
-- Any notable patterns or focus areas
+For each task, analyze the window activity logs to:
+- Calculate productive time by identifying time spent on work-related applications vs distractions
+- List specific achievements as bullet points (what was accomplished, not what was done)
+- Identify time lost to distractions, context switching, or non-productive activities
 
-Keep the summary for each task concise (1-2 sentences) but informative.`;
+After the table, add a single summary sentence in this format:
+"Total time spent: [X hours Y minutes], Productive time: [X hours Y minutes], Time lost: [X hours Y minutes]"
+
+Rules:
+- Use bullet points (• or -) for achievements, not narrative text
+- Be specific about what was achieved (e.g., "• Completed feature X", "• Fixed bug Y")
+- Calculate productive time based on application usage patterns
+- Keep achievements concise and action-oriented`;
 
   const response = await retryWithBackoff(async () => {
     return await client.messages.create({
@@ -736,19 +744,27 @@ export async function analyzeWindowActivityStream(
 
   const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and provide a summary in a specific format.
 
-IMPORTANT: Your response must be formatted as a table with exactly 3 columns:
+IMPORTANT: Your response must be formatted as a markdown table with exactly 4 columns:
 1. Task name
-2. Duration spent (in HH:MM format)
-3. Brief summary of time spent for this specific task (1-2 sentences describing what applications/tools were used and the main activities)
+2. Total Duration (in HH:MM format)
+3. Productive Time (in HH:MM format) - time spent on productive work activities
+4. Achievements (bullet points only, no narrative)
 
-Format the output as a markdown table with headers: "Task Name | Duration | Summary"
+Format the output as a markdown table with headers: "Task Name | Total Duration | Productive Time | Achievements"
 
-For each task, analyze the window activity logs to understand:
-- What applications/tools were used most frequently
-- The main work activities performed
-- Any notable patterns or focus areas
+For each task, analyze the window activity logs to:
+- Calculate productive time by identifying time spent on work-related applications vs distractions
+- List specific achievements as bullet points (what was accomplished, not what was done)
+- Identify time lost to distractions, context switching, or non-productive activities
 
-Keep the summary for each task concise (1-2 sentences) but informative.`;
+After the table, add a single summary sentence in this format:
+"Total time spent: [X hours Y minutes], Productive time: [X hours Y minutes], Time lost: [X hours Y minutes]"
+
+Rules:
+- Use bullet points (• or -) for achievements, not narrative text
+- Be specific about what was achieved (e.g., "• Completed feature X", "• Fixed bug Y")
+- Calculate productive time based on application usage patterns
+- Keep achievements concise and action-oriented`;
 
   return await retryWithBackoff(async () => {
     const stream = await client.messages.stream({

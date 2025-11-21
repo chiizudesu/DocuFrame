@@ -185,6 +185,44 @@ export const FunctionPanels: React.FC = () => {
   // Load timer state from localStorage on mount
   useEffect(() => {
     const savedState = taskTimerService.getTimerState();
+    
+    // Check if task is from a different day - if so, auto-stop and clear
+    if (savedState.currentTask && taskTimerService.isTaskFromDifferentDay(savedState.currentTask)) {
+      console.log('[FunctionPanels] Task is from a different day, auto-stopping and clearing...');
+      
+      // Auto-save the task if it was running (save it to yesterday's log)
+      if (savedState.isRunning) {
+        const taskStartDate = new Date(savedState.currentTask.startTime);
+        const taskDateGMT8 = new Date(taskStartDate.getTime() + (8 * 60 * 60 * 1000));
+        const taskDateString = taskDateGMT8.toISOString().split('T')[0];
+        
+        const finalTask: Task = {
+          ...savedState.currentTask,
+          endTime: new Date(savedState.currentTask.startTime).toISOString(), // End at start of next day
+          duration: taskTimerService.calculateDuration(savedState.currentTask, false),
+          isPaused: false
+        };
+        
+        // Save to the task's original date
+        (window.electronAPI as any).saveTaskLog(taskDateString, finalTask).catch((error: any) => {
+          console.error('[TaskTimer] Error auto-saving task from previous day:', error);
+        });
+      }
+      
+      // Clear timer state
+      const clearedState = {
+        currentTask: null,
+        isRunning: false,
+        isPaused: false
+      };
+      taskTimerService.saveTimerState(clearedState);
+      setTimerState(clearedState);
+      setTaskName(currentDirectory.split('\\').pop() || 'New Task');
+      setCurrentTime(0);
+      setPauseStartTime(null);
+      return;
+    }
+    
     setTimerState(savedState);
     
     if (savedState.currentTask) {
