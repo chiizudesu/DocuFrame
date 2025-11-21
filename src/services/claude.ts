@@ -682,7 +682,10 @@ Rules:
 - Use bullet points (• or -) for achievements, not narrative text
 - Be specific about what was achieved (e.g., "• Completed feature X", "• Fixed bug Y")
 - Calculate productive time based on application usage patterns
-- Keep achievements concise and action-oriented`;
+- Keep achievements BRIEF and concise - maximum 8-10 words per bullet point
+- Focus on key accomplishments only, avoid verbose descriptions
+- Use action verbs and be direct (e.g., "• Processed tax forms" not "• Reviewed and processed 2025 IR3 tax forms for both clients")
+- Each bullet should be a single, concise accomplishment`;
 
   const response = await retryWithBackoff(async () => {
     return await client.messages.create({
@@ -711,6 +714,183 @@ Rules:
 }
 
 // Streaming version of analyzeWindowActivity
+// New function to analyze a single task and return structured sub-tasks
+export async function analyzeTaskSubTasks(
+  windowActivityData: string,
+  model: 'sonnet' | 'haiku' = 'haiku',
+  apiKey?: string
+): Promise<Array<{ name: string; timeSpent: number }>> {
+  let finalApiKey = apiKey;
+  if (!finalApiKey) {
+    try {
+      const settings = await settingsService.getSettings();
+      finalApiKey = settings.claudeApiKey;
+    } catch (error) {
+      if (!finalApiKey) {
+        throw new Error('Claude API key not set.');
+      }
+    }
+  }
+  
+  if (!finalApiKey) {
+    throw new Error('Claude API key not set.');
+  }
+
+  const client = new Anthropic({
+    apiKey: finalApiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data for a SINGLE task and group activities into high-level sub-tasks.
+
+CRITICAL: Group activities VERY STRICTLY into brief, high-level sub-task names. Each sub-task should represent a major work category, not individual actions or client-specific variations.
+
+SPECIFIC WORK CATEGORIES (MUST FOLLOW THESE RULES):
+
+1. FINANCIAL STATEMENTS PREPARATION - WORKPAPER CATEGORIES:
+   Each workpaper category should be its OWN separate sub-task. These are the workpaper categories:
+   - "Job Notes" (A2)
+   - "Permanent Files" (A1)
+   - "Other Checks" (A3)
+   - "Financial Statements, Tax Returns & Minutes" (A4)
+   - "Individuals" (A5)
+   - "Bank Reconciliation" (C)
+   - "Accounts Receivable" (D)
+   - "Other Current Assets" (E)
+   - "Inventory" (E1)
+   - "Prepayments" (E2)
+   - "Fixed Assets" (F)
+   - "Non-Current Assets" (F1)
+   - "Accounts Payable" (G)
+   - "Other Current Liabilities" (H)
+   - "Non-Current Liabilities" (H1)
+   - "Loans" (I)
+   - "Finance Lease" (I2)
+   - "Operating Lease Commitments" (I3)
+   - "Investments" (J)
+   - "GST" (K)
+   - "Income Tax" (L)
+   - "Imputation Credits" (M)
+   - "Imputation Credits to RE" (M2)
+   - "Shareholder/Beneficiary Current Accounts" (N)
+   - "Equity, Capital, Accumulations" (O)
+   - "Intangibles" (P)
+   - "Profit & Loss" (Q)
+   - "Entertainment" (R)
+   - "Home Office" (S)
+   - "Wages" (W)
+   
+   IMPORTANT: Work on the same workpaper category for different clients should be grouped together as ONE sub-task.
+   Example: "Bank Reconciliation for Client X" + "Bank Reconciliation for Client Y" = "Bank Reconciliation" (one sub-task)
+   Example: "GST work for Client A" + "GST work for Client B" = "GST" (one sub-task)
+
+2. TAX RETURNS:
+   ALL tax return work (regardless of type: individual, trust, company, etc.) should be grouped as ONE sub-task: "Drafting Tax Returns"
+   
+   KEY INDICATORS OF TAX RETURN WORK (recognize these even if done through accounting software):
+   - Window titles containing "IR3" (Individual tax return)
+   - Window titles containing "Income Tax" (e.g., "2025 Income Tax", "2026 Income Tax")
+   - Window titles containing "Tax Returns" or "Tax Return"
+   - Window titles containing "Tax Statements"
+   - PDF files with names like "Tax Docs", "IR3", or client names with tax years
+   - Working in Xero Practice Manager on tax return files (even if it shows "Xero")
+   - Working in Xero Workpapers when the context is tax-related
+   - Any work preparing, reviewing, or processing tax returns
+   - Individual tax returns (IR3, etc.)
+   - Trust tax returns
+   - Company tax returns
+   - Work on different clients' tax returns should all be grouped together
+   
+   IMPORTANT: If you see "Xero" or "Xero Practice Manager" but the window title also contains "IR3", "Income Tax", "Tax Return", or similar tax-related terms, this is TAX RETURN work, NOT "Accounting Work". Only categorize as "Accounting Work" if it's general accounting/bookkeeping without tax return context.
+
+3. OTHER WORK:
+   Other types of work can be categorized as appropriate:
+   - "Reviewing Trust Reports" (if reviewing completed reports, not drafting)
+   - "Accounting Work" (general accounting tasks)
+   - "Document Review" (reviewing documents)
+   - "Email Communication" (email-related work)
+   - etc.
+
+EXAMPLES OF CORRECT GROUPING:
+- "Bank Reconciliation for Client X" + "Bank Reconciliation for Client Y" → "Bank Reconciliation" (one sub-task)
+- "GST work for Client A" + "GST reconciliation for Client B" → "GST" (one sub-task)
+- "Accounts Receivable for Client X" → "Accounts Receivable" (one sub-task)
+- "Xero Practice Manager | 2025 IR3 : Margaret Lawson" + "Xero Practice Manager | 2025 IR3 : Neville Parker" + "Margaret Lawson - 2025 - IR3 - PDF" + "Neville - Tax Docs - PDF" + "Xero Practice Manager | Margaret Lawson - 2025 Income Tax" → "Drafting Tax Returns" (ALL tax return work, even if done through Xero)
+- "Xero | Reports | MM Lawson & NF Parker Family Trusts" (if this is for financial statements, not tax) → appropriate workpaper category
+- "Xero Workpapers" when working on tax returns → "Drafting Tax Returns"
+- "Xero Workpapers" when working on financial statements → appropriate workpaper category
+- "Reviewed Trust Reports" → "Reviewing Trust Reports" (if it's review work, not drafting)
+- "Accessed Xero dashboard" + "Processed invoices" + "Reconciled accounts" (general bookkeeping, no tax context) → "Accounting Work"
+
+IMPORTANT GROUPING RULES:
+- Each workpaper category should be its OWN sub-task (e.g., "Bank Reconciliation", "GST", "Accounts Receivable")
+- Work on the same workpaper category for different clients should be grouped together as ONE sub-task
+- ALL tax return work (regardless of client or type) = ONE sub-task: "Drafting Tax Returns"
+- Client names should NOT create separate sub-tasks - group by workpaper category or work type instead
+- When in doubt, group MORE rather than less - err on the side of fewer, broader sub-tasks
+
+Your response must be formatted as a simple list of sub-tasks with time allocations:
+## Sub Task Name 1 (HH:MM)
+## Sub Task Name 2 (HH:MM)
+## Sub Task Name 3 (HH:MM)
+
+Rules:
+- Group related activities into a SINGLE high-level sub-task name
+- Use brief, descriptive names (2-4 words maximum)
+- Each sub-task name should represent a major work category, NOT individual clients, specific accounts, or specific documents
+- Include time spent in parentheses after each sub-task name (HH:MM format)
+- Time allocations should sum to the total task duration
+- Be very strict about grouping - multiple related activities should become ONE sub-task`;
+
+  let fullText = '';
+  await retryWithBackoff(async () => {
+    const stream = await client.messages.stream({
+      model: modelName,
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [
+        { 
+          role: 'user', 
+          content: [{ 
+            type: 'text', 
+            text: `Analyze this task's window activity and group into high-level sub-tasks:\n\n${windowActivityData}` 
+          }] 
+        }
+      ],
+      temperature: 0.3
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        fullText += chunk.delta.text;
+      }
+    }
+  });
+  
+  // Parse the response to extract sub-tasks
+  const subTasks: Array<{ name: string; timeSpent: number }> = [];
+  const lines = fullText.split('\n').filter(l => l.trim());
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('##')) {
+      // Extract sub-task name and time
+      const match = trimmed.match(/^##\s*(.+?)\s*\((\d{2}):(\d{2})\)/);
+      if (match) {
+        const name = match[1].trim();
+        const hours = parseInt(match[2]);
+        const minutes = parseInt(match[3]);
+        const timeSpent = hours * 3600 + minutes * 60;
+        subTasks.push({ name, timeSpent });
+      }
+    }
+  }
+  
+  return subTasks;
+}
+
 export async function analyzeWindowActivityStream(
   windowActivityData: string,
   model: 'sonnet' | 'haiku' = 'haiku',
@@ -764,7 +944,10 @@ Rules:
 - Use bullet points (• or -) for achievements, not narrative text
 - Be specific about what was achieved (e.g., "• Completed feature X", "• Fixed bug Y")
 - Calculate productive time based on application usage patterns
-- Keep achievements concise and action-oriented`;
+- Keep achievements BRIEF and concise - maximum 8-10 words per bullet point
+- Focus on key accomplishments only, avoid verbose descriptions
+- Use action verbs and be direct (e.g., "• Processed tax forms" not "• Reviewed and processed 2025 IR3 tax forms for both clients")
+- Each bullet should be a single, concise accomplishment`;
 
   return await retryWithBackoff(async () => {
     const stream = await client.messages.stream({
