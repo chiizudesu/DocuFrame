@@ -5,6 +5,7 @@ import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
 import { FloatingTaskTimerWindow } from './components/FloatingTaskTimerWindow';
+import { TaskTimerSummaryDialog } from './components/TaskTimerSummaryDialog';
 import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
@@ -678,6 +679,7 @@ const AppContent: React.FC = () => {
   // Check if this is the settings window
   const isSettingsWindow = window.location.hash === '#settings';
   const isFloatingTimerWindow = window.location.hash === '#floating-timer';
+  const isTaskSummaryWindow = window.location.hash === '#task-summary';
 
   // Handle initial path for new windows
   useEffect(() => {
@@ -859,14 +861,29 @@ const AppContent: React.FC = () => {
       <FloatingTaskTimerWindow 
         onClose={() => window.close()} 
         onOpenSummary={async () => {
-          // Open task timer summary in main window
+          // Open task timer summary window
           try {
-            await (window.electronAPI as any).sendToMainWindow('open-task-timer-summary');
+            const result = await (window.electronAPI as any).openTaskSummaryWindow();
+            if (!result.success) {
+              console.error('[FloatingTimer] Error opening summary window:', result.error);
+            }
           } catch (error) {
             console.error('[FloatingTimer] Error opening summary:', error);
           }
         }}
       />
+    );
+  }
+
+  // If this is the task summary window, render only the summary
+  if (isTaskSummaryWindow) {
+    return (
+      <Box w="100%" h="100vh" bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'} color={colorMode === 'dark' ? 'white' : '#334155'} overflow="hidden" position="relative">
+        <TaskTimerSummaryDialog 
+          isOpen={true} 
+          onClose={() => window.close()} 
+        />
+      </Box>
     );
   }
   

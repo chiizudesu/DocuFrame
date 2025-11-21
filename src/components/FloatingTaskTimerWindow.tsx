@@ -296,7 +296,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [clickTimeout, setClickTimeout] = useState<NodeJS.Timeout | null>(null);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
   const [currentWindowTitle, setCurrentWindowTitle] = useState<string>('');
-  const [isExpanded, setIsExpanded] = useState(false);
+  // Default to expanded when opened from function panel
+  const [isExpanded, setIsExpanded] = useState(true);
   
   // Load timer state from localStorage on mount
   useEffect(() => {
@@ -383,16 +384,31 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       handleClose();
     };
     
+    const handleSetExpandedState = (expanded: boolean) => {
+      console.log('[FloatingTimer] Received set-expanded-state:', expanded);
+      setIsExpanded(expanded);
+      // Also trigger resize to apply expanded state immediately
+      if (expanded) {
+        setTimeout(() => {
+          if (window.electronAPI && (window.electronAPI as any).resizeFloatingTimer) {
+            (window.electronAPI as any).resizeFloatingTimer(1068, 300);
+          }
+        }, 100);
+      }
+    };
+    
     // Listen for snap notifications from main process
     if ((window.electronAPI as any).onMessage) {
       (window.electronAPI as any).onMessage('corner-snapped', handleCornerSnapped);
       (window.electronAPI as any).onMessage('dock-to-panel', handleDockToPanel);
+      (window.electronAPI as any).onMessage('set-expanded-state', handleSetExpandedState);
     }
     
     return () => {
       if ((window.electronAPI as any).removeListener) {
         (window.electronAPI as any).removeListener('corner-snapped', handleCornerSnapped);
         (window.electronAPI as any).removeListener('dock-to-panel', handleDockToPanel);
+        (window.electronAPI as any).removeListener('set-expanded-state', handleSetExpandedState);
       }
     };
   }, [isMinimized]);
@@ -591,6 +607,19 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       }
     }
   }, [isMinimized, isExpanded]);
+
+  // Set expanded state on mount if opened from function panel
+  useEffect(() => {
+    // Default to expanded when window first opens
+    if (isExpanded) {
+      // Small delay to ensure window is ready
+      setTimeout(() => {
+        if (window.electronAPI && (window.electronAPI as any).resizeFloatingTimer) {
+          (window.electronAPI as any).resizeFloatingTimer(1068, 300);
+        }
+      }, 50);
+    }
+  }, []); // Run once on mount
   
   // Reset panel indicator when minimized state changes
   useEffect(() => {

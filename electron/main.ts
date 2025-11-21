@@ -2751,6 +2751,11 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       });
     }
 
+    // Set default expanded state when opened from function panel
+    floatingTimerWindow.webContents.once('did-finish-load', () => {
+      floatingTimerWindow?.webContents.send('set-expanded-state', true);
+    });
+
     // Listen to window move events and check for snapping
     let isMoving = false;
     let lastSnapCorner: string | null = null;
@@ -3005,6 +3010,70 @@ ipcMain.handle('open-floating-timer', async () => {
     return await createFloatingTimerWindow();
   } catch (error) {
     console.error('[Main] Error opening floating timer:', error);
+    return { success: false, error: String(error) };
+  }
+});
+
+// Task Summary Window
+let taskSummaryWindow: BrowserWindow | null = null;
+
+const createTaskSummaryWindow = async (): Promise<{ success: boolean }> => {
+  // Don't create multiple instances
+  if (taskSummaryWindow && !taskSummaryWindow.isDestroyed()) {
+    taskSummaryWindow.focus();
+    return { success: true };
+  }
+
+  try {
+    const { screen } = require('electron');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+
+    taskSummaryWindow = new BrowserWindow({
+      width: 1000,
+      height: 700,
+      minWidth: 800,
+      minHeight: 600,
+      x: Math.floor((width - 1000) / 2), // Center horizontally
+      y: Math.floor((height - 700) / 2), // Center vertically
+      frame: false, // Frameless for custom title bar
+      alwaysOnTop: false,
+      resizable: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: join(__dirname, 'preload.js'),
+      },
+    });
+
+    // Load the task summary route
+    if (process.env.NODE_ENV === 'development') {
+      await taskSummaryWindow.loadURL('http://localhost:5173/#task-summary');
+    } else {
+      await taskSummaryWindow.loadFile(join(__dirname, '../dist/index.html'), {
+        hash: 'task-summary',
+      });
+    }
+
+    taskSummaryWindow.on('closed', () => {
+      taskSummaryWindow = null;
+    });
+
+    console.log('[Main] Task summary window created successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error creating task summary window:', error);
+    taskSummaryWindow = null;
+    throw error;
+  }
+};
+
+// Task summary window IPC handler
+ipcMain.handle('open-task-summary-window', async () => {
+  try {
+    return await createTaskSummaryWindow();
+  } catch (error) {
+    console.error('[Main] Error opening task summary window:', error);
     return { success: false, error: String(error) };
   }
 });
