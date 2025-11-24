@@ -2734,6 +2734,7 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       alwaysOnTop: true, // Always on top of other windows
       resizable: false, // No manual resizing by user
       skipTaskbar: false, // Show in taskbar
+      title: 'Time Logger', // Window title
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

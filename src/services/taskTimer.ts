@@ -22,6 +22,7 @@ export interface Task {
   windowTitles: WindowTitleLog[]; // Track active window titles during task
   isPaused: boolean;
   pausedDuration: number; // total time spent paused in seconds
+  narration?: string; // Optional description of what was done in the task
 }
 
 export interface TimerState {

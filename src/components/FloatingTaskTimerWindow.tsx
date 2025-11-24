@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Flex,
@@ -12,10 +12,34 @@ import {
   Badge,
   VStack,
   Progress,
+  Input,
+  InputGroup,
+  InputLeftElement,
+  InputRightElement,
+  IconButton,
+  Spinner,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverArrow,
+  PopoverBody,
+  Portal,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalCloseButton,
+  ModalBody,
+  ModalFooter,
+  FormControl,
+  FormLabel,
+  Textarea,
+  useDisclosure,
 } from '@chakra-ui/react';
-import { Play, Pause, Square, BarChart, X, GripVertical, Minimize2, Maximize2, Circle, Clock } from 'lucide-react';
+import { Play, Pause, Square, BarChart, X, GripVertical, Minimize2, Maximize2, Circle, Clock, Search, ChevronDown } from 'lucide-react';
 import { taskTimerService, Task, TimerState } from '../services/taskTimer';
 import { settingsService } from '../services/settings';
+import { useAppContext } from '../context/AppContext';
 
 interface FloatingTaskTimerWindowProps {
   onClose: () => void;
@@ -23,15 +47,38 @@ interface FloatingTaskTimerWindowProps {
 }
 
 // Work Shift Infographic Component
-const WorkShiftInfographic: React.FC = () => {
+interface WorkShiftInfographicProps {
+  onEditTask?: (taskId: string) => Promise<void>;
+}
+
+const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask }) => {
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [productivityTarget, setProductivityTarget] = useState(27000); // 7:30 hours in seconds
   const [todayTimeWorked, setTodayTimeWorked] = useState(0);
+  const [billableTimeWorked, setBillableTimeWorked] = useState(0);
   const [currentTimeInShift, setCurrentTimeInShift] = useState(0);
   const [shiftProgress, setShiftProgress] = useState(0);
+  const [loggedTimeProgress, setLoggedTimeProgress] = useState(0);
   const [currentTimePosition, setCurrentTimePosition] = useState(0); // Position of current time line (0-100)
   const [currentTimeGMT8, setCurrentTimeGMT8] = useState('');
+  const [timeDifference, setTimeDifference] = useState(0); // Difference in seconds (positive = ahead, negative = behind)
+  const [tasks, setTasks] = useState<any[]>([]); // Store tasks for segment visualization
+  const [shiftDurationSeconds, setShiftDurationSeconds] = useState(0); // Store shift duration for calculations
+
+  // Non-billable task names
+  const NON_BILLABLE_TASKS = [
+    'Internal - Meetings',
+    'Internal - IT Issues',
+    'Internal - Workflow Planning'
+  ];
+
+  // Helper function to check if a task is non-billable
+  const isNonBillableTask = (taskName: string): boolean => {
+    return NON_BILLABLE_TASKS.some(nbTask => 
+      taskName && taskName.toLowerCase().includes(nbTask.toLowerCase())
+    );
+  };
 
   // GMT+8 offset (Philippines timezone)
   const GMT_8_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -59,10 +106,45 @@ const WorkShiftInfographic: React.FC = () => {
         const todayString = gmt8Time.toISOString().split('T')[0];
         const result = await (window.electronAPI as any).getTaskLogs(todayString);
         if (result.success && result.tasks) {
-          const totalSeconds = result.tasks.reduce((sum: number, task: any) => {
-            return sum + (task.duration || 0);
-          }, 0);
+          let totalSeconds = 0;
+          let billableSeconds = 0;
+          
+          // Process tasks and mark them as billable/non-billable
+          const processedTasks = result.tasks.map((task: any) => {
+            const duration = task.duration || 0;
+            totalSeconds += duration;
+            
+            // Check if task is billable (not in non-billable list)
+            const isBillable = !NON_BILLABLE_TASKS.some(nbTask => 
+              task.name && task.name.toLowerCase().includes(nbTask.toLowerCase())
+            );
+            if (isBillable) {
+              billableSeconds += duration;
+            }
+            
+            return {
+              ...task,
+              duration,
+              isBillable
+            };
+          });
+          
+          setTasks(processedTasks);
           setTodayTimeWorked(totalSeconds);
+          setBillableTimeWorked(billableSeconds);
+          
+          // Calculate logged time progress relative to shift duration
+          const [startHour, startMin] = workShiftStart.split(':').map(Number);
+          const [endHour, endMin] = workShiftEnd.split(':').map(Number);
+          const startMinutes = startHour * 60 + startMin;
+          const endMinutes = endHour * 60 + endMin;
+          const shiftDuration = (endMinutes - startMinutes) * 60;
+          setShiftDurationSeconds(shiftDuration);
+          
+          const loggedProgress = shiftDuration > 0 
+            ? Math.min(100, (totalSeconds / shiftDuration) * 100)
+            : 0;
+          setLoggedTimeProgress(loggedProgress);
         }
       } catch (error) {
         console.error('Error calculating today time:', error);
@@ -112,6 +194,11 @@ const WorkShiftInfographic: React.FC = () => {
         timePosition = (elapsedMinutes / shiftDurationMinutes) * 100;
       }
       setCurrentTimePosition(timePosition);
+      
+      // Calculate time difference: logged time - current shift time
+      const shiftDurationSecs = shiftDurationMinutes * 60;
+      const diff = todayTimeWorked - currentTimeInShift;
+      setTimeDifference(diff);
     };
 
     loadWorkShift();
@@ -122,8 +209,17 @@ const WorkShiftInfographic: React.FC = () => {
       calculateShiftProgress();
       calculateTodayTime(); // Also refresh today's time
     }, 60000); // Update every minute
+    
+    // Listen for task updates
+    const handleTaskUpdate = () => {
+      calculateTodayTime();
+    };
+    window.addEventListener('task-updated', handleTaskUpdate);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('task-updated', handleTaskUpdate);
+    };
   }, [workShiftStart, workShiftEnd, productivityTarget]);
 
   const formatTime = (seconds: number) => {
@@ -132,150 +228,446 @@ const WorkShiftInfographic: React.FC = () => {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
   };
 
+  const formatTimeDifference = (seconds: number) => {
+    const absSeconds = Math.abs(seconds);
+    const hours = Math.floor(absSeconds / 3600);
+    const minutes = Math.floor((absSeconds % 3600) / 60);
+    const sign = seconds >= 0 ? '+' : '-';
+    return `${sign}${hours}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  const productivityPercentage = todayTimeWorked > 0 
+    ? (billableTimeWorked / todayTimeWorked) * 100 
+    : 0;
+
+  // Calculate task segments for logged time bar
+  const calculateTaskSegments = () => {
+    if (shiftDurationSeconds === 0 || tasks.length === 0) return [];
+    
+    // Calculate total duration
+    const totalDuration = tasks.reduce((sum, task) => sum + (task.duration || 0), 0);
+    if (totalDuration === 0) return [];
+    
+    // Sort tasks: billable first (left), non-billable last (right)
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const aIsBillable = !isNonBillableTask(a.name);
+      const bIsBillable = !isNonBillableTask(b.name);
+      
+      // Billable tasks come first (return -1), non-billable come last (return 1)
+      if (aIsBillable && !bIsBillable) return -1;
+      if (!aIsBillable && bIsBillable) return 1;
+      return 0; // Keep original order for same type
+    });
+    
+    // Calculate segment widths based on duration (will add 2px gaps visually)
+    let cumulativeLeft = 0;
+    const gapPercent = 0.5; // Approximate 2px gap as percentage
+    
+    return sortedTasks.map((task, idx) => {
+      const segmentWidth = (task.duration / shiftDurationSeconds) * 100;
+      const left = cumulativeLeft;
+      // Add gap after each segment except the last
+      cumulativeLeft += segmentWidth + (idx < sortedTasks.length - 1 ? gapPercent : 0);
+      
+      return {
+        ...task,
+        left: Math.min(100, left),
+        width: Math.min(100 - left, segmentWidth)
+      };
+    });
+  };
+
+  const taskSegments = calculateTaskSegments();
+  
+  // Popover styling (subdued, similar to ClientInfoPane)
+  const popoverBg = useColorModeValue('white', 'gray.800');
+  const popoverBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
+
   return (
     <Flex
       direction="column"
-      w="280px"
-      px={4}
-      py={4}
+      w="320px"
+      px={3}
+      py={3}
       bg="gray.800"
       borderLeft="1px solid"
       borderColor="whiteAlpha.100"
-      gap={4}
+      gap={3}
     >
-      {/* Work Shift Progress */}
+      {/* Current Time and Time Difference - One Line */}
+      <Flex align="center" justify="space-between" gap={2}>
+        <Badge
+          px={3}
+          py={1}
+          borderRadius="sm"
+          bg="green.500"
+          color="white"
+          fontSize="13px"
+          fontWeight="700"
+          letterSpacing="0.05em"
+          boxShadow="0 2px 8px rgba(72, 187, 120, 0.4)"
+        >
+          {currentTimeGMT8}
+        </Badge>
+        <Box
+          bg={timeDifference >= 0 ? 'blue.500' : 'gray.600'}
+          borderRadius="sm"
+          px={3}
+          py={1}
+          textAlign="center"
+        >
+          <Text fontSize="12px" color="whiteAlpha.900" fontWeight="600" fontFamily="mono">
+            {timeDifference >= 0 ? 'Ahead' : 'Behind'} {formatTimeDifference(timeDifference)}
+          </Text>
+        </Box>
+      </Flex>
+
+      {/* Comparison Progress Bars */}
       <Box>
-        <Flex align="center" gap={2} mb={2}>
-          <Icon as={Clock} boxSize={4} color="gray.400" />
-          <Text fontSize="11px" fontWeight="600" color="gray.300" textTransform="uppercase" letterSpacing="0.05em">
-            Work Shift
-          </Text>
-        </Flex>
-        <Flex align="center" justify="space-between" mb={2}>
-          <Text fontSize="10px" color="gray.500">
-            {workShiftStart} - {workShiftEnd}
-          </Text>
-          <Text fontSize="10px" color="green.400" fontWeight="600">
-            {currentTimeGMT8}
-          </Text>
-        </Flex>
-        <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="md" overflow="visible">
-          {/* Progress Bar Background */}
-          <Box
-            position="absolute"
-            left="0"
-            top="0"
-            h="100%"
-            w="100%"
-            bg="whiteAlpha.100"
-            borderRadius="md"
-          />
-          {/* Progress Fill */}
-          <Box
-            position="absolute"
-            left="0"
-            top="0"
-            h="100%"
-            w={`${Math.min(100, Math.max(0, shiftProgress))}%`}
-            bg={shiftProgress >= 100 ? 'red.500' : shiftProgress >= 80 ? 'orange.500' : 'cyan.500'}
-            transition="width 0.3s ease"
-            borderRadius={shiftProgress >= 100 ? "md" : "md 0 0 md"}
-            overflow="hidden"
-          />
-          {/* Current Time Indicator Line */}
-          {currentTimePosition > 0 && (
+        {/* Shift Time Progress Bar */}
+        <Box mb={2}>
+          <Flex justify="space-between" mb={1}>
+            <Text fontSize="10px" color="gray.500" fontWeight="500">
+              Shift Time
+            </Text>
+            <Text fontSize="10px" color={shiftProgress > 100 ? 'red.400' : 'cyan.400'} fontWeight="600">
+              {formatTime(currentTimeInShift)}
+            </Text>
+          </Flex>
+          <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="sm" overflow="visible">
+            {/* Base progress bar (up to 100%) */}
             <Box
               position="absolute"
-              left={currentTimePosition >= 100 ? "calc(100% - 3px)" : `${currentTimePosition}%`}
-              top="-4px"
-              w="2px"
-              h="32px"
-              bg="green.400"
-              borderRadius="full"
-              zIndex={10}
-              boxShadow="0 0 8px rgba(72, 187, 120, 0.8)"
-              transform={currentTimePosition >= 100 ? "none" : "translateX(-50%)"}
-              sx={{
-                '@keyframes pulse': {
-                  '0%, 100%': {
-                    opacity: 1,
-                    boxShadow: '0 0 8px rgba(72, 187, 120, 0.8)',
-                  },
-                  '50%': {
-                    opacity: 0.7,
-                    boxShadow: '0 0 12px rgba(72, 187, 120, 1)',
-                  },
-                },
-                animation: 'pulse 2s ease-in-out infinite',
-              }}
+              left="0"
+              top="0"
+              h="100%"
+              w={`${Math.min(100, Math.max(0, shiftProgress))}%`}
+              bg={shiftProgress > 100 ? 'red.500' : 'cyan.500'}
+              transition="width 0.3s ease"
+              borderRadius="sm"
             />
-          )}
-          {/* Percentage Text */}
-          <Flex
-            position="absolute"
-            left="0"
-            top="0"
-            w="100%"
-            h="100%"
-            align="center"
-            justify="center"
-            zIndex={2}
-            pointerEvents="none"
-          >
-            <Text fontSize="9px" fontWeight="600" color="white" textShadow="0 1px 2px rgba(0,0,0,0.5)">
-              {shiftProgress.toFixed(0)}%
-            </Text>
-          </Flex>
+            {/* Overlapping progress bar for excess (beyond 100%) */}
+            {shiftProgress > 100 && (
+              <Box
+                position="absolute"
+                left="100%"
+                top="0"
+                h="100%"
+                w={`${Math.min(100, shiftProgress - 100)}%`}
+                bg="red.600"
+                transition="width 0.3s ease"
+                borderRadius="0 sm sm 0"
+                borderLeft="2px solid"
+                borderColor="red.400"
+              />
+            )}
+            {/* Current Time Indicator Line */}
+            {currentTimePosition > 0 && (
+              <Box
+                position="absolute"
+                left={`${Math.min(100, currentTimePosition)}%`}
+                top="-4px"
+                w="2px"
+                h="32px"
+                bg={currentTimePosition > 100 ? 'red.400' : 'green.400'}
+                borderRadius="full"
+                zIndex={10}
+                boxShadow={currentTimePosition > 100 ? '0 0 8px rgba(248, 113, 113, 0.9)' : '0 0 8px rgba(72, 187, 120, 0.9)'}
+                transform="translateX(-50%)"
+                sx={{
+                  '@keyframes pulse': {
+                    '0%, 100%': {
+                      opacity: 1,
+                    },
+                    '50%': {
+                      opacity: 0.7,
+                    },
+                  },
+                  animation: 'pulse 2s ease-in-out infinite',
+                }}
+              />
+            )}
+            <Flex
+              position="absolute"
+              left="0"
+              top="0"
+              w="100%"
+              h="100%"
+              align="center"
+              justify="center"
+              zIndex={2}
+              pointerEvents="none"
+            >
+              <Text fontSize="10px" fontWeight="700" color="white" textShadow="0 1px 3px rgba(0,0,0,0.6)">
+                {shiftProgress.toFixed(0)}%
+              </Text>
+            </Flex>
+          </Box>
         </Box>
-        <Text fontSize="9px" color="gray.400" mt={1}>
-          {formatTime(currentTimeInShift)} elapsed
-        </Text>
-      </Box>
 
-      {/* Today's Time Worked */}
-      <Box>
-        <Flex align="center" justify="space-between" mb={2}>
-          <Text fontSize="11px" fontWeight="600" color="gray.300" textTransform="uppercase" letterSpacing="0.05em">
-            Today's Time
-          </Text>
-          <Text fontSize="9px" color="gray.500">
-            Target: {formatTime(productivityTarget)}
-          </Text>
-        </Flex>
-        <Text fontSize="2xl" fontWeight="700" color="white" fontFamily="'Helvetica Neue', 'Helvetica', 'Arial', sans-serif" letterSpacing="0.02em" mb={2}>
-          {formatTime(todayTimeWorked)}
-        </Text>
-        {/* Productivity Progress Bar */}
-        <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="md" overflow="hidden" mb={1}>
-          <Box
-            position="absolute"
-            left="0"
-            top="0"
-            h="100%"
-            w={`${Math.min(100, (todayTimeWorked / productivityTarget) * 100)}%`}
-            bg={todayTimeWorked >= productivityTarget ? 'green.500' : todayTimeWorked >= productivityTarget * 0.8 ? 'cyan.500' : 'blue.500'}
-            transition="width 0.3s ease"
-            borderRadius="md"
-          />
-          <Flex
-            position="absolute"
-            left="0"
-            top="0"
-            w="100%"
-            h="100%"
-            align="center"
-            justify="center"
-            zIndex={1}
-            pointerEvents="none"
-          >
-            <Text fontSize="9px" fontWeight="600" color="white" textShadow="0 1px 2px rgba(0,0,0,0.5)">
-              {((todayTimeWorked / productivityTarget) * 100).toFixed(0)}%
+        {/* Logged Time Progress Bar with Task Segments */}
+        <Box mb={2}>
+          <Flex justify="space-between" mb={1}>
+            <Text fontSize="10px" color="gray.500" fontWeight="500">
+              Logged Time
+            </Text>
+            <Flex gap={2} align="center">
+              <Text fontSize="10px" color="blue.400" fontWeight="600">
+                {formatTime(todayTimeWorked)}
+              </Text>
+              {todayTimeWorked > 0 && (
+                <Text fontSize="10px" color="gray.400" fontWeight="500">
+                  {productivityPercentage.toFixed(0)}% Billable
+                </Text>
+              )}
+            </Flex>
+          </Flex>
+          <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="sm" overflow="visible">
+            {/* 85% Productivity Target Line */}
+            <Box
+              position="absolute"
+              left="85%"
+              top="0"
+              bottom="0"
+              w="1px"
+              bg="green.400"
+              opacity={0.5}
+              zIndex={10}
+              pointerEvents="none"
+            />
+            {/* Task Segments - only show segments within logged time progress */}
+            <Box position="relative" h="100%" overflow="hidden" borderRadius="sm">
+            {taskSegments.map((segment, idx) => {
+              // Only render segment if it's within the logged time progress
+              const segmentEnd = segment.left + segment.width;
+              const segmentName = segment.name || `Task ${idx + 1}`;
+              const segmentDuration = formatTime(segment.duration);
+              
+              if (segmentEnd > loggedTimeProgress) {
+                // Clip segment to logged time progress
+                const clippedWidth = Math.max(0, loggedTimeProgress - segment.left);
+                if (clippedWidth <= 0) return null;
+                
+                return (
+                  <Box
+                    key={idx}
+                    position="absolute"
+                    left={`${segment.left}%`}
+                    top="0"
+                    h="100%"
+                    w={`${clippedWidth}%`}
+                    cursor="pointer"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (segment.id && onEditTask) {
+                        // Load task and open edit modal directly
+                        await onEditTask(segment.id);
+                      }
+                    }}
+                    style={{
+                      marginRight: idx < taskSegments.length - 1 && segmentEnd <= loggedTimeProgress ? '2px' : '0'
+                    }}
+                  >
+                    <Popover placement="bottom" trigger="hover" openDelay={200} closeOnBlur={true}>
+                      <PopoverTrigger>
+                        <Box
+                          w="100%"
+                          h="100%"
+                          bg={segment.isBillable ? 'blue.500' : 'orange.500'}
+                          transition="all 0.3s ease"
+                          borderRadius={segment.left === 0 ? 'sm 0 0 sm' : idx === taskSegments.length - 1 && segmentEnd <= loggedTimeProgress ? '0 sm sm 0' : '0'}
+                          _hover={{ opacity: 0.9 }}
+                        />
+                      </PopoverTrigger>
+                    <Portal>
+                      <PopoverContent
+                        bg={popoverBg}
+                        border="1px solid"
+                        borderColor={popoverBorderColor}
+                        boxShadow="lg"
+                        w="auto"
+                        minW="150px"
+                        maxW="250px"
+                        zIndex={9999}
+                      >
+                        <PopoverArrow bg={popoverBg} borderColor={popoverBorderColor} />
+                        <PopoverBody p={3}>
+                          <VStack align="stretch" spacing={2}>
+                            <Text fontSize="sm" fontWeight="semibold" color={useColorModeValue('gray.800', 'white')}>
+                              {segmentName}
+                            </Text>
+                            <Flex align="center" gap={2}>
+                              <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')}>
+                                Duration:
+                              </Text>
+                              <Text fontSize="xs" fontWeight="medium" color={useColorModeValue('gray.800', 'gray.200')}>
+                                {segmentDuration}
+                              </Text>
+                            </Flex>
+                            {segment.narration && (
+                              <Box>
+                                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mb={1}>
+                                  Narration:
+                                </Text>
+                                <Text fontSize="xs" color={useColorModeValue('gray.700', 'gray.300')} fontStyle="italic">
+                                  {segment.narration}
+                                </Text>
+                              </Box>
+                            )}
+                            {segment.isBillable === false && (
+                              <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content">
+                                Non-Billable
+                              </Badge>
+                            )}
+                            <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.500')} fontStyle="italic" mt={1}>
+                              Click to edit
+                            </Text>
+                          </VStack>
+                        </PopoverBody>
+                      </PopoverContent>
+                    </Portal>
+                    </Popover>
+                  </Box>
+                );
+              }
+              
+              return (
+                <Box
+                  key={idx}
+                  position="absolute"
+                  left={`${segment.left}%`}
+                  top="0"
+                  h="100%"
+                  w={`${segment.width}%`}
+                  style={{
+                    marginRight: idx < taskSegments.length - 1 ? '2px' : '0'
+                  }}
+                >
+                  <Popover placement="bottom" trigger="hover" openDelay={200} closeOnBlur={true}>
+                    <PopoverTrigger>
+                      <Box
+                        w="100%"
+                        h="100%"
+                        bg={segment.isBillable ? 'blue.500' : 'orange.500'}
+                        transition="all 0.3s ease"
+                        borderRadius={segment.left === 0 ? 'sm 0 0 sm' : idx === taskSegments.length - 1 ? '0 sm sm 0' : '0'}
+                        cursor="pointer"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          if (segment.id && onEditTask) {
+                            // Load task and open edit modal directly
+                            await onEditTask(segment.id);
+                          }
+                        }}
+                        onMouseDown={async (e) => {
+                          // Also handle mousedown as fallback
+                          if (e.button === 0 && segment.id && onEditTask) { // Left click only
+                            e.stopPropagation();
+                            await onEditTask(segment.id);
+                          }
+                        }}
+                        _hover={{ opacity: 0.9 }}
+                      />
+                    </PopoverTrigger>
+                  <Portal>
+                    <PopoverContent
+                      bg={popoverBg}
+                      border="1px solid"
+                      borderColor={popoverBorderColor}
+                      boxShadow="lg"
+                      w="auto"
+                      minW="150px"
+                      maxW="250px"
+                      zIndex={9999}
+                    >
+                      <PopoverArrow bg={popoverBg} borderColor={popoverBorderColor} />
+                      <PopoverBody p={3}>
+                        <VStack align="stretch" spacing={1}>
+                          <Text fontSize="sm" fontWeight="semibold" color={useColorModeValue('gray.800', 'white')}>
+                            {segmentName}
+                          </Text>
+                          <Flex align="center" gap={2}>
+                            <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')}>
+                              Duration:
+                            </Text>
+                            <Text fontSize="xs" fontWeight="medium" color={useColorModeValue('gray.800', 'gray.200')}>
+                              {segmentDuration}
+                            </Text>
+                          </Flex>
+                          {segment.isBillable === false && (
+                            <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content">
+                              Non-Billable
+                            </Badge>
+                          )}
+                        </VStack>
+                      </PopoverBody>
+                    </PopoverContent>
+                  </Portal>
+                </Popover>
+                </Box>
+              );
+            })}
+            {/* Overall progress overlay for percentage */}
+            {loggedTimeProgress > 0 && (
+              <Flex
+                position="absolute"
+                left="0"
+                top="0"
+                w="100%"
+                h="100%"
+                align="center"
+                justify="center"
+                zIndex={2}
+                pointerEvents="none"
+              >
+                <Text fontSize="10px" fontWeight="700" color="white" textShadow="0 1px 3px rgba(0,0,0,0.8)">
+                  {loggedTimeProgress.toFixed(0)}%
+                </Text>
+              </Flex>
+            )}
+            </Box>
+          </Box>
+        </Box>
+        
+        {/* Today's Summary Section */}
+        <Box mt={3}>
+          <Flex align="center" gap={2} mb={2}>
+            <Icon as={Clock} boxSize={3.5} color="gray.400" />
+            <Text fontSize="11px" fontWeight="600" color="gray.300" textTransform="uppercase" letterSpacing="0.05em">
+              Today's Summary
             </Text>
           </Flex>
+          <VStack spacing={2} align="stretch">
+            <Flex justify="space-between" align="center">
+              <Text fontSize="10px" color="gray.500" fontWeight="500">
+                Total Time
+              </Text>
+              <Text fontSize="11px" color="white" fontWeight="600">
+                {formatTime(todayTimeWorked)}
+              </Text>
+            </Flex>
+            <Flex justify="space-between" align="center">
+              <Text fontSize="10px" color="gray.500" fontWeight="500">
+                Billable Time
+              </Text>
+              <Text fontSize="11px" color="blue.400" fontWeight="600">
+                {formatTime(billableTimeWorked)}
+              </Text>
+            </Flex>
+            {productivityPercentage > 0 && (
+              <Flex justify="space-between" align="center" pt={1} borderTop="1px solid" borderColor="whiteAlpha.100">
+                <Text fontSize="10px" color="gray.500" fontWeight="500">
+                  Productivity
+                </Text>
+                <Text fontSize="11px" color={productivityPercentage >= 85 ? 'green.400' : productivityPercentage >= 70 ? 'yellow.400' : 'orange.400'} fontWeight="600">
+                  {productivityPercentage.toFixed(0)}%
+                </Text>
+              </Flex>
+            )}
+          </VStack>
         </Box>
-        <Text fontSize="9px" color="gray.400">
-          {todayTimeWorked >= productivityTarget ? 'Target achieved!' : `${formatTime(Math.max(0, productivityTarget - todayTimeWorked))} remaining`}
-        </Text>
       </Box>
     </Flex>
   );
@@ -298,6 +690,38 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [currentWindowTitle, setCurrentWindowTitle] = useState<string>('');
   // Default to expanded when opened from function panel
   const [isExpanded, setIsExpanded] = useState(true);
+  
+  // Task search state
+  const [taskSearchValue, setTaskSearchValue] = useState('');
+  const [taskSearchResults, setTaskSearchResults] = useState<any[]>([]);
+  const [isTaskSearchOpen, setIsTaskSearchOpen] = useState(false);
+  const [isTaskSearchLoading, setIsTaskSearchLoading] = useState(false);
+  const taskSearchInputRef = useRef<HTMLInputElement>(null);
+  const taskSearchContainerRef = useRef<HTMLDivElement>(null);
+  const { setStatus } = useAppContext();
+  
+  // Edit modal state
+  const { isOpen: isEditModalOpen, onOpen: onEditModalOpen, onClose: onEditModalClose } = useDisclosure();
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingTaskName, setEditingTaskName] = useState('');
+  const [editingTaskDuration, setEditingTaskDuration] = useState('');
+  const [editingTaskNarration, setEditingTaskNarration] = useState('');
+  const [presetTaskOptions, setPresetTaskOptions] = useState<string[]>([]);
+  const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+  
+  // Non-billable tasks
+  const NON_BILLABLE_TASKS = [
+    'Internal - Meetings',
+    'Internal - IT Issues',
+    'Internal - Workflow Planning'
+  ];
+  
+  // Helper function to check if a task is non-billable
+  const isNonBillableTask = (taskName: string): boolean => {
+    return NON_BILLABLE_TASKS.some(nbTask => 
+      taskName && taskName.toLowerCase().includes(nbTask.toLowerCase())
+    );
+  };
   
   // Load timer state from localStorage on mount
   useEffect(() => {
@@ -637,6 +1061,323 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     };
   }, [clickTimeout]);
   
+  // Task search handler
+  const handleTaskSearch = async (value: string) => {
+    setTaskSearchValue(value);
+    if (!value.trim()) {
+      setTaskSearchResults([]);
+      return;
+    }
+    setIsTaskSearchLoading(true);
+    try {
+      const config = await window.electronAPI.getConfig();
+      const csvPath = config.clientbasePath;
+      if (!csvPath) {
+        setTaskSearchResults([]);
+        setIsTaskSearchLoading(false);
+        return;
+      }
+      const rows = await window.electronAPI.readCsv(csvPath);
+      if (!rows || rows.length === 0) {
+        setTaskSearchResults([]);
+        setIsTaskSearchLoading(false);
+        return;
+      }
+      const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+      const filtered = rows.filter((row: any) => {
+        const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+        if (clientNameField && row[clientNameField]) {
+          const clientValue = String(row[clientNameField]).toLowerCase();
+          return clientValue.includes(value.toLowerCase());
+        }
+        return false;
+      }).slice(0, 3);
+      
+      // Add non-billable tasks that match search
+      const nonBillableMatches = NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(value.toLowerCase())
+      ).slice(0, 3 - filtered.length);
+      
+      const results = [
+        ...filtered.map((row: any) => {
+          const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+          return {
+            name: clientNameField ? row[clientNameField] : 'Unknown',
+            type: 'client'
+          };
+        }),
+        ...nonBillableMatches.map(task => ({ name: task, type: 'internal' }))
+      ].slice(0, 3);
+      
+      setTaskSearchResults(results);
+    } catch (error) {
+      setTaskSearchResults([]);
+    }
+    setIsTaskSearchLoading(false);
+  };
+  
+  const handleTaskSelect = (taskName: string) => {
+    setTaskName(taskName);
+    setTaskSearchValue('');
+    setTaskSearchResults([]);
+    setIsTaskSearchOpen(false);
+    if (timerState.currentTask) {
+      setTimerState({
+        ...timerState,
+        currentTask: {
+          ...timerState.currentTask,
+          name: taskName
+        }
+      });
+    }
+  };
+  
+  // Search tasks dynamically (similar to handleTaskSearch)
+  const searchPresetTasks = async (searchValue: string) => {
+    console.log('[FloatingTimer] 🔍 searchPresetTasks called with:', searchValue);
+    
+    if (!searchValue.trim()) {
+      console.log('[FloatingTimer] ⚠️ Empty search value, returning non-billable tasks only');
+      setPresetTaskOptions([...NON_BILLABLE_TASKS]);
+      return;
+    }
+    
+    try {
+      const options: string[] = [];
+      
+      // Add non-billable tasks that match
+      const nonBillableMatches = NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(searchValue.toLowerCase())
+      );
+      console.log('[FloatingTimer] 📋 Non-billable matches:', nonBillableMatches);
+      options.push(...nonBillableMatches);
+      
+      // Search client database
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      console.log('[FloatingTimer] 📂 CSV Path:', csvPath);
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        console.log('[FloatingTimer] 📊 Total rows in CSV:', rows?.length || 0);
+        
+        if (rows && rows.length > 0) {
+          const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+          
+          // Log first row structure for debugging
+          if (rows.length > 0) {
+            console.log('[FloatingTimer] 🔍 First row keys:', Object.keys(rows[0]));
+            console.log('[FloatingTimer] 🔍 First row sample:', rows[0]);
+          }
+          
+          const filtered = rows.filter((row: any) => {
+            const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+            if (clientNameField && row[clientNameField]) {
+              const clientValue = String(row[clientNameField]).toLowerCase();
+              const matches = clientValue.includes(searchValue.toLowerCase());
+              if (matches) {
+                console.log('[FloatingTimer] ✅ Match found:', row[clientNameField], 'using field:', clientNameField);
+              }
+              return matches;
+            }
+            return false;
+          });
+          
+          console.log('[FloatingTimer] 🎯 Filtered rows count:', filtered.length);
+          console.log('[FloatingTimer] 🎯 Filtered rows (first 5):', filtered.slice(0, 5).map((r: any) => {
+            const field = clientNameFields.find(f => r[f] !== undefined);
+            return field ? r[field] : 'N/A';
+          }));
+          
+          const limitedFiltered = filtered.slice(0, 10); // Limit to 10 client results
+          console.log('[FloatingTimer] 📏 After limiting to 10:', limitedFiltered.length);
+          
+          const clientNames = limitedFiltered.map((row: any) => {
+            const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+            return clientNameField ? String(row[clientNameField]) : null;
+          }).filter((name: string | null): name is string => name !== null && name.trim() !== '');
+          
+          console.log('[FloatingTimer] 📝 Client names extracted:', clientNames);
+          console.log('[FloatingTimer] 📝 Client names count:', clientNames.length);
+          options.push(...clientNames);
+        } else {
+          console.log('[FloatingTimer] ⚠️ No rows found in CSV or CSV is empty');
+        }
+      } else {
+        console.log('[FloatingTimer] ⚠️ No CSV path configured');
+      }
+      
+      // Only show database client names and non-billable tasks, not custom task names
+      const finalOptions = [...new Set(options)];
+      console.log('[FloatingTimer] ✅ Final options (unique):', finalOptions);
+      console.log('[FloatingTimer] ✅ Final options count:', finalOptions.length);
+      setPresetTaskOptions(finalOptions);
+    } catch (error) {
+      console.error('[FloatingTimer] ❌ Error searching preset tasks:', error);
+      const fallbackOptions = [...NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(searchValue.toLowerCase())
+      )];
+      console.log('[FloatingTimer] 🔄 Using fallback options:', fallbackOptions);
+      setPresetTaskOptions(fallbackOptions);
+    }
+  };
+  
+  // Load preset task options (initial load)
+  const loadPresetTasks = async () => {
+    console.log('[FloatingTimer] 📥 loadPresetTasks called (initial load)');
+    
+    try {
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      console.log('[FloatingTimer] 📂 CSV Path:', csvPath);
+      const options: string[] = [...NON_BILLABLE_TASKS];
+      console.log('[FloatingTimer] 📋 Starting with non-billable tasks:', options);
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        console.log('[FloatingTimer] 📊 Total rows in CSV:', rows?.length || 0);
+        
+        if (rows && rows.length > 0) {
+          // Log first row structure for debugging
+          if (rows.length > 0) {
+            console.log('[FloatingTimer] 🔍 First row keys:', Object.keys(rows[0]));
+            console.log('[FloatingTimer] 🔍 First row sample:', rows[0]);
+          }
+          
+          const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+          const clientNames = rows
+            .map((row: any) => {
+              const field = clientNameFields.find(f => row[f] !== undefined);
+              return field ? String(row[field]) : null;
+            })
+            .filter((name: string | null): name is string => name !== null && name.trim() !== '');
+          
+          console.log('[FloatingTimer] 📝 All client names extracted:', clientNames);
+          console.log('[FloatingTimer] 📝 All client names count:', clientNames.length);
+          
+          const limitedClientNames = clientNames.slice(0, 50);
+          console.log('[FloatingTimer] 📏 After limiting to 50:', limitedClientNames.length);
+          console.log('[FloatingTimer] 📏 Limited client names (first 10):', limitedClientNames.slice(0, 10));
+          options.push(...limitedClientNames);
+        } else {
+          console.log('[FloatingTimer] ⚠️ No rows found in CSV or CSV is empty');
+        }
+      } else {
+        console.log('[FloatingTimer] ⚠️ No CSV path configured');
+      }
+      
+      // Only show database client names and non-billable tasks (no custom task names)
+      const finalOptions = [...new Set(options)].sort();
+      console.log('[FloatingTimer] ✅ Final options (unique, sorted):', finalOptions);
+      console.log('[FloatingTimer] ✅ Final options count:', finalOptions.length);
+      setPresetTaskOptions(finalOptions);
+    } catch (error) {
+      console.error('[FloatingTimer] ❌ Error loading preset tasks:', error);
+      console.log('[FloatingTimer] 🔄 Using fallback (non-billable tasks only)');
+      setPresetTaskOptions([...NON_BILLABLE_TASKS]);
+    }
+  };
+  
+  useEffect(() => {
+    loadPresetTasks();
+  }, []);
+  
+  // Reload preset tasks when edit modal opens
+  useEffect(() => {
+    if (isEditModalOpen) {
+      loadPresetTasks();
+    }
+  }, [isEditModalOpen]);
+  
+  // Handle opening edit modal
+  const handleOpenEditModal = async (taskId: string) => {
+    try {
+      const today = taskTimerService.getTodayDateString();
+      const result = await (window.electronAPI as any).getTaskLogs(today);
+      
+      if (result.success && result.tasks) {
+        const task = result.tasks.find((t: Task) => t.id === taskId);
+        if (task) {
+          setEditingTask(task);
+          setEditingTaskName(task.name);
+          setEditingTaskDuration(taskTimerService.formatDuration(task.duration));
+          setEditingTaskNarration(''); // Don't load narration in timer edit modal
+          onEditModalOpen();
+        }
+      }
+    } catch (error) {
+      console.error('Error loading task for edit:', error);
+    }
+  };
+  
+  // Handle saving edit
+  const handleSaveEdit = async () => {
+    if (!editingTask || !editingTaskName.trim() || !editingTaskDuration.trim()) {
+      return;
+    }
+    
+    // Parse duration
+    let newDuration = editingTask.duration;
+    const durationMatch = editingTaskDuration.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (durationMatch) {
+      const hours = parseInt(durationMatch[1]);
+      const minutes = parseInt(durationMatch[2]);
+      const seconds = durationMatch[3] ? parseInt(durationMatch[3]) : 0;
+      newDuration = hours * 3600 + minutes * 60 + seconds;
+    } else {
+      alert('Invalid duration format. Please use HH:MM or HH:MM:SS');
+      return;
+    }
+    
+    // Update task (don't update narration in timer edit modal)
+    const updatedTask: Task = {
+      ...editingTask,
+      name: editingTaskName.trim(),
+      duration: newDuration,
+      // Keep existing narration, don't update it from timer edit modal
+      endTime: new Date(new Date(editingTask.startTime).getTime() + newDuration * 1000).toISOString()
+    };
+    
+    try {
+      const today = taskTimerService.getTodayDateString();
+      const result = await (window.electronAPI as any).saveTaskLog(today, updatedTask);
+      if (result.success) {
+        onEditModalClose();
+        setEditingTask(null);
+        // Refresh the infographic by triggering a re-render
+        window.dispatchEvent(new Event('task-updated'));
+      } else {
+        alert('Failed to save task changes');
+      }
+    } catch (error) {
+      console.error('Error saving task:', error);
+      alert('Error saving task changes');
+    }
+  };
+  
+  // Handle canceling edit
+  const handleCancelEdit = () => {
+    onEditModalClose();
+    setEditingTask(null);
+    setEditingTaskName('');
+    setEditingTaskDuration('');
+    setEditingTaskNarration('');
+    setShowPresetDropdown(false);
+  };
+  
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (taskSearchContainerRef.current && !taskSearchContainerRef.current.contains(event.target as Node)) {
+        setIsTaskSearchOpen(false);
+      }
+    };
+    if (isTaskSearchOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isTaskSearchOpen]);
+  
   // Task timer functions
   const handleStartTimer = () => {
     if (timerState.isRunning && timerState.isPaused) {
@@ -936,6 +1677,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         bg={bgColor}
         borderRadius={isExpanded ? "0" : "12px"}
         boxShadow="0 4px 16px rgba(0,0,0,0.4)"
+        border={isExpanded ? "1px solid" : "none"}
+        borderColor={isExpanded ? "whiteAlpha.200" : "transparent"}
         overflow="hidden"
         w={isExpanded ? "100%" : "206px"}
         h={isExpanded ? "300px" : "116px"}
@@ -955,7 +1698,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           <Flex align="center" gap={1}>
             <Icon as={GripVertical} boxSize={3.5} color="gray.500" />
             <Text fontSize="10px" fontWeight="semibold" color="white">
-              Timer
+              Time Logger
             </Text>
           </Flex>
           <Flex gap={1}>
@@ -1042,7 +1785,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                   p={0}
                   borderRadius="md"
                 >
-                  <Icon as={Play} boxSize={5} />
+                  <Icon as={Play} boxSize={5} color="green.400" />
                 </Button>
               </Tooltip>
               
@@ -1060,7 +1803,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                   p={0}
                   borderRadius="md"
                 >
-                  <Icon as={Pause} boxSize={5} />
+                  <Icon as={Pause} boxSize={5} color="yellow.400" />
                 </Button>
               </Tooltip>
               
@@ -1078,7 +1821,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                   p={0}
                   borderRadius="md"
                 >
-                  <Icon as={Square} boxSize={5} />
+                  <Icon as={Square} boxSize={5} color="red.400" />
                 </Button>
               </Tooltip>
               
@@ -1118,49 +1861,137 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 justify="center"
                 position="relative"
               >
-                {/* Task Name Input - Compact, positioned above timer */}
+                {/* Task Name Search Input - Compact, positioned above timer */}
                 <Box 
-                  as="input"
-                  type="text"
-                  value={taskName}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    if (!timerState.isRunning) {
-                      setTaskName(e.target.value);
-                      if (timerState.currentTask) {
-                        setTimerState({
-                          ...timerState,
-                          currentTask: {
-                            ...timerState.currentTask,
-                            name: e.target.value
-                          }
-                        });
-                      }
-                    }
-                  }}
-                  placeholder="Task name..."
-                  fontSize="13px"
-                  fontWeight="medium"
-                  width="100%"
-                  maxW="500px"
-                  bg="whiteAlpha.100"
-                  border="1px solid"
-                  borderColor="whiteAlpha.200"
-                  borderRadius="sm"
-                  outline="none"
-                  color="white"
-                  _placeholder={{ color: 'gray.500' }}
-                  _hover={{ borderColor: timerState.isRunning ? 'whiteAlpha.200' : 'whiteAlpha.300' }}
-                  _focus={{ borderColor: timerState.isRunning ? 'whiteAlpha.200' : timerColor, boxShadow: timerState.isRunning ? 'none' : `0 0 0 2px ${timerColor}40` }}
-                  textAlign="center"
-                  px={3}
-                  py={1.5}
-                  cursor={timerState.isRunning ? "not-allowed" : "text"}
-                  transition="all 0.2s"
                   position="absolute"
                   top="20px"
-                  readOnly={timerState.isRunning}
-                  opacity={timerState.isRunning ? 0.7 : 1}
-                />
+                  width="100%"
+                  maxW="500px"
+                  ref={taskSearchContainerRef}
+                >
+                  <InputGroup>
+                    <Input
+                      ref={taskSearchInputRef}
+                      value={timerState.isRunning ? taskName : taskSearchValue}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        if (!timerState.isRunning) {
+                          const value = e.target.value;
+                          setTaskSearchValue(value);
+                          setTaskName(value);
+                          setIsTaskSearchOpen(true);
+                          handleTaskSearch(value);
+                          if (timerState.currentTask) {
+                            setTimerState({
+                              ...timerState,
+                              currentTask: {
+                                ...timerState.currentTask,
+                                name: value
+                              }
+                            });
+                          }
+                        }
+                      }}
+                      onFocus={() => {
+                        if (!timerState.isRunning) {
+                          setIsTaskSearchOpen(true);
+                          if (taskSearchValue) {
+                            handleTaskSearch(taskSearchValue);
+                          }
+                        }
+                      }}
+                      placeholder="Search task or client name..."
+                      fontSize="14px"
+                      fontWeight="500"
+                      bg="whiteAlpha.100"
+                      border="1px solid"
+                      borderColor="whiteAlpha.200"
+                      borderRadius="sm"
+                      outline="none"
+                      color="white"
+                      _placeholder={{ color: 'gray.500', fontWeight: 'normal' }}
+                      _hover={{ 
+                        borderColor: timerState.isRunning ? 'whiteAlpha.200' : 'whiteAlpha.300',
+                        bg: timerState.isRunning ? 'whiteAlpha.100' : 'whiteAlpha.150'
+                      }}
+                      _focus={{ 
+                        borderColor: timerState.isRunning ? 'whiteAlpha.200' : timerColor, 
+                        boxShadow: timerState.isRunning ? 'none' : `0 0 0 2px ${timerColor}40`,
+                        bg: 'whiteAlpha.150'
+                      }}
+                      textAlign="left"
+                      pl={10}
+                      pr={10}
+                      py={2.5}
+                      cursor={timerState.isRunning ? "not-allowed" : "text"}
+                      transition="all 0.2s ease"
+                      readOnly={timerState.isRunning}
+                      opacity={timerState.isRunning ? 0.6 : 1}
+                    />
+                    <InputLeftElement pl={3}>
+                      <Icon as={Search} boxSize={4} color={timerState.isRunning ? "gray.500" : "gray.400"} />
+                    </InputLeftElement>
+                    <InputRightElement pr={3}>
+                      {isTaskSearchLoading && (
+                        <Spinner size="xs" color="blue.400" />
+                      )}
+                    </InputRightElement>
+                  </InputGroup>
+                  
+                  {/* Dropdown Results */}
+                  {isTaskSearchOpen && !timerState.isRunning && (isTaskSearchLoading || taskSearchResults.length > 0 || taskSearchValue) && (
+                    <Box
+                      position="absolute"
+                      top="100%"
+                      left="0"
+                      right="0"
+                      mt={1}
+                      bg="gray.800"
+                      border="1px solid"
+                      borderColor="whiteAlpha.200"
+                      borderRadius="md"
+                      boxShadow="0 4px 12px rgba(0,0,0,0.4)"
+                      maxH="200px"
+                      overflowY="auto"
+                      zIndex={1000}
+                    >
+                      {isTaskSearchLoading ? (
+                        <Flex justify="center" align="center" py={4}>
+                          <Text color="gray.500" fontSize="sm">Searching...</Text>
+                        </Flex>
+                      ) : taskSearchResults.length > 0 ? (
+                        <VStack spacing={0} align="stretch" p={1}>
+                          {taskSearchResults.map((result, idx) => (
+                            <Box
+                              key={idx}
+                              px={3}
+                              py={2}
+                              cursor="pointer"
+                              _hover={{ bg: 'whiteAlpha.100' }}
+                              onClick={() => handleTaskSelect(result.name)}
+                              borderBottom={idx < taskSearchResults.length - 1 ? '1px solid' : 'none'}
+                              borderColor="whiteAlpha.100"
+                            >
+                              <Flex align="center" gap={2}>
+                                <Text fontSize="12px" fontWeight="500" color="white">
+                                  {result.name}
+                                </Text>
+                                {result.type === 'internal' && (
+                                  <Badge colorScheme="orange" fontSize="9px" px={1.5} py={0}>
+                                    Internal
+                                  </Badge>
+                                )}
+                              </Flex>
+                            </Box>
+                          ))}
+                        </VStack>
+                      ) : taskSearchValue ? (
+                        <Box textAlign="center" py={4}>
+                          <Text color="gray.500" fontSize="sm">No results found</Text>
+                        </Box>
+                      ) : null}
+                    </Box>
+                  )}
+                </Box>
                 
                 {/* Central Timer Display - Centered Vertically */}
                 <VStack spacing={3} align="center" justify="center" flex={1}>
@@ -1210,7 +2041,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               </Flex>
               
               {/* Right Section - Infographic */}
-              <WorkShiftInfographic />
+              <WorkShiftInfographic onEditTask={handleOpenEditModal} />
             </Flex>
           </Flex>
         ) : (
@@ -1233,15 +2064,15 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               value={taskName}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 if (!timerState.isRunning) {
-                  setTaskName(e.target.value);
-                  if (timerState.currentTask) {
-                    setTimerState({
-                      ...timerState,
-                      currentTask: {
-                        ...timerState.currentTask,
-                        name: e.target.value
-                      }
-                    });
+                setTaskName(e.target.value);
+                if (timerState.currentTask) {
+                  setTimerState({
+                    ...timerState,
+                    currentTask: {
+                      ...timerState.currentTask,
+                      name: e.target.value
+                    }
+                  });
                   }
                 }
               }}
@@ -1451,6 +2282,139 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         </Box>
       )}
     </Box>
+    
+    {/* Edit Task Modal */}
+    <Modal isOpen={isEditModalOpen} onClose={handleCancelEdit} size="md">
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent bg={useColorModeValue('white', 'gray.800')} maxW="500px">
+        <ModalHeader borderBottomWidth="1px" borderColor={useColorModeValue('gray.200', 'gray.600')} py={3} fontSize="md">
+          Edit Task
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody py={4}>
+          <Flex direction="row" gap={4} align="flex-start">
+            {/* Left Column - Task Name */}
+            <Box flex={1}>
+              <FormControl>
+                <FormLabel fontSize="sm">Task Name</FormLabel>
+                <Box position="relative">
+                  <Input
+                    value={editingTaskName}
+                    onChange={async (e) => {
+                      const value = e.target.value;
+                      setEditingTaskName(value);
+                      if (value.length > 0) {
+                        setShowPresetDropdown(true);
+                        await searchPresetTasks(value); // Search dynamically
+                      } else {
+                        setShowPresetDropdown(false);
+                        await loadPresetTasks(); // Load all when empty
+                      }
+                    }}
+                    onFocus={async () => {
+                      if (editingTaskName.length > 0) {
+                        setShowPresetDropdown(true);
+                        await searchPresetTasks(editingTaskName);
+                      } else {
+                        await loadPresetTasks();
+                      }
+                    }}
+                    placeholder="Enter task name or select from presets..."
+                    bg={useColorModeValue('white', 'gray.700')}
+                    size="sm"
+                    autoFocus
+                  />
+                  {showPresetDropdown && presetTaskOptions.length > 0 && (
+                    <Box
+                      position="absolute"
+                      top="100%"
+                      left="0"
+                      right="0"
+                      mt={1}
+                      bg={useColorModeValue('white', 'gray.800')}
+                      border="1px solid"
+                      borderColor={useColorModeValue('gray.200', 'gray.600')}
+                      borderRadius="md"
+                      boxShadow="lg"
+                      maxH="200px"
+                      overflowY="auto"
+                      zIndex={1000}
+                    >
+                      <VStack spacing={0} align="stretch" p={1}>
+                        {presetTaskOptions
+                          .slice(0, 5)
+                          .map((option, idx) => (
+                            <Box
+                              key={idx}
+                              px={3}
+                              py={2}
+                              cursor="pointer"
+                              _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
+                              onClick={() => {
+                                setEditingTaskName(option);
+                                setShowPresetDropdown(false);
+                              }}
+                              borderBottom={idx < Math.min(4, presetTaskOptions.length - 1) ? '1px solid' : 'none'}
+                              borderColor={useColorModeValue('gray.200', 'gray.600')}
+                            >
+                              <Flex align="center" gap={2}>
+                                <Text fontSize="sm" color={useColorModeValue('gray.800', 'white')}>
+                                  {option}
+                                </Text>
+                                {isNonBillableTask(option) && (
+                                  <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                    Internal
+                                  </Badge>
+                                )}
+                              </Flex>
+                            </Box>
+                          ))}
+                      </VStack>
+                    </Box>
+                  )}
+                </Box>
+                {isNonBillableTask(editingTaskName) && (
+                  <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                    Non-Billable
+                  </Badge>
+                )}
+              </FormControl>
+            </Box>
+            
+            {/* Right Column - Duration */}
+            <Box flex={1}>
+              <FormControl>
+                <FormLabel fontSize="sm">Duration (HH:MM:SS)</FormLabel>
+                <Input
+                  value={editingTaskDuration}
+                  onChange={(e) => setEditingTaskDuration(e.target.value)}
+                  placeholder="01:30:00"
+                  bg={useColorModeValue('white', 'gray.700')}
+                  maxLength={8}
+                  size="sm"
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Format: HH:MM:SS or HH:MM
+                </Text>
+              </FormControl>
+            </Box>
+          </Flex>
+          
+          <Flex justify="flex-end" gap={2} mt={4}>
+              <Button variant="ghost" onClick={handleCancelEdit}>
+                Cancel
+              </Button>
+              <Button
+                colorScheme="blue"
+                onClick={handleSaveEdit}
+                isDisabled={!editingTaskName.trim() || !editingTaskDuration.trim()}
+              >
+                Save Changes
+              </Button>
+            </Flex>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
     
     </React.Fragment>
   );

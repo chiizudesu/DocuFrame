@@ -28,10 +28,15 @@ import {
   FormControl,
   FormLabel,
   Input,
+  InputGroup,
+  InputRightElement,
   Tooltip,
-  Spacer
+  Spacer,
+  Textarea,
+  ModalFooter,
+  useDisclosure as useChakraDisclosure,
 } from '@chakra-ui/react';
-import { ChevronDown, ChevronRight, Clock, Trash2, ChevronLeft, Calendar, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Clock, Trash2, ChevronLeft, Calendar, Plus, X, Edit2, Check, XCircle, Search } from 'lucide-react';
 import { Task, taskTimerService } from '../services/taskTimer';
 import { analyzeTaskSubTasks as analyzeTaskSubTasksAPI } from '../services/claude';
 
@@ -48,8 +53,227 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   const { isOpen: isAddTimeOpen, onOpen: onAddTimeOpen, onClose: onAddTimeClose } = useDisclosure();
   const [customTaskName, setCustomTaskName] = useState('');
   const [customDuration, setCustomDuration] = useState(''); // HH:MM format
+  const [customNarration, setCustomNarration] = useState('');
   const [taskSubTasks, setTaskSubTasks] = useState<Map<string, Array<{ name: string; timeSpent: number }>>>(new Map());
   const [analyzingTasks, setAnalyzingTasks] = useState<Set<string>>(new Set());
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingTaskName, setEditingTaskName] = useState('');
+  const [editingTaskDuration, setEditingTaskDuration] = useState(''); // HH:MM format
+  const [editingTaskNarration, setEditingTaskNarration] = useState('');
+  const [presetTaskOptions, setPresetTaskOptions] = useState<string[]>([]);
+  const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+  const { isOpen: isEditModalOpen, onOpen: onEditModalOpen, onClose: onEditModalClose } = useChakraDisclosure();
+  const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
+  
+  // Non-billable task names
+  const NON_BILLABLE_TASKS = [
+    'Internal - Meetings',
+    'Internal - IT Issues',
+    'Internal - Workflow Planning'
+  ];
+  
+  // Check if a task name is non-billable
+  const isNonBillableTask = (taskName: string): boolean => {
+    return NON_BILLABLE_TASKS.some(nbTask => 
+      taskName && taskName.toLowerCase().includes(nbTask.toLowerCase())
+    );
+  };
+  
+  // Search tasks dynamically (similar to FloatingTaskTimerWindow)
+  const searchPresetTasks = async (searchValue: string) => {
+    console.log('[TaskSummary] 🔍 searchPresetTasks called with:', searchValue);
+    
+    if (!searchValue.trim()) {
+      console.log('[TaskSummary] ⚠️ Empty search value, returning non-billable tasks only');
+      setPresetTaskOptions([...NON_BILLABLE_TASKS]);
+      return;
+    }
+    
+    try {
+      const options: string[] = [];
+      
+      // Add non-billable tasks that match
+      const nonBillableMatches = NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(searchValue.toLowerCase())
+      );
+      console.log('[TaskSummary] 📋 Non-billable matches:', nonBillableMatches);
+      options.push(...nonBillableMatches);
+      
+      // Search client database
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      console.log('[TaskSummary] 📂 CSV Path:', csvPath);
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        console.log('[TaskSummary] 📊 Total rows in CSV:', rows?.length || 0);
+        
+        if (rows && rows.length > 0) {
+          const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+          
+          // Log first row structure for debugging
+          if (rows.length > 0) {
+            console.log('[TaskSummary] 🔍 First row keys:', Object.keys(rows[0]));
+            console.log('[TaskSummary] 🔍 First row sample:', rows[0]);
+          }
+          
+          const filtered = rows.filter((row: any) => {
+            const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+            if (clientNameField && row[clientNameField]) {
+              const clientValue = String(row[clientNameField]).toLowerCase();
+              const matches = clientValue.includes(searchValue.toLowerCase());
+              if (matches) {
+                console.log('[TaskSummary] ✅ Match found:', row[clientNameField], 'using field:', clientNameField);
+              }
+              return matches;
+            }
+            return false;
+          });
+          
+          console.log('[TaskSummary] 🎯 Filtered rows count:', filtered.length);
+          console.log('[TaskSummary] 🎯 Filtered rows (first 5):', filtered.slice(0, 5).map((r: any) => {
+            const field = clientNameFields.find(f => r[f] !== undefined);
+            return field ? r[field] : 'N/A';
+          }));
+          
+          const limitedFiltered = filtered.slice(0, 10); // Limit to 10 client results
+          console.log('[TaskSummary] 📏 After limiting to 10:', limitedFiltered.length);
+          
+          const clientNames = limitedFiltered.map((row: any) => {
+            const clientNameField = clientNameFields.find(field => row[field] !== undefined);
+            return clientNameField ? String(row[clientNameField]) : null;
+          }).filter((name: string | null): name is string => name !== null && name.trim() !== '');
+          
+          console.log('[TaskSummary] 📝 Client names extracted:', clientNames);
+          console.log('[TaskSummary] 📝 Client names count:', clientNames.length);
+          options.push(...clientNames);
+        } else {
+          console.log('[TaskSummary] ⚠️ No rows found in CSV or CSV is empty');
+        }
+      } else {
+        console.log('[TaskSummary] ⚠️ No CSV path configured');
+      }
+      
+      // Only show database client names and non-billable tasks, not custom task names
+      const finalOptions = [...new Set(options)];
+      console.log('[TaskSummary] ✅ Final options (unique):', finalOptions);
+      console.log('[TaskSummary] ✅ Final options count:', finalOptions.length);
+      console.log('[TaskSummary] 🔄 Setting presetTaskOptions state...');
+      setPresetTaskOptions(finalOptions);
+      console.log('[TaskSummary] ✅ presetTaskOptions state updated');
+    } catch (error) {
+      console.error('[TaskSummary] ❌ Error searching preset tasks:', error);
+      const fallbackOptions = [...NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(searchValue.toLowerCase())
+      )];
+      console.log('[TaskSummary] 🔄 Using fallback options:', fallbackOptions);
+      setPresetTaskOptions(fallbackOptions);
+    }
+  };
+  
+  // Load preset task options (initial load)
+  const loadPresetTasks = async () => {
+    console.log('[TaskSummary] 📥 loadPresetTasks called (initial load)');
+    
+    try {
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      console.log('[TaskSummary] 📂 CSV Path:', csvPath);
+      
+      if (!csvPath) {
+        console.log('[TaskSummary] ⚠️ No CSV path configured, using non-billable tasks only');
+        setPresetTaskOptions([...NON_BILLABLE_TASKS]);
+        return;
+      }
+      
+      const rows = await window.electronAPI.readCsv(csvPath);
+      console.log('[TaskSummary] 📊 Total rows in CSV:', rows?.length || 0);
+      
+      if (!rows || rows.length === 0) {
+        console.log('[TaskSummary] ⚠️ No rows found in CSV or CSV is empty');
+        setPresetTaskOptions([...NON_BILLABLE_TASKS]);
+        return;
+      }
+      
+      // Log first row structure for debugging
+      if (rows.length > 0) {
+        console.log('[TaskSummary] 🔍 First row keys:', Object.keys(rows[0]));
+        console.log('[TaskSummary] 🔍 First row sample:', rows[0]);
+      }
+      
+      const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+      const clientNames = rows
+        .map((row: any) => {
+          const field = clientNameFields.find(f => row[f] !== undefined);
+          return field ? String(row[field]) : null;
+        })
+        .filter((name: string | null): name is string => name !== null);
+      
+      console.log('[TaskSummary] 📝 All client names extracted:', clientNames);
+      console.log('[TaskSummary] 📝 All client names count:', clientNames.length);
+      
+      const limitedClientNames = clientNames.slice(0, 50); // Limit to 50 most recent
+      console.log('[TaskSummary] 📏 After limiting to 50:', limitedClientNames.length);
+      console.log('[TaskSummary] 📏 Limited client names (first 10):', limitedClientNames.slice(0, 10));
+      
+      // Only combine client names and non-billable tasks (no custom task names)
+      const uniqueTaskNames = new Set([
+        ...limitedClientNames,
+        ...NON_BILLABLE_TASKS
+      ]);
+      const finalOptions = Array.from(uniqueTaskNames).sort();
+      console.log('[TaskSummary] ✅ Final options (unique, sorted):', finalOptions);
+      console.log('[TaskSummary] ✅ Final options count:', finalOptions.length);
+      setPresetTaskOptions(finalOptions);
+    } catch (error) {
+      console.error('[TaskSummary] ❌ Error loading preset tasks:', error);
+      console.log('[TaskSummary] 🔄 Using fallback (non-billable tasks only)');
+      setPresetTaskOptions([...NON_BILLABLE_TASKS]);
+    }
+  };
+  
+  useEffect(() => {
+    if (isOpen) {
+      loadPresetTasks();
+    }
+  }, [isOpen, tasks]);
+  
+  // Load preset tasks when edit modal opens
+  useEffect(() => {
+    if (isEditModalOpen) {
+      console.log('[TaskSummary] 🔓 Edit modal opened, loading preset tasks...');
+      loadPresetTasks();
+    }
+  }, [isEditModalOpen]);
+  
+  // Search when editingTaskName changes in edit modal
+  useEffect(() => {
+    if (isEditModalOpen && editingTaskName !== undefined) {
+      const trimmed = editingTaskName.trim();
+      if (trimmed.length > 0) {
+        console.log('[TaskSummary] 🔄 editingTaskName changed, triggering search:', trimmed);
+        setShowPresetDropdown(true);
+        searchPresetTasks(trimmed);
+      } else if (trimmed.length === 0 && editingTaskName.length === 0) {
+        // Only load all if the field was cleared (not on initial load)
+        console.log('[TaskSummary] 📥 editingTaskName is empty, loading all tasks');
+        setShowPresetDropdown(false);
+        loadPresetTasks();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingTaskName, isEditModalOpen]);
+  
+  // Escape key handler
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isEditModalOpen) {
+        handleCancelEdit();
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isEditModalOpen]);
   
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -65,6 +289,27 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
       loadTasksForDate(today);
     }
   }, [isOpen]);
+  
+  // Check for editTaskId when tasks are loaded
+  useEffect(() => {
+    if (isOpen && tasks.length > 0) {
+      const editTaskId = sessionStorage.getItem('editTaskId');
+      if (editTaskId) {
+        sessionStorage.removeItem('editTaskId');
+        const task = tasks.find(t => t.id === editTaskId);
+        if (task) {
+          // Small delay to ensure modal is ready
+          setTimeout(() => {
+            setTaskToEdit(task);
+            setEditingTaskName(task.name);
+            setEditingTaskDuration(taskTimerService.formatDuration(task.duration));
+            setEditingTaskNarration(task.narration || '');
+            onEditModalOpen();
+          }, 100);
+        }
+      }
+    }
+  }, [tasks, isOpen, onEditModalOpen]);
   
   useEffect(() => {
     if (isOpen) {
@@ -285,6 +530,81 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     }
   };
   
+  const handleStartEdit = (task: Task, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row expansion
+    console.log('[TaskSummary] ✏️ handleStartEdit called for task:', task.name);
+    setTaskToEdit(task);
+    setEditingTaskName(task.name);
+    setEditingTaskDuration(taskTimerService.formatDuration(task.duration));
+    setEditingTaskNarration(task.narration || '');
+    console.log('[TaskSummary] 📝 Setting editingTaskName to:', task.name);
+    onEditModalOpen();
+  };
+  
+  const handleOpenEditFromChunk = (task: Task) => {
+    console.log('[TaskSummary] ✏️ handleOpenEditFromChunk called for task:', task.name);
+    setTaskToEdit(task);
+    setEditingTaskName(task.name);
+    setEditingTaskDuration(taskTimerService.formatDuration(task.duration));
+    setEditingTaskNarration(task.narration || '');
+    console.log('[TaskSummary] 📝 Setting editingTaskName to:', task.name);
+    onEditModalOpen();
+  };
+  
+  const handleCancelEdit = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingTaskId(null);
+    setEditingTaskName('');
+    setEditingTaskDuration('');
+    setEditingTaskNarration('');
+    setTaskToEdit(null);
+    onEditModalClose();
+  };
+  
+  const handleSaveEdit = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    
+    if (!taskToEdit) return;
+    
+    // Parse duration (HH:MM:SS or HH:MM format)
+    let newDuration = taskToEdit.duration;
+    if (editingTaskDuration) {
+      const durationMatch = editingTaskDuration.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (durationMatch) {
+        const hours = parseInt(durationMatch[1]);
+        const minutes = parseInt(durationMatch[2]);
+        const seconds = durationMatch[3] ? parseInt(durationMatch[3]) : 0;
+        newDuration = hours * 3600 + minutes * 60 + seconds;
+      } else {
+        alert('Invalid duration format. Please use HH:MM or HH:MM:SS');
+        return;
+      }
+    }
+    
+    // Update task
+    const updatedTask: Task = {
+      ...taskToEdit,
+      name: editingTaskName || taskToEdit.name,
+      duration: newDuration,
+      narration: editingTaskNarration || undefined,
+      // Recalculate endTime based on new duration
+      endTime: new Date(new Date(taskToEdit.startTime).getTime() + newDuration * 1000).toISOString()
+    };
+    
+    try {
+      const result = await (window.electronAPI as any).saveTaskLog(selectedDate, updatedTask);
+      if (result.success) {
+        await loadTasksForDate(selectedDate);
+        handleCancelEdit();
+      } else {
+        alert('Failed to save task changes');
+      }
+    } catch (error) {
+      console.error('[TaskTimer] Error saving task:', error);
+      alert('Error saving task changes');
+    }
+  };
+  
   const handleAddCustomTime = async () => {
     if (!customTaskName.trim() || !customDuration.trim()) {
       return;
@@ -314,7 +634,8 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
       fileOperations: [],
       windowTitles: [],
       isPaused: false,
-      pausedDuration: 0
+      pausedDuration: 0,
+      narration: customNarration.trim() || undefined
     };
     
     try {
@@ -325,6 +646,7 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
         // Reset form
         setCustomTaskName('');
         setCustomDuration('');
+        setCustomNarration('');
         onAddTimeClose();
       } else {
         alert('Failed to save custom time entry');
@@ -519,18 +841,19 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                       <Th py={2}>Task Name</Th>
                       <Th py={2}>Duration</Th>
                       <Th py={2}>Started</Th>
-                      <Th width="60px" py={2}></Th>
+                      <Th width="100px" py={2}></Th>
                     </Tr>
                   </Thead>
                   <Tbody>
                   {tasks.map((task) => {
                     const isExpanded = expandedTasks.has(task.id);
+                    const isEditing = editingTaskId === task.id;
                     return (
                       <React.Fragment key={task.id}>
                         <Tr 
                           _hover={{ bg: hoverBg }}
-                          cursor="pointer"
-                          onClick={() => toggleTaskExpanded(task.id)}
+                          cursor={isEditing ? "default" : "pointer"}
+                          onClick={() => !isEditing && toggleTaskExpanded(task.id)}
                         >
                           <Td py={2}>
                             <Icon 
@@ -539,7 +862,16 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                               color="gray.500" 
                             />
                           </Td>
-                          <Td fontWeight="medium" py={2}>{task.name}</Td>
+                          <Td fontWeight="medium" py={2}>
+                            <Flex align="center" gap={2}>
+                              <Text>{task.name}</Text>
+                              {isNonBillableTask(task.name) && (
+                                <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5}>
+                                  Non-Billable
+                                </Badge>
+                              )}
+                            </Flex>
+                          </Td>
                           <Td py={2}>
                             <Badge colorScheme="blue" fontSize="xs" px={2} py={1}>
                               {taskTimerService.formatDuration(task.duration)}
@@ -549,59 +881,112 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                             {taskTimerService.formatTimestamp(task.startTime)}
                           </Td>
                           <Td py={2}>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              colorScheme="red"
-                              onClick={(e) => handleDeleteTask(task.id, e)}
-                              aria-label="Delete task"
-                            >
-                              <Icon as={Trash2} boxSize={3.5} />
-                            </Button>
+                            <Flex gap={1} justify="flex-end">
+                              {isEditing ? (
+                                <>
+                                  <IconButton
+                                    size="xs"
+                                    variant="ghost"
+                                    colorScheme="green"
+                                    onClick={(e) => handleSaveEdit(task.id, e)}
+                                    aria-label="Save"
+                                    icon={<Check size={14} />}
+                                  />
+                                  <IconButton
+                                    size="xs"
+                                    variant="ghost"
+                                    colorScheme="gray"
+                                    onClick={handleCancelEdit}
+                                    aria-label="Cancel"
+                                    icon={<XCircle size={14} />}
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <IconButton
+                                    size="xs"
+                                    variant="ghost"
+                                    colorScheme="blue"
+                                    onClick={(e) => handleStartEdit(task, e)}
+                                    aria-label="Edit task"
+                                    icon={<Edit2 size={14} />}
+                                  />
+                                  <IconButton
+                                    size="xs"
+                                    variant="ghost"
+                                    colorScheme="red"
+                                    onClick={(e) => handleDeleteTask(task.id, e)}
+                                    aria-label="Delete task"
+                                    icon={<Trash2 size={14} />}
+                                  />
+                                </>
+                              )}
+                            </Flex>
                           </Td>
                         </Tr>
                         
-                        {/* Expanded Details - Sub-tasks */}
+                        {/* Expanded Details - Narration and Sub-tasks */}
                         <Tr>
                           <Td colSpan={6} p={0} border="none">
                             <Collapse in={isExpanded} animateOpacity>
                               <Box bg={detailsBg} px={4} py={3} borderTopWidth="1px" borderColor={borderColor}>
-                                {analyzingTasks.has(task.id) ? (
-                                  <Flex align="center" gap={2} py={4}>
-                                    <Spinner size="sm" />
-                                    <Text fontSize="xs" color="gray.500">
-                                      Analyzing activity...
-                                    </Text>
-                                  </Flex>
-                                ) : taskSubTasks.has(task.id) ? (
-                                  <Box>
-                                    <Text fontWeight="semibold" mb={3} fontSize="xs" color="gray.600">
-                                      Sub-tasks
-                                    </Text>
-                                    <Table variant="simple" size="sm">
-                                      <Thead>
-                                        <Tr>
-                                          <Th py={2} fontSize="xs">Sub Task Name</Th>
-                                          <Th py={2} fontSize="xs" isNumeric>Time Spent</Th>
-                                        </Tr>
-                                      </Thead>
-                                      <Tbody>
-                                        {taskSubTasks.get(task.id)?.map((subTask, idx) => (
-                                          <Tr key={idx}>
-                                            <Td py={2} fontSize="xs">{subTask.name}</Td>
-                                            <Td py={2} fontSize="xs" isNumeric>
-                                              {taskTimerService.formatDuration(subTask.timeSpent)}
-                                            </Td>
+                                <VStack spacing={4} align="stretch">
+                                  {/* Narration Section */}
+                                  {task.narration && task.narration.trim() && (
+                                    <Box
+                                      bg={useColorModeValue('white', 'gray.800')}
+                                      border="1px solid"
+                                      borderColor={borderColor}
+                                      borderRadius="md"
+                                      p={3}
+                                    >
+                                      <Text fontWeight="semibold" mb={2} fontSize="xs" color="gray.600">
+                                        Narration
+                                      </Text>
+                                      <Text fontSize="xs" color={useColorModeValue('gray.700', 'gray.300')} whiteSpace="pre-wrap">
+                                        {task.narration}
+                                      </Text>
+                                    </Box>
+                                  )}
+                                  
+                                  {/* Activity Log / Sub-tasks Section */}
+                                  {analyzingTasks.has(task.id) ? (
+                                    <Flex align="center" gap={2} py={4}>
+                                      <Spinner size="sm" />
+                                      <Text fontSize="xs" color="gray.500">
+                                        Analyzing activity...
+                                      </Text>
+                                    </Flex>
+                                  ) : taskSubTasks.has(task.id) ? (
+                                    <Box>
+                                      <Text fontWeight="semibold" mb={3} fontSize="xs" color="gray.600">
+                                        Activity Log
+                                      </Text>
+                                      <Table variant="simple" size="sm">
+                                        <Thead>
+                                          <Tr>
+                                            <Th py={2} fontSize="xs">Sub Task Name</Th>
+                                            <Th py={2} fontSize="xs" isNumeric>Time Spent</Th>
                                           </Tr>
-                                        ))}
-                                      </Tbody>
-                                    </Table>
-                                  </Box>
-                                ) : (
-                                  <Text fontSize="xs" color="gray.500" fontStyle="italic">
-                                    No activity data available for this task
-                                  </Text>
-                                )}
+                                        </Thead>
+                                        <Tbody>
+                                          {taskSubTasks.get(task.id)?.map((subTask, idx) => (
+                                            <Tr key={idx}>
+                                              <Td py={2} fontSize="xs">{subTask.name}</Td>
+                                              <Td py={2} fontSize="xs" isNumeric>
+                                                {taskTimerService.formatDuration(subTask.timeSpent)}
+                                              </Td>
+                                            </Tr>
+                                          ))}
+                                        </Tbody>
+                                      </Table>
+                                    </Box>
+                                  ) : (
+                                    <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                                      No activity data available for this task
+                                    </Text>
+                                  )}
+                                </VStack>
                               </Box>
                             </Collapse>
                           </Td>
@@ -628,12 +1013,90 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
               <VStack spacing={4} align="stretch">
                 <FormControl>
                   <FormLabel>Task Name</FormLabel>
-                  <Input
-                    value={customTaskName}
-                    onChange={(e) => setCustomTaskName(e.target.value)}
-                    placeholder="Enter task name"
-                    bg={useColorModeValue('white', 'gray.700')}
-                  />
+                  <Box position="relative">
+                    <InputGroup>
+                      <Input
+                        value={customTaskName}
+                        onChange={async (e) => {
+                          const value = e.target.value;
+                          setCustomTaskName(value);
+                          if (value.length > 0) {
+                            setShowPresetDropdown(true);
+                            await searchPresetTasks(value); // Search dynamically
+                          } else {
+                            setShowPresetDropdown(false);
+                            await loadPresetTasks(); // Load all when empty
+                          }
+                        }}
+                        onFocus={async () => {
+                          if (customTaskName.length > 0) {
+                            setShowPresetDropdown(true);
+                            await searchPresetTasks(customTaskName);
+                          } else {
+                            await loadPresetTasks();
+                          }
+                        }}
+                        placeholder="Search task or client name..."
+                        bg={useColorModeValue('white', 'gray.700')}
+                      />
+                      <InputRightElement>
+                        <Icon as={Search} boxSize={4} color="gray.400" />
+                      </InputRightElement>
+                    </InputGroup>
+                    {showPresetDropdown && customTaskName && presetTaskOptions.length > 0 && (
+                      <Box
+                        position="absolute"
+                        top="100%"
+                        left="0"
+                        right="0"
+                        mt={1}
+                        bg={bgColor}
+                        border="1px solid"
+                        borderColor={borderColor}
+                        borderRadius="md"
+                        boxShadow="lg"
+                        maxH="200px"
+                        overflowY="auto"
+                        zIndex={1000}
+                      >
+                        <VStack spacing={0} align="stretch" p={1}>
+                          {presetTaskOptions
+                            .slice(0, 5)
+                            .map((option, idx) => (
+                              <Box
+                                key={idx}
+                                px={3}
+                                py={2}
+                                cursor="pointer"
+                                _hover={{ bg: hoverBg }}
+                                onClick={() => {
+                                  setCustomTaskName(option);
+                                  setShowPresetDropdown(false);
+                                }}
+                                borderBottom={idx < Math.min(4, presetTaskOptions.length - 1) ? '1px solid' : 'none'}
+                                borderColor={borderColor}
+                              >
+                                <Flex align="center" gap={2}>
+                                  <Text fontSize="sm" color={textColor}>
+                                    {option}
+                                  </Text>
+                                  {isNonBillableTask(option) && (
+                                    <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                      Internal
+                                    </Badge>
+                                  )}
+                                </Flex>
+                              </Box>
+                            ))}
+                        </VStack>
+                      </Box>
+                    )}
+                  </Box>
+                  {isNonBillableTask(customTaskName) && (
+                    <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                      Non-Billable
+                    </Badge>
+                  )}
                 </FormControl>
                 <FormControl>
                   <FormLabel>Duration (HH:MM)</FormLabel>
@@ -648,6 +1111,17 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                     Format: HH:MM (e.g., 01:30 for 1 hour 30 minutes)
                   </Text>
                 </FormControl>
+                <FormControl>
+                  <FormLabel>Narration (Optional)</FormLabel>
+                  <Textarea
+                    value={customNarration}
+                    onChange={(e) => setCustomNarration(e.target.value)}
+                    placeholder="Describe what you did in this task..."
+                    bg={useColorModeValue('white', 'gray.700')}
+                    rows={4}
+                    resize="vertical"
+                  />
+                </FormControl>
                 <Flex justify="flex-end" gap={2} mt={4}>
                   <Button variant="ghost" onClick={onAddTimeClose}>
                     Cancel
@@ -658,6 +1132,135 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                     isDisabled={!customTaskName.trim() || !customDuration.trim()}
                   >
                     Add Entry
+                  </Button>
+                </Flex>
+              </VStack>
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+        
+        {/* Edit Task Modal */}
+        <Modal isOpen={isEditModalOpen} onClose={onEditModalClose} size="lg">
+          <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+          <ModalContent bg={bgColor}>
+            <ModalHeader borderBottomWidth="1px" borderColor={borderColor}>
+              Edit Task
+            </ModalHeader>
+            <ModalCloseButton />
+            <ModalBody py={6}>
+              <VStack spacing={4} align="stretch">
+                <FormControl>
+                  <FormLabel>Task Name</FormLabel>
+                  <Box position="relative">
+                    <Input
+                      value={editingTaskName}
+                      onChange={(e) => {
+                        setEditingTaskName(e.target.value);
+                        setShowPresetDropdown(e.target.value.length > 0);
+                      }}
+                      onFocus={() => setShowPresetDropdown(editingTaskName.length > 0)}
+                      placeholder="Enter task name or select from presets..."
+                      bg={useColorModeValue('white', 'gray.700')}
+                      autoFocus
+                    />
+                    {showPresetDropdown && presetTaskOptions.length > 0 && (
+                      <Box
+                        position="absolute"
+                        top="100%"
+                        left="0"
+                        right="0"
+                        mt={1}
+                        bg={bgColor}
+                        border="1px solid"
+                        borderColor={borderColor}
+                        borderRadius="md"
+                        boxShadow="lg"
+                        maxH="200px"
+                        overflowY="auto"
+                        zIndex={1000}
+                      >
+                        <VStack spacing={0} align="stretch" p={1}>
+                      {presetTaskOptions
+                        .filter(option => 
+                          option.toLowerCase().includes(editingTaskName.toLowerCase())
+                        )
+                        .slice(0, 5)
+                        .map((option, idx) => (
+                              <Box
+                                key={idx}
+                                px={3}
+                                py={2}
+                                cursor="pointer"
+                                _hover={{ bg: hoverBg }}
+                                onClick={() => {
+                                  setEditingTaskName(option);
+                                  setShowPresetDropdown(false);
+                                }}
+                                borderBottom={idx < Math.min(4, presetTaskOptions.filter(o => o.toLowerCase().includes(editingTaskName.toLowerCase())).length - 1) ? '1px solid' : 'none'}
+                                borderColor={borderColor}
+                              >
+                                <Flex align="center" gap={2}>
+                                  <Text fontSize="sm" color={textColor}>
+                                    {option}
+                                  </Text>
+                                  {isNonBillableTask(option) && (
+                                    <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                      Internal
+                                    </Badge>
+                                  )}
+                                </Flex>
+                              </Box>
+                            ))}
+                        </VStack>
+                      </Box>
+                    )}
+                  </Box>
+                  {isNonBillableTask(editingTaskName) && (
+                    <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                      Non-Billable
+                    </Badge>
+                  )}
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel>Duration (HH:MM:SS)</FormLabel>
+                  <Input
+                    value={editingTaskDuration}
+                    onChange={(e) => setEditingTaskDuration(e.target.value)}
+                    placeholder="01:30:00"
+                    bg={useColorModeValue('white', 'gray.700')}
+                    maxLength={8}
+                  />
+                  <Text fontSize="xs" color="gray.500" mt={1}>
+                    Format: HH:MM:SS or HH:MM (e.g., 01:30:00 or 01:30)
+                  </Text>
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel>Narration</FormLabel>
+                  <Textarea
+                    value={editingTaskNarration}
+                    onChange={(e) => setEditingTaskNarration(e.target.value)}
+                    placeholder="Describe what you did in this task..."
+                    bg={useColorModeValue('white', 'gray.700')}
+                    rows={6}
+                    resize="vertical"
+                  />
+                  <Text fontSize="xs" color="gray.500" mt={1}>
+                    Optional: Add a detailed description of the work completed
+                  </Text>
+                </FormControl>
+                
+                <Flex justify="flex-end" gap={2} mt={4}>
+                  <Button variant="ghost" onClick={handleCancelEdit}>
+                    Cancel
+                  </Button>
+                  <Button
+                    colorScheme="blue"
+                    onClick={handleSaveEdit}
+                    isDisabled={!editingTaskName.trim() || !editingTaskDuration.trim()}
+                  >
+                    Save Changes
                   </Button>
                 </Flex>
               </VStack>
@@ -772,11 +1375,11 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                   <Th py={2}>Task Name</Th>
                   <Th py={2}>Duration</Th>
                   <Th py={2}>Started</Th>
-                  <Th width="60px" py={2}></Th>
+                  <Th width="100px" py={2}></Th>
                     </Tr>
                   </Thead>
                   <Tbody>
-              {tasks.map((task) => {
+                  {tasks.map((task) => {
                     const isExpanded = expandedTasks.has(task.id);
                     return (
                       <React.Fragment key={task.id}>
@@ -792,7 +1395,16 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                               color="gray.500" 
                             />
                           </Td>
-                          <Td fontWeight="medium" py={2}>{task.name}</Td>
+                          <Td fontWeight="medium" py={2}>
+                            <Flex align="center" gap={2}>
+                              <Text>{task.name}</Text>
+                              {isNonBillableTask(task.name) && (
+                                <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5}>
+                                  Non-Billable
+                                </Badge>
+                              )}
+                            </Flex>
+                          </Td>
                           <Td py={2}>
                             <Badge colorScheme="blue" fontSize="xs" px={2} py={1}>
                               {taskTimerService.formatDuration(task.duration)}
@@ -802,59 +1414,89 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                             {taskTimerService.formatTimestamp(task.startTime)}
                           </Td>
                           <Td py={2}>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              colorScheme="red"
-                              onClick={(e) => handleDeleteTask(task.id, e)}
-                              aria-label="Delete task"
-                            >
-                              <Icon as={Trash2} boxSize={3.5} />
-                            </Button>
+                            <Flex gap={1} justify="flex-end">
+                              <IconButton
+                                size="xs"
+                                variant="ghost"
+                                colorScheme="blue"
+                                onClick={(e) => handleStartEdit(task, e)}
+                                aria-label="Edit task"
+                                icon={<Edit2 size={14} />}
+                              />
+                              <IconButton
+                                size="xs"
+                                variant="ghost"
+                                colorScheme="red"
+                                onClick={(e) => handleDeleteTask(task.id, e)}
+                                aria-label="Delete task"
+                                icon={<Trash2 size={14} />}
+                              />
+                            </Flex>
                           </Td>
                         </Tr>
                         
-                    {/* Expanded Details - Sub-tasks */}
+                    {/* Expanded Details - Narration and Sub-tasks */}
                         <Tr>
                       <Td colSpan={5} p={0} border="none">
                             <Collapse in={isExpanded} animateOpacity>
                               <Box bg={detailsBg} px={4} py={3} borderTopWidth="1px" borderColor={borderColor}>
-                            {analyzingTasks.has(task.id) ? (
-                              <Flex align="center" gap={2} py={4}>
-                                <Spinner size="sm" />
-                                            <Text fontSize="xs" color="gray.500">
-                                  Analyzing activity...
-                                            </Text>
-                                          </Flex>
-                            ) : taskSubTasks.has(task.id) ? (
-                              <Box>
-                                <Text fontWeight="semibold" mb={3} fontSize="xs" color="gray.600">
-                                  Sub-tasks
-                                </Text>
-                                <Table variant="simple" size="sm">
-                                  <Thead>
-                                    <Tr>
-                                      <Th py={2} fontSize="xs">Sub Task Name</Th>
-                                      <Th py={2} fontSize="xs" isNumeric>Time Spent</Th>
-                                    </Tr>
-                                  </Thead>
-                                  <Tbody>
-                                    {taskSubTasks.get(task.id)?.map((subTask, idx) => (
-                                      <Tr key={idx}>
-                                        <Td py={2} fontSize="xs">{subTask.name}</Td>
-                                        <Td py={2} fontSize="xs" isNumeric>
-                                          {taskTimerService.formatDuration(subTask.timeSpent)}
-                                        </Td>
-                                      </Tr>
-                                    ))}
-                                  </Tbody>
-                                </Table>
-                              </Box>
-                            ) : (
-                              <Text fontSize="xs" color="gray.500" fontStyle="italic">
-                                No activity data available for this task
-                                            </Text>
-                                )}
+                                <VStack spacing={4} align="stretch">
+                                  {/* Narration Section */}
+                                  {task.narration && task.narration.trim() && (
+                                    <Box
+                                      bg={useColorModeValue('white', 'gray.800')}
+                                      border="1px solid"
+                                      borderColor={borderColor}
+                                      borderRadius="md"
+                                      p={3}
+                                    >
+                                      <Text fontWeight="semibold" mb={2} fontSize="xs" color="gray.600">
+                                        Narration
+                                      </Text>
+                                      <Text fontSize="xs" color={useColorModeValue('gray.700', 'gray.300')} whiteSpace="pre-wrap">
+                                        {task.narration}
+                                      </Text>
+                                    </Box>
+                                  )}
+                                  
+                                  {/* Activity Log / Sub-tasks Section */}
+                                  {analyzingTasks.has(task.id) ? (
+                                    <Flex align="center" gap={2} py={4}>
+                                      <Spinner size="sm" />
+                                      <Text fontSize="xs" color="gray.500">
+                                        Analyzing activity...
+                                      </Text>
+                                    </Flex>
+                                  ) : taskSubTasks.has(task.id) ? (
+                                    <Box>
+                                      <Text fontWeight="semibold" mb={3} fontSize="xs" color="gray.600">
+                                        Activity Log
+                                      </Text>
+                                      <Table variant="simple" size="sm">
+                                        <Thead>
+                                          <Tr>
+                                            <Th py={2} fontSize="xs">Sub Task Name</Th>
+                                            <Th py={2} fontSize="xs" isNumeric>Time Spent</Th>
+                                          </Tr>
+                                        </Thead>
+                                        <Tbody>
+                                          {taskSubTasks.get(task.id)?.map((subTask, idx) => (
+                                            <Tr key={idx}>
+                                              <Td py={2} fontSize="xs">{subTask.name}</Td>
+                                              <Td py={2} fontSize="xs" isNumeric>
+                                                {taskTimerService.formatDuration(subTask.timeSpent)}
+                                              </Td>
+                                            </Tr>
+                                          ))}
+                                        </Tbody>
+                                      </Table>
+                                    </Box>
+                                  ) : (
+                                    <Text fontSize="xs" color="gray.500" fontStyle="italic">
+                                      No activity data available for this task
+                                    </Text>
+                                  )}
+                                </VStack>
                               </Box>
                             </Collapse>
                           </Td>
@@ -905,12 +1547,90 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
             <VStack spacing={4} align="stretch">
               <FormControl>
                 <FormLabel>Task Name</FormLabel>
-                <Input
-                  value={customTaskName}
-                  onChange={(e) => setCustomTaskName(e.target.value)}
-                  placeholder="Enter task name"
-                  bg={useColorModeValue('white', 'gray.700')}
-                />
+                <Box position="relative">
+                  <InputGroup>
+                    <Input
+                      value={customTaskName}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        setCustomTaskName(value);
+                        if (value.length > 0) {
+                          setShowPresetDropdown(true);
+                          await searchPresetTasks(value); // Search dynamically
+                        } else {
+                          setShowPresetDropdown(false);
+                          await loadPresetTasks(); // Load all when empty
+                        }
+                      }}
+                      onFocus={async () => {
+                        if (customTaskName.length > 0) {
+                          setShowPresetDropdown(true);
+                          await searchPresetTasks(customTaskName);
+                        } else {
+                          await loadPresetTasks();
+                        }
+                      }}
+                      placeholder="Search task or client name..."
+                      bg={useColorModeValue('white', 'gray.700')}
+                    />
+                    <InputRightElement>
+                      <Icon as={Search} boxSize={4} color="gray.400" />
+                    </InputRightElement>
+                  </InputGroup>
+                  {showPresetDropdown && customTaskName && presetTaskOptions.length > 0 && (
+                    <Box
+                      position="absolute"
+                      top="100%"
+                      left="0"
+                      right="0"
+                      mt={1}
+                      bg={bgColor}
+                      border="1px solid"
+                      borderColor={borderColor}
+                      borderRadius="md"
+                      boxShadow="lg"
+                      maxH="200px"
+                      overflowY="auto"
+                      zIndex={1000}
+                    >
+                      <VStack spacing={0} align="stretch" p={1}>
+                        {presetTaskOptions
+                          .slice(0, 5)
+                          .map((option, idx) => (
+                            <Box
+                              key={idx}
+                              px={3}
+                              py={2}
+                              cursor="pointer"
+                              _hover={{ bg: hoverBg }}
+                              onClick={() => {
+                                setCustomTaskName(option);
+                                setShowPresetDropdown(false);
+                              }}
+                              borderBottom={idx < Math.min(4, presetTaskOptions.length - 1) ? '1px solid' : 'none'}
+                              borderColor={borderColor}
+                            >
+                              <Flex align="center" gap={2}>
+                                <Text fontSize="sm" color={textColor}>
+                                  {option}
+                                </Text>
+                                {isNonBillableTask(option) && (
+                                  <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                    Internal
+                                  </Badge>
+                                )}
+                              </Flex>
+                            </Box>
+                          ))}
+                      </VStack>
+                    </Box>
+                  )}
+                </Box>
+                {isNonBillableTask(customTaskName) && (
+                  <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                    Non-Billable
+                  </Badge>
+                )}
               </FormControl>
               <FormControl>
                 <FormLabel>Duration (HH:MM)</FormLabel>
@@ -924,6 +1644,17 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                 <Text fontSize="xs" color="gray.500" mt={1}>
                   Format: HH:MM (e.g., 01:30 for 1 hour 30 minutes)
                 </Text>
+              </FormControl>
+              <FormControl>
+                <FormLabel>Narration (Optional)</FormLabel>
+                <Textarea
+                  value={customNarration}
+                  onChange={(e) => setCustomNarration(e.target.value)}
+                  placeholder="Describe what you did in this task..."
+                  bg={useColorModeValue('white', 'gray.700')}
+                  rows={4}
+                  resize="vertical"
+                />
               </FormControl>
               <Flex justify="flex-end" gap={2} mt={4}>
                 <Button variant="ghost" onClick={onAddTimeClose}>
@@ -941,6 +1672,145 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
         </ModalBody>
       </ModalContent>
     </Modal>
+    
+      {/* Edit Task Modal */}
+      <Modal isOpen={isEditModalOpen} onClose={onEditModalClose} size="lg">
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <ModalContent bg={bgColor}>
+          <ModalHeader borderBottomWidth="1px" borderColor={borderColor}>
+            Edit Task
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody py={6}>
+            <VStack spacing={4} align="stretch">
+              <FormControl>
+                <FormLabel>Task Name</FormLabel>
+                <Box position="relative">
+                  <Input
+                    value={editingTaskName}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      console.log('[TaskSummary] ⌨️ Edit modal input onChange triggered, value:', value);
+                      setEditingTaskName(value);
+                      // Search will be triggered by useEffect watching editingTaskName
+                    }}
+                    onFocus={async () => {
+                      console.log('[TaskSummary] 🎯 Edit modal input onFocus, current value:', editingTaskName);
+                      console.log('[TaskSummary] 📊 Current presetTaskOptions count:', presetTaskOptions.length);
+                      if (editingTaskName.length > 0) {
+                        setShowPresetDropdown(true);
+                        console.log('[TaskSummary] 🔍 Calling searchPresetTasks on focus with:', editingTaskName);
+                        await searchPresetTasks(editingTaskName);
+                      } else {
+                        console.log('[TaskSummary] 📥 Input empty on focus, calling loadPresetTasks');
+                        await loadPresetTasks();
+                      }
+                    }}
+                    placeholder="Enter task name or select from presets..."
+                    bg={useColorModeValue('white', 'gray.700')}
+                    autoFocus
+                  />
+                  {showPresetDropdown && presetTaskOptions.length > 0 && (
+                    <Box
+                      position="absolute"
+                      top="100%"
+                      left="0"
+                      right="0"
+                      mt={1}
+                      bg={bgColor}
+                      border="1px solid"
+                      borderColor={borderColor}
+                      borderRadius="md"
+                      boxShadow="lg"
+                      maxH="200px"
+                      overflowY="auto"
+                      zIndex={1000}
+                    >
+                      <VStack spacing={0} align="stretch" p={1}>
+                      {presetTaskOptions
+                        .slice(0, 5)
+                        .map((option, idx) => (
+                            <Box
+                              key={idx}
+                              px={3}
+                              py={2}
+                              cursor="pointer"
+                              _hover={{ bg: hoverBg }}
+                              onClick={() => {
+                                setEditingTaskName(option);
+                                setShowPresetDropdown(false);
+                              }}
+                              borderBottom={idx < Math.min(4, presetTaskOptions.length - 1) ? '1px solid' : 'none'}
+                              borderColor={borderColor}
+                            >
+                              <Flex align="center" gap={2}>
+                                <Text fontSize="sm" color={textColor}>
+                                  {option}
+                                </Text>
+                                {isNonBillableTask(option) && (
+                                  <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                    Internal
+                                  </Badge>
+                                )}
+                              </Flex>
+                            </Box>
+                          ))}
+                      </VStack>
+                    </Box>
+                  )}
+                </Box>
+                {isNonBillableTask(editingTaskName) && (
+                  <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                    Non-Billable
+                  </Badge>
+                )}
+              </FormControl>
+              
+              <FormControl>
+                <FormLabel>Duration (HH:MM:SS)</FormLabel>
+                <Input
+                  value={editingTaskDuration}
+                  onChange={(e) => setEditingTaskDuration(e.target.value)}
+                  placeholder="01:30:00"
+                  bg={useColorModeValue('white', 'gray.700')}
+                  maxLength={8}
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Format: HH:MM:SS or HH:MM (e.g., 01:30:00 or 01:30)
+                </Text>
+              </FormControl>
+              
+              <FormControl>
+                <FormLabel>Narration</FormLabel>
+                <Textarea
+                  value={editingTaskNarration}
+                  onChange={(e) => setEditingTaskNarration(e.target.value)}
+                  placeholder="Describe what you did in this task..."
+                  bg={useColorModeValue('white', 'gray.700')}
+                  rows={6}
+                  resize="vertical"
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Optional: Add a detailed description of the work completed
+                </Text>
+              </FormControl>
+              
+              <Flex justify="flex-end" gap={2} mt={4}>
+                <Button variant="ghost" onClick={handleCancelEdit}>
+                  Cancel
+                </Button>
+                <Button
+                  colorScheme="blue"
+                  onClick={handleSaveEdit}
+                  isDisabled={!editingTaskName.trim() || !editingTaskDuration.trim()}
+                >
+                  Save Changes
+                </Button>
+              </Flex>
+            </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
     </>
   );
 };
