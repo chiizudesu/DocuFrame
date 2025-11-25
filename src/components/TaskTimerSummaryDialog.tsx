@@ -79,6 +79,24 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     );
   };
   
+  // Format duration input with automatic colons (hh:mm:ss)
+  const formatDurationInput = (value: string): string => {
+    // Remove all non-digits
+    const digits = value.replace(/\D/g, '');
+    
+    // Limit to 6 digits (hhmmss)
+    const limited = digits.slice(0, 6);
+    
+    // Format with colons
+    if (limited.length <= 2) {
+      return limited;
+    } else if (limited.length <= 4) {
+      return `${limited.slice(0, 2)}:${limited.slice(2)}`;
+    } else {
+      return `${limited.slice(0, 2)}:${limited.slice(2, 4)}:${limited.slice(4)}`;
+    }
+  };
+  
   // Search tasks dynamically (similar to FloatingTaskTimerWindow)
   const searchPresetTasks = async (searchValue: string) => {
     console.log('[TaskSummary] 🔍 searchPresetTasks called with:', searchValue);
@@ -316,6 +334,22 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
       loadTasksForDate(selectedDate);
     }
   }, [selectedDate, isOpen]);
+  
+  // Listen for task updates and refresh when dialog is open
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleTaskUpdate = () => {
+      console.log('[TaskSummary] 📢 Task update event received, refreshing tasks...');
+      loadTasksForDate(selectedDate);
+    };
+    
+    window.addEventListener('task-updated', handleTaskUpdate);
+    
+    return () => {
+      window.removeEventListener('task-updated', handleTaskUpdate);
+    };
+  }, [isOpen, selectedDate]);
   
   const loadTasksForDate = async (dateString: string) => {
     setLoading(true);
@@ -610,10 +644,10 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
       return;
     }
     
-    // Parse duration (HH:MM format)
-    const durationMatch = customDuration.match(/^(\d{1,2}):(\d{2})$/);
+    // Parse duration (HH:MM:SS or HH:MM format)
+    const durationMatch = customDuration.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
     if (!durationMatch) {
-      alert('Invalid duration format. Please use HH:MM (e.g., 01:30 for 1 hour 30 minutes)');
+      alert('Invalid duration format. Please use HH:MM:SS or HH:MM (e.g., 01:30:00 or 01:30)');
       return;
     }
     
@@ -1102,13 +1136,16 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                   <FormLabel>Duration (HH:MM)</FormLabel>
                   <Input
                     value={customDuration}
-                    onChange={(e) => setCustomDuration(e.target.value)}
-                    placeholder="01:30"
+                    onChange={(e) => {
+                      const formatted = formatDurationInput(e.target.value);
+                      setCustomDuration(formatted);
+                    }}
+                    placeholder="013000"
                     bg={useColorModeValue('white', 'gray.700')}
-                    maxLength={5}
+                    maxLength={8}
                   />
                   <Text fontSize="xs" color="gray.500" mt={1}>
-                    Format: HH:MM (e.g., 01:30 for 1 hour 30 minutes)
+                    Type numbers only (e.g., 013000 for 01:30:00)
                   </Text>
                 </FormControl>
                 <FormControl>
@@ -1226,13 +1263,16 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                   <FormLabel>Duration (HH:MM:SS)</FormLabel>
                   <Input
                     value={editingTaskDuration}
-                    onChange={(e) => setEditingTaskDuration(e.target.value)}
-                    placeholder="01:30:00"
+                    onChange={(e) => {
+                      const formatted = formatDurationInput(e.target.value);
+                      setEditingTaskDuration(formatted);
+                    }}
+                    placeholder="013000"
                     bg={useColorModeValue('white', 'gray.700')}
                     maxLength={8}
                   />
                   <Text fontSize="xs" color="gray.500" mt={1}>
-                    Format: HH:MM:SS or HH:MM (e.g., 01:30:00 or 01:30)
+                    Type numbers only (e.g., 013000 for 01:30:00)
                   </Text>
                 </FormControl>
                 
@@ -1770,13 +1810,16 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                 <FormLabel>Duration (HH:MM:SS)</FormLabel>
                 <Input
                   value={editingTaskDuration}
-                  onChange={(e) => setEditingTaskDuration(e.target.value)}
-                  placeholder="01:30:00"
+                  onChange={(e) => {
+                    const formatted = formatDurationInput(e.target.value);
+                    setEditingTaskDuration(formatted);
+                  }}
+                  placeholder="013000"
                   bg={useColorModeValue('white', 'gray.700')}
                   maxLength={8}
                 />
                 <Text fontSize="xs" color="gray.500" mt={1}>
-                  Format: HH:MM:SS or HH:MM (e.g., 01:30:00 or 01:30)
+                  Type numbers only (e.g., 013000 for 01:30:00)
                 </Text>
               </FormControl>
               

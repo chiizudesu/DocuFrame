@@ -36,7 +36,7 @@ import {
   Textarea,
   useDisclosure,
 } from '@chakra-ui/react';
-import { Play, Pause, Square, BarChart, X, GripVertical, Minimize2, Maximize2, Circle, Clock, Search, ChevronDown } from 'lucide-react';
+import { Play, Pause, Square, BarChart, X, GripVertical, Minimize2, Maximize2, Circle, Clock, Search, ChevronDown, Trash2, Plus } from 'lucide-react';
 import { taskTimerService, Task, TimerState } from '../services/taskTimer';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -49,9 +49,10 @@ interface FloatingTaskTimerWindowProps {
 // Work Shift Infographic Component
 interface WorkShiftInfographicProps {
   onEditTask?: (taskId: string) => Promise<void>;
+  onAddCustomTask?: () => void;
 }
 
-const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask }) => {
+const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask, onAddCustomTask }) => {
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [productivityTarget, setProductivityTarget] = useState(27000); // 7:30 hours in seconds
@@ -194,11 +195,6 @@ const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask 
         timePosition = (elapsedMinutes / shiftDurationMinutes) * 100;
       }
       setCurrentTimePosition(timePosition);
-      
-      // Calculate time difference: logged time - current shift time
-      const shiftDurationSecs = shiftDurationMinutes * 60;
-      const diff = todayTimeWorked - currentTimeInShift;
-      setTimeDifference(diff);
     };
 
     loadWorkShift();
@@ -206,8 +202,8 @@ const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask 
     calculateShiftProgress();
     
     const interval = setInterval(() => {
-      calculateShiftProgress();
-      calculateTodayTime(); // Also refresh today's time
+      calculateTodayTime(); // Calculate today's time first
+      calculateShiftProgress(); // Then calculate shift progress
     }, 60000); // Update every minute
     
     // Listen for task updates
@@ -221,6 +217,12 @@ const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask 
       window.removeEventListener('task-updated', handleTaskUpdate);
     };
   }, [workShiftStart, workShiftEnd, productivityTarget]);
+
+  // Recalculate time difference whenever todayTimeWorked or currentTimeInShift changes
+  useEffect(() => {
+    const diff = todayTimeWorked - currentTimeInShift;
+    setTimeDifference(diff);
+  }, [todayTimeWorked, currentTimeInShift]);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -296,19 +298,34 @@ const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask 
     >
       {/* Current Time and Time Difference - One Line */}
       <Flex align="center" justify="space-between" gap={2}>
-        <Badge
-          px={3}
-          py={1}
-          borderRadius="sm"
-          bg="green.500"
-          color="white"
-          fontSize="13px"
-          fontWeight="700"
-          letterSpacing="0.05em"
-          boxShadow="0 2px 8px rgba(72, 187, 120, 0.4)"
-        >
-          {currentTimeGMT8}
-        </Badge>
+        <Flex align="center" gap={2}>
+          <Badge
+            px={3}
+            py={1}
+            borderRadius="sm"
+            bg="green.500"
+            color="white"
+            fontSize="13px"
+            fontWeight="700"
+            letterSpacing="0.05em"
+            boxShadow="0 2px 8px rgba(72, 187, 120, 0.4)"
+          >
+            {currentTimeGMT8}
+          </Badge>
+          <IconButton
+            aria-label="Add custom task"
+            icon={<Plus size={12} strokeWidth={3} style={{ strokeLinecap: 'square', strokeLinejoin: 'miter' }} />}
+            size="xs"
+            variant="ghost"
+            colorScheme="green"
+            color="green.400"
+            border="1px solid"
+            borderColor="green.400"
+            borderRadius={3}
+            _hover={{ bg: 'green.500', color: 'white', borderColor: 'green.500' }}
+            onClick={onAddCustomTask}
+          />
+        </Flex>
         <Box
           bg={timeDifference >= 0 ? 'blue.500' : 'gray.600'}
           borderRadius="sm"
@@ -411,16 +428,9 @@ const WorkShiftInfographic: React.FC<WorkShiftInfographicProps> = ({ onEditTask 
             <Text fontSize="10px" color="gray.500" fontWeight="500">
               Logged Time
             </Text>
-            <Flex gap={2} align="center">
-              <Text fontSize="10px" color="blue.400" fontWeight="600">
-                {formatTime(todayTimeWorked)}
-              </Text>
-              {todayTimeWorked > 0 && (
-                <Text fontSize="10px" color="gray.400" fontWeight="500">
-                  {productivityPercentage.toFixed(0)}% Billable
-                </Text>
-              )}
-            </Flex>
+            <Text fontSize="10px" color="blue.400" fontWeight="600">
+              {formatTime(todayTimeWorked)}
+            </Text>
           </Flex>
           <Box position="relative" h="24px" bg="whiteAlpha.100" borderRadius="sm" overflow="visible">
             {/* 85% Productivity Target Line */}
@@ -698,6 +708,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [isTaskSearchLoading, setIsTaskSearchLoading] = useState(false);
   const taskSearchInputRef = useRef<HTMLInputElement>(null);
   const taskSearchContainerRef = useRef<HTMLDivElement>(null);
+  const editTaskInputRef = useRef<HTMLInputElement>(null);
+  const editTaskDropdownRef = useRef<HTMLDivElement>(null);
   const { setStatus } = useAppContext();
   
   // Edit modal state
@@ -708,6 +720,27 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [editingTaskNarration, setEditingTaskNarration] = useState('');
   const [presetTaskOptions, setPresetTaskOptions] = useState<string[]>([]);
   const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+  
+  // Add custom task modal state
+  const { isOpen: isAddCustomTaskModalOpen, onOpen: onAddCustomTaskModalOpen, onClose: onAddCustomTaskModalClose } = useDisclosure();
+  const [customTaskName, setCustomTaskName] = useState('');
+  const [customTaskDuration, setCustomTaskDuration] = useState('');
+  const [customTaskNarration, setCustomTaskNarration] = useState('');
+  const [customTaskPresetOptions, setCustomTaskPresetOptions] = useState<string[]>([]);
+  const [showCustomTaskPresetDropdown, setShowCustomTaskPresetDropdown] = useState(false);
+  const customTaskInputRef = useRef<HTMLInputElement>(null);
+  const customTaskDropdownRef = useRef<HTMLDivElement>(null);
+  
+  // Stop timer confirmation modal state
+  const { isOpen: isStopTimerModalOpen, onOpen: onStopTimerModalOpen, onClose: onStopTimerModalClose } = useDisclosure();
+  const [stopTimerTaskName, setStopTimerTaskName] = useState('');
+  const [stopTimerDuration, setStopTimerDuration] = useState('');
+  const [stopTimerNarration, setStopTimerNarration] = useState('');
+  const [stopTimerPresetOptions, setStopTimerPresetOptions] = useState<string[]>([]);
+  const [showStopTimerPresetDropdown, setShowStopTimerPresetDropdown] = useState(false);
+  const stopTimerInputRef = useRef<HTMLInputElement>(null);
+  const stopTimerDropdownRef = useRef<HTMLDivElement>(null);
+  const [pendingTask, setPendingTask] = useState<Task | null>(null);
   
   // Non-billable tasks
   const NON_BILLABLE_TASKS = [
@@ -1118,7 +1151,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   
   const handleTaskSelect = (taskName: string) => {
     setTaskName(taskName);
-    setTaskSearchValue('');
+    setTaskSearchValue(taskName); // Set to selected task name so it shows in the input
     setTaskSearchResults([]);
     setIsTaskSearchOpen(false);
     if (timerState.currentTask) {
@@ -1302,11 +1335,37 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           setEditingTaskName(task.name);
           setEditingTaskDuration(taskTimerService.formatDuration(task.duration));
           setEditingTaskNarration(''); // Don't load narration in timer edit modal
+          setShowPresetDropdown(false); // Hide dropdown when modal opens
+          await loadPresetTasks();
           onEditModalOpen();
         }
       }
     } catch (error) {
       console.error('Error loading task for edit:', error);
+    }
+  };
+  
+  // Handle opening add custom task modal
+  const handleOpenAddCustomTaskModal = async () => {
+    await loadCustomTaskPresetTasks();
+    onAddCustomTaskModalOpen();
+  };
+  
+  // Format duration input with automatic colons (hh:mm:ss)
+  const formatDurationInput = (value: string): string => {
+    // Remove all non-digits
+    const digits = value.replace(/\D/g, '');
+    
+    // Limit to 6 digits (hhmmss)
+    const limited = digits.slice(0, 6);
+    
+    // Format with colons
+    if (limited.length <= 2) {
+      return limited;
+    } else if (limited.length <= 4) {
+      return `${limited.slice(0, 2)}:${limited.slice(2)}`;
+    } else {
+      return `${limited.slice(0, 2)}:${limited.slice(2, 4)}:${limited.slice(4)}`;
     }
   };
   
@@ -1355,14 +1414,184 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     }
   };
   
+  // Handle deleting task
+  const handleDeleteTask = async () => {
+    if (!editingTask) {
+      return;
+    }
+    
+    // Confirm deletion
+    if (!confirm(`Are you sure you want to delete the task "${editingTask.name}"?`)) {
+      return;
+    }
+    
+    try {
+      const today = taskTimerService.getTodayDateString();
+      const result = await (window.electronAPI as any).deleteTaskLog(today, editingTask.id);
+      
+      if (result.success) {
+        onEditModalClose();
+        setEditingTask(null);
+        setEditingTaskName('');
+        setEditingTaskDuration('');
+        // Refresh the infographic by triggering a re-render
+        window.dispatchEvent(new Event('task-updated'));
+      } else {
+        alert('Failed to delete task');
+      }
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      alert('Error deleting task');
+    }
+  };
+  
   // Handle canceling edit
   const handleCancelEdit = () => {
+    setShowPresetDropdown(false); // Hide dropdown when modal closes
     onEditModalClose();
     setEditingTask(null);
     setEditingTaskName('');
     setEditingTaskDuration('');
     setEditingTaskNarration('');
-    setShowPresetDropdown(false);
+  };
+  
+  // Handle saving custom task
+  const handleSaveCustomTask = async () => {
+    if (!customTaskName.trim() || !customTaskDuration.trim()) {
+      return;
+    }
+    
+    // Parse duration
+    let duration = 0;
+    const durationMatch = customTaskDuration.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (durationMatch) {
+      const hours = parseInt(durationMatch[1]);
+      const minutes = parseInt(durationMatch[2]);
+      const seconds = durationMatch[3] ? parseInt(durationMatch[3]) : 0;
+      duration = hours * 3600 + minutes * 60 + seconds;
+    } else {
+      alert('Invalid duration format. Please use HH:MM or HH:MM:SS');
+      return;
+    }
+    
+    try {
+      const today = taskTimerService.getTodayDateString();
+      const now = new Date();
+      
+      // Create new task
+      const newTask: Task = {
+        id: `custom-${Date.now()}`,
+        name: customTaskName.trim(),
+        startTime: new Date(now.getTime() - duration * 1000).toISOString(),
+        endTime: now.toISOString(),
+        duration: duration,
+        isPaused: false,
+        narration: customTaskNarration.trim() || undefined
+      };
+      
+      const result = await (window.electronAPI as any).saveTaskLog(today, newTask);
+      if (result.success) {
+        onAddCustomTaskModalClose();
+        setCustomTaskName('');
+        setCustomTaskDuration('');
+        setCustomTaskNarration('');
+        setShowCustomTaskPresetDropdown(false);
+        // Refresh the infographic by triggering a re-render
+        window.dispatchEvent(new Event('task-updated'));
+      } else {
+        alert('Failed to save custom task');
+      }
+    } catch (error) {
+      console.error('Error saving custom task:', error);
+      alert('Error saving custom task');
+    }
+  };
+  
+  // Handle canceling add custom task
+  const handleCancelAddCustomTask = () => {
+    setShowCustomTaskPresetDropdown(false);
+    onAddCustomTaskModalClose();
+    setCustomTaskName('');
+    setCustomTaskDuration('');
+    setCustomTaskNarration('');
+  };
+  
+  // Search preset tasks for custom task modal
+  const searchCustomTaskPresetTasks = async (searchValue: string) => {
+    if (!searchValue.trim()) {
+      setCustomTaskPresetOptions([]);
+      return;
+    }
+    
+    try {
+      const options: string[] = [];
+      
+      // Add non-billable tasks that match
+      const nonBillableMatches = NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(searchValue.toLowerCase())
+      );
+      options.push(...nonBillableMatches);
+      
+      // Search client database
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        const clientNameFields = ['Client Name', 'Client', 'Name', 'Company'];
+        
+        const clientNames = rows
+          .map((row: any) => {
+            const field = clientNameFields.find(f => row[f] && row[f].trim());
+            return field ? row[field].trim() : null;
+          })
+          .filter((name: string | null): name is string => name !== null && name.toLowerCase().includes(searchValue.toLowerCase()))
+          .slice(0, 50);
+        
+        options.push(...clientNames);
+      }
+      
+      const finalOptions = [...new Set(options)];
+      setCustomTaskPresetOptions(finalOptions);
+    } catch (error) {
+      console.error('Error searching preset tasks:', error);
+      setCustomTaskPresetOptions([]);
+    }
+  };
+  
+  // Load preset tasks for custom task modal
+  const loadCustomTaskPresetTasks = async () => {
+    try {
+      const options: string[] = [];
+      
+      // Add all non-billable tasks
+      options.push(...NON_BILLABLE_TASKS);
+      
+      // Load client database
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        const clientNameFields = ['Client Name', 'Client', 'Name', 'Company'];
+        
+        const clientNames = rows
+          .map((row: any) => {
+            const field = clientNameFields.find(f => row[f] && row[f].trim());
+            return field ? row[field].trim() : null;
+          })
+          .filter((name: string | null): name is string => name !== null)
+          .slice(0, 50);
+        
+        options.push(...clientNames);
+      }
+      
+      const finalOptions = [...new Set(options)].sort();
+      setCustomTaskPresetOptions(finalOptions);
+    } catch (error) {
+      console.error('Error loading preset tasks:', error);
+      setCustomTaskPresetOptions(NON_BILLABLE_TASKS);
+    }
   };
   
   // Close dropdown when clicking outside
@@ -1427,12 +1656,127 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       ? Math.floor((Date.now() - pauseStartTime) / 1000)
       : 0;
     
+    const calculatedDuration = taskTimerService.calculateDuration(timerState.currentTask, false);
     const finalTask: Task = {
       ...timerState.currentTask,
       endTime: new Date().toISOString(),
-      duration: taskTimerService.calculateDuration(timerState.currentTask, false),
+      duration: calculatedDuration,
       pausedDuration: timerState.currentTask.pausedDuration + pauseDuration,
       isPaused: false
+    };
+    
+    // Set up confirmation modal with current task data
+    setPendingTask(finalTask);
+    setStopTimerTaskName(finalTask.name);
+    setStopTimerDuration(taskTimerService.formatDuration(calculatedDuration));
+    setStopTimerNarration(finalTask.narration || '');
+    await loadStopTimerPresetTasks();
+    onStopTimerModalOpen();
+  };
+  
+  // Load preset tasks for stop timer modal
+  const loadStopTimerPresetTasks = async () => {
+    try {
+      const options: string[] = [];
+      
+      // Add all non-billable tasks
+      options.push(...NON_BILLABLE_TASKS);
+      
+      // Load client database
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        const clientNameFields = ['Client Name', 'Client', 'Name', 'Company'];
+        
+        const clientNames = rows
+          .map((row: any) => {
+            const field = clientNameFields.find(f => row[f] && row[f].trim());
+            return field ? row[field].trim() : null;
+          })
+          .filter((name: string | null): name is string => name !== null)
+          .slice(0, 50);
+        
+        options.push(...clientNames);
+      }
+      
+      const finalOptions = [...new Set(options)].sort();
+      setStopTimerPresetOptions(finalOptions);
+    } catch (error) {
+      console.error('Error loading preset tasks:', error);
+      setStopTimerPresetOptions(NON_BILLABLE_TASKS);
+    }
+  };
+  
+  // Search preset tasks for stop timer modal
+  const searchStopTimerPresetTasks = async (searchValue: string) => {
+    if (!searchValue.trim()) {
+      setStopTimerPresetOptions([]);
+      return;
+    }
+    
+    try {
+      const options: string[] = [];
+      
+      // Add non-billable tasks that match
+      const nonBillableMatches = NON_BILLABLE_TASKS.filter(task => 
+        task.toLowerCase().includes(searchValue.toLowerCase())
+      );
+      options.push(...nonBillableMatches);
+      
+      // Search client database
+      const config = await window.electronAPI.getConfig();
+      const csvPath = (config as any).clientbasePath;
+      
+      if (csvPath) {
+        const rows = await window.electronAPI.readCsv(csvPath);
+        const clientNameFields = ['Client Name', 'Client', 'Name', 'Company'];
+        
+        const clientNames = rows
+          .map((row: any) => {
+            const field = clientNameFields.find(f => row[f] && row[f].trim());
+            return field ? row[field].trim() : null;
+          })
+          .filter((name: string | null): name is string => name !== null && name.toLowerCase().includes(searchValue.toLowerCase()))
+          .slice(0, 50);
+        
+        options.push(...clientNames);
+      }
+      
+      const finalOptions = [...new Set(options)];
+      setStopTimerPresetOptions(finalOptions);
+    } catch (error) {
+      console.error('Error searching preset tasks:', error);
+      setStopTimerPresetOptions([]);
+    }
+  };
+  
+  // Handle confirming stop timer
+  const handleConfirmStopTimer = async () => {
+    if (!pendingTask || !stopTimerTaskName.trim() || !stopTimerDuration.trim()) {
+      return;
+    }
+    
+    // Parse duration
+    let duration = pendingTask.duration;
+    const durationMatch = stopTimerDuration.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (durationMatch) {
+      const hours = parseInt(durationMatch[1]);
+      const minutes = parseInt(durationMatch[2]);
+      const seconds = durationMatch[3] ? parseInt(durationMatch[3]) : 0;
+      duration = hours * 3600 + minutes * 60 + seconds;
+    } else {
+      alert('Invalid duration format. Please use HH:MM or HH:MM:SS');
+      return;
+    }
+    
+    // Update task with modified values
+    const finalTask: Task = {
+      ...pendingTask,
+      name: stopTimerTaskName.trim(),
+      duration: duration,
+      narration: stopTimerNarration.trim() || undefined
     };
     
     console.log('[FloatingTimer] 💾 Stopping and saving task:', finalTask.id, 'with', finalTask.windowTitles?.length || 0, 'window titles');
@@ -1442,26 +1786,52 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       const today = taskTimerService.getTodayDateString();
       const result = await (window.electronAPI as any).saveTaskLog(today, finalTask);
       console.log('[FloatingTimer] Save result:', result);
+      
+      if (result.success) {
+        // Reset timer state
+        setTimerState({
+          currentTask: null,
+          isRunning: false,
+          isPaused: false
+        });
+        setCurrentTime(0);
+        setPauseStartTime(null);
+        setTaskName('New Task');
+        
+        // Clear localStorage
+        taskTimerService.saveTimerState({
+          currentTask: null,
+          isRunning: false,
+          isPaused: false
+        });
+        
+        // Close modal and reset state
+        onStopTimerModalClose();
+        setPendingTask(null);
+        setStopTimerTaskName('');
+        setStopTimerDuration('');
+        setStopTimerNarration('');
+        setShowStopTimerPresetDropdown(false);
+        
+        // Trigger task update event to refresh infographic
+        window.dispatchEvent(new Event('task-updated'));
+      } else {
+        alert('Failed to save task');
+      }
     } catch (error) {
       console.error('[TaskTimer] Error saving task log:', error);
+      alert('Error saving task log');
     }
-    
-    // Reset timer state
-    setTimerState({
-      currentTask: null,
-      isRunning: false,
-      isPaused: false
-    });
-    setCurrentTime(0);
-    setPauseStartTime(null);
-    setTaskName('New Task');
-    
-    // Clear localStorage
-    taskTimerService.saveTimerState({
-      currentTask: null,
-      isRunning: false,
-      isPaused: false
-    });
+  };
+  
+  // Handle canceling stop timer
+  const handleCancelStopTimer = () => {
+    setShowStopTimerPresetDropdown(false);
+    onStopTimerModalClose();
+    setPendingTask(null);
+    setStopTimerTaskName('');
+    setStopTimerDuration('');
+    setStopTimerNarration('');
   };
   
   // Calculate progress percentage (cycles every hour)
@@ -2041,7 +2411,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               </Flex>
               
               {/* Right Section - Infographic */}
-              <WorkShiftInfographic onEditTask={handleOpenEditModal} />
+              <WorkShiftInfographic onEditTask={handleOpenEditModal} onAddCustomTask={handleOpenAddCustomTaskModal} />
             </Flex>
           </Flex>
         ) : (
@@ -2284,14 +2654,20 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     </Box>
     
     {/* Edit Task Modal */}
-    <Modal isOpen={isEditModalOpen} onClose={handleCancelEdit} size="md">
+    <Modal 
+      isOpen={isEditModalOpen} 
+      onClose={handleCancelEdit} 
+      size="md"
+      isCentered
+      scrollBehavior="inside"
+    >
       <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={useColorModeValue('white', 'gray.800')} maxW="500px">
+      <ModalContent bg={useColorModeValue('white', 'gray.800')} maxW="500px" maxH="90vh">
         <ModalHeader borderBottomWidth="1px" borderColor={useColorModeValue('gray.200', 'gray.600')} py={3} fontSize="md">
           Edit Task
         </ModalHeader>
         <ModalCloseButton />
-        <ModalBody py={4}>
+        <ModalBody py={4} overflowY="auto">
           <Flex direction="row" gap={4} align="flex-start">
             {/* Left Column - Task Name */}
             <Box flex={1}>
@@ -2299,16 +2675,21 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 <FormLabel fontSize="sm">Task Name</FormLabel>
                 <Box position="relative">
                   <Input
+                    ref={editTaskInputRef}
                     value={editingTaskName}
                     onChange={async (e) => {
                       const value = e.target.value;
                       setEditingTaskName(value);
-                      if (value.length > 0) {
+                      // Only show dropdown if input is focused (onChange only fires when focused, but double-check)
+                      const isFocused = document.activeElement === editTaskInputRef.current;
+                      if (value.length > 0 && isFocused) {
                         setShowPresetDropdown(true);
                         await searchPresetTasks(value); // Search dynamically
-                      } else {
+                      } else if (isFocused) {
                         setShowPresetDropdown(false);
                         await loadPresetTasks(); // Load all when empty
+                      } else {
+                        setShowPresetDropdown(false);
                       }
                     }}
                     onFocus={async () => {
@@ -2319,13 +2700,26 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                         await loadPresetTasks();
                       }
                     }}
+                    onBlur={(e) => {
+                      // Use setTimeout to allow clicks on dropdown to register first
+                      setTimeout(() => {
+                        // Check if the new focus target is not within the dropdown
+                        const relatedTarget = e.relatedTarget as HTMLElement;
+                        if (
+                          !editTaskDropdownRef.current?.contains(relatedTarget) &&
+                          !editTaskInputRef.current?.contains(relatedTarget)
+                        ) {
+                          setShowPresetDropdown(false);
+                        }
+                      }, 200);
+                    }}
                     placeholder="Enter task name or select from presets..."
                     bg={useColorModeValue('white', 'gray.700')}
                     size="sm"
-                    autoFocus
                   />
                   {showPresetDropdown && presetTaskOptions.length > 0 && (
                     <Box
+                      ref={editTaskDropdownRef}
                       position="absolute"
                       top="100%"
                       left="0"
@@ -2387,20 +2781,32 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 <FormLabel fontSize="sm">Duration (HH:MM:SS)</FormLabel>
                 <Input
                   value={editingTaskDuration}
-                  onChange={(e) => setEditingTaskDuration(e.target.value)}
-                  placeholder="01:30:00"
+                  onChange={(e) => {
+                    const formatted = formatDurationInput(e.target.value);
+                    setEditingTaskDuration(formatted);
+                  }}
+                  placeholder="013000"
                   bg={useColorModeValue('white', 'gray.700')}
                   maxLength={8}
                   size="sm"
                 />
                 <Text fontSize="xs" color="gray.500" mt={1}>
-                  Format: HH:MM:SS or HH:MM
+                  Type numbers only (e.g., 013000 for 01:30:00)
                 </Text>
               </FormControl>
             </Box>
           </Flex>
           
-          <Flex justify="flex-end" gap={2} mt={4}>
+          <Flex justify="space-between" align="center" mt={4}>
+            <IconButton
+              aria-label="Delete task"
+              icon={<Trash2 size={16} />}
+              size="sm"
+              variant="ghost"
+              colorScheme="red"
+              onClick={handleDeleteTask}
+            />
+            <Flex gap={2}>
               <Button variant="ghost" onClick={handleCancelEdit}>
                 Cancel
               </Button>
@@ -2412,6 +2818,344 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 Save Changes
               </Button>
             </Flex>
+          </Flex>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+    
+    {/* Add Custom Task Modal */}
+    <Modal 
+      isOpen={isAddCustomTaskModalOpen} 
+      onClose={handleCancelAddCustomTask} 
+      size="md"
+      isCentered
+      scrollBehavior="inside"
+    >
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent bg={useColorModeValue('white', 'gray.800')} maxW="600px" maxH="90vh">
+        <ModalHeader borderBottomWidth="1px" borderColor={useColorModeValue('gray.200', 'gray.600')} py={3} fontSize="md">
+          <Flex justify="space-between" align="center" w="100%" pr={8}>
+            <Text>Add Custom Task</Text>
+            <Button
+              colorScheme="blue"
+              size="sm"
+              onClick={handleSaveCustomTask}
+              isDisabled={!customTaskName.trim() || !customTaskDuration.trim()}
+            >
+              Add Task
+            </Button>
+          </Flex>
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody py={4} overflowY="auto">
+          <Flex direction="row" gap={4} align="flex-start">
+            {/* Left Column - Task Name and Duration (stacked) */}
+            <Box flex={1}>
+              <VStack spacing={4} align="stretch">
+                <FormControl>
+                  <FormLabel fontSize="sm">Task Name</FormLabel>
+                  <Box position="relative">
+                    <Input
+                      ref={customTaskInputRef}
+                      value={customTaskName}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        setCustomTaskName(value);
+                        const isFocused = document.activeElement === customTaskInputRef.current;
+                        if (value.length > 0 && isFocused) {
+                          setShowCustomTaskPresetDropdown(true);
+                          await searchCustomTaskPresetTasks(value);
+                        } else if (isFocused) {
+                          setShowCustomTaskPresetDropdown(false);
+                          await loadCustomTaskPresetTasks();
+                        } else {
+                          setShowCustomTaskPresetDropdown(false);
+                        }
+                      }}
+                      onFocus={async () => {
+                        if (customTaskName.length > 0) {
+                          setShowCustomTaskPresetDropdown(true);
+                          await searchCustomTaskPresetTasks(customTaskName);
+                        } else {
+                          await loadCustomTaskPresetTasks();
+                        }
+                      }}
+                      onBlur={(e) => {
+                        setTimeout(() => {
+                          const relatedTarget = e.relatedTarget as HTMLElement;
+                          if (
+                            !customTaskDropdownRef.current?.contains(relatedTarget) &&
+                            !customTaskInputRef.current?.contains(relatedTarget)
+                          ) {
+                            setShowCustomTaskPresetDropdown(false);
+                          }
+                        }, 200);
+                      }}
+                      placeholder="Enter task name or select from presets..."
+                      bg={useColorModeValue('white', 'gray.700')}
+                      size="sm"
+                      autoFocus
+                    />
+                    {showCustomTaskPresetDropdown && customTaskPresetOptions.length > 0 && (
+                      <Box
+                        ref={customTaskDropdownRef}
+                        position="absolute"
+                        top="100%"
+                        left="0"
+                        right="0"
+                        mt={1}
+                        bg={useColorModeValue('white', 'gray.800')}
+                        border="1px solid"
+                        borderColor={useColorModeValue('gray.200', 'gray.600')}
+                        borderRadius="md"
+                        boxShadow="lg"
+                        maxH="200px"
+                        overflowY="auto"
+                        zIndex={1000}
+                      >
+                        <VStack spacing={0} align="stretch" p={1}>
+                          {customTaskPresetOptions
+                            .slice(0, 5)
+                            .map((option, idx) => (
+                              <Box
+                                key={idx}
+                                px={3}
+                                py={2}
+                                cursor="pointer"
+                                _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
+                                onClick={() => {
+                                  setCustomTaskName(option);
+                                  setShowCustomTaskPresetDropdown(false);
+                                }}
+                                borderBottom={idx < Math.min(4, customTaskPresetOptions.length - 1) ? '1px solid' : 'none'}
+                                borderColor={useColorModeValue('gray.200', 'gray.600')}
+                              >
+                                <Flex align="center" gap={2}>
+                                  <Text fontSize="sm" color={useColorModeValue('gray.800', 'white')}>
+                                    {option}
+                                  </Text>
+                                  {isNonBillableTask(option) && (
+                                    <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                      Internal
+                                    </Badge>
+                                  )}
+                                </Flex>
+                              </Box>
+                            ))}
+                        </VStack>
+                      </Box>
+                    )}
+                  </Box>
+                  {isNonBillableTask(customTaskName) && (
+                    <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                      Non-Billable
+                    </Badge>
+                  )}
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel fontSize="sm">Duration (HH:MM:SS)</FormLabel>
+                  <Input
+                    value={customTaskDuration}
+                    onChange={(e) => {
+                      const formatted = formatDurationInput(e.target.value);
+                      setCustomTaskDuration(formatted);
+                    }}
+                    placeholder="013000"
+                    bg={useColorModeValue('white', 'gray.700')}
+                    maxLength={8}
+                    size="sm"
+                  />
+                  <Text fontSize="xs" color="gray.500" mt={1}>
+                    Type numbers only (e.g., 013000 for 01:30:00)
+                  </Text>
+                </FormControl>
+              </VStack>
+            </Box>
+            
+            {/* Right Column - Narration */}
+            <Box flex={1}>
+              <FormControl>
+                <FormLabel fontSize="sm">Narration (Optional)</FormLabel>
+                <Textarea
+                  value={customTaskNarration}
+                  onChange={(e) => setCustomTaskNarration(e.target.value)}
+                  placeholder="Describe what you did in this task..."
+                  bg={useColorModeValue('white', 'gray.700')}
+                  size="sm"
+                  rows={5}
+                />
+              </FormControl>
+            </Box>
+          </Flex>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+    
+    {/* Stop Timer Confirmation Modal */}
+    <Modal 
+      isOpen={isStopTimerModalOpen} 
+      onClose={handleCancelStopTimer} 
+      size="md"
+      isCentered
+      scrollBehavior="inside"
+    >
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent bg={useColorModeValue('white', 'gray.800')} maxW="600px" maxH="90vh">
+        <ModalHeader borderBottomWidth="1px" borderColor={useColorModeValue('gray.200', 'gray.600')} py={3} fontSize="md">
+          <Flex justify="space-between" align="center" w="100%" pr={8}>
+            <Text>Confirm Task</Text>
+            <Button
+              colorScheme="blue"
+              size="sm"
+              onClick={handleConfirmStopTimer}
+              isDisabled={!stopTimerTaskName.trim() || !stopTimerDuration.trim()}
+            >
+              Save
+            </Button>
+          </Flex>
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody py={4} overflowY="auto">
+          <Flex direction="row" gap={4} align="flex-start">
+            {/* Left Column - Task Name and Duration (stacked) */}
+            <Box flex={1}>
+              <VStack spacing={4} align="stretch">
+                <FormControl>
+                  <FormLabel fontSize="sm">Task Name</FormLabel>
+                  <Box position="relative">
+                    <Input
+                      ref={stopTimerInputRef}
+                      value={stopTimerTaskName}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        setStopTimerTaskName(value);
+                        const isFocused = document.activeElement === stopTimerInputRef.current;
+                        if (value.length > 0 && isFocused) {
+                          setShowStopTimerPresetDropdown(true);
+                          await searchStopTimerPresetTasks(value);
+                        } else if (isFocused) {
+                          setShowStopTimerPresetDropdown(false);
+                          await loadStopTimerPresetTasks();
+                        } else {
+                          setShowStopTimerPresetDropdown(false);
+                        }
+                      }}
+                      onFocus={async () => {
+                        if (stopTimerTaskName.length > 0) {
+                          setShowStopTimerPresetDropdown(true);
+                          await searchStopTimerPresetTasks(stopTimerTaskName);
+                        } else {
+                          await loadStopTimerPresetTasks();
+                        }
+                      }}
+                      onBlur={(e) => {
+                        setTimeout(() => {
+                          const relatedTarget = e.relatedTarget as HTMLElement;
+                          if (
+                            !stopTimerDropdownRef.current?.contains(relatedTarget) &&
+                            !stopTimerInputRef.current?.contains(relatedTarget)
+                          ) {
+                            setShowStopTimerPresetDropdown(false);
+                          }
+                        }, 200);
+                      }}
+                      placeholder="Enter task name or select from presets..."
+                      bg={useColorModeValue('white', 'gray.700')}
+                      size="sm"
+                    />
+                    {showStopTimerPresetDropdown && stopTimerPresetOptions.length > 0 && (
+                      <Box
+                        ref={stopTimerDropdownRef}
+                        position="absolute"
+                        top="100%"
+                        left="0"
+                        right="0"
+                        mt={1}
+                        bg={useColorModeValue('white', 'gray.800')}
+                        border="1px solid"
+                        borderColor={useColorModeValue('gray.200', 'gray.600')}
+                        borderRadius="md"
+                        boxShadow="lg"
+                        maxH="200px"
+                        overflowY="auto"
+                        zIndex={1000}
+                      >
+                        <VStack spacing={0} align="stretch" p={1}>
+                          {stopTimerPresetOptions
+                            .slice(0, 5)
+                            .map((option, idx) => (
+                              <Box
+                                key={idx}
+                                px={3}
+                                py={2}
+                                cursor="pointer"
+                                _hover={{ bg: useColorModeValue('gray.50', 'gray.700') }}
+                                onClick={() => {
+                                  setStopTimerTaskName(option);
+                                  setShowStopTimerPresetDropdown(false);
+                                }}
+                                borderBottom={idx < Math.min(4, stopTimerPresetOptions.length - 1) ? '1px solid' : 'none'}
+                                borderColor={useColorModeValue('gray.200', 'gray.600')}
+                              >
+                                <Flex align="center" gap={2}>
+                                  <Text fontSize="sm" color={useColorModeValue('gray.800', 'white')}>
+                                    {option}
+                                  </Text>
+                                  {isNonBillableTask(option) && (
+                                    <Badge colorScheme="orange" fontSize="xs" px={1.5} py={0}>
+                                      Internal
+                                    </Badge>
+                                  )}
+                                </Flex>
+                              </Box>
+                            ))}
+                        </VStack>
+                      </Box>
+                    )}
+                  </Box>
+                  {isNonBillableTask(stopTimerTaskName) && (
+                    <Badge colorScheme="orange" fontSize="xs" px={2} py={0.5} width="fit-content" mt={2}>
+                      Non-Billable
+                    </Badge>
+                  )}
+                </FormControl>
+                
+                <FormControl>
+                  <FormLabel fontSize="sm">Duration (HH:MM:SS)</FormLabel>
+                  <Input
+                    value={stopTimerDuration}
+                    onChange={(e) => {
+                      const formatted = formatDurationInput(e.target.value);
+                      setStopTimerDuration(formatted);
+                    }}
+                    placeholder="013000"
+                    bg={useColorModeValue('white', 'gray.700')}
+                    maxLength={8}
+                    size="sm"
+                  />
+                  <Text fontSize="xs" color="gray.500" mt={1}>
+                    Type numbers only (e.g., 013000 for 01:30:00)
+                  </Text>
+                </FormControl>
+              </VStack>
+            </Box>
+            
+            {/* Right Column - Narration */}
+            <Box flex={1}>
+              <FormControl>
+                <FormLabel fontSize="sm">Narration (Optional)</FormLabel>
+                <Textarea
+                  value={stopTimerNarration}
+                  onChange={(e) => setStopTimerNarration(e.target.value)}
+                  placeholder="Describe what you did in this task..."
+                  bg={useColorModeValue('white', 'gray.700')}
+                  size="sm"
+                  rows={5}
+                />
+              </FormControl>
+            </Box>
+          </Flex>
         </ModalBody>
       </ModalContent>
     </Modal>
