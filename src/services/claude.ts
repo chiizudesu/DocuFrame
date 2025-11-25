@@ -660,32 +660,33 @@ export async function analyzeWindowActivity(
 
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
-  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and provide a summary in a specific format.
+  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and summarize the apps used.
 
-IMPORTANT: Your response must be formatted as a markdown table with exactly 4 columns:
-1. Task name
-2. Total Duration (in HH:MM format)
-3. Productive Time (in HH:MM format) - time spent on productive work activities
-4. Achievements (bullet points only, no narrative)
+IMPORTANT: Your response must be formatted as a markdown table with exactly 2 columns:
+1. App Name
+2. Time (in HH:MM format)
 
-Format the output as a markdown table with headers: "Task Name | Total Duration | Productive Time | Achievements"
+Format the output as a markdown table with headers: "App Name | Time"
 
-For each task, analyze the window activity logs to:
-- Calculate productive time by identifying time spent on work-related applications vs distractions
-- List specific achievements as bullet points (what was accomplished, not what was done)
-- Identify time lost to distractions, context switching, or non-productive activities
+For each app used, analyze the window activity logs to:
+- Identify the application or service being used
+- Calculate the total time spent in that app
+- Group multiple instances of the same app together
 
-After the table, add a single summary sentence in this format:
-"Total time spent: [X hours Y minutes], Productive time: [X hours Y minutes], Time lost: [X hours Y minutes]"
+CRITICAL RULES FOR APP NAMING:
+- For web browsers (MS Edge, Chrome, Firefox, Safari, etc.), extract the website/service name from the window title instead of using the browser name
+  - Example: "MS Edge - Xero" should be recorded as "Xero" (not "MS Edge")
+  - Example: "Chrome - Gmail" should be recorded as "Gmail" (not "Chrome")
+  - Example: "Firefox - GitHub" should be recorded as "GitHub" (not "Firefox")
+- For desktop applications, use the application name (e.g., "Visual Studio Code", "Excel", "Word")
+- If a browser window title doesn't contain a clear website/service name, use the browser name as fallback
+- Group similar apps together (e.g., all "Xero" entries regardless of browser should be one row)
 
 Rules:
-- Use bullet points (• or -) for achievements, not narrative text
-- Be specific about what was achieved (e.g., "• Completed feature X", "• Fixed bug Y")
-- Calculate productive time based on application usage patterns
-- Keep achievements BRIEF and concise - maximum 8-10 words per bullet point
-- Focus on key accomplishments only, avoid verbose descriptions
-- Use action verbs and be direct (e.g., "• Processed tax forms" not "• Reviewed and processed 2025 IR3 tax forms for both clients")
-- Each bullet should be a single, concise accomplishment`;
+- Sum up all time spent in each app across the entire activity log
+- Time should be in HH:MM format (e.g., "02:30" for 2 hours 30 minutes)
+- Sort apps by time spent (descending order)
+- Each app should appear only once in the table`;
 
   const response = await retryWithBackoff(async () => {
     return await client.messages.create({
@@ -743,106 +744,79 @@ export async function analyzeTaskSubTasks(
 
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
-  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data for a SINGLE task and group activities into high-level sub-tasks.
+  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data for a SINGLE task and categorize ALL activities into EXACTLY these categories:
 
-CRITICAL: Group activities VERY STRICTLY into brief, high-level sub-task names. Each sub-task should represent a major work category, not individual actions or client-specific variations.
+ALLOWED CATEGORIES (ONLY these should appear):
+1. Xero
+2. Xero Practice Manager (XPM)
+3. Outlook
+4. Excel
+5. PDF Xchange
+6. Go FYI (Document Management / Jobs)
+7. Spotify
+8. CMD
+9. Idle Time
 
-SPECIFIC WORK CATEGORIES (MUST FOLLOW THESE RULES):
+IMPORTANT: Your response must be formatted as a simple list with time allocations:
+## Category Name (HH:MM)
+## Category Name (HH:MM)
 
-1. FINANCIAL STATEMENTS PREPARATION - WORKPAPER CATEGORIES:
-   Each workpaper category should be its OWN separate sub-task. These are the workpaper categories:
-   - "Job Notes" (A2)
-   - "Permanent Files" (A1)
-   - "Other Checks" (A3)
-   - "Financial Statements, Tax Returns & Minutes" (A4)
-   - "Individuals" (A5)
-   - "Bank Reconciliation" (C)
-   - "Accounts Receivable" (D)
-   - "Other Current Assets" (E)
-   - "Inventory" (E1)
-   - "Prepayments" (E2)
-   - "Fixed Assets" (F)
-   - "Non-Current Assets" (F1)
-   - "Accounts Payable" (G)
-   - "Other Current Liabilities" (H)
-   - "Non-Current Liabilities" (H1)
-   - "Loans" (I)
-   - "Finance Lease" (I2)
-   - "Operating Lease Commitments" (I3)
-   - "Investments" (J)
-   - "GST" (K)
-   - "Income Tax" (L)
-   - "Imputation Credits" (M)
-   - "Imputation Credits to RE" (M2)
-   - "Shareholder/Beneficiary Current Accounts" (N)
-   - "Equity, Capital, Accumulations" (O)
-   - "Intangibles" (P)
-   - "Profit & Loss" (Q)
-   - "Entertainment" (R)
-   - "Home Office" (S)
-   - "Wages" (W)
-   
-   IMPORTANT: Work on the same workpaper category for different clients should be grouped together as ONE sub-task.
-   Example: "Bank Reconciliation for Client X" + "Bank Reconciliation for Client Y" = "Bank Reconciliation" (one sub-task)
-   Example: "GST work for Client A" + "GST work for Client B" = "GST" (one sub-task)
+CRITICAL MAPPING RULES - Map ALL window titles to these categories:
 
-2. TAX RETURNS:
-   ALL tax return work (regardless of type: individual, trust, company, etc.) should be grouped as ONE sub-task: "Drafting Tax Returns"
-   
-   KEY INDICATORS OF TAX RETURN WORK (recognize these even if done through accounting software):
-   - Window titles containing "IR3" (Individual tax return)
-   - Window titles containing "Income Tax" (e.g., "2025 Income Tax", "2026 Income Tax")
-   - Window titles containing "Tax Returns" or "Tax Return"
-   - Window titles containing "Tax Statements"
-   - PDF files with names like "Tax Docs", "IR3", or client names with tax years
-   - Working in Xero Practice Manager on tax return files (even if it shows "Xero")
-   - Working in Xero Workpapers when the context is tax-related
-   - Any work preparing, reviewing, or processing tax returns
-   - Individual tax returns (IR3, etc.)
-   - Trust tax returns
-   - Company tax returns
-   - Work on different clients' tax returns should all be grouped together
-   
-   IMPORTANT: If you see "Xero" or "Xero Practice Manager" but the window title also contains "IR3", "Income Tax", "Tax Return", or similar tax-related terms, this is TAX RETURN work, NOT "Accounting Work". Only categorize as "Accounting Work" if it's general accounting/bookkeeping without tax return context.
+1. XERO:
+   - Any window title containing "Xero" (but NOT "XPM" or "Practice Manager")
+   - Examples: "MS Edge - Xero", "Chrome - Xero - Client Name", "Xero - Dashboard"
 
-3. OTHER WORK:
-   Other types of work can be categorized as appropriate:
-   - "Reviewing Trust Reports" (if reviewing completed reports, not drafting)
-   - "Accounting Work" (general accounting tasks)
-   - "Document Review" (reviewing documents)
-   - "Email Communication" (email-related work)
-   - etc.
+2. XERO PRACTICE MANAGER (XPM):
+   - Any window title containing "XPM" or "Xero Practice Manager" or "Practice Manager"
+   - Examples: "XPM", "Xero Practice Manager", "Practice Manager - Jobs"
 
-EXAMPLES OF CORRECT GROUPING:
-- "Bank Reconciliation for Client X" + "Bank Reconciliation for Client Y" → "Bank Reconciliation" (one sub-task)
-- "GST work for Client A" + "GST reconciliation for Client B" → "GST" (one sub-task)
-- "Accounts Receivable for Client X" → "Accounts Receivable" (one sub-task)
-- "Xero Practice Manager | 2025 IR3 : Margaret Lawson" + "Xero Practice Manager | 2025 IR3 : Neville Parker" + "Margaret Lawson - 2025 - IR3 - PDF" + "Neville - Tax Docs - PDF" + "Xero Practice Manager | Margaret Lawson - 2025 Income Tax" → "Drafting Tax Returns" (ALL tax return work, even if done through Xero)
-- "Xero | Reports | MM Lawson & NF Parker Family Trusts" (if this is for financial statements, not tax) → appropriate workpaper category
-- "Xero Workpapers" when working on tax returns → "Drafting Tax Returns"
-- "Xero Workpapers" when working on financial statements → appropriate workpaper category
-- "Reviewed Trust Reports" → "Reviewing Trust Reports" (if it's review work, not drafting)
-- "Accessed Xero dashboard" + "Processed invoices" + "Reconciled accounts" (general bookkeeping, no tax context) → "Accounting Work"
+3. OUTLOOK:
+   - Any window title containing "Outlook" or "Microsoft Outlook"
+   - Examples: "Outlook", "Microsoft Outlook - Inbox", "Outlook - Calendar"
 
-IMPORTANT GROUPING RULES:
-- Each workpaper category should be its OWN sub-task (e.g., "Bank Reconciliation", "GST", "Accounts Receivable")
-- Work on the same workpaper category for different clients should be grouped together as ONE sub-task
-- ALL tax return work (regardless of client or type) = ONE sub-task: "Drafting Tax Returns"
-- Client names should NOT create separate sub-tasks - group by workpaper category or work type instead
-- When in doubt, group MORE rather than less - err on the side of fewer, broader sub-tasks
+4. EXCEL:
+   - Any window title containing "Excel" or "Microsoft Excel"
+   - Examples: "Excel", "Microsoft Excel - Workbook.xlsx", "Excel - Sheet1"
 
-Your response must be formatted as a simple list of sub-tasks with time allocations:
-## Sub Task Name 1 (HH:MM)
-## Sub Task Name 2 (HH:MM)
-## Sub Task Name 3 (HH:MM)
+5. PDF XCHANGE:
+   - Any window title containing "PDF Xchange" or "PDF-XChange" or "PDFXChange"
+   - Examples: "PDF Xchange Editor", "PDF-XChange Viewer", "PDFXChange"
 
-Rules:
-- Group related activities into a SINGLE high-level sub-task name
-- Use brief, descriptive names (2-4 words maximum)
-- Each sub-task name should represent a major work category, NOT individual clients, specific accounts, or specific documents
-- Include time spent in parentheses after each sub-task name (HH:MM format)
+6. GO FYI (DOCUMENT MANAGEMENT / JOBS):
+   - Any window title containing "Go FYI" or "GoFYI" or "Document Management" or "Jobs" (when referring to document management system)
+   - Examples: "Go FYI", "Document Management", "Jobs - Go FYI", "GoFYI - Client Documents"
+
+7. SPOTIFY:
+   - Any window title containing "Spotify"
+   - Examples: "Spotify", "Spotify - Song Name", "Spotify Premium"
+
+8. CMD:
+   - Any window title containing "Command Prompt" or "CMD" or "Windows Command Processor" or "PowerShell"
+   - Examples: "Command Prompt", "CMD", "Windows PowerShell", "PowerShell"
+
+9. IDLE TIME (catch-all for everything else):
+   - Google searches (any window title with "and X more pages" or search-like content)
+   - AI usage (ChatGPT, Claude, Copilot, Bard, Perplexity, etc.)
+   - Non-accounting related activities (YouTube, social media, games, entertainment, etc.)
+   - Any browser activity that doesn't match the above categories
+   - Any other application that doesn't match the above categories
+   - Examples: "Chrome - Google Search", "ChatGPT", "YouTube", "Facebook", "Twitter", "GitHub", "Visual Studio Code", etc.
+
+CALCULATION RULES:
+- Calculate the total time spent in each category by summing all matching window activity entries
+- Time should be in HH:MM format (e.g., "02:30" for 2 hours 30 minutes)
+- Each category should appear only once in the list (sum all instances together)
+- Include time spent in parentheses after each category name (HH:MM format)
 - Time allocations should sum to the total task duration
-- Be very strict about grouping - multiple related activities should become ONE sub-task`;
+- Sort categories by time spent (descending order), EXCEPT "Idle Time" which must ALWAYS be last
+
+CRITICAL REQUIREMENTS:
+- ONLY return categories from the allowed list above
+- DO NOT create new categories or use different names
+- If a window title matches multiple categories, use the most specific match (e.g., "XPM" takes precedence over "Xero")
+- "Idle Time" must ALWAYS be the very last entry in the list, regardless of its duration
+- If a category has 0 time, DO NOT include it in the response`;
 
   let fullText = '';
   await retryWithBackoff(async () => {
@@ -855,7 +829,7 @@ Rules:
           role: 'user', 
           content: [{ 
             type: 'text', 
-            text: `Analyze this task's window activity and group into high-level sub-tasks:\n\n${windowActivityData}` 
+            text: `Analyze this task's window activity and summarize the apps used:\n\n${windowActivityData}` 
           }] 
         }
       ],
@@ -869,26 +843,36 @@ Rules:
     }
   });
   
-  // Parse the response to extract sub-tasks
-  const subTasks: Array<{ name: string; timeSpent: number }> = [];
+  // Parse the response to extract apps
+  const apps: Array<{ name: string; timeSpent: number }> = [];
   const lines = fullText.split('\n').filter(l => l.trim());
   
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed.startsWith('##')) {
-      // Extract sub-task name and time
-      const match = trimmed.match(/^##\s*(.+?)\s*\((\d{2}):(\d{2})\)/);
+      // Extract category name and time
+      // Handle category names that may contain parentheses (e.g., "Xero Practice Manager (XPM)")
+      // Match everything up to the time pattern at the end: (HH:MM)
+      const match = trimmed.match(/^##\s*(.+)\s+\((\d{1,2}):(\d{2})\)$/);
       if (match) {
         const name = match[1].trim();
         const hours = parseInt(match[2]);
         const minutes = parseInt(match[3]);
         const timeSpent = hours * 3600 + minutes * 60;
-        subTasks.push({ name, timeSpent });
+        apps.push({ name, timeSpent });
       }
     }
   }
   
-  return subTasks;
+  // Sort apps by time spent (descending), but always put "Idle Time" at the end
+  const idleTimeEntry = apps.find(app => app.name.toLowerCase() === 'idle time');
+  const otherApps = apps.filter(app => app.name.toLowerCase() !== 'idle time');
+  
+  // Sort other apps by time spent (descending)
+  otherApps.sort((a, b) => b.timeSpent - a.timeSpent);
+  
+  // Combine: other apps first, then idle time at the end (if present)
+  return idleTimeEntry ? [...otherApps, idleTimeEntry] : otherApps;
 }
 
 export async function analyzeWindowActivityStream(
@@ -922,32 +906,33 @@ export async function analyzeWindowActivityStream(
 
   const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
 
-  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and provide a summary in a specific format.
+  const systemPrompt = `You are a productivity analyst. Analyze the provided window activity data and summarize the apps used.
 
-IMPORTANT: Your response must be formatted as a markdown table with exactly 4 columns:
-1. Task name
-2. Total Duration (in HH:MM format)
-3. Productive Time (in HH:MM format) - time spent on productive work activities
-4. Achievements (bullet points only, no narrative)
+IMPORTANT: Your response must be formatted as a markdown table with exactly 2 columns:
+1. App Name
+2. Time (in HH:MM format)
 
-Format the output as a markdown table with headers: "Task Name | Total Duration | Productive Time | Achievements"
+Format the output as a markdown table with headers: "App Name | Time"
 
-For each task, analyze the window activity logs to:
-- Calculate productive time by identifying time spent on work-related applications vs distractions
-- List specific achievements as bullet points (what was accomplished, not what was done)
-- Identify time lost to distractions, context switching, or non-productive activities
+For each app used, analyze the window activity logs to:
+- Identify the application or service being used
+- Calculate the total time spent in that app
+- Group multiple instances of the same app together
 
-After the table, add a single summary sentence in this format:
-"Total time spent: [X hours Y minutes], Productive time: [X hours Y minutes], Time lost: [X hours Y minutes]"
+CRITICAL RULES FOR APP NAMING:
+- For web browsers (MS Edge, Chrome, Firefox, Safari, etc.), extract the website/service name from the window title instead of using the browser name
+  - Example: "MS Edge - Xero" should be recorded as "Xero" (not "MS Edge")
+  - Example: "Chrome - Gmail" should be recorded as "Gmail" (not "Chrome")
+  - Example: "Firefox - GitHub" should be recorded as "GitHub" (not "Firefox")
+- For desktop applications, use the application name (e.g., "Visual Studio Code", "Excel", "Word")
+- If a browser window title doesn't contain a clear website/service name, use the browser name as fallback
+- Group similar apps together (e.g., all "Xero" entries regardless of browser should be one row)
 
 Rules:
-- Use bullet points (• or -) for achievements, not narrative text
-- Be specific about what was achieved (e.g., "• Completed feature X", "• Fixed bug Y")
-- Calculate productive time based on application usage patterns
-- Keep achievements BRIEF and concise - maximum 8-10 words per bullet point
-- Focus on key accomplishments only, avoid verbose descriptions
-- Use action verbs and be direct (e.g., "• Processed tax forms" not "• Reviewed and processed 2025 IR3 tax forms for both clients")
-- Each bullet should be a single, concise accomplishment`;
+- Sum up all time spent in each app across the entire activity log
+- Time should be in HH:MM format (e.g., "02:30" for 2 hours 30 minutes)
+- Sort apps by time spent (descending order)
+- Each app should appear only once in the table`;
 
   return await retryWithBackoff(async () => {
     const stream = await client.messages.stream({

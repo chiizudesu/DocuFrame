@@ -898,6 +898,32 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         try {
           const newState: TimerState = JSON.parse(e.newValue);
           console.log('[FloatingTimer] Timer state changed from other window:', newState);
+          
+          // Validate the state before restoring it
+          // Don't restore if:
+          // 1. Task has an endTime (completed tasks shouldn't be restored)
+          // 2. Task is from a different day
+          // 3. Task is not actually running
+          if (newState.currentTask) {
+            // Check if task is completed (has endTime)
+            if (newState.currentTask.endTime) {
+              console.log('[FloatingTimer] ⚠️ Ignoring storage change - task is completed (has endTime)');
+              return;
+            }
+            
+            // Check if task is from a different day
+            if (taskTimerService.isTaskFromDifferentDay(newState.currentTask)) {
+              console.log('[FloatingTimer] ⚠️ Ignoring storage change - task is from a different day');
+              return;
+            }
+            
+            // Only restore if task is actually running
+            if (!newState.isRunning) {
+              console.log('[FloatingTimer] ⚠️ Ignoring storage change - task is not running');
+              return;
+            }
+          }
+          
           setTimerState(newState);
           
           if (newState.currentTask) {

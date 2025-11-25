@@ -38,7 +38,6 @@ import {
 } from '@chakra-ui/react';
 import { ChevronDown, ChevronRight, Clock, Trash2, ChevronLeft, Calendar, Plus, X, Edit2, Check, XCircle, Search } from 'lucide-react';
 import { Task, taskTimerService } from '../services/taskTimer';
-import { analyzeTaskSubTasks as analyzeTaskSubTasksAPI } from '../services/claude';
 
 interface TaskTimerSummaryDialogProps {
   isOpen: boolean;
@@ -64,6 +63,9 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
   const [showPresetDropdown, setShowPresetDropdown] = useState(false);
   const { isOpen: isEditModalOpen, onOpen: onEditModalOpen, onClose: onEditModalClose } = useChakraDisclosure();
   const [taskToEdit, setTaskToEdit] = useState<Task | null>(null);
+  const { isOpen: isBreakdownModalOpen, onOpen: onBreakdownModalOpen, onClose: onBreakdownModalClose } = useChakraDisclosure();
+  const [breakdownCategory, setBreakdownCategory] = useState<string>('');
+  const [breakdownTask, setBreakdownTask] = useState<Task | null>(null);
   
   // Non-billable task names
   const NON_BILLABLE_TASKS = [
@@ -438,53 +440,9 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     setAnalyzingTasks(prev => new Set(prev).add(task.id));
     
     try {
-      // Build window activity data for this task
-      let analysisText = `Task: ${task.name}\n`;
-      analysisText += `Duration: ${taskTimerService.formatDuration(task.duration)}\n`;
-      analysisText += `Started: ${taskTimerService.formatTimestamp(task.startTime)}\n`;
-      if (task.endTime) {
-        analysisText += `Ended: ${taskTimerService.formatTimestamp(task.endTime)}\n`;
-      }
-      analysisText += `\n`;
-      
-      if (task.windowTitles && task.windowTitles.length > 0) {
-        analysisText += `Window Activity Log (${task.windowTitles.length} entries) with time spent:\n`;
-        
-        // Calculate time spent in each window
-        for (let i = 0; i < task.windowTitles.length; i++) {
-          const log = task.windowTitles[i];
-          const logTime = new Date(log.timestamp).getTime();
-          
-          // Calculate time spent: difference to next log, or to task end, or to now if still running
-          let timeSpent = 0;
-          if (i < task.windowTitles.length - 1) {
-            const nextLogTime = new Date(task.windowTitles[i + 1].timestamp).getTime();
-            timeSpent = Math.floor((nextLogTime - logTime) / 1000);
-          } else {
-            const endTime = task.endTime ? new Date(task.endTime).getTime() : Date.now();
-            timeSpent = Math.floor((endTime - logTime) / 1000);
-          }
-          
-          const timeSpentFormatted = taskTimerService.formatDuration(timeSpent);
-          analysisText += `  [${taskTimerService.formatTimestamp(log.timestamp)}] ${log.windowTitle} (${timeSpentFormatted})\n`;
-        }
-      }
-      
-      // Use the new function to analyze single task and return structured sub-tasks
-      try {
-        const subTasks = await analyzeTaskSubTasksAPI(analysisText, 'haiku');
-        if (subTasks.length > 0) {
-          setTaskSubTasks(prev => new Map(prev).set(task.id, subTasks));
-        } else {
-          // Fallback to native grouping if AI returns no results
-          const subTasks = groupWindowTitlesIntoSubTasks(task);
-          setTaskSubTasks(prev => new Map(prev).set(task.id, subTasks));
-        }
-      } catch (error) {
-        // Fallback to native grouping if AI fails
-        const subTasks = groupWindowTitlesIntoSubTasks(task);
-        setTaskSubTasks(prev => new Map(prev).set(task.id, subTasks));
-      }
+      // Use programmatic categorization directly (no AI needed)
+      const subTasks = groupWindowTitlesIntoSubTasks(task);
+      setTaskSubTasks(prev => new Map(prev).set(task.id, subTasks));
     } catch (error: any) {
       console.error('[TaskTimer] Error analyzing task sub-tasks:', error);
     } finally {
@@ -496,19 +454,133 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
     }
   };
   
+  // Allowed categories
+  const CATEGORIES = {
+    XERO: 'Xero',
+    XPM: 'Xero Practice Manager (XPM)',
+    OUTLOOK: 'Outlook',
+    EXCEL: 'Excel',
+    PDF_XCHANGE: 'PDF Xchange',
+    GO_FYI: 'Go FYI (Document Management / Jobs)',
+    SPOTIFY: 'Spotify',
+    CMD: 'CMD',
+    IDLE_TIME: 'Idle Time'
+  };
+  
+  // Helper function to categorize a window title (extracted for reuse)
+  const categorizeWindowTitle = (windowTitle: string): string => {
+    const titleLower = windowTitle.toLowerCase();
+    
+    // Check for XPM first (more specific than Xero)
+    if (titleLower.includes('xpm') || 
+        titleLower.includes('xero practice manager') || 
+        titleLower.includes('practice manager')) {
+      return CATEGORIES.XPM;
+    }
+    
+    // Check for Xero (but not XPM)
+    if (titleLower.includes('xero')) {
+      return CATEGORIES.XERO;
+    }
+    
+    // Check for Outlook
+    if (titleLower.includes('outlook') || titleLower.includes('microsoft outlook')) {
+      return CATEGORIES.OUTLOOK;
+    }
+    
+    // Check for Excel
+    if (titleLower.includes('excel') || titleLower.includes('microsoft excel')) {
+      return CATEGORIES.EXCEL;
+    }
+    
+    // Check for PDF Xchange
+    if (titleLower.includes('pdf xchange') || 
+        titleLower.includes('pdf-xchange') || 
+        titleLower.includes('pdfxchange')) {
+      return CATEGORIES.PDF_XCHANGE;
+    }
+    
+    // Check for Go FYI / Document Management / Jobs
+    if (titleLower.includes('go fyi') || 
+        titleLower.includes('gofyi') || 
+        (titleLower.includes('document management') && !titleLower.includes('pdf')) ||
+        (titleLower.includes('jobs') && (titleLower.includes('go') || titleLower.includes('document')))) {
+      return CATEGORIES.GO_FYI;
+    }
+    
+    // Check for Spotify
+    if (titleLower.includes('spotify')) {
+      return CATEGORIES.SPOTIFY;
+    }
+    
+    // Check for CMD / PowerShell
+    if (titleLower.includes('command prompt') || 
+        titleLower.includes('cmd') || 
+        titleLower.includes('windows command processor') ||
+        titleLower.includes('powershell')) {
+      return CATEGORIES.CMD;
+    }
+    
+    // Everything else goes to Idle Time (Google searches, AI, non-accounting apps, etc.)
+    return CATEGORIES.IDLE_TIME;
+  };
+  
+  // Get window titles for a specific category
+  const getWindowTitlesForCategory = (task: Task, categoryName: string): Array<{ windowTitle: string; timestamp: string; timeSpent: number }> => {
+    if (!task.windowTitles || task.windowTitles.length === 0) {
+      return [];
+    }
+    
+    const results: Array<{ windowTitle: string; timestamp: string; timeSpent: number }> = [];
+    
+    for (let i = 0; i < task.windowTitles.length; i++) {
+      const log = task.windowTitles[i];
+      const category = categorizeWindowTitle(log.windowTitle);
+      
+      if (category === categoryName) {
+        const logTime = new Date(log.timestamp).getTime();
+        let timeSpent = 0;
+        
+        if (i < task.windowTitles.length - 1) {
+          const nextLogTime = new Date(task.windowTitles[i + 1].timestamp).getTime();
+          timeSpent = Math.floor((nextLogTime - logTime) / 1000);
+        } else {
+          const endTime = task.endTime ? new Date(task.endTime).getTime() : Date.now();
+          timeSpent = Math.floor((endTime - logTime) / 1000);
+        }
+        
+        results.push({
+          windowTitle: log.windowTitle,
+          timestamp: log.timestamp,
+          timeSpent
+        });
+      }
+    }
+    
+    return results;
+  };
+  
+  // Handle opening breakdown modal
+  const handleOpenBreakdown = (task: Task, categoryName: string) => {
+    setBreakdownTask(task);
+    setBreakdownCategory(categoryName);
+    onBreakdownModalOpen();
+  };
+  
   const groupWindowTitlesIntoSubTasks = (task: Task): Array<{ name: string; timeSpent: number }> => {
-    // Native logic to group window titles into high-level sub-tasks
-    const subTaskMap = new Map<string, number>();
+    // Programmatic categorization into specific categories
+    const categoryMap = new Map<string, number>();
     
     if (!task.windowTitles || task.windowTitles.length === 0) {
       return [];
     }
     
+    // Process each window title log
     for (let i = 0; i < task.windowTitles.length; i++) {
       const log = task.windowTitles[i];
       const logTime = new Date(log.timestamp).getTime();
       
-      // Calculate time spent
+      // Calculate time spent in this window
       let timeSpent = 0;
       if (i < task.windowTitles.length - 1) {
         const nextLogTime = new Date(task.windowTitles[i + 1].timestamp).getTime();
@@ -518,31 +590,27 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
         timeSpent = Math.floor((endTime - logTime) / 1000);
       }
       
-      // Group by application/activity type
-      const windowTitle = log.windowTitle.toLowerCase();
-      let subTaskName = 'General Work';
+      // Categorize the window title
+      const category = categorizeWindowTitle(log.windowTitle);
       
-      if (windowTitle.includes('xero') || windowTitle.includes('accounting')) {
-        subTaskName = 'Accounting Work';
-      } else if (windowTitle.includes('tax') || windowTitle.includes('ir3') || windowTitle.includes('ird')) {
-        subTaskName = 'Tax Preparation';
-      } else if (windowTitle.includes('pdf') || windowTitle.includes('document')) {
-        subTaskName = 'Document Review';
-      } else if (windowTitle.includes('email') || windowTitle.includes('outlook') || windowTitle.includes('gmail')) {
-        subTaskName = 'Email Communication';
-      } else if (windowTitle.includes('excel') || windowTitle.includes('spreadsheet')) {
-        subTaskName = 'Data Analysis';
-      } else if (windowTitle.includes('word') || windowTitle.includes('document')) {
-        subTaskName = 'Document Creation';
-      }
-      
-      const currentTime = subTaskMap.get(subTaskName) || 0;
-      subTaskMap.set(subTaskName, currentTime + timeSpent);
+      // Add time to category
+      const currentTime = categoryMap.get(category) || 0;
+      categoryMap.set(category, currentTime + timeSpent);
     }
     
-    return Array.from(subTaskMap.entries())
+    // Convert to array, filter out categories with 0 time, and sort by time spent
+    const categories = Array.from(categoryMap.entries())
+      .filter(([_, timeSpent]) => timeSpent > 0)
       .map(([name, timeSpent]) => ({ name, timeSpent }))
-      .sort((a, b) => b.timeSpent - a.timeSpent);
+      .sort((a, b) => {
+        // Idle Time always goes last
+        if (a.name === CATEGORIES.IDLE_TIME) return 1;
+        if (b.name === CATEGORIES.IDLE_TIME) return -1;
+        // Others sorted by time spent (descending)
+        return b.timeSpent - a.timeSpent;
+      });
+    
+    return categories;
   };
   
   const getTotalDuration = () => {
@@ -999,13 +1067,18 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                                       <Table variant="simple" size="sm">
                                         <Thead>
                                           <Tr>
-                                            <Th py={2} fontSize="xs">Sub Task Name</Th>
-                                            <Th py={2} fontSize="xs" isNumeric>Time Spent</Th>
+                                            <Th py={2} fontSize="xs">App Name</Th>
+                                            <Th py={2} fontSize="xs" isNumeric>Time</Th>
                                           </Tr>
                                         </Thead>
                                         <Tbody>
                                           {taskSubTasks.get(task.id)?.map((subTask, idx) => (
-                                            <Tr key={idx}>
+                                            <Tr 
+                                              key={idx}
+                                              cursor="pointer"
+                                              _hover={{ bg: hoverBg }}
+                                              onClick={() => handleOpenBreakdown(task, subTask.name)}
+                                            >
                                               <Td py={2} fontSize="xs">{subTask.name}</Td>
                                               <Td py={2} fontSize="xs" isNumeric>
                                                 {taskTimerService.formatDuration(subTask.timeSpent)}
@@ -1304,9 +1377,83 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                   </Button>
                 </Flex>
               </VStack>
-            </ModalBody>
-          </ModalContent>
-        </Modal>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+      
+      {/* Category Breakdown Modal */}
+      <Modal isOpen={isBreakdownModalOpen} onClose={onBreakdownModalClose} size="xl" scrollBehavior="inside">
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <ModalContent bg={bgColor} maxH="80vh">
+          <ModalHeader borderBottomWidth="1px" borderColor={borderColor}>
+            <Flex align="center" gap={2}>
+              <Text>{breakdownCategory}</Text>
+              {breakdownTask && (
+                <Text fontSize="sm" color="gray.500" fontWeight="normal">
+                  - {breakdownTask.name}
+                </Text>
+              )}
+            </Flex>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody py={4} overflowY="auto">
+            {breakdownTask && breakdownCategory ? (
+              (() => {
+                const windowTitles = getWindowTitlesForCategory(breakdownTask, breakdownCategory);
+                const totalTime = windowTitles.reduce((sum, item) => sum + item.timeSpent, 0);
+                
+                return windowTitles.length > 0 ? (
+                  <VStack spacing={4} align="stretch">
+                    <Flex justify="space-between" align="center" pb={2} borderBottomWidth="1px" borderColor={borderColor}>
+                      <Text fontSize="sm" fontWeight="semibold" color={textColor}>
+                        Total Time: {taskTimerService.formatDuration(totalTime)}
+                      </Text>
+                      <Text fontSize="sm" color="gray.500">
+                        {windowTitles.length} {windowTitles.length === 1 ? 'entry' : 'entries'}
+                      </Text>
+                    </Flex>
+                    
+                    <Table variant="simple" size="sm">
+                      <Thead>
+                        <Tr>
+                          <Th py={2} fontSize="xs">Window Title</Th>
+                          <Th py={2} fontSize="xs">Timestamp</Th>
+                          <Th py={2} fontSize="xs" isNumeric>Duration</Th>
+                        </Tr>
+                      </Thead>
+                      <Tbody>
+                        {windowTitles.map((item, idx) => (
+                          <Tr key={idx} _hover={{ bg: hoverBg }}>
+                            <Td py={2} fontSize="xs" maxW="400px">
+                              <Text isTruncated title={item.windowTitle}>
+                                {item.windowTitle}
+                              </Text>
+                            </Td>
+                            <Td py={2} fontSize="xs" color="gray.600">
+                              {taskTimerService.formatTimestamp(item.timestamp)}
+                            </Td>
+                            <Td py={2} fontSize="xs" isNumeric>
+                              {taskTimerService.formatDuration(item.timeSpent)}
+                            </Td>
+                          </Tr>
+                        ))}
+                      </Tbody>
+                    </Table>
+                  </VStack>
+                ) : (
+                  <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
+                    No window titles found for this category.
+                  </Text>
+                );
+              })()
+            ) : (
+              <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
+                Loading...
+              </Text>
+            )}
+          </ModalBody>
+        </ModalContent>
+      </Modal>
       </Box>
     );
   }
@@ -1515,13 +1662,18 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                                       <Table variant="simple" size="sm">
                                         <Thead>
                                           <Tr>
-                                            <Th py={2} fontSize="xs">Sub Task Name</Th>
-                                            <Th py={2} fontSize="xs" isNumeric>Time Spent</Th>
+                                            <Th py={2} fontSize="xs">App Name</Th>
+                                            <Th py={2} fontSize="xs" isNumeric>Time</Th>
                                           </Tr>
                                         </Thead>
                                         <Tbody>
                                           {taskSubTasks.get(task.id)?.map((subTask, idx) => (
-                                            <Tr key={idx}>
+                                            <Tr 
+                                              key={idx}
+                                              cursor="pointer"
+                                              _hover={{ bg: hoverBg }}
+                                              onClick={() => handleOpenBreakdown(task, subTask.name)}
+                                            >
                                               <Td py={2} fontSize="xs">{subTask.name}</Td>
                                               <Td py={2} fontSize="xs" isNumeric>
                                                 {taskTimerService.formatDuration(subTask.timeSpent)}
@@ -1851,6 +2003,80 @@ export const TaskTimerSummaryDialog: React.FC<TaskTimerSummaryDialogProps> = ({ 
                 </Button>
               </Flex>
             </VStack>
+          </ModalBody>
+        </ModalContent>
+      </Modal>
+      
+      {/* Category Breakdown Modal */}
+      <Modal isOpen={isBreakdownModalOpen} onClose={onBreakdownModalClose} size="xl" scrollBehavior="inside">
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <ModalContent bg={bgColor} maxH="80vh">
+          <ModalHeader borderBottomWidth="1px" borderColor={borderColor}>
+            <Flex align="center" gap={2}>
+              <Text>{breakdownCategory}</Text>
+              {breakdownTask && (
+                <Text fontSize="sm" color="gray.500" fontWeight="normal">
+                  - {breakdownTask.name}
+                </Text>
+              )}
+            </Flex>
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody py={4} overflowY="auto">
+            {breakdownTask && breakdownCategory ? (
+              (() => {
+                const windowTitles = getWindowTitlesForCategory(breakdownTask, breakdownCategory);
+                const totalTime = windowTitles.reduce((sum, item) => sum + item.timeSpent, 0);
+                
+                return windowTitles.length > 0 ? (
+                  <VStack spacing={4} align="stretch">
+                    <Flex justify="space-between" align="center" pb={2} borderBottomWidth="1px" borderColor={borderColor}>
+                      <Text fontSize="sm" fontWeight="semibold" color={textColor}>
+                        Total Time: {taskTimerService.formatDuration(totalTime)}
+                      </Text>
+                      <Text fontSize="sm" color="gray.500">
+                        {windowTitles.length} {windowTitles.length === 1 ? 'entry' : 'entries'}
+                      </Text>
+                    </Flex>
+                    
+                    <Table variant="simple" size="sm">
+                      <Thead>
+                        <Tr>
+                          <Th py={2} fontSize="xs">Window Title</Th>
+                          <Th py={2} fontSize="xs">Timestamp</Th>
+                          <Th py={2} fontSize="xs" isNumeric>Duration</Th>
+                        </Tr>
+                      </Thead>
+                      <Tbody>
+                        {windowTitles.map((item, idx) => (
+                          <Tr key={idx} _hover={{ bg: hoverBg }}>
+                            <Td py={2} fontSize="xs" maxW="400px">
+                              <Text isTruncated title={item.windowTitle}>
+                                {item.windowTitle}
+                              </Text>
+                            </Td>
+                            <Td py={2} fontSize="xs" color="gray.600">
+                              {taskTimerService.formatTimestamp(item.timestamp)}
+                            </Td>
+                            <Td py={2} fontSize="xs" isNumeric>
+                              {taskTimerService.formatDuration(item.timeSpent)}
+                            </Td>
+                          </Tr>
+                        ))}
+                      </Tbody>
+                    </Table>
+                  </VStack>
+                ) : (
+                  <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
+                    No window titles found for this category.
+                  </Text>
+                );
+              })()
+            ) : (
+              <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
+                Loading...
+              </Text>
+            )}
           </ModalBody>
         </ModalContent>
       </Modal>
