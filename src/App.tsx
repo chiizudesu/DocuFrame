@@ -416,6 +416,7 @@ const JumpModeOverlay: React.FC<{
   const inputBorderColor = useColorModeValue('gray.300', 'gray.600');
   const pathBg = useColorModeValue('gray.50', 'gray.700');
   const pathTextColor = useColorModeValue('gray.600', 'gray.300');
+  const highlightColor = useColorModeValue('blue.400', 'blue.500');
   
   // Helper function to get relative path from root
   const getRelativePath = React.useCallback((fullPath: string) => {
@@ -610,9 +611,10 @@ const JumpModeOverlay: React.FC<{
         zIndex={9999}
         minW="500px"
         maxW="700px"
-        boxShadow="0 4px 20px rgba(0, 0, 0, 0.15)"
         borderRadius="md"
         overflow="hidden"
+        border="5px solid"
+        borderColor={highlightColor}
       >
         {/* Row 1: Current text input */}
         <Box

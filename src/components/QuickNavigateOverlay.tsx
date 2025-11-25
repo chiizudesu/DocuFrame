@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Box, Input, Text, Flex, Icon, useColorModeValue, Divider, IconButton, Switch, FormControl, FormLabel } from '@chakra-ui/react';
+import { keyframes } from '@emotion/react';
 import { ChevronRight, Search, FileText } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { FileItem, TransferOptions } from '../types';
@@ -14,6 +15,31 @@ function debounce<T extends (...args: any[]) => any>(func: T, wait: number): T {
     timeout = setTimeout(() => func(...args), wait);
   }) as T;
 }
+
+// Simple pulsing border animation for content search loading - pulses outward only
+const pulseBorder = keyframes`
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+`;
+
+const pulseBorderDark = keyframes`
+  0% {
+    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 15px rgba(96, 165, 250, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+  }
+`;
 
 
 export const QuickNavigateOverlay: React.FC = () => {
@@ -39,7 +65,9 @@ export const QuickNavigateOverlay: React.FC = () => {
     setSearchResults,
     logFileOperation,
     fileSearchFilter,
-    setFileSearchFilter
+    setFileSearchFilter,
+    contentSearchResults,
+    setContentSearchResults
   } = useAppContext();
 
   // All useState hooks next
@@ -63,6 +91,7 @@ export const QuickNavigateOverlay: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchInDocuments, setSearchInDocuments] = useState(false);
   const [localSearchResults, setLocalSearchResults] = useState<FileItem[]>([]);
+  const [isContentSearching, setIsContentSearching] = useState(false);
 
   // All useRef hooks next
   const inputRef = useRef<HTMLInputElement>(null);
@@ -72,6 +101,15 @@ export const QuickNavigateOverlay: React.FC = () => {
   const inputBgColor = useColorModeValue('#ffffff', 'gray.900');
   const shadowColor = useColorModeValue('rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)');
   const commandBgColor = useColorModeValue('#f8fafc', 'gray.700');
+  const highlightColor = useColorModeValue('blue.400', 'blue.500');
+  const fileTextIconColor = useColorModeValue('gray.500', 'gray.400');
+  const fileTextLabelColor = useColorModeValue('gray.600', 'gray.300');
+  
+  // Pulsing border animation for content search loading
+  const pulseBorderAnimation = useColorModeValue(
+    `${pulseBorder} 1.5s ease-in-out infinite`,
+    `${pulseBorderDark} 1.5s ease-in-out infinite`
+  );
 
   // All useCallback hooks for functions used in useEffect
   const handleTransferMappingPreview = useCallback(async (command: string) => {
@@ -202,8 +240,10 @@ export const QuickNavigateOverlay: React.FC = () => {
       setLocalSearchResults([]);
       setIsSearchMode(false);
       setFileSearchFilter(''); // Clear search filter when overlay closes
+      setContentSearchResults([]); // Clear content search results when overlay closes
+      setIsContentSearching(false); // Clear content search loading state when overlay closes
     }
-  }, [isQuickNavigating, initialCommandMode, isSearchMode, setFileSearchFilter]);
+  }, [isQuickNavigating, initialCommandMode, isSearchMode, setFileSearchFilter, setContentSearchResults]);
 
   // Global Ctrl+F shortcut for file search
   useEffect(() => {
@@ -329,6 +369,30 @@ export const QuickNavigateOverlay: React.FC = () => {
       
       // Clear local search results since we're not showing dropdown anymore
       setLocalSearchResults([]);
+      
+      // Perform content search if enabled
+      if (searchInDocuments && searchQuery.trim()) {
+        setIsContentSearching(true);
+        (async () => {
+          try {
+            const results = await window.electronAPI.searchInDocuments({
+              query: searchQuery,
+              currentDirectory,
+              maxResults: 100 // Get more results for filtering
+            });
+            setContentSearchResults(results || []);
+          } catch (error) {
+            console.error('[QuickNavigate] Content search failed:', error);
+            setContentSearchResults([]);
+          } finally {
+            setIsContentSearching(false);
+          }
+        })();
+      } else {
+        // Clear content search results when content search is disabled or query is empty
+        setContentSearchResults([]);
+        setIsContentSearching(false);
+      }
     } else {
       // Command mode - handle command input with debouncing
       if (!inputValue) {
@@ -339,8 +403,11 @@ export const QuickNavigateOverlay: React.FC = () => {
       
       const commandText = inputValue.trim().toLowerCase();
       debouncedCommandProcessing(commandText, inputValue);
+      
+      // Clear content search results in command mode
+      setContentSearchResults([]);
     }
-  }, [inputValue, searchQuery, isSearchMode, debouncedCommandProcessing, performSearch]);
+  }, [inputValue, searchQuery, isSearchMode, searchInDocuments, currentDirectory, debouncedCommandProcessing, performSearch, setContentSearchResults]);
 
   // Sync search results to filtered results for display
   useEffect(() => {
@@ -489,6 +556,7 @@ export const QuickNavigateOverlay: React.FC = () => {
       setPreviewFiles([]); // Clear preview on escape
       setLocalSearchResults([]); // Clear search results on escape
       setFileSearchFilter(''); // Clear search filter on escape
+      setContentSearchResults([]); // Clear content search results on escape
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       
@@ -789,11 +857,23 @@ export const QuickNavigateOverlay: React.FC = () => {
           width="600px" 
           maxWidth="90vw" 
           borderRadius="lg" 
-          boxShadow="0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" 
-          bg={bgColor} 
+          border="5px solid"
+          borderColor={highlightColor}
+          bg={bgColor}
           onClick={e => e.stopPropagation()}
+          position="relative"
+          overflow="hidden"
+          animation={isContentSearching ? pulseBorderAnimation : undefined}
         >
-          <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative" bg={inputBgColor}>
+          <Box 
+            borderRadius="lg" 
+            bg={bgColor}
+            width="100%"
+            height="100%"
+            position="relative"
+            zIndex={1}
+          >
+            <Box borderRadius="md" overflow="hidden" position="relative" bg={inputBgColor}>
             <Flex align="center" p={3} minH="47px">
               <IconButton 
                 icon={<Search size={25} strokeWidth={2} />} 
@@ -824,21 +904,29 @@ export const QuickNavigateOverlay: React.FC = () => {
               {isSearchMode && (
                 <Flex align="center" position="absolute" right={3} gap={2}>
                   <Flex align="center" gap={1}>
-                    <FileText size={14} color={useColorModeValue('gray.500', 'gray.400')} />
-                    <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
+                    <FileText size={14} color={fileTextIconColor} />
+                    <Text fontSize="sm" color={fileTextLabelColor}>
                       Contents
                     </Text>
                   </Flex>
                   <Switch 
                     id="document-search" 
                     isChecked={searchInDocuments}
-                    onChange={(e) => setSearchInDocuments(e.target.checked)}
+                    onChange={(e) => {
+                      setSearchInDocuments(e.target.checked);
+                      // Clear content search results when disabled
+                      if (!e.target.checked) {
+                        setContentSearchResults([]);
+                        setIsContentSearching(false);
+                      }
+                    }}
                     size="sm"
                     colorScheme="blue"
                   />
                 </Flex>
               )}
             </Flex>
+          </Box>
           </Box>
         </Box>
       </Box>
@@ -892,7 +980,14 @@ export const QuickNavigateOverlay: React.FC = () => {
                 <Switch 
                   id="document-search" 
                   isChecked={searchInDocuments}
-                  onChange={(e) => setSearchInDocuments(e.target.checked)}
+                  onChange={(e) => {
+                    setSearchInDocuments(e.target.checked);
+                    // Clear content search results when disabled
+                    if (!e.target.checked) {
+                      setContentSearchResults([]);
+                      setIsContentSearching(false);
+                    }
+                  }}
                   size="sm"
                   colorScheme="blue"
                 />

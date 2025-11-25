@@ -296,6 +296,7 @@ export const FileGrid: React.FC = () => {
     quickAccessPaths,
     logFileOperation, // Task Timer integration
     fileSearchFilter, // File search filter for current directory
+    contentSearchResults, // Content search results (files matching content search)
   } = useAppContext()
 
   // Memoize selectedFiles as Set for O(1) lookup performance (moved early to avoid initialization errors)
@@ -544,13 +545,26 @@ export const FileGrid: React.FC = () => {
   const dragGhostBorder = useColorModeValue('gray.300', 'gray.700')
   const dragGhostAccent = useColorModeValue('blue.400', 'blue.300')
 
+  // Memoize content search result paths for O(1) lookup
+  const contentSearchPathsSet = useMemo(() => {
+    if (!Array.isArray(contentSearchResults) || contentSearchResults.length === 0) {
+      return new Set<string>();
+    }
+    return new Set(contentSearchResults.map(file => file.path));
+  }, [contentSearchResults]);
+
   // Memoize sorted files computation for better performance
   const sortedFiles = useMemo(() => {
     if (!Array.isArray(folderItems) || folderItems.length === 0) return [];
     
     // Apply search filter if active
     let items = [...folderItems];
-    if (fileSearchFilter && fileSearchFilter.trim()) {
+    
+    // If content search has results, filter to only show those files
+    if (contentSearchPathsSet.size > 0) {
+      items = items.filter(item => contentSearchPathsSet.has(item.path));
+    } else if (fileSearchFilter && fileSearchFilter.trim()) {
+      // Otherwise, use filename filtering
       const normalizedFilter = fileSearchFilter.toLowerCase().trim();
       items = items.filter(item => 
         item.name.toLowerCase().includes(normalizedFilter)
@@ -595,7 +609,7 @@ export const FileGrid: React.FC = () => {
     });
     
     return sortData.map(data => data.item);
-  }, [folderItems, sortColumn, sortDirection, fileSearchFilter]);
+  }, [folderItems, sortColumn, sortDirection, fileSearchFilter, contentSearchPathsSet]);
 
   // Pre-compute file name to path map for O(1) drag lookups (moved early to avoid initialization errors)
   const fileNameToPathMap = useMemo(() => {
