@@ -2040,510 +2040,515 @@ const renderListView = () => (
       </Box>
     )}
     
-    {/* CSS Grid container */}
+    {/* HTML Table container */}
     <Box
+      as="table"
       ref={gridContainerRef}
-      display="grid"
-      gridTemplateColumns={columnOrder.map(col => `${columnWidths[col as keyof typeof columnWidths]}px`).join(' ')}
-      gridAutoRows="30px"
       width="fit-content"
       fontSize="xs"
       userSelect="none"
       minWidth="690px"
       position="relative"
+      borderCollapse="separate"
+      borderSpacing={0}
     >
-      {/* Sticky header */}
-      <Box 
-        display="contents" 
-        position="sticky" 
-        top={0} 
-        zIndex={100}
-      >
-        {columnOrder.map((column) => {
-          const isName = column === 'name';
-          const isSize = column === 'size';
-          const isModified = column === 'modified';
-          
-          return (
-            <Box
-              key={column}
-              px={2}
-              py={0.85}
-              fontWeight="medium"
-              fontSize="xs"
-              color={tableHeadTextColor}
-              display="flex"
-              alignItems="center"
-              cursor="pointer"
-              _hover={{ bg: headerHoverBg }}
-              role="group"
-              onClick={(e) => {
-                // Prevent sorting if a drag operation just occurred
-                if (hasDraggedColumn) {
-                  return;
-                }
-                
-                // Check if click is in the resize area (right edge)
-                // This prevents sorting when clicking near the resize handle
-                const rect = e.currentTarget.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const isInResizeArea = clickX > rect.width - 8; // 8px from right edge
-                
-                // Only sort if not clicking in resize area
-                if (!isInResizeArea) {
-                  handleSort(column as SortColumn);
-                }
-              }}
-              onDoubleClick={(e) => {
-                // Double-click on header area (not resize area) auto-fits the column
-                const rect = e.currentTarget.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const isInResizeArea = clickX > rect.width - 8;
-                
-                if (!isInResizeArea) {
-                  autoFitColumn(column);
-                }
-              }}
-              position="sticky"
-              top={0}
-              zIndex={100}
-              bg={headerStickyBg}
-              _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: headerDividerBg }}
-              data-column={column}
-              onMouseDown={(e) => handleColumnDragStart(column, e)}
-              opacity={draggingColumn === column ? 0.5 : 1}
-              borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
-              transition="all 0.2s ease"
-            >
-              {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : ''}
-              {sortColumn === column && (
-                <Icon
-                  as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                  ml={1}
-                  boxSize={2.5}
-                  color="#4F46E5"
-                />
-              )}
+      {/* Column width management */}
+      <colgroup>
+        {columnOrder.map((column) => (
+          <col
+            key={column}
+            style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
+          />
+        ))}
+      </colgroup>
 
+      {/* Table header */}
+      <Box as="thead">
+        <Box as="tr">
+          {columnOrder.map((column) => {
+            const isName = column === 'name';
+            const isSize = column === 'size';
+            const isModified = column === 'modified';
+            
+            return (
               <Box
-                position="absolute"
-                left={0}
-                top={0}
-                bottom={0}
-                width="4px"
-                cursor="grab"
-                _hover={{ bg: dragGhostAccent }}
-                _active={{ cursor: 'grabbing' }}
-              />
-              <Box
-                position="absolute"
-                right={0}
-                top={0}
-                bottom={0}
-                width="8px"
-                cursor="col-resize"
-                _hover={{ bg: dragGhostAccent }}
-                onMouseDown={(e) => handleResizeStart(column, e)}
-                onDoubleClick={() => autoFitColumn(column)}
-                zIndex={10}
-                _after={{
-                  content: '""',
-                  position: 'absolute',
-                  right: '2px',
-                  top: '25%',
-                  bottom: '25%',
-                  width: '1px',
-                  bg: 'transparent',
-                  _hover: { bg: 'white' }
+                as="th"
+                key={column}
+                px={2}
+                py={1.02}
+                fontWeight="medium"
+                fontSize="xs"
+                color={tableHeadTextColor}
+                cursor="pointer"
+                _hover={{ bg: headerHoverBg }}
+                role="group"
+                position="relative"
+                verticalAlign="middle"
+                onClick={(e) => {
+                  // Prevent sorting if a drag operation just occurred
+                  if (hasDraggedColumn) {
+                    return;
+                  }
+                  
+                  // Check if click is in the resize area (right edge)
+                  // This prevents sorting when clicking near the resize handle
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickX = e.clientX - rect.left;
+                  const isInResizeArea = clickX > rect.width - 8; // 8px from right edge
+                  
+                  // Only sort if not clicking in resize area
+                  if (!isInResizeArea) {
+                    handleSort(column as SortColumn);
+                  }
                 }}
-                title="Double-click to auto-fit column width"
-              />
-            </Box>
-          );
-        })}
+                onDoubleClick={(e) => {
+                  // Double-click on header area (not resize area) auto-fits the column
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickX = e.clientX - rect.left;
+                  const isInResizeArea = clickX > rect.width - 8;
+                  
+                  if (!isInResizeArea) {
+                    autoFitColumn(column);
+                  }
+                }}
+                position="sticky"
+                top={0}
+                zIndex={100}
+                bg={headerStickyBg}
+                _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: headerDividerBg }}
+                data-column={column}
+                onMouseDown={(e) => handleColumnDragStart(column, e)}
+                opacity={draggingColumn === column ? 0.5 : 1}
+                borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
+                transition="all 0.2s ease"
+              >
+                <Flex alignItems="center">
+                  {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : ''}
+                  {sortColumn === column && (
+                    <Icon
+                      as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
+                      ml={1}
+                      boxSize={2.5}
+                      color="#4F46E5"
+                    />
+                  )}
+                </Flex>
+
+                <Box
+                  position="absolute"
+                  left={0}
+                  top={0}
+                  bottom={0}
+                  width="4px"
+                  cursor="grab"
+                  _hover={{ bg: dragGhostAccent }}
+                  _active={{ cursor: 'grabbing' }}
+                />
+                <Box
+                  position="absolute"
+                  right={0}
+                  top={0}
+                  bottom={0}
+                  width="8px"
+                  cursor="col-resize"
+                  _hover={{ bg: dragGhostAccent }}
+                  onMouseDown={(e) => handleResizeStart(column, e)}
+                  onDoubleClick={() => autoFitColumn(column)}
+                  zIndex={10}
+                  _after={{
+                    content: '""',
+                    position: 'absolute',
+                    right: '2px',
+                    top: '25%',
+                    bottom: '25%',
+                    width: '1px',
+                    bg: 'transparent',
+                    _hover: { bg: 'white' }
+                  }}
+                  title="Double-click to auto-fit column width"
+                />
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
 
-      {/* Header spacer */}
-            <Box 
-        position="absolute"
-        top={0}
-        left="690px"
-        right={0}
-        height="30px"
-        zIndex={99}
-        bg={headerStickyBg}
-      />
+      {/* Table body */}
+      <Box as="tbody">
+        {sortedFiles.map((file, index) => {
+          if (isRenaming === file.name) {
+            return (
+              <Box as="tr" key={index}>
+                <Box
+                  as="td"
+                  colSpan={columnOrder.length}
+                  px={2}
+                  py={1}
+                >
+                  <form onSubmit={handleRenameSubmit}>
+                    <Input
+                      ref={renameInputRef}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={handleRenameSubmit}
+                      autoFocus
+                      size="xs"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setIsRenaming(null)
+                          setRenameValue('')
+                        }
+                      }}
+                    />
+                  </form>
+                </Box>
+              </Box>
+            )
+          }
 
+          const fileState = memoizedFileStates[index];
+          const finalBg = memoizedRowBackgrounds[index];
 
-      {/* File rows - FIXED VERSION */}
-      {sortedFiles.map((file, index) => {
-        if (isRenaming === file.name) {
+          // Create row handlers inline to avoid hook violations
+          const rowHandlers = {
+            onMouseEnter: () => handleRowMouseEnter(index),
+            onMouseLeave: (e: React.MouseEvent) => handleRowMouseLeave(index, e),
+            onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, file),
+            onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
+            onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
+            onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
+            draggable: true,
+            onDragStart: (e: React.DragEvent) => {
+              // FIXED: Prevent dragging within same folder
+              const filesToDrag: string[] = selectedFiles.length > 0 && selectedFiles.includes(file.name)
+                ? selectedFiles.map(name => {
+                    const selectedFile = sortedFiles.find(f => f.name === name);
+                    return selectedFile ? selectedFile.path : null;
+                  }).filter((path): path is string => path !== null)
+                : [file.path];
+              
+              // Set internal drag data
+              e.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
+              e.dataTransfer.effectAllowed = 'copyMove';
+              
+              handleFileItemDragStart(file, index, e);
+            },
+            onDragEnd: (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDragStarted(false);
+              setDraggedFiles(new Set());
+              clearFolderHoverStates();
+              try { delete (window as any).__docuframeInternalDrag; } catch {}
+              addLog('Drag operation ended');
+            }
+          };
+
+          // Create folder drop handlers inline to avoid hook violations
+          const folderDropHandlers = file.type === 'folder' ? {
+            onDragEnterCapture: (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleFolderDragEnter(file.path);
+            },
+            onDragOverCapture: (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const hasExternalFiles = e.dataTransfer.types.includes('Files');
+              const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+              
+              if (hasExternalFiles) {
+                e.dataTransfer.dropEffect = 'copy';
+              } else if (isInternalDrag) {
+                e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+              } else {
+                e.dataTransfer.dropEffect = 'none';
+              }
+            },
+            onDragLeaveCapture: (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const relatedTarget = e.relatedTarget as Element;
+              
+              // Only clear if truly leaving the row
+              if (!relatedTarget || typeof (relatedTarget as any).closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
+                handleFolderDragLeave(file.path);
+              }
+            },
+            onDropCapture: async (e: React.DragEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              handleFolderDragLeave(file.path);
+              
+              const hasExternalFiles = e.dataTransfer.types.includes('Files');
+              const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
+              const isInternal = isInternalDrag || !!((window as any).__docuframeInternalDrag?.files?.length);
+              
+              if (isInternal) {
+                try {
+                  let filesToTransfer: string[] = [];
+                  const draggedFilesData = e.dataTransfer.getData('application/x-docuframe-files');
+                  if (draggedFilesData) {
+                    filesToTransfer = JSON.parse(draggedFilesData) as string[];
+                  } else if ((window as any).__docuframeInternalDrag?.files) {
+                    filesToTransfer = (window as any).__docuframeInternalDrag.files as string[];
+                  } else {
+                    return;
+                  }
+                  
+                  // FIXED: Check if dragging to same folder
+                  const targetFolderPath = file.path.replace(/\\/g, '/');
+                  const isSameFolder = filesToTransfer.some(path => {
+                    const sourceFolder = path.substring(0, path.lastIndexOf('/')).replace(/\\/g, '/');
+                    return sourceFolder === targetFolderPath;
+                  });
+                  
+                  if (isSameFolder) {
+                    addLog('Cannot move files to the same folder', 'info');
+                    setStatus('Files are already in this folder', 'info');
+                    return;
+                  }
+                  
+                  const operation = e.ctrlKey ? 'copy' : 'move';
+                  
+                  if (window.electronAPI) {
+                    // FIXED: Use proper API methods for move vs copy
+                    if (operation === 'copy') {
+                      const results = await window.electronAPI.copyFilesWithConflictResolution(filesToTransfer, file.path);
+                      const successful = results.filter((r: any) => r.status === 'success').length;
+                      addLog(`Copied ${successful} file(s) to ${file.name}`);
+                      setStatus(`Copied ${successful} file(s)`, 'success');
+                    } else {
+                      // Use moveFilesWithConflictResolution for actual move operation
+                      const results = await window.electronAPI.moveFilesWithConflictResolution(filesToTransfer, file.path);
+                      const successful = results.filter((r: any) => r.status === 'success').length;
+                      const failed = results.filter((r: any) => r.status === 'error').length;
+                      
+                      let message = `Moved ${successful} file(s) to ${file.name}`;
+                      if (failed > 0) message += `, ${failed} failed`;
+                      
+                      addLog(message);
+                      setStatus(message, failed > 0 ? 'error' : 'success');
+                    }
+                    
+                    setDraggedFiles(new Set());
+                    await refreshDirectory(currentDirectory);
+                    
+                    if (operation === 'move') {
+                      setSelectedFiles([]);
+                    }
+                  }
+                } catch (error) {
+                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                  addLog(`${e.ctrlKey ? 'Copy' : 'Move'} operation failed: ${errorMessage}`, 'error');
+                  setDraggedFiles(new Set());
+                }
+              } else if (hasExternalFiles && e.dataTransfer.files.length > 0) {
+                // Handle external file drops
+                try {
+                  const files = Array.from(e.dataTransfer.files).map(f => (f as any).path || f.name);
+                  const validFiles = files.filter(f => f && f !== f.name);
+                  
+                  if (validFiles.length > 0 && window.electronAPI) {
+                    const results = await window.electronAPI.copyFilesWithConflictResolution(validFiles, file.path);
+                    const successful = results.filter((r: any) => r.status === 'success').length;
+                    addLog(`Uploaded ${successful} file(s) to ${file.name}`);
+                    await refreshDirectory(currentDirectory);
+                  }
+                } catch (error) {
+                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                  addLog(`Upload operation failed: ${errorMessage}`, 'error');
+                }
+              }
+            }
+          } : {};
+
+          // Common cell styles with proper row highlighting
+          const cellStyles = {
+            bg: finalBg,
+            transition: "background 0.1s",
+            cursor: "default",
+            px: 2,
+            py: 2,
+            position: "relative" as const,
+            verticalAlign: "middle" as const,
+            // Ensure the cell itself is the drop target area
+            pointerEvents: 'auto' as const,
+          };
+
           return (
             <Box
+              as="tr"
               key={index}
-              gridColumn="1 / -1"
-              px={2}
-              py={1}
+              {...rowHandlers}
+              data-row-index={index}
+              data-file-index={index}
             >
-              <form onSubmit={handleRenameSubmit}>
-                <Input
-                  ref={renameInputRef}
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={handleRenameSubmit}
-                  autoFocus
-                  size="xs"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setIsRenaming(null)
-                      setRenameValue('')
-                    }
-                  }}
-                />
-              </form>
-            </Box>
-          )
-        }
-
-        const fileState = memoizedFileStates[index];
-        const finalBg = memoizedRowBackgrounds[index];
-
-        // Create cell handlers inline to avoid hook violations
-        const cellHandlers = {
-          onMouseEnter: () => handleRowMouseEnter(index),
-          onMouseLeave: (e: React.MouseEvent) => handleRowMouseLeave(index, e),
-          onContextMenu: (e: React.MouseEvent) => handleContextMenu(e, file),
-          onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
-          onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
-          onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
-          draggable: true,
-          onDragStart: (e: React.DragEvent) => {
-            // FIXED: Prevent dragging within same folder
-            const filesToDrag: string[] = selectedFiles.length > 0 && selectedFiles.includes(file.name)
-              ? selectedFiles.map(name => {
-                  const selectedFile = sortedFiles.find(f => f.name === name);
-                  return selectedFile ? selectedFile.path : null;
-                }).filter((path): path is string => path !== null)
-              : [file.path];
-            
-            // Set internal drag data
-            e.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
-            e.dataTransfer.effectAllowed = 'copyMove';
-            
-            handleFileItemDragStart(file, index, e);
-          },
-          onDragEnd: (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsDragStarted(false);
-            setDraggedFiles(new Set());
-            clearFolderHoverStates();
-            try { delete (window as any).__docuframeInternalDrag; } catch {}
-            addLog('Drag operation ended');
-          }
-        };
-
-        // Create folder drop handlers inline to avoid hook violations
-        const folderDropHandlers = file.type === 'folder' ? {
-          onDragEnterCapture: (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            handleFolderDragEnter(file.path);
-          },
-          onDragOverCapture: (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const hasExternalFiles = e.dataTransfer.types.includes('Files');
-            const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
-            
-            if (hasExternalFiles) {
-              e.dataTransfer.dropEffect = 'copy';
-            } else if (isInternalDrag) {
-              e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
-            } else {
-              e.dataTransfer.dropEffect = 'none';
-            }
-          },
-          onDragLeaveCapture: (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const relatedTarget = e.relatedTarget as Element;
-            
-            // Only clear if truly leaving the row
-            if (!relatedTarget || typeof (relatedTarget as any).closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
-              handleFolderDragLeave(file.path);
-            }
-          },
-          onDropCapture: async (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            handleFolderDragLeave(file.path);
-            
-            const hasExternalFiles = e.dataTransfer.types.includes('Files');
-            const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
-            const isInternal = isInternalDrag || !!((window as any).__docuframeInternalDrag?.files?.length);
-            
-            if (isInternal) {
-              try {
-                let filesToTransfer: string[] = [];
-                const draggedFilesData = e.dataTransfer.getData('application/x-docuframe-files');
-                if (draggedFilesData) {
-                  filesToTransfer = JSON.parse(draggedFilesData) as string[];
-                } else if ((window as any).__docuframeInternalDrag?.files) {
-                  filesToTransfer = (window as any).__docuframeInternalDrag.files as string[];
-                } else {
-                  return;
-                }
+              {columnOrder.map((column) => {
+                const isName = column === 'name';
+                const isSize = column === 'size';
+                const isModified = column === 'modified';
                 
-                // FIXED: Check if dragging to same folder
-                const targetFolderPath = file.path.replace(/\\/g, '/');
-                const isSameFolder = filesToTransfer.some(path => {
-                  const sourceFolder = path.substring(0, path.lastIndexOf('/')).replace(/\\/g, '/');
-                  return sourceFolder === targetFolderPath;
-                });
-                
-                if (isSameFolder) {
-                  addLog('Cannot move files to the same folder', 'info');
-                  setStatus('Files are already in this folder', 'info');
-                  return;
-                }
-                
-                const operation = e.ctrlKey ? 'copy' : 'move';
-                
-                if (window.electronAPI) {
-                  // FIXED: Use proper API methods for move vs copy
-                  if (operation === 'copy') {
-                    const results = await window.electronAPI.copyFilesWithConflictResolution(filesToTransfer, file.path);
-                    const successful = results.filter((r: any) => r.status === 'success').length;
-                    addLog(`Copied ${successful} file(s) to ${file.name}`);
-                    setStatus(`Copied ${successful} file(s)`, 'success');
-                  } else {
-                    // Use moveFilesWithConflictResolution for actual move operation
-                    const results = await window.electronAPI.moveFilesWithConflictResolution(filesToTransfer, file.path);
-                    const successful = results.filter((r: any) => r.status === 'success').length;
-                    const failed = results.filter((r: any) => r.status === 'error').length;
-                    
-                    let message = `Moved ${successful} file(s) to ${file.name}`;
-                    if (failed > 0) message += `, ${failed} failed`;
-                    
-                    addLog(message);
-                    setStatus(message, failed > 0 ? 'error' : 'success');
-                  }
-                  
-                  setDraggedFiles(new Set());
-                  await refreshDirectory(currentDirectory);
-                  
-                  if (operation === 'move') {
-                    setSelectedFiles([]);
-                  }
-                }
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                addLog(`${e.ctrlKey ? 'Copy' : 'Move'} operation failed: ${errorMessage}`, 'error');
-                setDraggedFiles(new Set());
-              }
-            } else if (hasExternalFiles && e.dataTransfer.files.length > 0) {
-              // Handle external file drops
-              try {
-                const files = Array.from(e.dataTransfer.files).map(f => (f as any).path || f.name);
-                const validFiles = files.filter(f => f && f !== f.name);
-                
-                if (validFiles.length > 0 && window.electronAPI) {
-                  const results = await window.electronAPI.copyFilesWithConflictResolution(validFiles, file.path);
-                  const successful = results.filter((r: any) => r.status === 'success').length;
-                  addLog(`Uploaded ${successful} file(s) to ${file.name}`);
-                  await refreshDirectory(currentDirectory);
-                }
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                addLog(`Upload operation failed: ${errorMessage}`, 'error');
-              }
-            }
-          }
-        } : {};
-
-        // FIXED: Common cell styles with proper row highlighting
-        const cellStyles = {
-          bg: finalBg,
-          transition: "background 0.1s",
-          cursor: "default",
-          px: 2,
-          py: 1.05,
-          display: "flex",
-          alignItems: "center",
-          position: "relative" as const,
-          // Ensure the cell itself is the drop target area
-          pointerEvents: 'auto' as const,
-        };
-
-        return (
-          <React.Fragment key={index}>
-            {columnOrder.map((column) => {
-              const isName = column === 'name';
-              const isSize = column === 'size';
-              const isModified = column === 'modified';
-              
-              if (isName) {
-                return (
-                  <Box 
-                    key={column}
-                    {...cellStyles} 
-                    {...cellHandlers}
-                    {...folderDropHandlers}
-                    data-row-index={index}
-                    data-file-index={index}
-                    ref={(el: HTMLElement | null) => {
-                      if (file.type === 'file') {
-                        if (el) {
-                          observeFileElement(el, file.path);
-                        } else {
-                          // Element is unmounting, unobserve it
-                          const existingEl = document.querySelector(`[data-file-path="${file.path}"]`) as HTMLElement;
-                          if (existingEl) {
-                            unobserveFileElement(existingEl);
+                if (isName) {
+                  return (
+                    <Box
+                      as="td"
+                      key={column}
+                      {...cellStyles}
+                      {...folderDropHandlers}
+                      ref={(el: HTMLElement | null) => {
+                        if (file.type === 'file') {
+                          if (el) {
+                            observeFileElement(el, file.path);
+                          } else {
+                            // Element is unmounting, unobserve it
+                            const existingEl = document.querySelector(`[data-file-path="${file.path}"]`) as HTMLElement;
+                            if (existingEl) {
+                              unobserveFileElement(existingEl);
+                            }
                           }
                         }
-                      }
-                    }}
-                  >
-                    {/* Icon */}
-                    {file.type === 'file' && nativeIcons.has(file.path) ? (
-                      <Image
-                        src={nativeIcons.get(file.path)}
-                        boxSize={4}
-                        mr={1.5}
-                        alt={`${file.name} icon`}
-                        flexShrink={0}
-                      />
-                    ) : (
-                      <Icon
-                        as={FolderOpen}
-                        boxSize={4}
-                        mr={1.5}
-                        color="blue.400"
-                        flexShrink={0}
-                      />
-                    )}
-                    
-                    {/* File name */}
-                    <Text 
-                      fontSize="xs" 
-                      color={fileTextColor} 
-                      style={{ 
-                        userSelect: 'none', 
-                        opacity: fileState.isFileCut ? 0.5 : 1, 
-                        fontStyle: fileState.isFileCut ? 'italic' : 'normal'
                       }}
-                      overflow="hidden"
-                      textOverflow="ellipsis"
-                      whiteSpace="nowrap"
-                      flex={1}
                     >
-                      {file.name}
-                    </Text>
-                    
-                    {/* NEW indicator */}
-                    {fileState.isFileNew && (
-                      <Box
-                        position="absolute"
-                        top={1}
-                        right={1}
-                        bg="green.500"
-                        color="white"
-                        fontSize="2xs"
-                        fontWeight="bold"
-                        px={1}
-                        py={0.25}
-                        borderRadius="full"
-                        zIndex={2}
-                        boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+                      <Flex alignItems="center">
+                        {/* Icon */}
+                        {file.type === 'file' && nativeIcons.has(file.path) ? (
+                          <Image
+                            src={nativeIcons.get(file.path)}
+                            boxSize={4}
+                            mr={1.5}
+                            alt={`${file.name} icon`}
+                            flexShrink={0}
+                          />
+                        ) : (
+                          <Icon
+                            as={FolderOpen}
+                            boxSize={4}
+                            mr={1.5}
+                            color="blue.400"
+                            flexShrink={0}
+                          />
+                        )}
+                        
+                        {/* File name */}
+                        <Text 
+                          fontSize="xs" 
+                          color={fileTextColor} 
+                          style={{ 
+                            userSelect: 'none', 
+                            opacity: fileState.isFileCut ? 0.5 : 1, 
+                            fontStyle: fileState.isFileCut ? 'italic' : 'normal'
+                          }}
+                          overflow="hidden"
+                          textOverflow="ellipsis"
+                          whiteSpace="nowrap"
+                          flex={1}
+                        >
+                          {file.name}
+                        </Text>
+                      </Flex>
+                      
+                      {/* NEW indicator */}
+                      {fileState.isFileNew && (
+                        <Box
+                          position="absolute"
+                          top={1}
+                          right={1}
+                          bg="green.500"
+                          color="white"
+                          fontSize="2xs"
+                          fontWeight="bold"
+                          px={1}
+                          py={0.25}
+                          borderRadius="full"
+                          zIndex={2}
+                          boxShadow="0 1px 3px rgba(0,0,0,0.3)"
+                        >
+                          NEW
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                } else if (isSize) {
+                  return (
+                    <Box
+                      as="td"
+                      key={column}
+                      {...cellStyles}
+                      {...folderDropHandlers}
+                    >
+                      <Text 
+                        fontSize="xs" 
+                        color={fileSubTextColor}
+                        style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
                       >
-                        NEW
-                      </Box>
-                    )}
-                  </Box>
-                );
-              } else if (isSize) {
-                return (
-                  <Box 
-                    key={column}
-                    {...cellStyles}
-                    {...cellHandlers}
-                    {...folderDropHandlers}
-                    data-row-index={index}
-                  >
-                    <Text 
-                      fontSize="xs" 
-                      color={fileSubTextColor}
-                      style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
+                        {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
+                      </Text>
+                    </Box>
+                  );
+                } else if (isModified) {
+                  return (
+                    <Box
+                      as="td"
+                      key={column}
+                      {...cellStyles}
+                      {...folderDropHandlers}
                     >
-                      {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
-                    </Text>
-                  </Box>
-                );
-              } else if (isModified) {
-                return (
-                  <Box 
-                    key={column}
-                    {...cellStyles}
-                    {...cellHandlers}
-                    {...folderDropHandlers}
-                    data-row-index={index}
-                  >
-                    <Text 
-                      fontSize="xs" 
-                      color={fileSubTextColor}
-                      style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
-                    >
-                      {file.modified ? formatDate(file.modified) : '-'}
-                    </Text>
-                  </Box>
-                );
-              }
-              return null;
-            })}
-          </React.Fragment>
-        )
-      })}
-
-      {/* Drag ghost preview */}
-      {draggingColumn && dragMousePos && isDragThresholdMet && (
-        <Box
-          position="fixed"
-          left={dragMousePos.x - dragOffset.x}
-          top={dragMousePos.y - dragOffset.y}
-          width={`${columnWidths[draggingColumn as keyof typeof columnWidths]}px`}
-          height="30px"
-          bg={dragGhostBg}
-          border="1px solid"
-          borderColor={dragGhostBorder}
-          borderRadius="md"
-          px={2}
-          py={0.85}
-          fontWeight="medium"
-          fontSize="xs"
-          color={tableHeadTextColor}
-          display="flex"
-          alignItems="center"
-          opacity={0.8}
-          zIndex={9999}
-          pointerEvents="none"
-          boxShadow="lg"
-        >
-          {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : draggingColumn === 'modified' ? 'Modified' : ''}
-          <Box
-            position="absolute"
-            left={0}
-            top={0}
-            bottom={0}
-            width="4px"
-            bg={dragGhostAccent}
-            borderRadius="md 0 0 md"
-          />
-        </Box>
-      )}
+                      <Text 
+                        fontSize="xs" 
+                        color={fileSubTextColor}
+                        style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
+                      >
+                        {file.modified ? formatDate(file.modified) : '-'}
+                      </Text>
+                    </Box>
+                  );
+                }
+                return null;
+              })}
+            </Box>
+          )
+        })}
+      </Box>
     </Box>
+
+    {/* Drag ghost preview */}
+    {draggingColumn && dragMousePos && isDragThresholdMet && (
+      <Box
+        position="fixed"
+        left={dragMousePos.x - dragOffset.x}
+        top={dragMousePos.y - dragOffset.y}
+        width={`${columnWidths[draggingColumn as keyof typeof columnWidths]}px`}
+        height="30px"
+        bg={dragGhostBg}
+        border="1px solid"
+        borderColor={dragGhostBorder}
+        borderRadius="md"
+        px={2}
+        py={0.85}
+        fontWeight="medium"
+        fontSize="xs"
+        color={tableHeadTextColor}
+        display="flex"
+        alignItems="center"
+        opacity={0.8}
+        zIndex={9999}
+        pointerEvents="none"
+        boxShadow="lg"
+      >
+        {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : draggingColumn === 'modified' ? 'Modified' : ''}
+        <Box
+          position="absolute"
+          left={0}
+          top={0}
+          bottom={0}
+          width="4px"
+          bg={dragGhostAccent}
+          borderRadius="md 0 0 md"
+        />
+      </Box>
+    )}
   </Box>
 )
   // Convert renderContextMenu to a component
