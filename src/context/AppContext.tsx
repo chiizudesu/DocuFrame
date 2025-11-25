@@ -35,6 +35,9 @@ interface AppContextType {
   // Search mode state
   isSearchMode: boolean;
   setIsSearchMode: (value: boolean) => void;
+  // File search filter for filtering current directory
+  fileSearchFilter: string;
+  setFileSearchFilter: (filter: string) => void;
   // File search system - replaced allFiles mock data
   searchResults: FileItem[];
   setSearchResults: (files: FileItem[]) => void;
@@ -120,6 +123,7 @@ export const AppProvider: React.FC<{
   const [isQuickNavigating, setIsQuickNavigating] = useState(false);
   const [initialCommandMode, setInitialCommandMode] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
+  const [fileSearchFilter, setFileSearchFilter] = useState<string>('');
   // Footer status system
   const [statusMessage, setStatusMessage] = useState<string>('Ready');
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | 'default'>('default');
@@ -358,6 +362,8 @@ export const AppProvider: React.FC<{
       setInitialCommandMode,
       isSearchMode,
       setIsSearchMode,
+      fileSearchFilter,
+      setFileSearchFilter,
       searchResults,
       setSearchResults,
       rootDirectory,

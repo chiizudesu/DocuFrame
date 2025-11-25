@@ -34,9 +34,12 @@ export const QuickNavigateOverlay: React.FC = () => {
     commandHistory,
     setStatus,
     setFolderItems,
+    folderItems,
     searchResults,
     setSearchResults,
-    logFileOperation
+    logFileOperation,
+    fileSearchFilter,
+    setFileSearchFilter
   } = useAppContext();
 
   // All useState hooks next
@@ -66,7 +69,7 @@ export const QuickNavigateOverlay: React.FC = () => {
 
   // All useColorModeValue hooks next
   const bgColor = useColorModeValue('#ffffff', 'gray.800');
-
+  const inputBgColor = useColorModeValue('#ffffff', 'gray.900');
   const shadowColor = useColorModeValue('rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)');
   const commandBgColor = useColorModeValue('#f8fafc', 'gray.700');
 
@@ -198,8 +201,9 @@ export const QuickNavigateOverlay: React.FC = () => {
       setPreviewFiles([]);
       setLocalSearchResults([]);
       setIsSearchMode(false);
+      setFileSearchFilter(''); // Clear search filter when overlay closes
     }
-  }, [isQuickNavigating, initialCommandMode, isSearchMode]);
+  }, [isQuickNavigating, initialCommandMode, isSearchMode, setFileSearchFilter]);
 
   // Global Ctrl+F shortcut for file search
   useEffect(() => {
@@ -319,18 +323,12 @@ export const QuickNavigateOverlay: React.FC = () => {
   // Process input changes with debouncing
   useEffect(() => {
     if (isSearchMode) {
-      // Search mode - handle search query
-      if (!searchQuery) {
-        setLocalSearchResults([]);
-        return;
-      }
+      // Search mode - filter current directory instead of showing dropdown
+      // Set the filter directly (no debounce needed for live filtering)
+      setFileSearchFilter(searchQuery);
       
-      // Debounce search
-      const timeoutId = setTimeout(() => {
-        performSearch(searchQuery);
-      }, 300);
-      
-      return () => clearTimeout(timeoutId);
+      // Clear local search results since we're not showing dropdown anymore
+      setLocalSearchResults([]);
     } else {
       // Command mode - handle command input with debouncing
       if (!inputValue) {
@@ -490,23 +488,33 @@ export const QuickNavigateOverlay: React.FC = () => {
       setCommandInfo(null); // Clear command info on escape
       setPreviewFiles([]); // Clear preview on escape
       setLocalSearchResults([]); // Clear search results on escape
+      setFileSearchFilter(''); // Clear search filter on escape
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       
       if (isSearchMode) {
-        // In search mode, select the first result or do nothing
-        if (localSearchResults.length > 0) {
-          // Navigate to the first result
-          const firstResult = localSearchResults[0];
-          if (firstResult.type === 'folder') {
-            setCurrentPath(firstResult.path);
+        // In search mode, open/navigate to the first filtered file/folder
+        if (searchQuery && searchQuery.trim() && Array.isArray(folderItems) && folderItems.length > 0) {
+          // Filter folderItems the same way FileGrid does
+          const normalizedFilter = searchQuery.toLowerCase().trim();
+          const filteredItems = folderItems.filter(item => 
+            item.name.toLowerCase().includes(normalizedFilter)
+          );
+          
+          if (filteredItems.length > 0) {
+            const firstItem = filteredItems[0];
             setIsQuickNavigating(false);
-            addLog(`Navigated to: ${firstResult.path}`);
-          } else {
-            // Open the file
-            window.electronAPI.openFile(firstResult.path);
-            setIsQuickNavigating(false);
-            addLog(`Opened file: ${firstResult.name}`);
+            setFileSearchFilter('');
+            setSearchQuery('');
+            
+            if (firstItem.type === 'folder') {
+              setCurrentPath(firstItem.path);
+              addLog(`Navigated to: ${firstItem.path}`);
+            } else {
+              // Open the file
+              window.electronAPI.openFile(firstItem.path);
+              addLog(`Opened file: ${firstItem.name}`);
+            }
           }
         }
       } else {
@@ -758,6 +766,86 @@ export const QuickNavigateOverlay: React.FC = () => {
   };
 
   if (!isQuickNavigating) return null;
+  
+  // In search mode, show input centered without overlay/blur
+  if (isSearchMode) {
+    return (
+      <Box 
+        position="fixed" 
+        top="0" 
+        left="0" 
+        right="0" 
+        bottom="0"
+        zIndex={1999} 
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        onClick={() => {
+          setIsQuickNavigating(false);
+          setFileSearchFilter('');
+        }}
+      >
+        <Box 
+          width="600px" 
+          maxWidth="90vw" 
+          borderRadius="lg" 
+          boxShadow="0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" 
+          bg={bgColor} 
+          onClick={e => e.stopPropagation()}
+        >
+          <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative" bg={inputBgColor}>
+            <Flex align="center" p={3} minH="47px">
+              <IconButton 
+                icon={<Search size={25} strokeWidth={2} />} 
+                aria-label="Search mode" 
+                variant="ghost" 
+                size="sm" 
+                color="blue.400" 
+                onClick={() => {
+                  setIsQuickNavigating(false);
+                  setFileSearchFilter('');
+                }} 
+              />
+              <Input 
+                ref={inputRef} 
+                placeholder="Search files in current directory..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+                onKeyDown={handleKeyDown} 
+                variant="unstyled" 
+                fontSize="md" 
+                ml={2} 
+                autoFocus 
+                pr={isSearchMode ? "120px" : "60px"} 
+                height="41px"
+                bg={inputBgColor}
+              />
+              {/* Document search toggle - inline in search mode */}
+              {isSearchMode && (
+                <Flex align="center" position="absolute" right={3} gap={2}>
+                  <Flex align="center" gap={1}>
+                    <FileText size={14} color={useColorModeValue('gray.500', 'gray.400')} />
+                    <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
+                      Contents
+                    </Text>
+                  </Flex>
+                  <Switch 
+                    id="document-search" 
+                    isChecked={searchInDocuments}
+                    onChange={(e) => setSearchInDocuments(e.target.checked)}
+                    size="sm"
+                    colorScheme="blue"
+                  />
+                </Flex>
+              )}
+            </Flex>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+  
+  // Command mode - show centered overlay with blur
   return <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="blackAlpha.600" backdropFilter="blur(4px)" zIndex={1999} display="flex" alignItems="center" justifyContent="center" onClick={() => setIsQuickNavigating(false)}>
       {/* Absolute centered input container */}
       <Box position="absolute" top="44%" left="50%" transform="translate(-50%, -50%)" width="600px" maxWidth="90vw" borderRadius="lg" boxShadow="0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" bg={bgColor} onClick={e => e.stopPropagation()}>
@@ -853,66 +941,7 @@ export const QuickNavigateOverlay: React.FC = () => {
             )}
           </Box>
         )}
-        {/* Search results panel - shows search results */}
-        {isSearchMode && localSearchResults.length > 0 && (
-          <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>
-            <Box p={4} bg={commandBgColor}>
-              <Text fontSize="sm" fontWeight="medium" mb={2}>
-                {isSearching ? 'Searching...' : `Found ${localSearchResults.length} result${localSearchResults.length > 1 ? 's' : ''}:`}
-              </Text>
-              <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
-                {localSearchResults.map((file, index) => (
-                  <Box
-                    key={index}
-                    fontSize="sm"
-                    borderRadius="lg"
-                    bg={useColorModeValue('gray.100', 'gray.700')}
-                    px={3}
-                    py={2}
-                    boxShadow="sm"
-                    borderWidth="1px"
-                    borderColor={useColorModeValue('gray.200', 'gray.600')}
-                    w="100%"
-                    overflow="visible"
-                    display="flex"
-                    flexDirection="column"
-                    gap={1}
-                    cursor="pointer"
-                    _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
-                    onClick={() => {
-                      if (file.type === 'folder') {
-                        setCurrentPath(file.path);
-                        setIsQuickNavigating(false);
-                        addLog(`Navigated to: ${file.path}`);
-                      } else {
-                        window.electronAPI.openFile(file.path);
-                        setIsQuickNavigating(false);
-                        addLog(`Opened file: ${file.name}`);
-                      }
-                    }}
-                  >
-                    <Flex align="center" gap={2}>
-                      <Box color={file.type === 'folder' ? 'blue.400' : 'gray.400'}>
-                        {file.type === 'folder' ? '📁' : '📄'}
-                      </Box>
-                      <Text whiteSpace="normal" wordBreak="break-all" title={file.path} fontWeight="medium" overflow="visible">
-                        {file.name}
-                      </Text>
-                    </Flex>
-                    <Text fontSize="xs" color="gray.500" ml={6}>
-                      {file.path}
-                    </Text>
-                    {file.size && (
-                      <Text fontSize="xs" color="gray.500" ml={6}>
-                        {file.size}
-                      </Text>
-                    )}
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          </Box>
-        )}
+        {/* Search results panel removed - filtering is now done in FileGrid */}
         {/* Preview files panel - shows actual files to be transferred */}
         {previewFiles.length > 0 && (
           <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>

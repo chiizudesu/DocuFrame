@@ -1142,7 +1142,6 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Archive} label="Extract Zips" action="extract_zips" description="Extract all ZIP files in current directory" color="orange.400" />
                   <FunctionButton icon={Mail} label="Extract EML" action="extract_eml" description="Extract attachments from EML files" color="cyan.400" />
                   <FunctionButton icon={Settings} label="Transfer Map" action="transfer_mapping" description="Edit transfer command mappings" color="gray.600" />
-                  <FunctionButton icon={Users} label="Search Clients" action="client_search" description="Search client database for contacts" color="purple.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   File Management
@@ -1160,7 +1159,6 @@ export const FunctionPanels: React.FC = () => {
                   <FunctionButton icon={Sparkles} label="AI Templater" action="ai_templater" description="Create AI templates for content generation" color="purple.400" />
                   <FunctionButton icon={Brain} label="Analyze Docs" action="analyze_docs" description="AI-powered document analysis and insights" color="blue.400" />
                   <FunctionButton icon={FileEdit} label="Manage Templates" action="manage_templates" description="Create, edit, and manage template YAMLs" color="indigo.400" />
-                  <FunctionButton icon={Calculator} label="Calculator" action="calculator" description="Windows-style calculator with history" color="green.400" />
                   <FunctionButton icon={RotateCcw} label="Update" action="update" description="Update application and components" color="pink.400" />
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
@@ -1547,6 +1545,21 @@ export const FunctionPanels: React.FC = () => {
                 </Flex>
                 <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
                   Xero
+                </Text>
+              </Box>
+              <Divider orientation="vertical" borderColor={useColorModeValue('#e2e8f0', 'gray.600')} />
+              <Box 
+                p={2} 
+                bg={useColorModeValue('#f1f5f9', 'rgba(255,255,255,0.03)')} 
+                borderRadius="md" 
+                boxShadow={useColorModeValue('0 1px 2px rgba(0,0,0,0.08)', '0 1px 2px rgba(0,0,0,0.4)')}
+              >
+                <Flex gap={1}>
+                  <FunctionButton icon={Users} label="Search Clients" action="client_search" description="Search client database for contacts" color="purple.400" />
+                  <FunctionButton icon={Calculator} label="Calculator" action="calculator" description="Windows-style calculator with history" color="green.400" />
+                </Flex>
+                <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} mt={1} textAlign="center" fontWeight="medium">
+                  Deprecated
                 </Text>
               </Box>
             </Flex>
