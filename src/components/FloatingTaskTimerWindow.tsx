@@ -968,7 +968,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     return () => window.removeEventListener('fileOperation', handleFileOperation as EventListener);
   }, [timerState]);
   
-  // Track active window titles
+  // Track active window titles - optimized to avoid blocking clipboard and improve performance
   useEffect(() => {
     console.log('[FloatingTimer] 🔄 Window tracking effect triggered - isRunning:', timerState.isRunning, 'isPaused:', timerState.isPaused, 'hasTask:', !!timerState.currentTask);
     
@@ -982,62 +982,110 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     console.log('[FloatingTimer] Task started at:', timerState.currentTask?.startTime);
     console.log('[FloatingTimer] Resuming window tracking after app restart:', timerState.currentTask?.startTime ? 'Yes' : 'No');
     
+    let isTracking = true; // Flag to prevent concurrent tracking calls
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     const trackWindowTitle = async () => {
+      // Prevent concurrent calls that could interfere with clipboard operations
+      if (!isTracking) {
+        return;
+      }
+      
+      isTracking = false;
+      
       try {
-        console.log('[FloatingTimer] 🔍 Fetching active window title...');
-        const result = await (window.electronAPI as any).getActiveWindowTitle();
-        console.log('[FloatingTimer] Window title result:', result);
-        
-        if (!result.success) {
-          console.error('[FloatingTimer] ❌ Failed to get window title. Check MAIN TERMINAL for error details!');
-          console.error('[FloatingTimer] Error:', result.error || 'Unknown error');
-          return;
-        }
-        
-        // Check if title exists and is not empty (handle empty strings properly)
-        const hasTitle = result.title && typeof result.title === 'string' && result.title.trim().length > 0;
-        
-        if (hasTitle) {
-          console.log('[FloatingTimer] ✅ Active window detected:', result.title);
-          setCurrentWindowTitle(result.title);
-          
-          // Get fresh timer state to avoid stale closures
-          const currentState = taskTimerService.getTimerState();
-          if (currentState.currentTask && currentState.isRunning && !currentState.isPaused) {
-            const updatedTask = taskTimerService.logWindowTitle(
-              currentState.currentTask,
-              result.title
-            );
+        // Use requestIdleCallback to defer non-critical work and avoid blocking clipboard
+        const trackAsync = async () => {
+          try {
+            console.log('[FloatingTimer] 🔍 Fetching active window title...');
             
-            console.log('[FloatingTimer] 📝 Logged to task! Total windows tracked:', updatedTask.windowTitles.length);
+            // Add timeout to prevent blocking (5 second max wait)
+            const timeoutPromise = new Promise<{ success: boolean; title: string }>((resolve) => {
+              timeoutId = setTimeout(() => {
+                console.log('[FloatingTimer] ⏱️ Window title fetch timeout');
+                resolve({ success: false, title: '' });
+              }, 5000);
+            });
             
-            const newState = {
-              ...currentState,
-              currentTask: updatedTask
-            };
-            taskTimerService.saveTimerState(newState);
-            setTimerState(newState);
+            const fetchPromise = (window.electronAPI as any).getActiveWindowTitle();
+            const result = await Promise.race([fetchPromise, timeoutPromise]);
+            
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
+            
+            console.log('[FloatingTimer] Window title result:', result);
+            
+            if (!result.success) {
+              console.error('[FloatingTimer] ❌ Failed to get window title. Check MAIN TERMINAL for error details!');
+              console.error('[FloatingTimer] Error:', result.error || 'Unknown error');
+              return;
+            }
+            
+            // Check if title exists and is not empty (handle empty strings properly)
+            const hasTitle = result.title && typeof result.title === 'string' && result.title.trim().length > 0;
+            
+            if (hasTitle) {
+              console.log('[FloatingTimer] ✅ Active window detected:', result.title);
+              setCurrentWindowTitle(result.title);
+              
+              // Get fresh timer state to avoid stale closures
+              const currentState = taskTimerService.getTimerState();
+              if (currentState.currentTask && currentState.isRunning && !currentState.isPaused) {
+                const updatedTask = taskTimerService.logWindowTitle(
+                  currentState.currentTask,
+                  result.title
+                );
+                
+                console.log('[FloatingTimer] 📝 Logged to task! Total windows tracked:', updatedTask.windowTitles.length);
+                
+                const newState = {
+                  ...currentState,
+                  currentTask: updatedTask
+                };
+                taskTimerService.saveTimerState(newState);
+                setTimerState(newState);
+              }
+            } else {
+              console.log('[FloatingTimer] ⏭️ Skipped - no active window title (title is empty, might be DocuFrame itself or API issue)');
+              console.log('[FloatingTimer] Debug - result.title value:', result.title, 'type:', typeof result.title);
+              setCurrentWindowTitle('(DocuFrame)');
+            }
+          } catch (error) {
+            console.error('[FloatingTimer] ❌ Error tracking window title:', error);
+          } finally {
+            isTracking = true; // Re-enable tracking after completion
           }
+        };
+        
+        // Use requestIdleCallback if available, otherwise use setTimeout with small delay
+        if (typeof (window as any).requestIdleCallback === 'function') {
+          (window as any).requestIdleCallback(trackAsync, { timeout: 1000 });
         } else {
-          console.log('[FloatingTimer] ⏭️ Skipped - no active window title (title is empty, might be DocuFrame itself or API issue)');
-          console.log('[FloatingTimer] Debug - result.title value:', result.title, 'type:', typeof result.title);
-          setCurrentWindowTitle('(DocuFrame)');
+          // Fallback: use setTimeout with small delay to avoid blocking
+          setTimeout(trackAsync, 100);
         }
       } catch (error) {
-        console.error('[FloatingTimer] ❌ Error tracking window title:', error);
+        console.error('[FloatingTimer] ❌ Error in trackWindowTitle wrapper:', error);
+        isTracking = true; // Re-enable on error
       }
     };
     
-    // Track immediately
+    // Track immediately (with deferral)
     trackWindowTitle();
     
-    // Then track every 2 seconds for more responsive window switching detection
-    const interval = setInterval(trackWindowTitle, 2000);
-    console.log('[FloatingTimer] ⏱️ Window tracking interval set (every 2s)');
+    // Then track every 5 seconds (reduced from 2s to minimize interference and improve performance)
+    const interval = setInterval(trackWindowTitle, 5000);
+    console.log('[FloatingTimer] ⏱️ Window tracking interval set (every 5s)');
     
     return () => {
       console.log('[FloatingTimer] 🛑 Stopping window title tracking');
       clearInterval(interval);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      isTracking = false;
     };
   }, [timerState.isRunning, timerState.isPaused]);
   
@@ -1634,7 +1682,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   }, [isTaskSearchOpen]);
   
   // Task timer functions
-  const handleStartTimer = () => {
+  const handleStartTimer = async () => {
     if (timerState.isRunning && timerState.isPaused) {
       // Resume from pause
       console.log('[FloatingTimer] ▶️ Resuming timer');
@@ -1652,16 +1700,53 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       });
       setPauseStartTime(null);
     } else if (!timerState.isRunning) {
-      // Start new task
+      // Start new task - always create a fresh task even if name matches previous task
       console.log('[FloatingTimer] ▶️ Starting new timer');
-      const newTask = taskTimerService.startTask(taskName || 'New Task');
-      console.log('[FloatingTimer] New task created:', newTask);
+      
+      // Ensure we're starting fresh - clear any existing task state
+      const previousTaskId = timerState.currentTask?.id;
+      if (timerState.currentTask) {
+        console.log('[FloatingTimer] ⚠️ Clearing existing task before starting new one. Previous task ID:', previousTaskId);
+      }
+      
+      // Always create a completely new task with new ID and startTime
+      // This ensures that even if the task name matches a previous task, we get a fresh start
+      let newTask = taskTimerService.startTask(taskName || 'New Task');
+      
+      // Validate that we got a new task (different ID and fresh startTime)
+      if (previousTaskId && newTask.id === previousTaskId) {
+        console.error('[FloatingTimer] ❌ ERROR: New task has same ID as previous task! This should not happen.');
+        // Force a new ID by creating another task (wait a bit to ensure different timestamp)
+        await new Promise(resolve => setTimeout(resolve, 10));
+        newTask = taskTimerService.startTask(taskName || 'New Task');
+        console.log('[FloatingTimer] ✅ Corrected task created with new ID:', newTask.id);
+      }
+      
+      console.log('[FloatingTimer] New task created:', {
+        id: newTask.id,
+        name: newTask.name,
+        startTime: newTask.startTime,
+        duration: newTask.duration,
+        previousTaskId: previousTaskId || 'none'
+      });
+      
       setTimerState({
         currentTask: newTask,
         isRunning: true,
         isPaused: false
       });
       setCurrentTime(0);
+      setPauseStartTime(null);
+      
+      // Force save to ensure state is persisted correctly
+      taskTimerService.saveTimerState({
+        currentTask: newTask,
+        isRunning: true,
+        isPaused: false
+      });
+    } else {
+      // Timer is already running and not paused - do nothing
+      console.log('[FloatingTimer] ⚠️ Timer is already running. Stop current task first to start a new one.');
     }
   };
   

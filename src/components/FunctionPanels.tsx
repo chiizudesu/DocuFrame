@@ -971,6 +971,7 @@ export const FunctionPanels: React.FC = () => {
     isDisabled = false
   }) => {
     const isLong = label.length > 18;
+    // Always call useAppContext to maintain hook order
     const { currentDirectory } = useAppContext();
     if (action === 'gst_rename') {
       // Custom tooltip for GST Rename

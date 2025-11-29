@@ -976,32 +976,50 @@ ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
       throw new Error(`Target directory does not exist: ${targetDir}`);
     }
 
-    // Check if target file already exists
-    try {
-      await fsPromises.access(newPath, fs.constants.F_OK);
-      // If we get here, file exists - ask user what to do
-      const { response } = await dialog.showMessageBox({
-        type: 'question',
-        buttons: ['Replace', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        title: 'File Already Exists',
-        message: `A file named "${path.basename(newPath)}" already exists.`,
-        detail: 'Do you want to replace it?'
-      });
-      
-      if (response === 1) { // Cancel
-        throw new Error('Rename cancelled: Target file already exists');
+    // Normalize paths for comparison (Windows is case-insensitive)
+    const normalizedOldPath = path.resolve(oldPath).toLowerCase();
+    const normalizedNewPath = path.resolve(newPath).toLowerCase();
+    const isCaseOnlyRename = normalizedOldPath === normalizedNewPath && oldPath !== newPath;
+    
+    // Skip conflict check for case-only renames (same file, different case)
+    // Case-only renames should always be allowed without dialog
+    if (!isCaseOnlyRename) {
+      // Check if target file already exists (different file)
+      try {
+        await fsPromises.access(newPath, fs.constants.F_OK);
+        // File exists - check if it's actually the same file by comparing stats
+        const oldStats = await fsPromises.stat(oldPath);
+        const newStats = await fsPromises.stat(newPath);
+        
+        // If it's the same file (same inode/dev), skip dialog and allow rename
+        if (oldStats.ino === newStats.ino && oldStats.dev === newStats.dev) {
+          // Same file, allow rename without dialog
+        } else {
+          // Different file exists - ask user what to do
+          const { response } = await dialog.showMessageBox({
+            type: 'question',
+            buttons: ['Replace', 'Cancel'],
+            defaultId: 1,
+            cancelId: 1,
+            title: 'File Already Exists',
+            message: `A file named "${path.basename(newPath)}" already exists.`,
+            detail: 'Do you want to replace it?'
+          });
+          
+          if (response === 1) { // Cancel
+            throw new Error('Rename cancelled: Target file already exists');
+          }
+          
+          // User chose to replace, delete the existing file
+          await fsPromises.unlink(newPath);
+        }
+      } catch (error) {
+        // If error is not about file existing, it's something else
+        if (error.code !== 'ENOENT') {
+          throw error;
+        }
+        // ENOENT means file doesn't exist, which is good - continue with rename
       }
-      
-      // User chose to replace, delete the existing file
-      await fsPromises.unlink(newPath);
-    } catch (error) {
-      // If error is not about file existing, it's something else
-      if (error.code !== 'ENOENT') {
-        throw error;
-      }
-      // ENOENT means file doesn't exist, which is good - continue with rename
     }
 
     // Validate filename - check for invalid characters
@@ -2149,28 +2167,26 @@ ipcMain.handle('create-blank-spreadsheet', async (_, filePath: string) => {
 ipcMain.handle('create-word-document', async (_, filePath: string) => {
   try {
     // Import docx dynamically to avoid issues with Electron
-    const { Document, Packer, Paragraph } = require('docx');
+    const { Document, Packer, Paragraph, TextRun } = require('docx');
     
-    // Create a new document
+    // Create a new document with proper TextRun usage
     const doc = new Document({
       sections: [{
         properties: {},
         children: [
           new Paragraph({
             children: [
-              {
+              new TextRun({
                 text: "New Document",
-                size: 24,
                 bold: true,
-              },
+              }),
             ],
           }),
           new Paragraph({
             children: [
-              {
-                text: "This is a new Word document created by DocuFrame.",
-                size: 20,
-              },
+              new TextRun({
+                text: "",
+              }),
             ],
           }),
         ],

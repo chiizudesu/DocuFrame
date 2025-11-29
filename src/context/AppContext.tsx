@@ -111,6 +111,9 @@ interface AppContextType {
   setQuickAccessPaths: (paths: string[]) => void;
   addQuickAccessPath: (path: string) => Promise<void>;
   removeQuickAccessPath: (path: string) => Promise<void>;
+  // File grouping by index prefix
+  isGroupedByIndex: boolean;
+  setIsGroupedByIndex: (value: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -166,6 +169,8 @@ export const AppProvider: React.FC<{
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
+  // File grouping by index prefix
+  const [isGroupedByIndex, setIsGroupedByIndex] = useState<boolean>(false);
   
   // Task Timer file operation logging
   const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
@@ -426,6 +431,8 @@ export const AppProvider: React.FC<{
       removeQuickAccessPath,
       logFileOperation,
       setLogFileOperation,
+      isGroupedByIndex,
+      setIsGroupedByIndex,
       // Document insights properties removed
     }}>
       {children}

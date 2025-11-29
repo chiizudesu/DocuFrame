@@ -46,7 +46,31 @@ export async function getDirectoryContents(dirPath: string): Promise<{ name: str
 }
 
 export async function renameItem(oldPath: string, newPath: string): Promise<void> {
-  fs.renameSync(oldPath, newPath);
+  // On Windows, case-only renames can fail if the filesystem deletes the original file first
+  // To work around this, we use a temporary name for case-only renames
+  const oldName = path.basename(oldPath);
+  const newName = path.basename(newPath);
+  const oldDir = path.dirname(oldPath);
+  const newDir = path.dirname(newPath);
+  
+  // Check if this is a case-only rename (same name, different case, same directory)
+  const isCaseOnlyRename = oldDir === newDir && 
+                           oldName.toLowerCase() === newName.toLowerCase() && 
+                           oldName !== newName;
+  
+  if (isCaseOnlyRename) {
+    // Use a temporary name to avoid Windows filesystem issues
+    const tempName = `__temp_rename_${Date.now()}_${oldName}`;
+    const tempPath = path.join(oldDir, tempName);
+    
+    // First rename to temporary name
+    fs.renameSync(oldPath, tempPath);
+    // Then rename to final name
+    fs.renameSync(tempPath, newPath);
+  } else {
+    // Normal rename
+    fs.renameSync(oldPath, newPath);
+  }
 }
 
 export async function deleteItem(itemPath: string): Promise<void> {

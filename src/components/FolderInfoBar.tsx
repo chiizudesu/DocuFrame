@@ -48,6 +48,7 @@ import {
   Search,
   PanelRightClose,
   Star,
+  Layers,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath, normalizePath, isChildPath } from '../utils/path'
@@ -68,7 +69,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, isGroupedByIndex, setIsGroupedByIndex } = useAppContext()
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -555,7 +556,7 @@ export const FolderInfoBar: React.FC = () => {
 
   const handleCreateWordDocument = async () => {
     try {
-      const fileName = `New Document ${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.docx`;
+      const fileName = `New Document.docx`;
       const filePath = joinPath(currentDirectory, fileName);
       
       // Create a basic Word document (this would need to be implemented in the main process)
@@ -576,8 +577,7 @@ export const FolderInfoBar: React.FC = () => {
 
   const handleCreateFromTemplate = async (templatePath: string, templateName: string) => {
     try {
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-      const fileName = `${templateName.replace('.xlsx', '')} ${timestamp}.xlsx`;
+      const fileName = `${templateName.replace('.xlsx', '')}.xlsx`;
       const destPath = joinPath(currentDirectory, fileName);
       
       await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
@@ -794,6 +794,16 @@ export const FolderInfoBar: React.FC = () => {
             color={iconColor}
             _hover={{ bg: hoverBgColor }}
           />
+          <IconButton
+            icon={<Layers size={16} />}
+            aria-label="Group by index"
+            variant={isGroupedByIndex ? 'solid' : 'ghost'}
+            size="sm"
+            onClick={() => setIsGroupedByIndex(!isGroupedByIndex)}
+            bg={isGroupedByIndex ? activeButtonBg : undefined}
+            color={isGroupedByIndex ? activeButtonColor : iconColor}
+            _hover={{ bg: isGroupedByIndex ? activeButtonBg : hoverBgColor }}
+          />
           <Menu>
             <MenuButton
               as={IconButton}
@@ -804,38 +814,56 @@ export const FolderInfoBar: React.FC = () => {
               color={iconColor}
               _hover={{ bg: hoverBgColor }}
             />
-            <MenuList minW="200px" py={1}>
+            <MenuList minW="200px" borderRadius={0} py={0}>
               <MenuItem 
                 icon={<FileSpreadsheet size={14} />} 
                 onClick={() => setIsCreateSpreadsheetOpen(true)}
-                py={2}
+                py={1.5}
                 px={3}
+                bg={useColorModeValue('#dcfce7', 'green.900')}
+                _hover={{ bg: useColorModeValue('#bbf7d0', 'green.800') }}
+                borderBottom="1px solid"
+                borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
               >
-                New spreadsheet
+                New Spreadsheet
+              </MenuItem>
+              <MenuItem 
+                icon={<FileText size={14} />} 
+                onClick={handleCreateWordDocument}
+                py={1.5}
+                px={3}
+                bg={useColorModeValue('#dbeafe', 'blue.900')}
+                _hover={{ bg: useColorModeValue('#bfdbfe', 'blue.800') }}
+                borderBottom="1px solid"
+                borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
+              >
+                New Word Document
               </MenuItem>
               {isLoadingTemplates ? (
-                <MenuItem isDisabled py={2} px={3}>Loading...</MenuItem>
+                <MenuItem 
+                  isDisabled 
+                  py={1.5} 
+                  px={3}
+                  borderBottom="1px solid"
+                  borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
+                >
+                  Loading...
+                </MenuItem>
               ) : templates.length > 0 ? (
-                templates.map((template) => (
+                templates.map((template, idx) => (
                   <MenuItem 
                     key={template.path}
                     icon={<FileSpreadsheet size={14} />} 
                     onClick={() => handleCreateFromTemplate(template.path, template.name)}
-                    py={2}
+                    py={1.5}
                     px={3}
+                    borderBottom={idx < templates.length - 1 ? "1px solid" : undefined}
+                    borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
                   >
                     {formatTemplateName(template.name)}
                   </MenuItem>
                 ))
               ) : null}
-              <MenuItem 
-                icon={<FileText size={14} />} 
-                onClick={handleCreateWordDocument}
-                py={2}
-                px={3}
-              >
-                New Word document
-              </MenuItem>
             </MenuList>
           </Menu>
           <IconButton
