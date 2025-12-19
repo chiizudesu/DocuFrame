@@ -163,6 +163,7 @@ export const FileGrid: React.FC = () => {
   const [backgroundFillPath, setBackgroundFillPath] = useState<string>('')
   const [backgroundFillUrl, setBackgroundFillUrl] = useState<string>('')
   const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>('watermark')
+  const [enableBackgrounds, setEnableBackgrounds] = useState(true)
   
   // Drag selection state
   const [isSelecting, setIsSelecting] = useState(false)
@@ -3341,8 +3342,12 @@ export const FileGrid: React.FC = () => {
         console.log('FileGrid: Loaded settings:', {
           backgroundType: settings.backgroundType,
           fileGridBackgroundPath: settings.fileGridBackgroundPath,
-          backgroundFillPath: settings.backgroundFillPath
+          backgroundFillPath: settings.backgroundFillPath,
+          enableBackgrounds: settings.enableBackgrounds
         });
+
+        // Load enableBackgrounds setting (default to true)
+        setEnableBackgrounds(settings.enableBackgrounds !== false);
 
         // Migration: if fileGridBackgroundPath exists but backgroundType is not set, default to corner mascot (watermark)
         const bgType = settings.backgroundType || (settings.fileGridBackgroundPath ? 'watermark' : 'watermark');
@@ -3841,6 +3846,7 @@ export const FileGrid: React.FC = () => {
         backgroundFillUrl={backgroundFillUrl}
         backgroundFillPath={backgroundFillPath}
         backgroundType={backgroundType}
+        enableBackgrounds={enableBackgrounds}
         nativeIcons={nativeIcons}
         memoizedFileStates={memoizedFileStates}
         memoizedRowBackgrounds={memoizedRowBackgrounds}

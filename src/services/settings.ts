@@ -31,7 +31,8 @@ export interface AppSettings {
   enableActivityTracking?: boolean; // Enable/disable window title tracking for timer
   fileGridBackgroundPath?: string; // Path to background image for file grid (JPEG/PNG) - legacy corner mascot
   backgroundType?: 'watermark' | 'backgroundFill'; // Type of background to display (watermark = corner mascot)
-  backgroundFillPath?: string; // Path to background fill image (fills entire filegrid, 15% opacity)
+  backgroundFillPath?: string; // Path to background fill image (fills entire filegrid, 10% opacity)
+  enableBackgrounds?: boolean; // Enable/disable background images
 
 }
 

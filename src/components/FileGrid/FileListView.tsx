@@ -449,6 +449,7 @@ export interface FileListViewProps {
   backgroundFillUrl: string;
   backgroundFillPath: string;
   backgroundType: 'watermark' | 'backgroundFill';
+  enableBackgrounds: boolean;
   nativeIcons: Map<string, string>;
   memoizedFileStates: Array<{
     isFileSelected: boolean;
@@ -541,6 +542,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
   backgroundFillUrl,
   backgroundFillPath,
   backgroundType,
+  enableBackgrounds,
   nativeIcons,
   memoizedFileStates,
   memoizedRowBackgrounds,
@@ -608,8 +610,8 @@ export const FileListView: React.FC<FileListViewProps> = ({
       width="100%"
       overflow="hidden"
     >
-      {/* Background Fill - Full filegrid coverage, 15% opacity - Fixed to container, doesn't scroll */}
-      {backgroundType === 'backgroundFill' && backgroundFillUrl && (
+      {/* Background Fill - Full filegrid coverage, 10% opacity - Fixed to container, doesn't scroll */}
+      {enableBackgrounds && backgroundType === 'backgroundFill' && backgroundFillUrl && (
         <Box
           position="absolute"
           top="35px"
@@ -623,13 +625,13 @@ export const FileListView: React.FC<FileListViewProps> = ({
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
-            opacity: 0.15,
+            opacity: 0.10,
           }}
         />
       )}
       
       {/* Watermark - Bottom-right corner, 100% opacity - Fixed to container, doesn't scroll */}
-      {backgroundType === 'watermark' && fileGridBackgroundUrl && (
+      {enableBackgrounds && backgroundType === 'watermark' && fileGridBackgroundUrl && (
         <Box
           position="absolute"
           bottom="150px"
@@ -658,7 +660,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
       )}
       
       {/* Legacy support: if backgroundType is not set but fileGridBackgroundUrl exists, show as corner mascot */}
-      {!backgroundType && fileGridBackgroundUrl && (
+      {enableBackgrounds && !backgroundType && fileGridBackgroundUrl && (
         <Box
           position="absolute"
           bottom="150px"
@@ -1289,6 +1291,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
     </Box>
   );
 };
+
 
 
 

@@ -251,6 +251,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [backgroundFillPath, setBackgroundFillPath] = useState('');
   const [backgroundImages, setBackgroundImages] = useState<Array<{ filename: string; path: string; relativePath: string }>>([]);
   const [selectedBackground, setSelectedBackground] = useState<string>('');
+  const [enableBackgrounds, setEnableBackgrounds] = useState(true);
 
   
   // Keyboard recorder state
@@ -309,6 +310,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
           setBackgroundType(loadedSettings.backgroundType || 'watermark');
         }
         setBackgroundFillPath(loadedSettings.backgroundFillPath || '');
+        setEnableBackgrounds(loadedSettings.enableBackgrounds !== false);
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -398,6 +400,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         fileGridBackgroundPath,
         backgroundType,
         backgroundFillPath,
+        enableBackgrounds,
 
       };
       
@@ -1901,6 +1904,35 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     </Text>
                     
                     <FormControl mb={4}>
+                      <Flex justify="space-between" align="center">
+                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={0}>Enable Backgrounds</FormLabel>
+                        <Switch
+                          isChecked={enableBackgrounds}
+                          onChange={async (e) => {
+                            const newValue = e.target.checked;
+                            setEnableBackgrounds(newValue);
+                            
+                            // Auto-save immediately
+                            try {
+                              const currentSettings = await settingsService.getSettings();
+                              const updatedSettings = {
+                                ...currentSettings,
+                                enableBackgrounds: newValue,
+                              };
+                              
+                              await settingsService.setSettings(updatedSettings as any);
+                              (settingsService as any).clearCache();
+                              window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
+                            } catch (error) {
+                              console.error('Failed to save enableBackgrounds:', error);
+                            }
+                          }}
+                          colorScheme="blue"
+                        />
+                      </Flex>
+                    </FormControl>
+                    
+                    <FormControl mb={4} isDisabled={!enableBackgrounds}>
                       <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Background Type</FormLabel>
                       <Select
                         value={backgroundType}
@@ -1922,11 +1954,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         }}
                       >
                         <option value="watermark" style={{ background: 'inherit', color: 'inherit' }}>Corner Mascot (Bottom-right corner, 100% opacity)</option>
-                        <option value="backgroundFill" style={{ background: 'inherit', color: 'inherit' }}>Background Fill (Fills filegrid, 15% opacity)</option>
+                        <option value="backgroundFill" style={{ background: 'inherit', color: 'inherit' }}>Background Fill (Fills filegrid, 10% opacity)</option>
                       </Select>
                     </FormControl>
 
-                    <Box mb={4}>
+                    <Box mb={4} opacity={enableBackgrounds ? 1 : 0.5} pointerEvents={enableBackgrounds ? 'auto' : 'none'}>
                       <HStack justify="space-between" mb={2}>
                         <Text fontSize="xs" fontWeight="500" color={textColor}>
                           Available {backgroundType === 'watermark' ? 'Corner Mascots' : 'Background Fills'}
@@ -1936,6 +1968,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           leftIcon={<Icon as={Plus} boxSize={3.5} />}
                           onClick={handleAddBackground}
                           colorScheme="blue"
+                          isDisabled={!enableBackgrounds}
                         >
                           Add Background
                         </Button>
