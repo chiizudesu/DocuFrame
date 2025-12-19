@@ -629,6 +629,132 @@ export async function analyzePdfDocumentStream(
   throw lastError;
 }
 
+// Streaming version for multiple PDF documents
+export async function analyzeMultiplePdfDocumentsStream(
+  pdfFiles: Array<{ path: string; name: string; base64?: string }>,
+  prompt: string,
+  model: 'sonnet' | 'haiku' = 'sonnet',
+  onChunk: (text: string) => void
+): Promise<string> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  console.log('=== CLAUDE MULTIPLE PDF DOCUMENT ANALYSIS (STREAMING) ===');
+  console.log('Model:', model);
+  console.log('Number of PDFs:', pdfFiles.length);
+  console.log('Files:', pdfFiles.map(f => f.name).join(', '));
+  console.log('Prompt:', prompt);
+
+  const modelName = model === 'haiku'
+    ? 'claude-haiku-4-5'
+    : 'claude-sonnet-4-5';
+
+  // Build message content with multiple PDF document blocks
+  const messageContent: any[] = [];
+  
+  // Add all PDF documents
+  for (const file of pdfFiles) {
+    let pdfBase64: string;
+    
+    // Use provided base64 if available, otherwise read the file
+    if (file.base64) {
+      pdfBase64 = file.base64;
+    } else {
+      const pdfBuffer = await (window.electronAPI as any).readFileAsBuffer(file.path);
+      pdfBase64 = arrayBufferToBase64(pdfBuffer);
+    }
+    
+    console.log(`Adding document: ${file.name} (${pdfBase64.length} base64 chars)`);
+    
+    messageContent.push({
+      type: 'document',
+      source: {
+        type: 'base64',
+        media_type: 'application/pdf',
+        data: pdfBase64
+      },
+      cache_control: { type: 'ephemeral' } // Cache PDFs for follow-up questions
+    });
+  }
+  
+  // Add the prompt text after all documents
+  messageContent.push({
+    type: 'text',
+    text: prompt
+  });
+
+  console.log('Starting multiple PDF document streaming...');
+
+  let fullText = '';
+  let lastError: any;
+  const maxRetries = 3;
+  const initialDelay = 2000;
+
+  // Retry logic for streaming
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const stream = client.messages.stream({
+        model: modelName,
+        max_tokens: 4000,
+        messages: [
+          { role: 'user', content: messageContent }
+        ],
+        temperature: 0.3
+      });
+
+      // Listen for text deltas
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_delta' &&
+            chunk.delta.type === 'text_delta') {
+          const text = chunk.delta.text;
+          fullText += text;
+          onChunk(text);
+        }
+      }
+
+      console.log('Claude multiple PDF streaming response complete. Length:', fullText.length);
+      return fullText.trim();
+    } catch (error: any) {
+      lastError = error;
+
+      // Check if it's a rate limit or overload error
+      const isRateLimitError =
+        error?.status === 429 ||
+        error?.status === 529 ||
+        error?.error?.type === 'overloaded_error' ||
+        error?.message?.includes('overloaded') ||
+        error?.message?.includes('Overloaded') ||
+        error?.message?.includes('rate limit');
+
+      if (isRateLimitError && attempt < maxRetries) {
+        const delay = initialDelay * Math.pow(2, attempt);
+        console.log(`Anthropic API overloaded/rate limited during multiple PDF streaming. Retrying in ${delay}ms... (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        // Clear accumulated text before retry
+        fullText = '';
+        continue;
+      }
+
+      // For other errors or if we've exhausted retries, throw
+      throw error;
+    }
+  }
+
+  // If we get here, we've exhausted retries
+  if (lastError?.status === 529 || lastError?.error?.type === 'overloaded_error') {
+    throw new Error('Anthropic servers are currently overloaded. Please try again in a few moments.');
+  }
+
+  throw lastError;
+}
+
 // Analyze window activity data and provide insights
 export async function analyzeWindowActivity(
   windowActivityData: string,

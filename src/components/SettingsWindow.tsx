@@ -83,6 +83,7 @@ interface Settings {
   workShiftEnd?: string;
   productivityTargetHours?: number;
   enableActivityTracking?: boolean;
+  fileGridBackgroundPath?: string;
 
 }
 
@@ -117,6 +118,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
   const [enableActivityTracking, setEnableActivityTracking] = useState(true);
+  const [fileGridBackgroundPath, setFileGridBackgroundPath] = useState('');
 
   
   // Keyboard recorder state
@@ -167,6 +169,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setWorkShiftEnd(loadedSettings.workShiftEnd || '15:00');
         setProductivityTargetHours(loadedSettings.productivityTargetHours || 7.5);
         setEnableActivityTracking(loadedSettings.enableActivityTracking !== false);
+        setFileGridBackgroundPath(loadedSettings.fileGridBackgroundPath || '');
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -221,6 +224,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         workShiftEnd,
         productivityTargetHours,
         enableActivityTracking,
+        fileGridBackgroundPath,
 
       };
       
@@ -383,6 +387,30 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       toast({
         title: 'Error',
         description: 'Failed to select workpaper template folder',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleBrowseFileGridBackground = async () => {
+    try {
+      const result = await (window.electronAPI as any).selectFile({
+        title: 'Select File Grid Background Image',
+        filters: [
+          { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (result) {
+        setFileGridBackgroundPath(result);
+      }
+    } catch (error) {
+      console.error('Error selecting background image:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select background image',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -976,10 +1004,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       fontWeight: '600',
                       color: textColor,
                     },
-                    '& tr:nth-child(even)': {
+                    '& tr:nth-of-type(even)': {
                       backgroundColor: useColorModeValue('gray.50', 'gray.700') + ' !important',
                     },
-                    '& tr:nth-child(odd)': {
+                    '& tr:nth-of-type(odd)': {
                       backgroundColor: useColorModeValue('gray.100', 'gray.750') + ' !important',
                     },
                     '& tr:hover': {
@@ -1534,6 +1562,47 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         size="sm"
                       />
                     </HStack>
+                  </FormControl>
+                </Box>
+
+                <Divider my={3.5} />
+
+                <Box>
+                  <Heading size="sm" mb={1.5} color={textColor}>Background Image</Heading>
+                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
+                    Set a custom background image for the file grid (JPEG/PNG). PNG images support transparency.
+                  </Text>
+                  <FormControl>
+                    <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Background Image Path</FormLabel>
+                    <InputGroup size="sm">
+                      <Input
+                        value={fileGridBackgroundPath}
+                        onChange={(e) => setFileGridBackgroundPath(e.target.value)}
+                        placeholder="No background image selected"
+                        bg="white"
+                        _dark={{ bg: 'gray.600' }}
+                        borderRadius="sm"
+                        fontSize="xs"
+                        h="31px"
+                        isReadOnly
+                      />
+                      <InputRightElement width="3.5rem" h="31px">
+                        <Button h="22px" size="xs" onClick={handleBrowseFileGridBackground} borderRadius="sm">
+                          <Icon as={FolderOpen} boxSize={3.5} />
+                        </Button>
+                      </InputRightElement>
+                    </InputGroup>
+                    {fileGridBackgroundPath && (
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="red"
+                        mt={2}
+                        onClick={() => setFileGridBackgroundPath('')}
+                      >
+                        Clear Background
+                      </Button>
+                    )}
                   </FormControl>
                 </Box>
               </VStack>

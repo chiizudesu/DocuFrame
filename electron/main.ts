@@ -3528,6 +3528,40 @@ ipcMain.handle('convert-file-path-to-http-url', async (_, filePath: string) => {
   }
 });
 
+// Read image file and convert to data URL (works for files outside Clients directory)
+ipcMain.handle('read-image-as-data-url', async (_, filePath: string) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File does not exist' };
+    }
+    
+    // Read the file as buffer
+    const fileBuffer = fs.readFileSync(filePath);
+    
+    // Determine MIME type based on file extension
+    const ext = path.extname(filePath).toLowerCase();
+    let mimeType = 'image/jpeg'; // default
+    if (ext === '.png') {
+      mimeType = 'image/png';
+    } else if (ext === '.jpg' || ext === '.jpeg') {
+      mimeType = 'image/jpeg';
+    } else if (ext === '.gif') {
+      mimeType = 'image/gif';
+    } else if (ext === '.webp') {
+      mimeType = 'image/webp';
+    }
+    
+    // Convert buffer to base64
+    const base64 = fileBuffer.toString('base64');
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    
+    return { success: true, dataUrl };
+  } catch (error) {
+    console.error('[Main] Error reading image file:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Note: PDF viewer functionality has been moved to inline preview pane
 // The separate PDF viewer window is no longer needed
 

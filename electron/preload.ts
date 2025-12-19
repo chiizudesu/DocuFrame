@@ -302,9 +302,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return await ipcRenderer.invoke('search-files', options);
   },
   // Additional missing methods
-  convertFilePathToHttpUrl: async (filePath: string) => {
-    return await ipcRenderer.invoke('convert-file-path-to-http-url', filePath);
-  },
+    convertFilePathToHttpUrl: async (filePath: string) => {
+      return await ipcRenderer.invoke('convert-file-path-to-http-url', filePath);
+    },
+    readImageAsDataUrl: async (filePath: string) => {
+      return await ipcRenderer.invoke('read-image-as-data-url', filePath);
+    },
   // Image clipboard methods
   saveImageFromClipboard: async (currentDirectory: string, filename: string, base64Data: string) => {
     return await ipcRenderer.invoke('save-image-from-clipboard', currentDirectory, filename, base64Data);

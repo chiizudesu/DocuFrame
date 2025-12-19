@@ -42,7 +42,7 @@ import {
 import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ChevronDown, ChevronUp, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle, Minus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, type AIAgent, analyzePdfDocument, analyzePdfDocumentStream } from '../services/aiService';
+import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, type AIAgent, analyzePdfDocument, analyzePdfDocumentStream, analyzeMultiplePdfDocumentsStream } from '../services/aiService';
 
 interface FileItem { 
   name: string; 
@@ -199,6 +199,7 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
   const [currentStage, setCurrentStage] = useState<'setup' | 'results'>('setup');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [lastClickedIndex, setLastClickedIndex] = useState<number>(-1);
   const analysisBoxRef = React.useRef<HTMLDivElement>(null);
 
   const toast = useToast();
@@ -212,32 +213,45 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      // Reset state
-      setSelectedFile(null);
-      setSelectedFileItems([]);
-      setAnalysis('');
-      setChatMessages([]);
-      setFollowUpQuestion('');
-      setError(null);
-      setDocumentText('');
-      setCopied(false);
-      setSelectedQuickAction(null);
-      setCustomPrompt('');
-      setCurrentStage('setup');
-      setIsStreaming(false);
+      // Only reset if we're in setup stage (not reopening with results)
+      if (currentStage === 'setup') {
+        setSelectedFile(null);
+        setSelectedFileItems([]);
+        setAnalysis('');
+        setChatMessages([]);
+        setFollowUpQuestion('');
+        setError(null);
+        setDocumentText('');
+        setCopied(false);
+        setSelectedQuickAction(null);
+        setCustomPrompt('');
+        setIsStreaming(false);
+        setLastClickedIndex(-1);
+      }
       
-      // Find all PDF files in current directory and folder items
+      // Always update available files when folder items change
       const pdfFiles = folderItems.filter(file => 
         file.name.toLowerCase().endsWith('.pdf')
       );
       setAvailableFiles(pdfFiles);
     }
-  }, [isOpen, folderItems]);
+  }, [isOpen, folderItems, currentStage]);
 
-  const handleFileSelect = useCallback((file: FileItem, event?: React.MouseEvent) => {
-    const isMultiSelect = event?.ctrlKey || event?.metaKey || event?.shiftKey;
+  const handleFileSelect = useCallback((file: FileItem, fileIndex: number, event?: React.MouseEvent) => {
+    const isShiftClick = event?.shiftKey;
+    const isCtrlClick = event?.ctrlKey || event?.metaKey;
     
-    if (isMultiSelect) {
+    if (isShiftClick && lastClickedIndex !== -1) {
+      // Shift-click: select range from last clicked to current
+      const start = Math.min(lastClickedIndex, fileIndex);
+      const end = Math.max(lastClickedIndex, fileIndex);
+      const rangeFiles = availableFiles.slice(start, end + 1);
+      
+      setSelectedFileItems(rangeFiles);
+      setSelectedFile(file);
+      setLastClickedIndex(fileIndex);
+    } else if (isCtrlClick) {
+      // Ctrl/Cmd-click: toggle individual file
       setSelectedFileItems(prev => {
         const isSelected = prev.some(f => f.name === file.name);
         if (isSelected) {
@@ -246,14 +260,16 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
           return [...prev, file];
         }
       });
-      // Keep selectedFile for backward compatibility, but use the first selected file
       setSelectedFile(file);
+      setLastClickedIndex(fileIndex);
     } else {
+      // Normal click: select only this file
       setSelectedFileItems([file]);
       setSelectedFile(file);
+      setLastClickedIndex(fileIndex);
     }
     setError(null);
-  }, []);
+  }, [lastClickedIndex, availableFiles]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -427,7 +443,7 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
         // Store the PDF path for follow-up questions
         setDocumentText(primaryFile.path);
       } else {
-        // Multiple files analysis - read all files first, then make combined summary
+        // Multiple files analysis - read all files first, then analyze together
         setAnalysis(`# Reading ${filesToAnalyze.length} Documents...\n\nPlease wait while all documents are being loaded.\n\n`);
         
         // Helper function to convert ArrayBuffer to base64
@@ -470,37 +486,28 @@ Please provide a comprehensive analysis that:
 
 Structure your response to be useful for someone who needs to understand all these documents together.`;
 
-        // Analyze each file sequentially but with context about all files
-        // The combined prompt ensures the AI knows it's analyzing multiple documents together
-        let combinedAnalysis = `# Analysis of ${filesToAnalyze.length} Documents\n\n`;
+        // Use the new multi-document stream function to analyze ALL files in a single API call
+        console.log('Calling analyzeMultiplePdfDocumentsStream with all files...');
+        setAnalysis(''); // Clear to show fresh streaming content
         
-        for (let i = 0; i < filesToAnalyze.length; i++) {
-          const file = filesToAnalyze[i];
-          const fileSpecificPrompt = i === 0 
-            ? combinedPrompt 
-            : `${combinedPrompt}\n\nNote: You have already analyzed ${i} document(s). This is document ${i + 1} of ${filesToAnalyze.length}. Continue building on your previous analysis.`;
-          
-          let fileAnalysis = '';
-          await analyzePdfDocumentStream(
-            file.path,
-            file.name,
-            fileSpecificPrompt,
-            selectedAgent,
-            (chunk: string) => {
-              fileAnalysis += chunk;
-              // Update analysis with combined view
-              const currentContent = combinedAnalysis + (i > 0 ? '\n\n---\n\n' : '') + `## Document ${i + 1}: ${file.name}\n\n${fileAnalysis}`;
-              setAnalysis(currentContent);
+        await analyzeMultiplePdfDocumentsStream(
+          readFiles, // Pass all files with their base64 data
+          combinedPrompt,
+          selectedAgent,
+          (chunk: string) => {
+            // Accumulate text as it streams in
+            setAnalysis(prev => {
+              const newContent = prev + chunk;
+              // Auto-scroll to bottom during streaming
               setTimeout(() => {
                 if (analysisBoxRef.current) {
                   analysisBoxRef.current.scrollTop = analysisBoxRef.current.scrollHeight;
                 }
               }, 0);
-            }
-          );
-          
-          combinedAnalysis += (i > 0 ? '\n\n---\n\n' : '') + `## Document ${i + 1}: ${file.name}\n\n${fileAnalysis}`;
-        }
+              return newContent;
+            });
+          }
+        );
         
         // Store paths for follow-up (use first file for now)
         setDocumentText(primaryFile.path);
@@ -695,6 +702,7 @@ Please provide a helpful, detailed response based on the PDF document content an
     setCustomPrompt('');
     setCurrentStage('setup');
     setIsStreaming(false);
+    setLastClickedIndex(-1);
   };
 
   const handleClose = () => {
@@ -710,11 +718,21 @@ Please provide a helpful, detailed response based on the PDF document content an
       setSelectedQuickAction(null);
       setCurrentStage('setup');
       setIsStreaming(false);
+      setLastClickedIndex(-1);
       onClose();
   };
 
+  const handleOverlayClick = () => {
+    // Auto-dock when clicking outside if minimize handler is provided and we have results
+    if (onMinimize && (currentStage === 'results' || analysis)) {
+      onMinimize();
+    } else {
+      handleClose();
+    }
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="4xl">
+    <Modal isOpen={isOpen} onClose={handleOverlayClick} size="4xl">
               <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent 
         maxW="900px" 
@@ -724,21 +742,19 @@ Please provide a helpful, detailed response based on the PDF document content an
         my="auto"
       >
         <ModalHeader>
-          <Flex align="center" justify="space-between">
-            <Flex align="center" gap={2}>
-              <Brain size={20} />
-              <Text>Analyze Documents</Text>
-            </Flex>
-            {currentStage === 'results' && (
-              <Button
+          <Flex align="center" gap={2}>
+            {currentStage === 'results' ? (
+              <IconButton
+                aria-label="Back to setup"
+                icon={<ArrowLeft size={16} />}
                 size="sm"
                 variant="ghost"
-                leftIcon={<ArrowLeft size={14} />}
                 onClick={handleBackToSetup}
-              >
-                Setup
-              </Button>
+              />
+            ) : (
+              <Brain size={20} />
             )}
+            <Text>Analyze Documents</Text>
           </Flex>
         </ModalHeader>
         {onMinimize && (
@@ -751,6 +767,7 @@ Please provide a helpful, detailed response based on the PDF document content an
             top={4}
             right={12}
             onClick={onMinimize}
+            zIndex={10}
           />
         )}
         <ModalCloseButton />
@@ -852,11 +869,12 @@ Please provide a helpful, detailed response based on the PDF document content an
                                       transform: 'translateY(-1px)',
                                       boxShadow: useColorModeValue('sm', 'dark-lg'),
                                     }}
-                                    onClick={(e) => handleFileSelect(file, e)}
+                                    onClick={(e) => handleFileSelect(file, index, e)}
                                     transition="all 0.15s"
                                     display="flex"
                                     alignItems="center"
                                     gap={2}
+                                    userSelect="none"
                                   >
                                     <FileText size={18} color={isSelected ? '#2563eb' : useColorModeValue('#64748b', '#cbd5e1')} />
                                     <Text

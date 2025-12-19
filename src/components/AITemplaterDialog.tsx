@@ -185,8 +185,17 @@ Please modify or enhance the email according to the user's request. Only provide
     onClose();
   };
 
+  const handleOverlayClick = () => {
+    // Auto-dock when clicking outside if minimize handler is provided and result exists
+    if (onMinimize && result) {
+      onMinimize();
+    } else {
+      handleClose();
+    }
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="xl" isCentered>
+    <Modal isOpen={isOpen} onClose={handleOverlayClick} size="xl" isCentered closeOnOverlayClick={true}>
               <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent 
         bg={bgColor} 
@@ -355,14 +364,24 @@ Please modify or enhance the email according to the user's request. Only provide
               bg={useColorModeValue('gray.50', 'gray.700')}
               borderRadius="md"
             >
-              <Text 
-                fontSize="sm" 
-                color={useColorModeValue('gray.600', 'gray.300')} 
-                fontWeight="semibold"
-                mb={4}
-              >
-                Generated Email
-              </Text>
+              <Flex justify="space-between" align="center" mb={4}>
+                <Text 
+                  fontSize="sm" 
+                  color={useColorModeValue('gray.600', 'gray.300')} 
+                  fontWeight="semibold"
+                >
+                  Generated Email
+                </Text>
+                {onMinimize && result && (
+                  <IconButton
+                    aria-label="Minimize"
+                    icon={<Minus size={14} />}
+                    size="xs"
+                    variant="ghost"
+                    onClick={onMinimize}
+                  />
+                )}
+              </Flex>
               
               <Box 
                 bg={useColorModeValue('yellow.50', 'gray.900')} 

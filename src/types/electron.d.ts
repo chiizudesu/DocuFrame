@@ -49,6 +49,10 @@ interface ElectronAPI {
   readPdfText: (filePath: string) => Promise<string>;
   readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
   
+  // Image operations
+  convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  readImageAsDataUrl: (filePath: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>;
+  
   // Window operations
   minimize: () => void;
   maximize: () => void;

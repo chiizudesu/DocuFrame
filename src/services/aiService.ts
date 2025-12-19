@@ -183,3 +183,14 @@ export async function analyzePdfDocumentStream(
   const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
   return await claudeService.analyzePdfDocumentStream(pdfFilePath, fileName, prompt, model, onChunk);
 }
+
+// Streaming version for multiple PDF document analysis
+export async function analyzeMultiplePdfDocumentsStream(
+  pdfFiles: Array<{ path: string; name: string; base64?: string }>,
+  prompt: string,
+  selectedAgent: DocumentAIAgent = 'claude',
+  onChunk: (text: string) => void
+): Promise<string> {
+  const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
+  return await claudeService.analyzeMultiplePdfDocumentsStream(pdfFiles, prompt, model, onChunk);
+}

@@ -10,6 +10,7 @@ import { AppProvider } from './context/AppContext';
 import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
+import { normalizePath, joinPath } from './utils/path';
 import type { FileItem } from './types';
 
 // Jump mode overlay component - simple 2 rows
@@ -134,10 +135,24 @@ const JumpModeOverlay: React.FC<{
       // This allows users to see what they're about to navigate to
       // Validate that match.path is a proper full path
       if (match.path && match.path.length > 2 && match.path.includes('\\')) {
+        // If it's a file, extract the directory path; if it's a folder, use the path directly
+        let pathToSet = match.path;
+        if (match.type === 'file') {
+          // Extract directory from file path
+          const pathParts = normalizePath(match.path).split(/[\\/]/).filter(Boolean);
+          if (pathParts.length > 1) {
+            pathParts.pop(); // Remove filename
+            pathToSet = normalizePath(joinPath(...pathParts));
+          } else {
+            // Fallback to overlay working directory if we can't extract directory
+            pathToSet = overlayWorkingDirectory;
+          }
+        }
+        
         // Only update if the path is actually different to prevent unnecessary re-renders
-        if (overlayPath !== match.path) {
-          console.log('Setting overlayPath to match.path:', match.path);
-        setOverlayPath(match.path);
+        if (overlayPath !== pathToSet) {
+          console.log('Setting overlayPath to:', pathToSet, match.type === 'file' ? '(extracted from file)' : '');
+          setOverlayPath(pathToSet);
         }
       } else {
         // Fallback to overlay working directory
@@ -760,6 +775,15 @@ const AppContent: React.FC = () => {
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       
+      console.log('[App] Global keydown:', e.key, {
+        isInputFocused,
+        isQuickNavigating,
+        isJumpModeActive,
+        target: target.tagName,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+      });
 
       // Backspace to go up one directory level (only when jump mode is not active)
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Backspace') {
@@ -787,6 +811,7 @@ const AppContent: React.FC = () => {
       
       // If Ctrl + Space is pressed, open in command mode
       if (!isInputFocused && !isQuickNavigating && e.ctrlKey && e.code === 'Space') {
+        console.log('[App] Ctrl+Space detected - opening command mode');
         setIsQuickNavigating(true);
         setInitialCommandMode(true);
         e.preventDefault();
@@ -794,6 +819,7 @@ const AppContent: React.FC = () => {
       }
       // Calculator shortcut (configurable)
       if (!isInputFocused && eventMatchesShortcut(e, calculatorShortcut)) {
+        console.log('[App] Calculator shortcut detected');
         setIsCalculatorOpen(true);
         e.preventDefault();
         return;
@@ -802,6 +828,7 @@ const AppContent: React.FC = () => {
       // Activate jump mode on any key press when no input is focused and app is active
       // But don't interfere if jump mode is already active
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        console.log('[App] Activating jump mode with key:', e.key);
         e.preventDefault();
         setInitialJumpKey(e.key);
         setIsJumpModeActive(true);
@@ -812,6 +839,7 @@ const AppContent: React.FC = () => {
       
       // Escape key to cancel any ongoing operations (drag, etc.) - but allow it to pass through when jump mode is active
       if (!isJumpModeActive && e.key === 'Escape') {
+        console.log('[App] Escape key - dispatching escape event');
         // Dispatch a custom event that components can listen to for resetting their state
         window.dispatchEvent(new CustomEvent('escape-key-pressed'));
       }

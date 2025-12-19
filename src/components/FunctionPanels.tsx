@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Flex, Button, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, Menu, MenuButton, MenuList, MenuItem } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, FolderPlus, PanelRightClose, ExternalLink, Plus, FileSpreadsheet, X, FileType } from 'lucide-react';
+import { Box, Flex, Button, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton, Input } from '@chakra-ui/react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, FolderPlus, PanelRightClose, ExternalLink, Plus, FileSpreadsheet, X, FileType, Wand2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { OrgCodesDialog } from './OrgCodesDialog';
@@ -154,10 +154,36 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+  
+  // Keys to force remount and reset dialog state when closing minimized dialogs
+  const [dialogKeys, setDialogKeys] = useState({
+    aiEditor: 0,
+    aiTemplater: 0,
+    documentAnalysis: 0,
+    manageTemplates: 0,
+  });
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
   const [isTaskTimerSummaryOpen, setTaskTimerSummaryOpen] = useState(false);
+  
+  // Input dialog state
+  const [inputDialog, setInputDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    placeholder: string;
+    onSubmit: (value: string) => Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    placeholder: '',
+    onSubmit: async () => {}
+  });
+  const [inputValue, setInputValue] = useState('');
+  
+  // Templates state
+  const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   
   // Task Timer state (kept for logFileOperation functionality)
   const [timerState, setTimerState] = useState<TimerState>({ currentTask: null, isRunning: false, isPaused: false });
@@ -630,6 +656,28 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
 
   const handleCloseMinimizedDialog = (type: DialogType) => {
     setMinimizedDialogs(prev => prev.filter(d => d.type !== type));
+    
+    // Reset dialog state by incrementing key to force remount
+    setDialogKeys(prev => ({
+      ...prev,
+      [type]: prev[type as keyof typeof prev] + 1,
+    }));
+    
+    // Ensure dialog is closed
+    switch (type) {
+      case 'documentAnalysis':
+        setDocumentAnalysisOpen(false);
+        break;
+      case 'aiEditor':
+        setAIEditorOpen(false);
+        break;
+      case 'aiTemplater':
+        setAITemplaterOpen(false);
+        break;
+      case 'manageTemplates':
+        setManageTemplatesOpen(false);
+        break;
+    }
   };
 
   // Register handlers with Layout
@@ -637,6 +685,45 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setOnRestoreDialog(() => handleRestoreDialog);
     setOnCloseMinimizedDialog(() => handleCloseMinimizedDialog);
   }, [setOnRestoreDialog, setOnCloseMinimizedDialog]);
+
+  // Load templates function
+  const loadTemplates = async () => {
+    try {
+      setIsLoadingTemplates(true);
+      const result = await (window.electronAPI as any).getWorkpaperTemplates();
+      if (result.success) {
+        setTemplates(result.templates || []);
+      } else {
+        console.warn('Failed to load workpaper templates:', result.message);
+        setTemplates([]);
+      }
+    } catch (error) {
+      console.error('Error loading workpaper templates:', error);
+      setTemplates([]);
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  };
+
+  // Handle creating file from template
+  const handleCreateFromTemplate = async (templatePath: string, templateName: string) => {
+    try {
+      const fileName = templateName.replace('.xlsx', '');
+      const destPath = `${currentDirectory}\\${fileName}.xlsx`;
+      
+      await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
+      
+      addLog(`Created ${fileName}.xlsx from template`);
+      setStatus(`Created ${fileName}.xlsx from template`, 'success');
+      
+      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+      setFolderItems(contents);
+    } catch (error) {
+      console.error('Error creating from template:', error);
+      addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to create from template', 'error');
+    }
+  };
 
   // Icon-only function button component
   const FunctionButton: React.FC<{
@@ -791,7 +878,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       {/* Utilities Functions */}
       <Flex gap={1}>
         <FunctionButton 
-          icon={Star} 
+          icon={Wand2} 
           action="ai_editor" 
           description="Email AI editor for content generation" 
           color="yellow.400" 
@@ -911,16 +998,36 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             aria-label={isGroupedByIndex ? 'Ungroup by index' : 'Group by index'}
             icon={<Icon as={Layers} boxSize={5} />}
             size="sm"
-            variant="ghost"
-            color={buttonColor}
+            variant={isGroupedByIndex ? "solid" : "ghost"}
+            bg={isGroupedByIndex ? useColorModeValue('blue.600', 'blue.700') : undefined}
+            color={isGroupedByIndex ? "white" : buttonColor}
             onClick={() => setIsGroupedByIndex(!isGroupedByIndex)}
-            _hover={{ bg: buttonHoverBg }}
+            _hover={{ bg: isGroupedByIndex ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
             h="40px"
             w="40px"
           />
         </Tooltip>
         
-        <Menu>
+        <Tooltip label={isPreviewPaneOpen ? 'Hide preview pane' : 'Show preview pane'} placement="bottom" hasArrow>
+          <IconButton
+            aria-label="Preview pane"
+            icon={<Icon as={PanelRightClose} boxSize={5} />}
+            size="sm"
+            variant={isPreviewPaneOpen ? "solid" : "ghost"}
+            bg={isPreviewPaneOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
+            color={isPreviewPaneOpen ? "white" : buttonColor}
+            onClick={() => {
+              setIsPreviewPaneOpen(!isPreviewPaneOpen);
+              addLog(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`);
+              setStatus(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`, 'info');
+            }}
+            _hover={{ bg: isPreviewPaneOpen ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
+            h="40px"
+            w="40px"
+          />
+        </Tooltip>
+        
+        <Menu onOpen={loadTemplates}>
           <MenuButton
             as={IconButton}
             icon={<Icon as={Plus} boxSize={5} />}
@@ -933,28 +1040,62 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             w="40px"
           />
           <MenuList minW="200px" borderRadius="md" py={0}>
+            {/* Templates from workpaperTemplateFolderPath */}
+            {templates.length > 0 && (
+              <>
+                {templates.map((template) => (
+                  <MenuItem
+                    key={template.path}
+                    icon={<FileSpreadsheet size={14} />}
+                    onClick={() => handleCreateFromTemplate(template.path, template.name)}
+                    py={1.5}
+                    px={3}
+                    bg={useColorModeValue('#3b82f6', 'blue.700')}
+                    _hover={{ bg: useColorModeValue('#2563eb', 'blue.600') }}
+                    color="white"
+                    borderBottom="1px solid"
+                    borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
+                  >
+                    {template.name.replace('.xlsx', '')}
+                  </MenuItem>
+                ))}
+                <Divider borderColor={useColorModeValue('#e5e7eb', 'gray.600')} />
+              </>
+            )}
+            {isLoadingTemplates && (
+              <MenuItem isDisabled py={1.5} px={3}>
+                Loading templates...
+              </MenuItem>
+            )}
             <MenuItem 
               icon={<FileSpreadsheet size={14} />} 
-              onClick={async () => {
-                const newSpreadsheetName = prompt('Enter spreadsheet name:');
-                if (!newSpreadsheetName?.trim()) return;
-                
-                try {
-                  const fileName = `${newSpreadsheetName}.xlsx`;
-                  const filePath = `${currentDirectory}\\${fileName}`;
-                  
-                  await (window.electronAPI as any).createBlankSpreadsheet(filePath);
-                  
-                  addLog(`Created blank spreadsheet: ${fileName}`);
-                  setStatus(`Created ${fileName}`, 'success');
-                  
-                  const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                  setFolderItems(contents);
-                } catch (error) {
-                  console.error('Error creating spreadsheet:', error);
-                  addLog(`Failed to create spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-                  setStatus('Failed to create spreadsheet', 'error');
-                }
+              onClick={() => {
+                setInputValue('');
+                setInputDialog({
+                  isOpen: true,
+                  title: 'New Spreadsheet',
+                  placeholder: 'Enter spreadsheet name',
+                  onSubmit: async (newSpreadsheetName: string) => {
+                    if (!newSpreadsheetName?.trim()) return;
+                    
+                    try {
+                      const fileName = `${newSpreadsheetName}.xlsx`;
+                      const filePath = `${currentDirectory}\\${fileName}`;
+                      
+                      await (window.electronAPI as any).createBlankSpreadsheet(filePath);
+                      
+                      addLog(`Created blank spreadsheet: ${fileName}`);
+                      setStatus(`Created ${fileName}`, 'success');
+                      
+                      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+                      setFolderItems(contents);
+                    } catch (error) {
+                      console.error('Error creating spreadsheet:', error);
+                      addLog(`Failed to create spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+                      setStatus('Failed to create spreadsheet', 'error');
+                    }
+                  }
+                });
               }}
               py={1.5}
               px={3}
@@ -1028,24 +1169,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           />
         </Tooltip>
         
-        <Tooltip label={isPreviewPaneOpen ? 'Hide preview pane' : 'Show preview pane'} placement="bottom" hasArrow>
-          <IconButton
-            aria-label="Preview pane"
-            icon={<Icon as={PanelRightClose} boxSize={5} />}
-            size="sm"
-            variant="ghost"
-            color={buttonColor}
-            onClick={() => {
-              setIsPreviewPaneOpen(!isPreviewPaneOpen);
-              addLog(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`);
-              setStatus(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`, 'info');
-            }}
-            _hover={{ bg: buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
-        
         <Tooltip label="Open in file explorer" placement="bottom" hasArrow>
           <IconButton
             aria-label="Open in explorer"
@@ -1103,17 +1226,20 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     />
     <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
     <AIEditorDialog 
+      key={`aiEditor-${dialogKeys.aiEditor}`}
       isOpen={isAIEditorOpen} 
       onClose={() => setAIEditorOpen(false)}
       onMinimize={() => handleMinimizeDialog('aiEditor')}
     />
     <AITemplaterDialog 
+      key={`aiTemplater-${dialogKeys.aiTemplater}`}
       isOpen={isAITemplaterOpen} 
       onClose={() => setAITemplaterOpen(false)} 
       currentDirectory={currentDirectory}
       onMinimize={() => handleMinimizeDialog('aiTemplater')}
     />
     <DocumentAnalysisDialog 
+      key={`documentAnalysis-${dialogKeys.documentAnalysis}`}
       isOpen={isDocumentAnalysisOpen} 
       onClose={() => setDocumentAnalysisOpen(false)} 
       currentDirectory={currentDirectory}
@@ -1122,6 +1248,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       onMinimize={() => handleMinimizeDialog('documentAnalysis')}
     />
     <ManageTemplatesDialog 
+      key={`manageTemplates-${dialogKeys.manageTemplates}`}
       isOpen={isManageTemplatesOpen} 
       onClose={() => setManageTemplatesOpen(false)} 
       currentDirectory={currentDirectory}
@@ -1144,5 +1271,60 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       isOpen={isTaskTimerSummaryOpen}
       onClose={() => setTaskTimerSummaryOpen(false)}
     />
+    
+    {/* Input Dialog */}
+    <Modal 
+      isOpen={inputDialog.isOpen} 
+      onClose={() => setInputDialog({ ...inputDialog, isOpen: false })}
+      size="md"
+      isCentered
+    >
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent bg={useColorModeValue('white', 'gray.800')}>
+        <ModalHeader>{inputDialog.title}</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <Input
+            placeholder={inputDialog.placeholder}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && inputValue.trim()) {
+                inputDialog.onSubmit(inputValue.trim()).then(() => {
+                  setInputDialog({ ...inputDialog, isOpen: false });
+                  setInputValue('');
+                });
+              }
+            }}
+            autoFocus
+          />
+        </ModalBody>
+        <ModalFooter>
+          <Button 
+            variant="ghost" 
+            mr={3} 
+            onClick={() => {
+              setInputDialog({ ...inputDialog, isOpen: false });
+              setInputValue('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            colorScheme="blue"
+            onClick={async () => {
+              if (inputValue.trim()) {
+                await inputDialog.onSubmit(inputValue.trim());
+                setInputDialog({ ...inputDialog, isOpen: false });
+                setInputValue('');
+              }
+            }}
+            isDisabled={!inputValue.trim()}
+          >
+            Create
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   </>;
 };

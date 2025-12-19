@@ -55,6 +55,18 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
+  // Pre-compute all color values to avoid conditional hook calls
+  const textColor = useColorModeValue('gray.900', 'white');
+  const secondaryTextColor = useColorModeValue('gray.600', 'gray.400');
+  const emptyStateBg = useColorModeValue('gray.50', 'gray.900');
+  const emptyStateBorder = useColorModeValue('gray.300', 'gray.700');
+  const emptyStateText = useColorModeValue('gray.500', 'gray.400');
+  const resultBg = useColorModeValue('gray.50', 'gray.900');
+  const resultBoxBg = useColorModeValue('white', 'gray.800');
+  const resultBoxShadow = useColorModeValue('sm', 'dark-lg');
+  const resultBoxBorder = useColorModeValue('gray.200', 'gray.700');
+  const resultHeaderText = useColorModeValue('gray.700', 'gray.300');
+  const instructionsBg = useColorModeValue('gray.50', 'gray.700');
 
   const handleRewrite = async () => {
     setError(null);
@@ -177,8 +189,17 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
     setLocalInstructions(aiEditorInstructions);
   }, [aiEditorInstructions]);
 
+  const handleOverlayClick = () => {
+    // Auto-dock when clicking outside if minimize handler is provided and result exists
+    if (onMinimize && result) {
+      onMinimize();
+    } else {
+      handleClose();
+    }
+  };
+
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="4xl" isCentered>
+    <Modal isOpen={isOpen} onClose={handleOverlayClick} size="4xl" isCentered>
               <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
       <ModalContent bg={bgColor} color={useColorModeValue('gray.900', 'white')} boxShadow="lg" maxW="1200px" maxH="85vh">
         <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
@@ -223,7 +244,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
 
                 {/* Custom Instructions - Compact */}
                 <HStack spacing={2} px={1}>
-                  <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} flex={1}>
+                  <Text fontSize="xs" color={secondaryTextColor} flex={1}>
                     Custom Instructions
                   </Text>
                   <Tooltip label={isEditingInstructions ? "Cancel" : "Edit instructions"}>
@@ -264,7 +285,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                         maxH="120px"
                         resize="vertical"
                         borderColor={borderColor}
-                        bg={useColorModeValue('gray.50', 'gray.700')}
+                        bg={instructionsBg}
                         fontSize="xs"
                       />
                       <HStack spacing={2}>
@@ -288,7 +309,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                       </HStack>
                     </VStack>
                   ) : (
-                    <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} px={1}>
+                    <Text fontSize="xs" color={secondaryTextColor} px={1}>
                       {aiEditorInstructions}
                     </Text>
                   )}
@@ -302,7 +323,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                   flex={1}
                   resize="vertical"
                   borderColor={borderColor}
-                  bg={useColorModeValue('gray.50', 'gray.700')}
+                  bg={instructionsBg}
                   fontSize="sm"
                   isDisabled={loading}
                 />
@@ -329,12 +350,12 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                     justify="center" 
                     align="center" 
                     h="100%" 
-                    bg={useColorModeValue('gray.50', 'gray.900')}
+                    bg={emptyStateBg}
                     borderRadius="lg"
                     border="2px dashed"
-                    borderColor={useColorModeValue('gray.300', 'gray.700')}
+                    borderColor={emptyStateBorder}
                   >
-                    <VStack spacing={3} color={useColorModeValue('gray.500', 'gray.400')}>
+                    <VStack spacing={3} color={emptyStateText}>
                       <Sparkles size={48} opacity={0.3} />
                       <Text fontSize="sm" fontWeight="medium">
                         AI Rewritten Email Will Appear Here
@@ -357,7 +378,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                 {result && !loading && (
               <Box h="100%" display="flex" flexDirection="column">
                 <Flex justify="space-between" align="center" mb={2}>
-                  <Text fontWeight="semibold" fontSize="sm" color={useColorModeValue('gray.700', 'gray.300')}>
+                  <Text fontWeight="semibold" fontSize="sm" color={resultHeaderText}>
                     AI Rewritten Email:
                   </Text>
                   <IconButton
@@ -375,17 +396,17 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                   ref={resultBoxRef}
                   maxH="290px"
                   overflowY="auto"
-                  bg={useColorModeValue('gray.50', 'gray.900')}
+                  bg={resultBg}
                   borderRadius="lg"
                   p={3}
                 >
                   <Box
-                    bg={useColorModeValue('white', 'gray.800')}
+                    bg={resultBoxBg}
                     p={4}
                     borderRadius="lg"
-                    boxShadow={useColorModeValue('sm', 'dark-lg')}
+                    boxShadow={resultBoxShadow}
                     border="1px solid"
-                    borderColor={useColorModeValue('gray.200', 'gray.700')}
+                    borderColor={resultBoxBorder}
                     sx={{
                       '& h1, & h2, & h3, & h4': {
                         fontWeight: 'bold',
