@@ -698,6 +698,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [clickTimeout, setClickTimeout] = useState<NodeJS.Timeout | null>(null);
   const [lastClickTime, setLastClickTime] = useState<number>(0);
   const [currentWindowTitle, setCurrentWindowTitle] = useState<string>('');
+  const [isActivityTrackingEnabled, setIsActivityTrackingEnabled] = useState(true);
   // Default to expanded when opened from function panel
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -756,6 +757,36 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     );
   };
   
+  // Load activity tracking setting on mount and listen for changes
+  useEffect(() => {
+    const loadActivityTrackingSetting = async () => {
+      try {
+        const settings = await settingsService.getSettings() as any;
+        setIsActivityTrackingEnabled(settings.enableActivityTracking !== false);
+      } catch (error) {
+        console.error('[FloatingTimer] Error loading activity tracking setting:', error);
+        setIsActivityTrackingEnabled(true); // Default to enabled
+      }
+    };
+
+    loadActivityTrackingSetting();
+
+    // Listen for settings updates
+    const handleSettingsUpdate = async (event: CustomEvent) => {
+      const settings = event.detail as any;
+      if (settings && 'enableActivityTracking' in settings) {
+        setIsActivityTrackingEnabled(settings.enableActivityTracking !== false);
+        console.log('[FloatingTimer] Activity tracking setting updated:', settings.enableActivityTracking !== false);
+      }
+    };
+
+    window.addEventListener('settings-updated', handleSettingsUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('settings-updated', handleSettingsUpdate as EventListener);
+    };
+  }, []);
+
   // Load timer state from localStorage on mount
   useEffect(() => {
     const savedState = taskTimerService.getTimerState();
@@ -977,15 +1008,27 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       return;
     }
     
-    console.log('[FloatingTimer] 📊 Window tracking ACTIVE - Starting tracking...');
-    console.log('[FloatingTimer] Current task:', timerState.currentTask?.name);
-    console.log('[FloatingTimer] Task started at:', timerState.currentTask?.startTime);
-    console.log('[FloatingTimer] Resuming window tracking after app restart:', timerState.currentTask?.startTime ? 'Yes' : 'No');
+    // Check if activity tracking is enabled
+    if (!isActivityTrackingEnabled) {
+      console.log('[FloatingTimer] ⏸️ Activity tracking is disabled in settings');
+      return;
+    }
     
-    let isTracking = true; // Flag to prevent concurrent tracking calls
+    let interval: NodeJS.Timeout | null = null;
     let timeoutId: NodeJS.Timeout | null = null;
+    let isTracking = true; // Flag to prevent concurrent tracking calls
     
     const trackWindowTitle = async () => {
+      // Check setting state before each track (in case it changed)
+      if (!isActivityTrackingEnabled) {
+        console.log('[FloatingTimer] ⏸️ Activity tracking disabled, stopping tracking');
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+        return;
+      }
+
       // Prevent concurrent calls that could interfere with clipboard operations
       if (!isTracking) {
         return;
@@ -1072,22 +1115,29 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
       }
     };
     
+    console.log('[FloatingTimer] 📊 Window tracking ACTIVE - Starting tracking...');
+    console.log('[FloatingTimer] Current task:', timerState.currentTask?.name);
+    console.log('[FloatingTimer] Task started at:', timerState.currentTask?.startTime);
+    console.log('[FloatingTimer] Resuming window tracking after app restart:', timerState.currentTask?.startTime ? 'Yes' : 'No');
+    
     // Track immediately (with deferral)
     trackWindowTitle();
     
     // Then track every 5 seconds (reduced from 2s to minimize interference and improve performance)
-    const interval = setInterval(trackWindowTitle, 5000);
+    interval = setInterval(trackWindowTitle, 5000);
     console.log('[FloatingTimer] ⏱️ Window tracking interval set (every 5s)');
     
     return () => {
       console.log('[FloatingTimer] 🛑 Stopping window title tracking');
-      clearInterval(interval);
+      if (interval) {
+        clearInterval(interval);
+      }
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
       isTracking = false;
     };
-  }, [timerState.isRunning, timerState.isPaused]);
+  }, [timerState.isRunning, timerState.isPaused, isActivityTrackingEnabled]);
   
   // Notify main window when floating timer opens/closes
   useEffect(() => {
@@ -2506,7 +2556,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                   </Box>
                   
                   {/* Window Tracking Indicator */}
-                  {timerState.isRunning && !timerState.isPaused && (
+                  {timerState.isRunning && !timerState.isPaused && isActivityTrackingEnabled && (
                     <Flex align="center" justify="center" gap={2}>
                       <Text fontSize="11px" color="gray.400" maxW="400px" isTruncated title={currentWindowTitle || 'Tracking...'}>
                         {currentWindowTitle || 'Tracking...'}
@@ -2578,7 +2628,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             />
             
             {/* Window Tracking Indicator */}
-            {timerState.isRunning && !timerState.isPaused && (
+            {timerState.isRunning && !timerState.isPaused && isActivityTrackingEnabled && (
               <Flex align="center" justify="center" gap={0.5}>
                 <Text fontSize="7px" color="gray.600" maxW="90px" isTruncated title={currentWindowTitle || 'Tracking...'}>
                   {currentWindowTitle || 'Tracking...'}

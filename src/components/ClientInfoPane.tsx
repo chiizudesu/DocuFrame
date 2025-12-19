@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Icon, Portal, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, ChevronLeft, ChevronRight, Folder, Star } from 'lucide-react';
+import { ExternalLink, FileText, Info, Folder, Star } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 // Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
 
-export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: () => void, isCollapsed?: boolean }> = ({ collapsed = false, onToggleCollapse }) => {
+export const ClientInfoPane: React.FC = () => {
   const {
     currentDirectory,
     setCurrentDirectory,
@@ -18,7 +18,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
 
   // Removed document insights functionality - now available as a dedicated dialog
 
-  const bgColor = useColorModeValue('#f8fafc', 'gray.800');
+  const bgColor = useColorModeValue('#e8eef3', 'gray.850'); // Match FileGrid background
   const textColor = useColorModeValue('#334155', 'white');
   const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
   
@@ -30,7 +30,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
   const clientInfoColor = useColorModeValue('blue.900', 'blue.100');
   const noClientBg = useColorModeValue('gray.100', 'gray.700');
   const noClientColor = useColorModeValue('gray.600', 'gray.300');
-  const transferBg = useColorModeValue('#ffffff', 'gray.800');
+  const transferBg = 'transparent';
   const transferSectionBg = useColorModeValue('#f8fafc', 'gray.700');
 
   // State for loaded client info
@@ -152,155 +152,6 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
     border: "none",
     mb: 0,
   };
-
-  if (collapsed) {
-    return (
-      <Box p={2} h="100%" bg={bgColor} display="flex" flexDirection="column" alignItems="center" justifyContent="flex-start">
-        {/* Collapse/Expand button at the very top, centered */}
-        <Box w="100%" display="flex" justifyContent="center" mb={3}>
-          <IconButton aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} icon={<ChevronRight size={20} strokeWidth={2.5} />} size="sm" variant="ghost" onClick={onToggleCollapse} />
-        </Box>
-        {/* Only 3 icons: Client Info, Client Link, Job Link */}
-        <Tooltip label={<Box minW="180px"><Text fontWeight="bold">Client Information</Text><Divider my={1} />
-          <Text fontSize="sm"><b>Name:</b> {clientInfo ? (clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']) : 'No client loaded'}<br/>
-          <b>IRD #:</b> {clientInfo ? (clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-') : '-'}<br/>
-          <b>Address:</b> {clientInfo && clientInfo['Address'] ? clientInfo['Address'] : '-'}</Text></Box>} placement="right" hasArrow>
-          <IconButton 
-            aria-label="Client Info" 
-            icon={<Info size={20} strokeWidth={2.5} />} 
-            size="md" 
-            variant="solid" 
-            bg="#6d28d9" 
-            color="#ede9fe" 
-            borderRadius="lg" 
-            _hover={{ bg: '#6d28d9', color: '#ddd6fe' }} 
-            mb={2}
-            onClick={handleLoadClientInfo}
-            isLoading={loadingClient}
-          />
-        </Tooltip>
-        {clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) && (
-          <Tooltip label="Open Client Page" placement="right" hasArrow>
-            <IconButton aria-label="Client Link" icon={<ExternalLink size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#1976d2" color="#e3f0fa" borderRadius="lg" _hover={{ bg: '#1976d2', color: '#cbe3f7' }} mb={2} as="a" href={clientInfo['Client Link'] || clientInfo['ClientLink']} target="_blank" />
-          </Tooltip>
-        )}
-        {clientInfo && (clientInfo['2025 Job Link'] || clientInfo['2026 Job Link']) && (
-          (() => {
-            const has2025 = clientInfo['2025 Job Link'];
-            const has2026 = clientInfo['2026 Job Link'];
-            const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
-            
-            if (has2025 && has2026) {
-              // Both years available - show popover
-              return (
-                                 <Popover placement="right-start">
-                   <Tooltip label="Open Job (2025/2026)" placement="right" hasArrow>
-                     <PopoverTrigger>
-                       <IconButton
-                       aria-label="Job Links"
-                       icon={<FileText size={20} strokeWidth={2.5} />}
-                       size="md"
-                       variant="solid"
-                       bg="#388e3c"
-                       color="#e3fae3"
-                       borderRadius="lg"
-                       _hover={{ bg: '#388e3c', color: '#c8f7cb' }}
-                       mb={2}
-                     />
-                     </PopoverTrigger>
-                   </Tooltip>
-                   <Portal>
-                     <PopoverContent
-                       zIndex={9999}
-                       bg={popoverBg}
-                       border="1px solid"
-                       borderColor={popoverBorderColor}
-                       boxShadow="lg"
-                       w="auto"
-                       minW="120px"
-                       maxW="150px"
-                     >
-                       <PopoverArrow 
-                         bg={popoverBg}
-                         borderColor={popoverBorderColor}
-                       />
-                       <PopoverBody p={3}>
-                         <VStack spacing={2}>
-                           <Button
-                         onClick={() => window.open(clientInfo['2025 Job Link'], '_blank')}
-                             bg="green.500"
-                             color="white"
-                             fontWeight="bold"
-                         fontSize="sm"
-                             borderRadius="md"
-                             px={4}
-                             py={2}
-                             w="100%"
-                             h="auto"
-                         _hover={{ 
-                               bg: "green.600"
-                         }}
-                         _focus={{ 
-                               bg: "green.600"
-                         }}
-                         _active={{
-                               bg: "green.700"
-                         }}
-                       >
-                             2025
-                           </Button>
-                           <Button
-                         onClick={() => window.open(clientInfo['2026 Job Link'], '_blank')}
-                             bg="green.500"
-                             color="white"
-                             fontWeight="bold"
-                         fontSize="sm"
-                             borderRadius="md"
-                             px={4}
-                             py={2}
-                             w="100%"
-                             h="auto"
-                         _hover={{ 
-                               bg: "green.600"
-                         }}
-                         _focus={{ 
-                               bg: "green.600"
-                         }}
-                         _active={{
-                               bg: "green.700"
-                         }}
-                       >
-                             2026
-                           </Button>
-                         </VStack>
-                       </PopoverBody>
-                     </PopoverContent>
-                   </Portal>
-                 </Popover>
-              );
-            } else if (currentYearLink) {
-              // Only current year available
-              return (
-                <Tooltip label={`Open ${taxYear} Job`} placement="right" hasArrow>
-                  <IconButton aria-label="Job Link" icon={<FileText size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#388e3c" color="#e3fae3" borderRadius="lg" _hover={{ bg: '#388e3c', color: '#c8f7cb' }} mb={2} as="a" href={currentYearLink} target="_blank" />
-                </Tooltip>
-              );
-            } else {
-              // Other year available
-              const otherYear = has2025 ? '2025' : '2026';
-              const otherLink = has2025 ? clientInfo['2025 Job Link'] : clientInfo['2026 Job Link'];
-              return (
-                <Tooltip label={`Open ${otherYear} Job`} placement="right" hasArrow>
-                  <IconButton aria-label="Job Link" icon={<FileText size={20} strokeWidth={2.5} />} size="md" variant="solid" bg="#388e3c" color="#e3fae3" borderRadius="lg" _hover={{ bg: '#388e3c', color: '#c8f7cb' }} mb={2} as="a" href={otherLink} target="_blank" />
-                </Tooltip>
-              );
-            }
-          })()
-        )}
-        {/* Document insights button removed - functionality moved to Utilities → Analyze Docs */}
-      </Box>
-    );
-  }
 
   // Expanded sidebar: replace Xero/XPM with Client/Job buttons
   const handleOpenClientLink = () => {
@@ -483,16 +334,6 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
             </Text>
           )}
         </Box>
-        
-        {/* Collapse button positioned to the right */}
-        <IconButton 
-          aria-label="Collapse sidebar" 
-          icon={<ChevronLeft size={20} strokeWidth={2.5} />} 
-          size="sm" 
-          variant="ghost" 
-          ml={2}
-          onClick={onToggleCollapse} 
-        />
       </Flex>
 
       {/* Add separator above Quick Access */}
@@ -522,6 +363,7 @@ export const ClientInfoPane: React.FC<{ collapsed?: boolean, onToggleCollapse?: 
               <Box
                 flex="1"
                 overflowY="auto"
+                overflowX="hidden"
                 className="enhanced-scrollbar"
                 maxH="600px" // Increased height to show more Quick Access folders
                 minH="100px"

@@ -86,6 +86,7 @@ export const QuickNavigateOverlay: React.FC = () => {
   } | null>(null);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [transferMappings, setTransferMappings] = useState<{ [key: string]: string }>({});
+  const transferMappingsRef = useRef<{ [key: string]: string }>({});
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -114,7 +115,6 @@ export const QuickNavigateOverlay: React.FC = () => {
   // All useCallback hooks for functions used in useEffect
   const handleTransferMappingPreview = useCallback(async (command: string) => {
     try {
-      console.log('[QuickNavigate] Auto-requesting mapping preview for command:', command);
       const previewOptions: TransferOptions = { 
         numFiles: 1,
         command: command, // Pass the actual command for mapping lookup
@@ -122,17 +122,13 @@ export const QuickNavigateOverlay: React.FC = () => {
         currentDirectory: currentDirectory
       };
       const previewResult = await window.electronAPI.transfer(previewOptions);
-      console.log('[QuickNavigate] Mapping preview result:', previewResult);
       
       if (previewResult.success && previewResult.files) {
-        console.log('[QuickNavigate] Mapping preview successful, updating preview pane');
         setPreviewFiles(previewResult.files);
       } else {
-        console.log('[QuickNavigate] Mapping preview failed:', previewResult.message);
         setPreviewFiles([]);
       }
     } catch (error) {
-      console.error('[QuickNavigate] Error during mapping preview:', error);
       setPreviewFiles([]);
     }
   }, [currentDirectory, setPreviewFiles]);
@@ -146,8 +142,6 @@ export const QuickNavigateOverlay: React.FC = () => {
 
     setIsSearching(true);
     try {
-      console.log('[QuickNavigate] Performing search for:', query);
-      
       if (searchInDocuments) {
         // Document search - search inside PDF files
         const result = await window.electronAPI.searchInDocuments({
@@ -167,7 +161,6 @@ export const QuickNavigateOverlay: React.FC = () => {
         setLocalSearchResults(result.results);
       }
     } catch (error) {
-      console.error('[QuickNavigate] Search failed:', error);
       setLocalSearchResults([]);
     } finally {
       setIsSearching(false);
@@ -176,58 +169,77 @@ export const QuickNavigateOverlay: React.FC = () => {
 
   const handleTransferPreview = useCallback(async (numFiles: number) => {
     try {
-      console.log('[QuickNavigate] Auto-requesting transfer preview for', numFiles, 'files');
       const previewOptions: TransferOptions = { 
         numFiles,
         command: 'preview',
         currentDirectory: currentDirectory
       };
       const previewResult = await window.electronAPI.transfer(previewOptions);
-      console.log('[QuickNavigate] Auto-preview result:', previewResult);
       
       if (previewResult.success && previewResult.files) {
-        console.log('[QuickNavigate] Auto-preview successful, updating preview pane');
         setPreviewFiles(previewResult.files);
       } else {
-        console.log('[QuickNavigate] Auto-preview failed:', previewResult.message);
         setPreviewFiles([]);
       }
     } catch (error) {
-      console.error('[QuickNavigate] Error during auto-preview:', error);
       setPreviewFiles([]);
     }
   }, [currentDirectory, setPreviewFiles]);
 
-  // Fetch transfer mappings on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const config = await (window.electronAPI as any).getConfig();
-        console.log('[QuickNavigate] Raw config result:', config);
-        // Extract just the transferCommandMappings part
-        const mappings = config?.transferCommandMappings || {};
-        console.log('[QuickNavigate] Extracted transfer mappings:', mappings);
-        setTransferMappings(mappings);
-      } catch (error) {
-        console.error('[QuickNavigate] Error loading transfer mappings:', error);
-        setTransferMappings({});
-      }
-    })();
+  // Load transfer mappings function
+  const loadTransferMappings = useCallback(async () => {
+    try {
+      const config = await (window.electronAPI as any).getConfig();
+      // Extract just the transferCommandMappings part
+      const mappings = config?.transferCommandMappings || {};
+      setTransferMappings(mappings);
+      transferMappingsRef.current = mappings; // Update ref immediately
+    } catch (error) {
+      setTransferMappings({});
+      transferMappingsRef.current = {}; // Update ref even on error
+    }
   }, []);
 
-  // Re-trigger command info update when mappings are loaded
+  // Fetch transfer mappings on mount and when updated
+  useEffect(() => {
+    loadTransferMappings();
+    
+    // Listen for transfer mappings updates
+    const handleMappingsUpdate = () => {
+      loadTransferMappings();
+    };
+    
+    window.addEventListener('transferMappingsUpdated', handleMappingsUpdate);
+    
+    return () => {
+      window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
+    };
+  }, [loadTransferMappings]);
+
+  // Re-trigger command info update and preview when mappings are loaded/updated
   useEffect(() => {
     if (Object.keys(transferMappings).length > 0 && inputValue) {
       const commandText = inputValue.trim().toLowerCase();
       handleCommandInfoUpdate(commandText);
+      
+      // Also re-trigger preview if the current command is a mapping command
+      const commandParts = commandText.split(' ');
+      const command = commandParts[0];
+      const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
+      
+      if (mappingKey) {
+        // Use a small delay to ensure state is updated
+        setTimeout(() => {
+          handleTransferMappingPreview(command);
+        }, 100);
+      }
     }
-  }, [transferMappings]);
+  }, [transferMappings, inputValue, handleTransferMappingPreview]);
 
   // Focus input when overlay opens and set initial mode
   useEffect(() => {
     if (isQuickNavigating && inputRef.current) {
       inputRef.current.focus();
-      console.log('[QuickNavigate] Setting mode - initialCommandMode:', initialCommandMode, 'isSearchMode:', isSearchMode);
       setInputValue('');
       setSearchQuery('');
       setLocalSearchResults([]);
@@ -260,6 +272,11 @@ export const QuickNavigateOverlay: React.FC = () => {
   }, []);
 
   // Debounced command processing to prevent API calls on every keystroke
+  // Note: We use a ref to access the latest transferMappings to avoid stale closures
+  useEffect(() => {
+    transferMappingsRef.current = transferMappings;
+  }, [transferMappings]);
+
   const debouncedCommandProcessing = useCallback(
     debounce((commandText: string, inputValue: string) => {
       if (!commandText) {
@@ -268,12 +285,15 @@ export const QuickNavigateOverlay: React.FC = () => {
         return;
       }
       
+      // Get the latest mappings from ref to avoid stale closure
+      const currentMappings = transferMappingsRef.current;
+      
       handleCommandInfoUpdate(commandText);
       
       // Auto-preview for transfer commands (including mapping commands)
       const commandParts = commandText.split(' ');
       const command = commandParts[0];
-      const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
+      const mappingKey = Object.keys(currentMappings).find(key => key.toLowerCase() === command.toLowerCase());
       
       if (commandText.startsWith('transfer ')) {
         // Parse argument, supporting quoted strings
@@ -357,7 +377,7 @@ export const QuickNavigateOverlay: React.FC = () => {
         setPreviewFiles([]); // Clear preview for non-transfer commands
       }
     }, 300), // 300ms debounce delay
-    [transferMappings, handleTransferMappingPreview, currentDirectory, setPreviewFiles]
+    [handleTransferMappingPreview, currentDirectory, setPreviewFiles]
   );
 
   // Process input changes with debouncing
@@ -382,7 +402,6 @@ export const QuickNavigateOverlay: React.FC = () => {
             });
             setContentSearchResults(results || []);
           } catch (error) {
-            console.error('[QuickNavigate] Content search failed:', error);
             setContentSearchResults([]);
           } finally {
             setIsContentSearching(false);
@@ -415,10 +434,6 @@ export const QuickNavigateOverlay: React.FC = () => {
   }, []);
 
   const handleCommandInfoUpdate = (commandText: string) => {
-    console.log('[QuickNavigate] handleCommandInfoUpdate called with commandText:', commandText);
-    console.log('[QuickNavigate] transferMappings object:', transferMappings);
-    console.log('[QuickNavigate] transferMappings keys:', Object.keys(transferMappings));
-    
     if (!commandText) {
       setCommandInfo({
         title: 'Command Info',
@@ -430,20 +445,14 @@ export const QuickNavigateOverlay: React.FC = () => {
     // Parse command and show relevant info
     const commandParts = commandText.split(' ');
     const command = commandParts[0];
-    console.log('[QuickNavigate] Parsed command:', command);
     
     // Check for transfer mapping commands
     const mappingKey = Object.keys(transferMappings).find(key => {
-      console.log('[QuickNavigate] Checking key:', key, 'against command:', command);
-      console.log('[QuickNavigate] key.toLowerCase():', key.toLowerCase(), 'command.toLowerCase():', command.toLowerCase());
       const matches = key.toLowerCase() === command.toLowerCase();
-      console.log('[QuickNavigate] Match result:', matches);
       return matches;
     });
-    console.log('[QuickNavigate] Final mappingKey found:', mappingKey);
     
     if (mappingKey) {
-      console.log('[QuickNavigate] Setting transfer mapping command info');
       setCommandInfo({
         title: `Transfer Mapping: ${mappingKey}`,
         description: `Transfer file(s) using mapping: ${transferMappings[mappingKey]}`,
@@ -617,7 +626,6 @@ export const QuickNavigateOverlay: React.FC = () => {
     const command = inputValue.trim();
     if (!command) return;
     
-    console.log('[QuickNavigate] Executing command:', command);
     addLog(`$ ${command}`, 'command');
     addCommand(command);
     setStatus(`Executing: ${command}`, 'info');
@@ -625,7 +633,6 @@ export const QuickNavigateOverlay: React.FC = () => {
     try {
       // For transfer commands, get preview first
       if (command.toLowerCase().startsWith('transfer')) {
-        console.log('[QuickNavigate] Detected transfer command');
         // Parse arguments, supporting quoted strings
         const match = command.match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
         let arg = match && (match[1] || match[2] || match[3]);
@@ -638,10 +645,8 @@ export const QuickNavigateOverlay: React.FC = () => {
             newName = arg;
           }
         }
-        console.log('[QuickNavigate] Parsed transfer args:', { numFiles, newName });
         try {
           // Get preview first
-          console.log('[QuickNavigate] Requesting transfer preview...');
           const previewOptions: TransferOptions = { 
             numFiles,
             newName,
@@ -649,15 +654,12 @@ export const QuickNavigateOverlay: React.FC = () => {
             currentDirectory: currentDirectory
           };
           const previewResult = await window.electronAPI.transfer(previewOptions);
-          console.log('[QuickNavigate] Preview result:', previewResult);
           
           if (previewResult.success && previewResult.files) {
-            console.log('[QuickNavigate] Preview successful, updating preview pane');
             // Update preview pane
             setPreviewFiles(previewResult.files);
             
             // Now execute the actual transfer
-            console.log('[QuickNavigate] Executing transfer...');
             const transferOptions: TransferOptions = { 
               numFiles,
               newName,
@@ -665,10 +667,8 @@ export const QuickNavigateOverlay: React.FC = () => {
               currentDirectory: currentDirectory
             };
             const transferResult = await window.electronAPI.transfer(transferOptions);
-            console.log('[QuickNavigate] Transfer result:', transferResult);
             
             if (transferResult.success) {
-              console.log('[QuickNavigate] Transfer successful');
               addLog(transferResult.message, 'response');
               setStatus('Transfer completed', 'success');
               
@@ -688,25 +688,18 @@ export const QuickNavigateOverlay: React.FC = () => {
                 setStatus('Folder refreshed', 'success');
               }
             } else {
-              console.log('[QuickNavigate] Transfer failed:', transferResult.message);
               addLog(transferResult.message, 'error');
               setStatus('Transfer failed', 'error');
             }
           } else {
-            console.log('[QuickNavigate] Preview failed:', previewResult.message);
             addLog(previewResult.message, 'error');
           }
         } catch (error) {
-          console.error('[QuickNavigate] Error during transfer:', error);
           addLog(`Error during transfer: ${error}`, 'error');
         }
       } else if (command === 'finals') {
         // Handle finals command with folder refresh
-        console.log('[QuickNavigate] Executing finals command');
-        console.log('[QuickNavigate] Current directory:', currentDirectory);
-        
         const result = await window.electronAPI.executeCommand(command, currentDirectory);
-        console.log('[QuickNavigate] Finals command execution result:', result);
         
         if (result.success) {
           addLog(result.message, 'response');
@@ -724,13 +717,11 @@ export const QuickNavigateOverlay: React.FC = () => {
         }
       } else if (command.startsWith('edsby')) {
         // Handle edsby command with folder refresh
-        console.log('[QuickNavigate] Executing edsby command');
         let period = command.split(' ').slice(1).join(' ').trim();
         if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
           period = period.slice(1, -1);
         }
         const result = await window.electronAPI.executeCommand('edsby', currentDirectory, { period });
-        console.log('[QuickNavigate] Edsby command execution result:', result);
         if (result.success) {
           addLog(result.message, 'response');
           setStatus('Edsby batch rename completed', 'success');
@@ -746,9 +737,7 @@ export const QuickNavigateOverlay: React.FC = () => {
         }
       } else if (command.toLowerCase() === 'pdfinc') {
         // Handle pdfinc command with folder refresh
-        console.log('[QuickNavigate] Executing pdfinc command');
         const result = await window.electronAPI.executeCommand(command, currentDirectory);
-        console.log('[QuickNavigate] PDFInc command execution result:', result);
         
         if (result.success) {
           addLog(result.message, 'response');
@@ -772,7 +761,6 @@ export const QuickNavigateOverlay: React.FC = () => {
         
         if (mappingKey) {
           // This is a transfer mapping command - use transfer API
-          console.log('[QuickNavigate] Executing transfer mapping command:', mappingKey);
           try {
             const transferOptions: TransferOptions = { 
               numFiles: 1,
@@ -780,7 +768,6 @@ export const QuickNavigateOverlay: React.FC = () => {
               currentDirectory: currentDirectory
             };
             const transferResult = await window.electronAPI.transfer(transferOptions);
-            console.log('[QuickNavigate] Transfer mapping result:', transferResult);
             
             if (transferResult.success) {
               addLog(transferResult.message, 'response');
@@ -806,14 +793,11 @@ export const QuickNavigateOverlay: React.FC = () => {
               setStatus('Transfer failed', 'error');
             }
           } catch (error) {
-            console.error('[QuickNavigate] Error during transfer mapping:', error);
             addLog(`Error during transfer: ${error}`, 'error');
           }
         } else {
           // Handle other commands
-          console.log('[QuickNavigate] Executing non-transfer command');
           const result = await window.electronAPI.executeCommand(command, currentDirectory);
-          console.log('[QuickNavigate] Command execution result:', result);
           
           if (result.success) {
             addLog(result.message, 'response');
@@ -825,7 +809,6 @@ export const QuickNavigateOverlay: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('[QuickNavigate] Error executing command:', error);
       addLog(`Error executing command: ${error}`, 'error');
     }
 

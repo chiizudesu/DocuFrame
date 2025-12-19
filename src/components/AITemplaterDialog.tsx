@@ -23,7 +23,7 @@ import {
   HStack,
   Input
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Brain, Send } from 'lucide-react';
+import { Copy, Sparkles, Brain, Send, Minus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { loadEmailTemplates, generateEmailFromTemplateStream, AI_AGENTS, type AIAgent } from '../services/aiService';
 
@@ -33,9 +33,10 @@ interface AITemplaterDialogProps {
   isOpen: boolean;
   onClose: () => void;
   currentDirectory: string;
+  onMinimize?: () => void;
 }
 
-export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, onClose, currentDirectory }) => {
+export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, onClose, currentDirectory, onMinimize }) => {
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<any | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -203,6 +204,18 @@ Please modify or enhance the email according to the user's request. Only provide
             AI Templater
           </Flex>
         </ModalHeader>
+        {onMinimize && (
+          <IconButton
+            aria-label="Minimize"
+            icon={<Minus size={16} />}
+            size="sm"
+            variant="ghost"
+            position="absolute"
+            top={4}
+            right={12}
+            onClick={onMinimize}
+          />
+        )}
         <ModalCloseButton />
         <ModalBody p={6} overflow="hidden" display="flex" flexDirection="column">
           <Flex 

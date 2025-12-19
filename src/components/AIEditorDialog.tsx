@@ -26,7 +26,7 @@ import {
   Grid,
   GridItem
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Edit3, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import { Copy, Sparkles, Edit3, ChevronDown, ChevronUp, Send, Minus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { rewriteEmailBlurbStream, AI_AGENTS, AIAgent } from '../services/aiService';
@@ -36,9 +36,10 @@ import { settingsService } from '../services/settings';
 interface AIEditorDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onMinimize?: () => void;
 }
 
-export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose }) => {
+export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose, onMinimize }) => {
   const [input, setInput] = useState('');
   const [result, setResult] = useState('');
   const [loading, setLoading] = useState(false);
@@ -186,6 +187,18 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose 
             AI Email Editor
           </Flex>
         </ModalHeader>
+        {onMinimize && (
+          <IconButton
+            aria-label="Minimize"
+            icon={<Minus size={16} />}
+            size="sm"
+            variant="ghost"
+            position="absolute"
+            top={4}
+            right={12}
+            onClick={onMinimize}
+          />
+        )}
         <ModalCloseButton />
         <ModalBody p={4} h="calc(85vh - 80px)">
           <Grid templateColumns="1fr 1fr" gap={4} h="100%">

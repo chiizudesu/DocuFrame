@@ -19,6 +19,7 @@ import {
   HStack,
   Icon,
   useColorModeValue,
+  useColorMode,
   Alert,
   AlertIcon,
   AlertTitle,
@@ -44,7 +45,9 @@ import {
   EyeOff,
   Save,
   X,
-  Edit
+  Edit,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -79,10 +82,12 @@ interface Settings {
   workShiftStart?: string;
   workShiftEnd?: string;
   productivityTargetHours?: number;
+  enableActivityTracking?: boolean;
 
 }
 
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
+  const { colorMode, toggleColorMode, setColorMode } = useColorMode();
   const [rootPath, setRootPath] = useState('');
   const [originalRootPath, setOriginalRootPath] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -111,6 +116,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
+  const [enableActivityTracking, setEnableActivityTracking] = useState(true);
 
   
   // Keyboard recorder state
@@ -160,6 +166,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setWorkShiftStart(loadedSettings.workShiftStart || '06:00');
         setWorkShiftEnd(loadedSettings.workShiftEnd || '15:00');
         setProductivityTargetHours(loadedSettings.productivityTargetHours || 7.5);
+        setEnableActivityTracking(loadedSettings.enableActivityTracking !== false);
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -213,6 +220,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         workShiftStart,
         workShiftEnd,
         productivityTargetHours,
+        enableActivityTracking,
 
       };
       
@@ -255,6 +263,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       setNewTabShortcut(newTabShortcut);
       setCloseTabShortcut(closeTabShortcut);
       setClientSearchShortcut(clientSearchShortcut);
+      
+      // Dispatch event to notify other components of settings change
+      window.dispatchEvent(new CustomEvent('settings-updated', { detail: newSettings }));
       
       toast({
         title: 'Settings saved',
@@ -1322,6 +1333,82 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     </HStack>
   </FormControl>
 </Box>
+
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <FormControl>
+                      <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Theme</FormLabel>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            Switch between light and dark mode
+                          </Text>
+                        </VStack>
+                        <HStack spacing={2}>
+                          <IconButton
+                            aria-label="Light mode"
+                            icon={<Sun size={16} />}
+                            size="sm"
+                            variant={colorMode === 'light' ? 'solid' : 'ghost'}
+                            colorScheme={colorMode === 'light' ? 'blue' : 'gray'}
+                            onClick={() => {
+                              setColorMode('light');
+                              localStorage.setItem('chakra-ui-color-mode', 'light');
+                              // Broadcast theme change to all windows via IPC
+                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
+                                (window.electronAPI as any).broadcastThemeChange('light');
+                              }
+                              // Trigger storage event for same-window listeners
+                              window.dispatchEvent(new StorageEvent('storage', {
+                                key: 'chakra-ui-color-mode',
+                                newValue: 'light',
+                                storageArea: localStorage
+                              }));
+                            }}
+                          />
+                          <IconButton
+                            aria-label="Dark mode"
+                            icon={<Moon size={16} />}
+                            size="sm"
+                            variant={colorMode === 'dark' ? 'solid' : 'ghost'}
+                            colorScheme={colorMode === 'dark' ? 'blue' : 'gray'}
+                            onClick={() => {
+                              setColorMode('dark');
+                              localStorage.setItem('chakra-ui-color-mode', 'dark');
+                              // Broadcast theme change to all windows via IPC
+                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
+                                (window.electronAPI as any).broadcastThemeChange('dark');
+                              }
+                              // Trigger storage event for same-window listeners
+                              window.dispatchEvent(new StorageEvent('storage', {
+                                key: 'chakra-ui-color-mode',
+                                newValue: 'dark',
+                                storageArea: localStorage
+                              }));
+                            }}
+                          />
+                        </HStack>
+                      </HStack>
+                    </FormControl>
+                  </Box>
+
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <FormControl>
+                      <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Activity Tracking</FormLabel>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            Track active window titles while timer is running (for productivity insights)
+                          </Text>
+                        </VStack>
+                        <Switch
+                          isChecked={enableActivityTracking}
+                          onChange={(e) => setEnableActivityTracking(e.target.checked)}
+                          colorScheme="blue"
+                          size="sm"
+                        />
+                      </HStack>
+                    </FormControl>
+                  </Box>
 
                   <Divider my={3.5} />
 

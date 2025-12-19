@@ -28,6 +28,7 @@ export interface AppSettings {
   workShiftStart?: string; // Format: "HH:MM" (24-hour)
   workShiftEnd?: string; // Format: "HH:MM" (24-hour)
   productivityTargetHours?: number; // Target hours per day (e.g., 7.5 for 7:30)
+  enableActivityTracking?: boolean; // Enable/disable window title tracking for timer
 
 }
 

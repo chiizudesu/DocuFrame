@@ -7,8 +7,9 @@ import {
   useColorModeValue,
   Button,
 } from '@chakra-ui/react';
-import { X, Plus, ExternalLink } from 'lucide-react';
+import { X, Plus, ExternalLink, Minimize2, Maximize2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 
 interface FolderTab {
   id: string;
@@ -18,10 +19,40 @@ interface FolderTab {
 
 interface FolderTabSystemProps {
   onActiveTabChange: (path: string) => void;
+  minimizedDialogs?: MinimizedDialog[];
+  onRestoreDialog?: (type: DialogType) => void;
+  onCloseMinimizedDialog?: (type: DialogType) => void;
 }
 
-export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabChange }) => {
+export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ 
+  onActiveTabChange,
+  minimizedDialogs = [],
+  onRestoreDialog,
+  onCloseMinimizedDialog
+}) => {
   const { currentDirectory, setCurrentDirectory, rootDirectory, newTabShortcut, closeTabShortcut, addTabToCurrentWindow, closeCurrentTab } = useAppContext();
+  const [isMaximized, setIsMaximized] = useState(false);
+  
+  // Window controls
+  const handleMinimize = useCallback(() => window.electronAPI?.minimize?.(), []);
+  const handleMaximize = useCallback(() => window.electronAPI?.maximize?.(), []);
+  const handleUnmaximize = useCallback(() => window.electronAPI?.unmaximize?.(), []);
+  const handleClose = useCallback(() => window.electronAPI?.close?.(), []);
+
+  useEffect(() => {
+    if (!window.electronAPI) return;
+    let mounted = true;
+    window.electronAPI.isMaximized?.().then((val: boolean) => {
+      if (mounted) setIsMaximized(val);
+    });
+    const onMax = () => setIsMaximized(true);
+    const onUnmax = () => setIsMaximized(false);
+    window.electronAPI.onWindowMaximize?.(onMax);
+    window.electronAPI.onWindowUnmaximize?.(onUnmax);
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const [tabs, setTabs] = useState<FolderTab[]>([
     {
       id: '1',
@@ -36,12 +67,13 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null); // For file drag/drop
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  // Colors - Updated to match light theme design with better contrast
-  const bgColor = useColorModeValue('#f8fafc', 'gray.800');
-  const activeBg = useColorModeValue('#ffffff', 'gray.800'); // Active tab - white background
-  const inactiveBg = useColorModeValue('#f1f5f9', 'gray.700'); // Inactive tabs - light gray, darker in dark mode
-  const borderColor = useColorModeValue('#d1d5db', 'gray.700');
-  const hoverBg = useColorModeValue('#e2e8f0', 'gray.650');
+  // Colors - Matching active tab to FolderInfoBar
+  const bgColor = useColorModeValue('#2d3748', 'gray.900'); // Dark background like Windows/Edge
+  const activeBg = useColorModeValue('#4a5a68', 'gray.700'); // Active tab - darker slate
+  const inactiveBg = useColorModeValue('#3d4a56', 'gray.800'); // Inactive tabs - darker gray
+  const borderColor = useColorModeValue('#1a202c', 'gray.700');
+  const separatorColor = useColorModeValue('#334155', 'gray.600'); // Subtle separator
+  const hoverBg = useColorModeValue('#4a5a68', 'gray.750');
 
   // Helper function to get directory name from path
   function getDirectoryName(path: string): string {
@@ -385,8 +417,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
     <Box
       ref={tabsRef}
       bg={bgColor}
-      px={1}
-      pt={1}
+      px={0}
+      pt={0}
       pb={0}
       position="relative"
       _after={{
@@ -400,9 +432,25 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
         zIndex: 1,
       }}
     >
-      <Flex align="end" gap="1px">
-        {/* Tabs */}
-        {tabs.map((tab, index) => (
+      <Flex align="center" gap="0" height="37px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
+        {/* App Icon - Left side */}
+        <Box 
+          display="flex" 
+          alignItems="center" 
+          h="37px" 
+          px={2}
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          <Box w="20px" h="20px">
+            <img src="./32.ico" alt="DocuFrame" style={{ width: '20px', height: '20px' }} />
+          </Box>
+        </Box>
+        
+        {/* Tabs Container with top padding */}
+        <Box pt={1} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <Flex align="end" gap="0" height="37px">
+            {/* Tabs */}
+            {tabs.map((tab, index) => (
           <React.Fragment key={tab.id}>
             <Box
               draggable={true}
@@ -525,37 +573,48 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                 align="center"
                 bg={
                   fileDropTarget === tab.id 
-                    ? useColorModeValue('blue.50', 'blue.900')
+                    ? useColorModeValue('blue.500', 'blue.900')
                     : activeTabId === tab.id 
-                      ? activeBg 
+                      ? activeBg
                       : inactiveBg
                 }
-                border="1px solid"
-                borderColor={
-                  fileDropTarget === tab.id 
-                    ? useColorModeValue('blue.300', 'blue.600')
-                    : borderColor
+                borderRight={
+                  activeTabId !== tab.id && 
+                  index < tabs.length - 1 && 
+                  tabs[index + 1] && 
+                  activeTabId !== tabs[index + 1].id
+                    ? `1px solid ${separatorColor}`
+                    : 'none'
                 }
-                borderBottom={activeTabId === tab.id ? 'none' : `1px solid ${borderColor}`}
-                borderTopRadius="8px"
-                px={3}
-                py={1}
+                borderRadius={activeTabId === tab.id ? '8px 8px 0 0' : '8px 8px 0 0'}
+                px={activeTabId === tab.id ? 4 : 3}
+                py={activeTabId === tab.id ? 2 : 1.5}
                 cursor="pointer"
                 _hover={{ 
                   bg: fileDropTarget === tab.id 
-                    ? useColorModeValue('blue.100', 'blue.800')
+                    ? useColorModeValue('blue.600', 'blue.800')
                     : activeTabId === tab.id 
-                      ? activeBg 
-                      : hoverBg 
+                      ? activeBg
+                      : hoverBg
                 }}
+                _after={activeTabId === tab.id ? {
+                  content: '""',
+                  position: 'absolute',
+                  bottom: '-1px',
+                  left: 0,
+                  right: 0,
+                  height: '2px',
+                  bg: activeBg,
+                  zIndex: 10,
+                } : {}}
                 onClick={() => handleTabClick(tab.id)}
-                minW="159px"
-                maxW="200px"
-                h={activeTabId === tab.id ? "33px" : "32px"}
+                minW="180px"
+                maxW={activeTabId === tab.id ? '600px' : '260px'}
+                h={activeTabId === tab.id ? '36px' : '30px'}
                 position="relative"
                 opacity={draggedTab === tab.id ? 0.5 : 1}
                 zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
-                mb={activeTabId === tab.id ? "-1px" : "0"}
+                mb={activeTabId === tab.id ? '-1px' : '0'}
                 transform={
                   dragOverTab === tab.id && draggedTab !== tab.id 
                     ? 'translateX(2px)' 
@@ -563,15 +622,16 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                       ? 'scale(1.02)'
                       : 'none'
                 }
-                transition="all 0.15s ease"
+                transition="all 0.2s ease"
                 fontSize="sm"
                 color={
                   fileDropTarget === tab.id
-                    ? useColorModeValue('blue.700', 'blue.200')
-                    : useColorModeValue('gray.800', activeTabId === tab.id ? 'white' : 'gray.300')
+                    ? useColorModeValue('white', 'blue.200')
+                    : activeTabId === tab.id 
+                      ? useColorModeValue('#1a202c', 'white')
+                      : useColorModeValue('#e2e8f0', 'gray.300')
                 }
-                fontWeight={activeTabId === tab.id ? '600' : '400'}
-                boxShadow={fileDropTarget === tab.id ? 'sm' : 'none'}
+                fontWeight={activeTabId === tab.id ? '500' : '400'}
               >
                 <Text
                   fontSize="sm"
@@ -587,12 +647,14 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                   <Box
                     as="button"
                     ml={2}
-                    p="3px"
-                    borderRadius="4px"
-                    opacity={0.6}
+                    p="2px"
+                    borderRadius="3px"
+                    opacity={activeTabId === tab.id ? 0.5 : 0.6}
                     _hover={{ 
                       opacity: 1,
-                      bg: useColorModeValue('gray.200', 'gray.600')
+                      bg: activeTabId === tab.id 
+                        ? useColorModeValue('gray.200', 'gray.600')
+                        : useColorModeValue('#64748b', 'gray.600')
                     }}
                     onClick={(e: React.MouseEvent) => {
                       e.stopPropagation();
@@ -602,8 +664,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                     alignItems="center"
                     justifyContent="center"
                     transition="all 0.15s ease"
+                    color={activeTabId === tab.id 
+                      ? useColorModeValue('#1a202c', 'white')
+                      : useColorModeValue('#e2e8f0', 'gray.300')
+                    }
                   >
-                    <X size={12} />
+                    <X size={14} strokeWidth={2} />
                   </Box>
                 )}
               </Flex>
@@ -612,11 +678,11 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
               {dragOverTab === tab.id && draggedTab !== tab.id && (
                 <Box
                   position="absolute"
-                  left="-1px"
-                  top="2px"
-                  bottom="2px"
-                  w="2px"
-                  bg="blue.400"
+                  left="-2px"
+                  top="4px"
+                  bottom="4px"
+                  w="3px"
+                  bg={useColorModeValue('blue.500', 'blue.400')}
                   borderRadius="full"
                   zIndex={4}
                 />
@@ -631,50 +697,162 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({ onActiveTabCha
                   right="0"
                   bottom="0"
                   borderRadius="6px"
-                  bg={useColorModeValue('blue.50', 'blue.900')}
-                  opacity={0.8}
+                  border="2px solid"
+                  borderColor={useColorModeValue('blue.400', 'blue.500')}
+                  bg="transparent"
                   zIndex={4}
                   pointerEvents="none"
                 />
               )}
             </Box>
-
-            {/* Tab separator */}
-            {index < tabs.length - 1 && activeTabId !== tab.id && (
-              <Box
-                w="1px"
-                h="16px"
-                bg={useColorModeValue('gray.300', 'gray.600')}
-                opacity={0.5}
-                alignSelf="end"
-                mb="4px"
-              />
-            )}
           </React.Fragment>
-        ))}
-        
-        {/* Add new tab button */}
-        <Box
-          as="button"
-          ml={1}
-          p={1}
-          borderRadius="4px"
-          opacity={0.7}
-          _hover={{ 
-            opacity: 1,
-            bg: useColorModeValue('gray.100', 'gray.700')
-          }}
-                      onClick={() => addNewTab()}
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-          transition="all 0.15s ease"
-          color={useColorModeValue('gray.600', 'gray.400')}
-          h="24px"
-          w="24px"
-        >
-          <Plus size={14} />
+          ))}
+          
+          {/* Add new tab button - immediately after tabs */}
+          <Flex
+            alignItems="center"
+            h="37px"
+            px={2}
+          >
+            <Box
+              as="button"
+              ml={0}
+              p={0}
+              borderRadius="6px"
+              opacity={0.7}
+              _hover={{ 
+                opacity: 1,
+                bg: useColorModeValue('#4a5a68', 'gray.700')
+              }}
+              onClick={() => addNewTab()}
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              transition="all 0.15s ease"
+              color={useColorModeValue('#e2e8f0', 'gray.400')}
+              h="30px"
+              w="30px"
+            >
+              <Plus size={16} strokeWidth={2} />
+            </Box>
+          </Flex>
+          </Flex>
         </Box>
+        
+        {/* Flex spacer - pushes window controls to far right */}
+        <Box flex="1" />
+        
+        {/* Window Controls - Right side */}
+        <Flex 
+          height="37px" 
+          align="center" 
+          justify="flex-end"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
+          {/* Minimize */}
+          <IconButton
+            aria-label="Minimize"
+            variant="ghost"
+            size="sm"
+            onClick={handleMinimize}
+            color={useColorModeValue('#64748b', 'gray.400')}
+            _hover={{ bg: useColorModeValue('#e5e7eb', 'gray.600') }}
+            _focus={{ boxShadow: 'none', bg: 'transparent' }}
+            _active={{ bg: useColorModeValue('#d1d5db', 'gray.500') }}
+            borderRadius={0}
+            minW="46px"
+            h="37px"
+            p={0}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            cursor="default"
+            icon={<Box w="10px" h="1px" bg={useColorModeValue('#64748b', 'gray.400')} borderRadius="1px" />}
+          />
+          {/* Maximize/Restore */}
+          <Box
+            as="button"
+            aria-label={isMaximized ? 'Restore' : 'Maximize'}
+            onClick={isMaximized ? handleUnmaximize : handleMaximize}
+            color={useColorModeValue('#64748b', 'gray.400')}
+            bg="transparent"
+            border="none"
+            cursor="default"
+            outline="none"
+            transition="background-color 0.2s"
+            _hover={{ bg: useColorModeValue('#e5e7eb', 'gray.600') }}
+            _focus={{ boxShadow: 'none', bg: 'transparent' }}
+            _active={{ bg: useColorModeValue('#d1d5db', 'gray.500') }}
+            borderRadius={0}
+            minW="46px"
+            h="37px"
+            p={0}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            sx={{
+              '& .window-icon': {
+                borderColor: 'currentColor',
+              },
+              '& .maximize-icon': {
+                display: isMaximized ? 'none' : 'block',
+              },
+              '& .restore-icon': {
+                display: isMaximized ? 'block' : 'none',
+              },
+            }}
+          >
+            {/* Maximize icon - single square */}
+            <Box
+              className="window-icon maximize-icon"
+              w="10px"
+              h="10px"
+              border="1px solid"
+              bg="transparent"
+            />
+            {/* Restore icon - two overlapping squares */}
+            <Box className="window-icon restore-icon" position="relative" w="10px" h="10px">
+              <Box
+                position="absolute"
+                top="0px"
+                right="0px"
+                w="7px"
+                h="7px"
+                border="1px solid"
+                bg="transparent"
+              />
+              <Box
+                position="absolute"
+                bottom="0px"
+                left="0px"
+                w="7px"
+                h="7px"
+                border="1px solid"
+                bg="transparent"
+              />
+            </Box>
+          </Box>
+          {/* Close */}
+          <IconButton
+            aria-label="Close"
+            variant="ghost"
+            size="sm"
+            onClick={handleClose}
+            color={useColorModeValue('#64748b', 'gray.400')}
+            _hover={{ bg: '#ef4444', color: 'white' }}
+            _focus={{ boxShadow: 'none', bg: 'transparent' }}
+            _active={{ bg: '#dc2626', color: 'white' }}
+            borderRadius={0}
+            minW="46px"
+            h="37px"
+            p={0}
+            display="flex"
+            alignItems="center"
+            justifyContent="center"
+            cursor="default"
+            icon={<X size={16} strokeWidth={1.5} style={{ display: 'block', margin: 'auto' }} />}
+          />
+        </Flex>
       </Flex>
     </Box>
   );

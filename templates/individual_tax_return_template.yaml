@@ -1,0 +1,11 @@
+name: Individual Tax Return
+description: Template for Individual Tax Return
+categories:
+  - IR3 Tax Return
+template: |-
+  Individual tax return
+
+  {{salutation}}, your total taxable income for the year was {{total_taxable_income}} which is made up of your shareholder salary from {{client_name}}, PAYE salary from XXX, interest earnings and dividend income. Tax on this amount is {{total_taxable_income}}. With PAYE already deducted, tax credits on your investment income and provisional tax already paid during the year, you are due to receive a refund of {{refund_or_tax_due}}/have tax to pay of {{refund_or_tax_due}}. This is due for payment on {{payment_due_date}}.
+
+  As in the Company, the most recent tax return resets your provisional tax payments for the current financial year which are summarised below.
+created: '2025-12-16'

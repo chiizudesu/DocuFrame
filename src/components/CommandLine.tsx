@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Flex, Input, IconButton, Text, useColorModeValue } from '@chakra-ui/react';
 import { Send, ArrowUp, ArrowDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -24,19 +24,34 @@ export const CommandLine: React.FC<CommandLineProps> = ({ onFileOperation }) => 
   const bgColor = useColorModeValue('white', 'gray.900');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   
-  // Load transfer mappings on mount
-  useEffect(() => {
-    (async () => {
-      try {
+  // Load transfer mappings on mount and when updated
+  const loadTransferMappings = useCallback(async () => {
+    try {
         const config = await (window.electronAPI as any).getConfig();
-        const mappings = config?.transferCommandMappings || {};
-        setTransferMappings(mappings);
-      } catch (error) {
-        console.error('[CommandLine] Error loading transfer mappings:', error);
-        setTransferMappings({});
-      }
-    })();
+      const mappings = config?.transferCommandMappings || {};
+      console.log('[CommandLine] Loaded transfer mappings:', mappings);
+      setTransferMappings(mappings);
+    } catch (error) {
+      console.error('[CommandLine] Error loading transfer mappings:', error);
+      setTransferMappings({});
+    }
   }, []);
+
+  useEffect(() => {
+    loadTransferMappings();
+    
+    // Listen for transfer mappings updates
+    const handleMappingsUpdate = () => {
+      console.log('[CommandLine] Transfer mappings updated, reloading...');
+      loadTransferMappings();
+    };
+    
+    window.addEventListener('transferMappingsUpdated', handleMappingsUpdate);
+    
+    return () => {
+      window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
+    };
+  }, [loadTransferMappings]);
 
   const handleSubmit = async () => {
     if (!command.trim()) return;

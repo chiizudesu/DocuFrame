@@ -1557,6 +1557,17 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+// Silent copy file with custom target path (no dialogs)
+ipcMain.handle('copy-file-silent', async (_, sourcePath: string, targetPath: string) => {
+  try {
+    await fsPromises.copyFile(sourcePath, targetPath);
+    return { success: true, path: targetPath };
+  } catch (error) {
+    console.error('Error in copy-file-silent handler:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
 // Helper function to generate unique filename with (#) suffix
 async function generateUniqueFileName(originalPath: string): Promise<string> {
   const dir = path.dirname(originalPath);

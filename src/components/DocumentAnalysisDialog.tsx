@@ -39,7 +39,7 @@ import {
   ScaleFade,
   Center
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ChevronDown, ChevronUp, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ChevronDown, ChevronUp, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle, Minus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, type AIAgent, analyzePdfDocument, analyzePdfDocumentStream } from '../services/aiService';
@@ -56,6 +56,7 @@ interface DocumentAnalysisDialogProps {
   currentDirectory: string;
   selectedFiles: string[];
   folderItems: FileItem[];
+  onMinimize?: () => void;
 }
 
 interface ChatMessage {
@@ -179,10 +180,12 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   onClose, 
   currentDirectory, 
   selectedFiles, 
-  folderItems 
+  folderItems,
+  onMinimize
 }) => {
   const [selectedAgent, setSelectedAgent] = useState<DocumentAIAgent>('claude');
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const [selectedFileItems, setSelectedFileItems] = useState<FileItem[]>([]);
   const [availableFiles, setAvailableFiles] = useState<FileItem[]>([]);
   const [analysis, setAnalysis] = useState('');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -211,6 +214,7 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
     if (isOpen) {
       // Reset state
       setSelectedFile(null);
+      setSelectedFileItems([]);
       setAnalysis('');
       setChatMessages([]);
       setFollowUpQuestion('');
@@ -230,8 +234,24 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
     }
   }, [isOpen, folderItems]);
 
-  const handleFileSelect = useCallback((file: FileItem) => {
-    setSelectedFile(file);
+  const handleFileSelect = useCallback((file: FileItem, event?: React.MouseEvent) => {
+    const isMultiSelect = event?.ctrlKey || event?.metaKey || event?.shiftKey;
+    
+    if (isMultiSelect) {
+      setSelectedFileItems(prev => {
+        const isSelected = prev.some(f => f.name === file.name);
+        if (isSelected) {
+          return prev.filter(f => f.name !== file.name);
+        } else {
+          return [...prev, file];
+        }
+      });
+      // Keep selectedFile for backward compatibility, but use the first selected file
+      setSelectedFile(file);
+    } else {
+      setSelectedFileItems([file]);
+      setSelectedFile(file);
+    }
     setError(null);
   }, []);
 
@@ -275,17 +295,22 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   }, []);
 
   const handleAnalyzeDocument = async () => {
-    if (!selectedFile) {
-      setError('Please select a document to analyze');
+    const filesToAnalyze = selectedFileItems.length > 0 ? selectedFileItems : (selectedFile ? [selectedFile] : []);
+    
+    if (filesToAnalyze.length === 0) {
+      setError('Please select at least one document to analyze');
       return;
     }
 
     console.log('=== ANALYSIS START ===');
-    console.log('Selected file:', selectedFile.name);
+    console.log('Selected files:', filesToAnalyze.map(f => f.name));
     console.log('Custom prompt:', customPrompt);
     console.log('Custom prompt length:', customPrompt.length);
     console.log('Custom prompt trimmed:', customPrompt.trim());
     console.log('Selected quick action:', selectedQuickAction);
+    
+    // Use the first file for single-file operations, or combine analysis for multiple files
+    const primaryFile = filesToAnalyze[0];
 
     // Transition to results stage immediately
     setCurrentStage('results');
@@ -377,29 +402,111 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
       
       // Use Claude's native PDF document API with streaming
       console.log('Calling analyzePdfDocumentStream...');
-      await analyzePdfDocumentStream(
-        selectedFile.path, 
-        selectedFile.name, 
-        analysisPrompt, 
-        selectedAgent,
-        (chunk: string) => {
-          // Accumulate text as it streams in
-          setAnalysis(prev => {
-            const newContent = prev + chunk;
-            // Auto-scroll to bottom during streaming
-            setTimeout(() => {
-              if (analysisBoxRef.current) {
-                analysisBoxRef.current.scrollTop = analysisBoxRef.current.scrollHeight;
-              }
-            }, 0);
-            return newContent;
-          });
-        }
-      );
-      console.log('Streaming complete');
       
-      // Store the PDF path for follow-up questions (we'll use the file path, not text)
-      setDocumentText(selectedFile.path);
+      if (filesToAnalyze.length === 1) {
+        // Single file analysis
+        await analyzePdfDocumentStream(
+          primaryFile.path, 
+          primaryFile.name, 
+          analysisPrompt, 
+          selectedAgent,
+          (chunk: string) => {
+            // Accumulate text as it streams in
+            setAnalysis(prev => {
+              const newContent = prev + chunk;
+              // Auto-scroll to bottom during streaming
+              setTimeout(() => {
+                if (analysisBoxRef.current) {
+                  analysisBoxRef.current.scrollTop = analysisBoxRef.current.scrollHeight;
+                }
+              }, 0);
+              return newContent;
+            });
+          }
+        );
+        // Store the PDF path for follow-up questions
+        setDocumentText(primaryFile.path);
+      } else {
+        // Multiple files analysis - read all files first, then make combined summary
+        setAnalysis(`# Reading ${filesToAnalyze.length} Documents...\n\nPlease wait while all documents are being loaded.\n\n`);
+        
+        // Helper function to convert ArrayBuffer to base64
+        const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return btoa(binary);
+        };
+        
+        // Read all PDF files first
+        const fileReadPromises = filesToAnalyze.map(async (file) => {
+          const pdfBuffer = await (window.electronAPI as any).readFileAsBuffer(file.path);
+          const pdfBase64 = arrayBufferToBase64(pdfBuffer);
+          return {
+            name: file.name,
+            path: file.path,
+            base64: pdfBase64
+          };
+        });
+        
+        const readFiles = await Promise.all(fileReadPromises);
+        
+        setAnalysis(`# Analysis of ${filesToAnalyze.length} Documents\n\nAll documents have been read. Generating combined analysis...\n\n`);
+        
+        // Now create a combined prompt that references all documents
+        const fileNamesList = filesToAnalyze.map((f, idx) => `${idx + 1}. ${f.name}`).join('\n');
+        const combinedPrompt = `${analysisPrompt}
+
+You are analyzing ${filesToAnalyze.length} documents together:
+${fileNamesList}
+
+Please provide a comprehensive analysis that:
+1. Summarizes key information from all documents
+2. Identifies common themes, patterns, or relationships across the documents
+3. Highlights any important differences or contrasts between documents
+4. Provides actionable insights based on the combined information
+
+Structure your response to be useful for someone who needs to understand all these documents together.`;
+
+        // Analyze each file sequentially but with context about all files
+        // The combined prompt ensures the AI knows it's analyzing multiple documents together
+        let combinedAnalysis = `# Analysis of ${filesToAnalyze.length} Documents\n\n`;
+        
+        for (let i = 0; i < filesToAnalyze.length; i++) {
+          const file = filesToAnalyze[i];
+          const fileSpecificPrompt = i === 0 
+            ? combinedPrompt 
+            : `${combinedPrompt}\n\nNote: You have already analyzed ${i} document(s). This is document ${i + 1} of ${filesToAnalyze.length}. Continue building on your previous analysis.`;
+          
+          let fileAnalysis = '';
+          await analyzePdfDocumentStream(
+            file.path,
+            file.name,
+            fileSpecificPrompt,
+            selectedAgent,
+            (chunk: string) => {
+              fileAnalysis += chunk;
+              // Update analysis with combined view
+              const currentContent = combinedAnalysis + (i > 0 ? '\n\n---\n\n' : '') + `## Document ${i + 1}: ${file.name}\n\n${fileAnalysis}`;
+              setAnalysis(currentContent);
+              setTimeout(() => {
+                if (analysisBoxRef.current) {
+                  analysisBoxRef.current.scrollTop = analysisBoxRef.current.scrollHeight;
+                }
+              }, 0);
+            }
+          );
+          
+          combinedAnalysis += (i > 0 ? '\n\n---\n\n' : '') + `## Document ${i + 1}: ${file.name}\n\n${fileAnalysis}`;
+        }
+        
+        // Store paths for follow-up (use first file for now)
+        setDocumentText(primaryFile.path);
+      }
+      
+      console.log('Streaming complete');
       
       // Clear any existing chat messages when starting fresh analysis
       setChatMessages([]);
@@ -486,6 +593,8 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
       // Preserve the original analysis context (custom prompt or quick action)
       const activeAction = selectedQuickAction ? QUICK_ACTIONS.find(a => a.id === selectedQuickAction) : null;
       const originalInstructions = customPrompt.trim() || (activeAction ? activeAction.prompt : '');
+      const filesToAnalyze = selectedFileItems.length > 0 ? selectedFileItems : (selectedFile ? [selectedFile] : []);
+      const primaryFile = filesToAnalyze[0];
       
       console.log('Original instructions for follow-up:', originalInstructions);
 
@@ -493,7 +602,8 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
 
       if (originalInstructions) {
         // Preserve the original custom instructions in the follow-up
-        conversationalPrompt = `You are continuing to analyze the PDF document "${selectedFile.name}" based on these original instructions:
+        const fileNames = filesToAnalyze.map(f => f.name).join(', ');
+        conversationalPrompt = `You are continuing to analyze ${filesToAnalyze.length === 1 ? 'the PDF document' : 'PDF documents'} "${fileNames}" based on these original instructions:
 
 ORIGINAL INSTRUCTIONS: ${originalInstructions}
 
@@ -505,7 +615,8 @@ User's new question: ${question}
 Please respond to the user's new question while maintaining the context of the original instructions. If the user is asking for modifications to the previous analysis (like converting to a table, adding more details, etc.), please fulfill their request based on the PDF document content.`;
       } else {
         // Default conversational prompt
-        conversationalPrompt = `You are analyzing the PDF document "${selectedFile.name}".
+        const fileNames = filesToAnalyze.map(f => f.name).join(', ');
+        conversationalPrompt = `You are analyzing ${filesToAnalyze.length === 1 ? 'the PDF document' : 'PDF documents'} "${fileNames}".
 
 Previous conversation:
 ${conversationHistory}
@@ -519,8 +630,8 @@ Please provide a helpful, detailed response based on the PDF document content an
       console.log('Follow-up prompt preview:', conversationalPrompt.substring(0, 300));
       console.log('PDF file path:', documentText);
 
-      // Use PDF document API for follow-up questions
-      const response = await analyzePdfDocument(documentText, selectedFile.name, conversationalPrompt, selectedAgent);
+      // Use PDF document API for follow-up questions (use first file for follow-ups)
+      const response = await analyzePdfDocument(documentText, primaryFile.name, conversationalPrompt, selectedAgent);
       
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -630,6 +741,18 @@ Please provide a helpful, detailed response based on the PDF document content an
             )}
           </Flex>
         </ModalHeader>
+        {onMinimize && (
+          <IconButton
+            aria-label="Minimize"
+            icon={<Minus size={16} />}
+            size="sm"
+            variant="ghost"
+            position="absolute"
+            top={4}
+            right={12}
+            onClick={onMinimize}
+          />
+        )}
         <ModalCloseButton />
         
         <ModalBody p={0} overflow="hidden">
@@ -643,7 +766,7 @@ Please provide a helpful, detailed response based on the PDF document content an
                     <Box w="100%" flex="1" overflow="hidden" display="flex" flexDirection="column">
                       <Flex align="center" justify="space-between" mb={3}>
                         <Heading size="sm">Select Document</Heading>
-                        {selectedFile && (
+                        {(selectedFileItems.length > 0 || selectedFile) && (
                           <Box 
                             px={2} 
                             py={1} 
@@ -662,9 +785,11 @@ Please provide a helpful, detailed response based on the PDF document content an
                                 color={useColorModeValue('green.700', 'green.200')} 
                                 fontWeight="medium"
                                 noOfLines={1}
-                                title={selectedFile.name}
+                                title={selectedFileItems.length > 0 ? `${selectedFileItems.length} file(s) selected` : selectedFile?.name}
                               >
-                                {selectedFile.name}
+                                {selectedFileItems.length > 1 
+                                  ? `${selectedFileItems.length} files selected`
+                                  : (selectedFileItems[0]?.name || selectedFile?.name || '')}
                               </Text>
                             </Flex>
                           </Box>
@@ -710,43 +835,46 @@ Please provide a helpful, detailed response based on the PDF document content an
                             </Center>
                           ) : (
                             <VStack spacing={1} align="stretch">
-                              {availableFiles.map((file, index) => (
-                                <Box
-                                  key={index}
-                                  p={3}
-                                  bg={selectedFile?.name === file.name ? useColorModeValue('blue.50', 'blue.800') : useColorModeValue('white', 'gray.900')}
-                                  borderRadius="md"
-                                  cursor="pointer"
-                                  border="1px solid"
-                                  borderColor={selectedFile?.name === file.name ? useColorModeValue('blue.400', 'blue.300') : 'transparent'}
-                                  _hover={{
-                                    bg: selectedFile?.name === file.name ? useColorModeValue('blue.100', 'blue.700') : useColorModeValue('gray.100', 'gray.700'),
-                                    borderColor: useColorModeValue('blue.200', 'blue.400'),
-                                    transform: 'translateY(-1px)',
-                                    boxShadow: useColorModeValue('sm', 'dark-lg'),
-                                  }}
-                                  onClick={() => handleFileSelect(file)}
-                                  transition="all 0.15s"
-                                  display="flex"
-                                  alignItems="center"
-                                  gap={2}
-                                >
-                                  <FileText size={18} color={selectedFile?.name === file.name ? '#2563eb' : useColorModeValue('#64748b', '#cbd5e1')} />
-                                  <Text
-                                    fontSize="sm"
-                                    fontWeight={selectedFile?.name === file.name ? 'medium' : 'normal'}
-                                    noOfLines={2}
-                                    title={file.name}
-                                    flex="1"
-                                    color={selectedFile?.name === file.name ? useColorModeValue('blue.800', 'blue.100') : undefined}
+                              {availableFiles.map((file, index) => {
+                                const isSelected = selectedFileItems.some(f => f.name === file.name) || selectedFile?.name === file.name;
+                                return (
+                                  <Box
+                                    key={index}
+                                    p={3}
+                                    bg={isSelected ? useColorModeValue('blue.50', 'blue.800') : useColorModeValue('white', 'gray.900')}
+                                    borderRadius="md"
+                                    cursor="pointer"
+                                    border="1px solid"
+                                    borderColor={isSelected ? useColorModeValue('blue.400', 'blue.300') : 'transparent'}
+                                    _hover={{
+                                      bg: isSelected ? useColorModeValue('blue.100', 'blue.700') : useColorModeValue('gray.100', 'gray.700'),
+                                      borderColor: useColorModeValue('blue.200', 'blue.400'),
+                                      transform: 'translateY(-1px)',
+                                      boxShadow: useColorModeValue('sm', 'dark-lg'),
+                                    }}
+                                    onClick={(e) => handleFileSelect(file, e)}
+                                    transition="all 0.15s"
+                                    display="flex"
+                                    alignItems="center"
+                                    gap={2}
                                   >
-                                    {file.name}
-                                  </Text>
-                                  {selectedFile?.name === file.name && (
-                                    <CheckCircle size={16} color={useColorModeValue('#2563eb', '#60a5fa')} />
-                                  )}
-                                </Box>
-                              ))}
+                                    <FileText size={18} color={isSelected ? '#2563eb' : useColorModeValue('#64748b', '#cbd5e1')} />
+                                    <Text
+                                      fontSize="sm"
+                                      fontWeight={isSelected ? 'medium' : 'normal'}
+                                      noOfLines={2}
+                                      title={file.name}
+                                      flex="1"
+                                      color={isSelected ? useColorModeValue('blue.800', 'blue.100') : undefined}
+                                    >
+                                      {file.name}
+                                    </Text>
+                                    {isSelected && (
+                                      <CheckCircle size={16} color={useColorModeValue('#2563eb', '#60a5fa')} />
+                                    )}
+                                  </Box>
+                                );
+                              })}
                             </VStack>
                           )}
                         </Box>
@@ -849,12 +977,14 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                       leftIcon={<Sparkles size={16} />}
                       colorScheme="blue"
                       size="sm"
-                      isDisabled={!selectedFile || loading}
+                      isDisabled={(selectedFileItems.length === 0 && !selectedFile) || loading}
                       isLoading={loading}
                       onClick={handleAnalyzeDocument}
                       w="100%"
                     >
-                      Analyze Document
+                      {selectedFileItems.length > 1 
+                        ? `Analyze ${selectedFileItems.length} Documents`
+                        : 'Analyze Document'}
                     </Button>
 
                     {error && (
@@ -882,9 +1012,11 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                   <Flex flex={1} align="center" justify="center" direction="column" gap={4}>
                     <Spinner size="lg" />
                     <Text color="gray.500">Analyzing document...</Text>
-                    {selectedFile && (
+                    {(selectedFileItems.length > 0 || selectedFile) && (
                       <Text fontSize="sm" color="gray.400">
-                        Processing: {selectedFile.name}
+                        Processing: {selectedFileItems.length > 1 
+                          ? `${selectedFileItems.length} documents`
+                          : (selectedFileItems[0]?.name || selectedFile?.name || '')}
                       </Text>
                     )}
                   </Flex>

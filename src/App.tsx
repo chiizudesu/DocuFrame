@@ -41,10 +41,7 @@ const JumpModeOverlay: React.FC<{
       (window.electronAPI as any).getDirectoryContents(currentDirectory).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-        console.log('Loaded files from current directory:', currentDirectory, 'File count:', files.length);
-        console.log('First 5 items in current directory:', files.slice(0, 5).map((f: any) => ({ name: f.name, path: f.path, type: f.type })));
       }).catch((error: any) => {
-        console.error('Failed to load directory contents for current directory:', currentDirectory, error);
         // Fallback to sortedFiles if loading fails
       setOverlayFiles(sortedFiles);
       });
@@ -85,7 +82,6 @@ const JumpModeOverlay: React.FC<{
     // Reset selected segment when user starts typing (clears pill indicator)
     if (selectedSegmentIndex !== null) {
       setSelectedSegmentIndex(null);
-      console.log('Cleared segment selection due to typing');
     }
     
     const query = searchText.toLowerCase();
@@ -95,15 +91,12 @@ const JumpModeOverlay: React.FC<{
       // Load files from the current overlayPath (which should be the directory we want to search in)
       const pathToLoad = overlayPath || currentDirectory;
       
-      console.log('Loading files for search from:', pathToLoad);
-      
       // Load files from the valid path
       (window.electronAPI as any).getDirectoryContents(pathToLoad).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-        console.log('Loaded files for search:', files.length);
       }).catch((error: any) => {
-        console.error('Failed to load directory contents for path:', pathToLoad, error);
+        // Failed to load directory contents
       });
       return; // Wait for files to load before searching
     }
@@ -111,14 +104,6 @@ const JumpModeOverlay: React.FC<{
     // Since we're loading files from the correct directory, use all loaded files for searching
     // No need for complex path filtering since overlayFiles already contains the right files
     const currentLevelFiles = overlayFiles;
-    
-    console.log('Search filtering debug:', {
-      query,
-      overlayPath,
-      currentDirectory,
-      overlayFilesCount: overlayFiles.length,
-      searchText: searchText
-    });
     
     const matches = currentLevelFiles
       .filter(file => file.name.toLowerCase().includes(query))
@@ -138,30 +123,12 @@ const JumpModeOverlay: React.FC<{
       })
       .slice(0, 1); // Only take first result
     
-    console.log('Search results debug:', {
-      query,
-      currentLevelFiles: currentLevelFiles.length,
-      matches: matches.map(m => ({ name: m.name, path: m.path, type: m.type }))
-    });
-    
-    // Debug: Show first few files/folders and whether they match the query
-    console.log('First 5 files/folders with match status:');
-    currentLevelFiles.slice(0, 5).forEach((file: any) => {
-      const matchesQuery = file.name.toLowerCase().includes(query);
-      console.log(`- ${file.name} (${file.type}): ${matchesQuery ? 'MATCH' : 'no match'} - query: "${query}"`);
-    });
-    
     setSearchResults(matches);
     
     // Update preview path as user types - this is the key for dynamic preview
     if (matches.length > 0) {
       const match = matches[0];
-      
-      console.log('Updating overlayPath with match:', {
-        matchName: match.name,
-        matchPath: match.path,
-        currentOverlayPath: overlayPath
-      });
+
       
       // Always update overlayPath to show the preview path
       // This allows users to see what they're about to navigate to
@@ -420,15 +387,12 @@ const JumpModeOverlay: React.FC<{
   
   // Helper function to get relative path from root
   const getRelativePath = React.useCallback((fullPath: string) => {
-    console.log('getRelativePath called with:', { fullPath, rootDirectory });
     
     if (!rootDirectory || !fullPath) return 'Root';
     
     // Normalize paths for comparison
     const normRoot = rootDirectory.replace(/\\/g, '/').replace(/\/+$/, '');
     const normPath = fullPath.replace(/\\/g, '/').replace(/\/+$/, '');
-    
-    console.log('Normalized paths:', { normRoot, normPath });
     
     if (normPath === normRoot) return 'Root';
     
@@ -441,7 +405,6 @@ const JumpModeOverlay: React.FC<{
       if (segments.length === 0) return 'Root';
       
       const result = segments.join(' / ');
-      console.log('Relative path result:', { relative, segments, result });
       return result;
     }
     
@@ -652,7 +615,8 @@ const JumpModeOverlay: React.FC<{
 // Separate component to use context
 const AppContent: React.FC = () => {
   const {
-    colorMode
+    colorMode,
+    setColorMode
   } = useColorMode();
   const {
     isQuickNavigating,
@@ -677,11 +641,43 @@ const AppContent: React.FC = () => {
   
   // Jump mode state
   const [initialJumpKey, setInitialJumpKey] = useState<string>('');
-
+  
   // Check if this is the settings window
   const isSettingsWindow = window.location.hash === '#settings';
   const isFloatingTimerWindow = window.location.hash === '#floating-timer';
   const isTaskSummaryWindow = window.location.hash === '#task-summary';
+
+  // Listen for theme changes from other windows
+  useEffect(() => {
+    // Listen for IPC messages about theme changes
+    const handleThemeChange = (_event: any, newTheme: 'light' | 'dark') => {
+      if (newTheme === 'light' || newTheme === 'dark') {
+        setColorMode(newTheme);
+      }
+    };
+
+    if (window.electronAPI && (window.electronAPI as any).onMessage) {
+      (window.electronAPI as any).onMessage('theme-changed', handleThemeChange);
+    }
+
+    // Listen for storage events (for same-window theme changes)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'chakra-ui-color-mode' && e.newValue) {
+        if (e.newValue === 'light' || e.newValue === 'dark') {
+          setColorMode(e.newValue);
+        }
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      if (window.electronAPI && (window.electronAPI as any).removeListener) {
+        (window.electronAPI as any).removeListener('theme-changed', handleThemeChange);
+      }
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [setColorMode]);
 
   // Handle initial path for new windows
   useEffect(() => {

@@ -28,27 +28,12 @@ import {
 } from '@chakra-ui/react'
 import {
   Home,
-  Grid as GridIcon,
-  List as ListIcon,
   ChevronLeft,
   ChevronRight,
-  ChevronRight as ChevronRightIcon,
   RefreshCw,
-  ExternalLink,
-  Monitor,
-  FolderPlus,
-  Minimize2,
-  Maximize2,
-  X,
-  Square,
-  Download,
-  Plus,
-  FileText,
-  FileSpreadsheet,
   Search,
-  PanelRightClose,
   Star,
-  Layers,
+  Download,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, getParentPath, isAbsolutePath, normalizePath, isChildPath } from '../utils/path'
@@ -69,7 +54,14 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, isGroupedByIndex, setIsGroupedByIndex } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter } = useAppContext()
+  
+  // Helper function to get directory name from path
+  const getDirectoryName = (path: string): string => {
+    if (!path) return 'Current Folder';
+    const parts = path.replace(/\\/g, '/').split('/').filter(Boolean);
+    return parts[parts.length - 1] || 'Current Folder';
+  }
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
@@ -78,9 +70,6 @@ export const FolderInfoBar: React.FC = () => {
   const [isCreateSpreadsheetOpen, setIsCreateSpreadsheetOpen] = useState(false)
   const [newSpreadsheetName, setNewSpreadsheetName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>(
-    (localStorage.getItem('fileViewMode') as 'grid' | 'list') || 'grid',
-  )
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
   const [clickCount, setClickCount] = useState(0)
@@ -115,16 +104,17 @@ export const FolderInfoBar: React.FC = () => {
     });
   }
 
-  // Optimized color values for consistent light mode appearance
-  const bgColor = useColorModeValue('#f1f5f9', 'gray.800')
-  const hoverBgColor = useColorModeValue('#e2e8f0', 'blue.700')
-  const activeButtonBg = useColorModeValue('#3b82f6', 'gray.900')
+  // Match the active tab color from FolderTabSystem
+  const bgColor = useColorModeValue('#4a5a68', 'gray.700')
+  const hoverBgColor = useColorModeValue('#64748b', 'blue.700')
+  const activeButtonBg = bgColor // Use title bar background color for current path pill
   const activeButtonColor = useColorModeValue('white', 'blue.200')
-  const textColor = useColorModeValue('#475569', 'gray.100')
-  const iconColor = useColorModeValue('#64748b', 'gray.400')
-  const inputBgColor = useColorModeValue('#ffffff', 'gray.700')
-  const inputFocusBgColor = useColorModeValue('#f8fafc', 'gray.600')
-  const separatorColor = useColorModeValue('#94a3b8', 'gray.400')
+  const breadcrumbHoverBg = useColorModeValue('#64748b', '#6b7280') // Hover color for parent paths - lighter gray for better visibility in dark mode
+  const textColor = useColorModeValue('#e2e8f0', 'gray.100')
+  const iconColor = useColorModeValue('#cbd5e1', 'gray.400')
+  const inputBgColor = useColorModeValue('#475569', 'gray.600')
+  const inputFocusBgColor = useColorModeValue('#64748b', 'gray.500')
+  const separatorColor = useColorModeValue('#64748b', 'gray.400')
 
   // Window controls
   const handleMinimize = () => {
@@ -316,12 +306,15 @@ export const FolderInfoBar: React.FC = () => {
       setClipboard({ files: [], operation: null })
       
       // Apply filtering to match FileGrid behavior
-      const filtered = filterFiles(Array.isArray(contents) ? contents : [])
+      const filtered = filterFiles(Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []))
       setFolderItems(filtered)
       setStatus('Folder refreshed', 'info')
       
       // Dispatch custom event to notify other components (like downloads panel) to refresh
       window.dispatchEvent(new CustomEvent('folderRefresh'));
+      
+      // Also dispatch a directory refresh event that FileGrid can listen to
+      window.dispatchEvent(new CustomEvent('directoryRefreshed', { detail: { directory: currentDirectory } }));
     } catch (error) {
       // Even on error, wait for the animation to complete
       await new Promise(resolve => setTimeout(resolve, 600))
@@ -343,13 +336,6 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
-  const handleViewModeChange = (mode: 'grid' | 'list') => {
-    setViewMode(mode)
-    localStorage.setItem('fileViewMode', mode)
-    window.dispatchEvent(new CustomEvent('viewModeChanged', { detail: mode }))
-    addLog(`Changed view mode to: ${mode}`)
-    setStatus(`Switched to ${mode} view`, 'info')
-  }
 
   const handlePreviewPaneToggle = () => {
     const newState = !isPreviewPaneOpen
@@ -684,9 +670,19 @@ export const FolderInfoBar: React.FC = () => {
               onClick={() => addQuickAccessPath(currentDirectory)}
             />
           </Tooltip>
+          <IconButton
+            icon={<RefreshCw size={16} />}
+            aria-label="Refresh folder"
+            variant="ghost"
+            size="sm"
+            mr={1}
+            onClick={handleRefresh}
+            color={iconColor}
+            _hover={{ bg: hoverBgColor }}
+          />
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Flex flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')} borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <Flex flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="none">
           {isRefreshing && (
             <Box
               position="absolute"
@@ -741,6 +737,12 @@ export const FolderInfoBar: React.FC = () => {
                     cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
                     bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
                     borderRadius="md"
+                    _hover={idx !== breadcrumbs.length - 1 ? { 
+                      bg: breadcrumbHoverBg
+                    } : undefined}
+                    transition="background 0.2s ease"
+                    position="relative"
+                    zIndex={1}
                     onClick={async (e) => {
                       e.stopPropagation(); // Prevent triggering the parent's onClick
                       if (idx !== breadcrumbs.length - 1) {
@@ -784,139 +786,39 @@ export const FolderInfoBar: React.FC = () => {
             )}
           </Box>
         </Flex>
-        <HStack spacing={1} px={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
-          <IconButton
-            icon={<RefreshCw size={16} />}
-            aria-label="Refresh folder"
-            variant="ghost"
+        {/* Search Input Field - Same style as address bar, no border */}
+        <InputGroup maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <InputLeftElement pointerEvents="none" h="33px" pl={2}>
+            <Search size={16} color={useColorModeValue('#94a3b8', 'gray.400')} />
+          </InputLeftElement>
+          <Input
+            placeholder={`Search ${getDirectoryName(currentDirectory)}`}
             size="sm"
-            onClick={handleRefresh}
-            color={iconColor}
-            _hover={{ bg: hoverBgColor }}
-          />
-          <IconButton
-            icon={<Layers size={16} />}
-            aria-label="Group by index"
-            variant={isGroupedByIndex ? 'solid' : 'ghost'}
-            size="sm"
-            onClick={() => setIsGroupedByIndex(!isGroupedByIndex)}
-            bg={isGroupedByIndex ? activeButtonBg : undefined}
-            color={isGroupedByIndex ? activeButtonColor : iconColor}
-            _hover={{ bg: isGroupedByIndex ? activeButtonBg : hoverBgColor }}
-          />
-          <Menu>
-            <MenuButton
-              as={IconButton}
-              icon={<Plus size={16} />}
-              aria-label="Create new document"
-              variant="ghost"
-              size="sm"
-              color={iconColor}
-              _hover={{ bg: hoverBgColor }}
-            />
-            <MenuList minW="200px" borderRadius={0} py={0}>
-              <MenuItem 
-                icon={<FileSpreadsheet size={14} />} 
-                onClick={() => setIsCreateSpreadsheetOpen(true)}
-                py={1.5}
-                px={3}
-                bg={useColorModeValue('#dcfce7', 'green.900')}
-                _hover={{ bg: useColorModeValue('#bbf7d0', 'green.800') }}
-                borderBottom="1px solid"
-                borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-              >
-                New Spreadsheet
-              </MenuItem>
-              <MenuItem 
-                icon={<FileText size={14} />} 
-                onClick={handleCreateWordDocument}
-                py={1.5}
-                px={3}
-                bg={useColorModeValue('#dbeafe', 'blue.900')}
-                _hover={{ bg: useColorModeValue('#bfdbfe', 'blue.800') }}
-                borderBottom="1px solid"
-                borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-              >
-                New Word Document
-              </MenuItem>
-              {isLoadingTemplates ? (
-                <MenuItem 
-                  isDisabled 
-                  py={1.5} 
-                  px={3}
-                  borderBottom="1px solid"
-                  borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-                >
-                  Loading...
-                </MenuItem>
-              ) : templates.length > 0 ? (
-                templates.map((template, idx) => (
-                  <MenuItem 
-                    key={template.path}
-                    icon={<FileSpreadsheet size={14} />} 
-                    onClick={() => handleCreateFromTemplate(template.path, template.name)}
-                    py={1.5}
-                    px={3}
-                    borderBottom={idx < templates.length - 1 ? "1px solid" : undefined}
-                    borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-                  >
-                    {formatTemplateName(template.name)}
-                  </MenuItem>
-                ))
-              ) : null}
-            </MenuList>
-          </Menu>
-          <IconButton
-            icon={<FolderPlus size={16} />}
-            aria-label="Create folder"
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsCreateFolderOpen(true)}
-            color={iconColor}
-            _hover={{ bg: hoverBgColor }}
-          />
-          <IconButton
-            icon={<PanelRightClose size={16} />}
-            aria-label="Preview pane"
-            variant={isPreviewPaneOpen ? 'solid' : 'ghost'}
-            size="sm"
-            onClick={handlePreviewPaneToggle}
-            bg={isPreviewPaneOpen ? activeButtonBg : undefined}
-            color={isPreviewPaneOpen ? activeButtonColor : iconColor}
-            _hover={{ bg: isPreviewPaneOpen ? activeButtonBg : hoverBgColor }}
-          />
-          <IconButton
-            icon={<ListIcon size={16} />}
-            aria-label="List view"
-            variant={viewMode === 'list' ? 'solid' : 'ghost'}
-            size="sm"
-            onClick={() => handleViewModeChange('list')}
-            bg={viewMode === 'list' ? activeButtonBg : undefined}
-            color={viewMode === 'list' ? activeButtonColor : iconColor}
-            _hover={{ bg: viewMode === 'list' ? activeButtonBg : hoverBgColor }}
-          />
-          <IconButton
-            icon={<ExternalLink size={16} />}
-            aria-label="Open in explorer"
-            variant="ghost"
-            size="sm"
-            onClick={handleOpenExplorer}
-            color={iconColor}
-            _hover={{ bg: hoverBgColor }}
-          />
-          <IconButton
-            icon={<Search size={16} />}
-            aria-label="Search files"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setIsSearchMode(true);
-              setIsQuickNavigating(true);
+            h="33px"
+            borderRadius="md"
+            bg={inputBgColor}
+            border="none"
+            color={textColor}
+            fontSize="sm"
+            pl={7}
+            _placeholder={{ color: useColorModeValue('#94a3b8', 'gray.400') }}
+            _focus={{
+              bg: inputFocusBgColor,
+              boxShadow: 'none',
+              outline: 'none'
             }}
-            color={iconColor}
-            _hover={{ bg: hoverBgColor }}
+            onChange={(e) => {
+              const query = e.target.value;
+              // Filter files directly using fileSearchFilter (FileGrid handles the filtering)
+              setFileSearchFilter(query);
+              if (query.trim()) {
+                setStatus(`Filtering files...`, 'info');
+              } else {
+                setStatus('', 'info');
+              }
+            }}
           />
-        </HStack>
+        </InputGroup>
       </Flex>
 
       <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} isCentered>

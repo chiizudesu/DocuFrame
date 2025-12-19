@@ -38,7 +38,7 @@ import {
   AlertDialogContent,
   AlertDialogOverlay
 } from '@chakra-ui/react';
-import { FileText, Plus, Edit2, Trash2, Save, Download, Upload, RefreshCw, Send, Bot, X } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, Save, Download, Upload, RefreshCw, Send, Bot, X, Minus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import * as yaml from 'js-yaml';
 import { settingsService } from '../services/settings';
@@ -55,9 +55,10 @@ interface ManageTemplatesDialogProps {
   isOpen: boolean;
   onClose: () => void;
   currentDirectory: string;
+  onMinimize?: () => void;
 }
 
-export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ isOpen, onClose, currentDirectory }) => {
+export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ isOpen, onClose, currentDirectory, onMinimize }) => {
   const [templates, setTemplates] = useState<TemplateFile[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateFile | null>(null);
   const [editMode, setEditMode] = useState<'visual' | 'raw'>('visual');
@@ -748,6 +749,18 @@ This will make the template more flexible and accurate."`;
               <Badge ml={3} colorScheme="blue">{templates.length} templates</Badge>
             </Flex>
           </ModalHeader>
+          {onMinimize && (
+            <IconButton
+              aria-label="Minimize"
+              icon={<Minus size={16} />}
+              size="sm"
+              variant="ghost"
+              position="absolute"
+              top={4}
+              right={12}
+              onClick={onMinimize}
+            />
+          )}
           <ModalCloseButton top={4} right={4} />
           
           <ModalBody p={0}>

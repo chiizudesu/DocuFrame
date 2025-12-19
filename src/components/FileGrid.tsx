@@ -9,6 +9,8 @@ import {
   Image,
   Divider,
   useToast,
+  Checkbox,
+  Portal,
 } from '@chakra-ui/react'
 import {
   FolderOpen,
@@ -32,6 +34,7 @@ import {
   Layers,
   ArrowRightLeft,
   Type,
+  X,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { joinPath, isAbsolutePath, normalizePath } from '../utils/path'
@@ -78,6 +81,12 @@ interface FileTableRowProps {
   };
   finalBg: string;
   columnOrder: string[];
+  columnVisibility: {
+    name: boolean;
+    size: boolean;
+    modified: boolean;
+    type: boolean;
+  };
   cellStyles: {
     bg: string;
     transition: string;
@@ -115,6 +124,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   fileState,
   finalBg,
   columnOrder,
+  columnVisibility,
   cellStyles,
   nativeIcons,
   fileTextColor,
@@ -134,16 +144,22 @@ const FileTableRow = React.memo<FileTableRowProps>(({
       data-row-index={index}
       data-file-index={index}
     >
-      {columnOrder.map((column) => {
+      {columnOrder.map((column, colIndex) => {
         const isName = column === 'name';
         const isSize = column === 'size';
         const isModified = column === 'modified';
+        const isType = column === 'type';
+        
+        // Skip rendering if column is hidden
+        if (!columnVisibility[column as keyof typeof columnVisibility]) {
+          return null;
+        }
         
         if (isName) {
           return (
             <Box
               as="td"
-              key={column}
+              key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
               ref={(el: HTMLElement | null) => {
                 if (file.type === 'file') {
@@ -221,7 +237,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
           return (
             <Box
               as="td"
-              key={column}
+              key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
             >
               <Text 
@@ -237,15 +253,39 @@ const FileTableRow = React.memo<FileTableRowProps>(({
           return (
             <Box
               as="td"
-              key={column}
+              key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
             >
               <Text 
                 fontSize="xs" 
                 color={fileSubTextColor}
-                style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.1 : 1 }}
+                style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
               >
                 {file.modified ? formatDate(file.modified) : '-'}
+              </Text>
+            </Box>
+          );
+        } else if (isType) {
+          // Get file extension for type column
+          const getFileExtension = (filename: string): string => {
+            if (file.type === 'folder') return 'Folder';
+            const lastDot = filename.lastIndexOf('.');
+            if (lastDot === -1 || lastDot === filename.length - 1) return 'File';
+            return filename.substring(lastDot + 1).toUpperCase();
+          };
+          
+          return (
+            <Box
+              as="td"
+              key={`${file.path}-${column}-${colIndex}`}
+              {...cellStyles}
+            >
+              <Text 
+                fontSize="xs" 
+                color={fileSubTextColor}
+                style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
+              >
+                {getFileExtension(file.name)}
               </Text>
             </Box>
           );
@@ -256,6 +296,10 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   );
 }, (prevProps, nextProps) => {
   // Custom comparison function for React.memo
+  // Check if columnOrder has changed by comparing array length and contents
+  const columnOrderChanged = prevProps.columnOrder.length !== nextProps.columnOrder.length ||
+    prevProps.columnOrder.some((col, idx) => col !== nextProps.columnOrder[idx]);
+  
   return (
     prevProps.file.path === nextProps.file.path &&
     prevProps.file.name === nextProps.file.name &&
@@ -268,7 +312,12 @@ const FileTableRow = React.memo<FileTableRowProps>(({
     prevProps.fileState.isFileNew === nextProps.fileState.isFileNew &&
     prevProps.fileState.isFileDragged === nextProps.fileState.isFileDragged &&
     prevProps.finalBg === nextProps.finalBg &&
-    prevProps.nativeIcons.has(prevProps.file.path) === nextProps.nativeIcons.has(nextProps.file.path)
+    prevProps.nativeIcons.has(prevProps.file.path) === nextProps.nativeIcons.has(nextProps.file.path) &&
+    prevProps.columnVisibility.name === nextProps.columnVisibility.name &&
+    prevProps.columnVisibility.size === nextProps.columnVisibility.size &&
+    prevProps.columnVisibility.modified === nextProps.columnVisibility.modified &&
+    prevProps.columnVisibility.type === nextProps.columnVisibility.type &&
+    !columnOrderChanged
   );
 });
 
@@ -591,12 +640,21 @@ export const FileGrid: React.FC = () => {
     if (items.length === 1) return items;
     
     // Pre-compute sort values to avoid repeated calculations
+    // Helper function to get file extension
+    const getFileExtension = (filename: string, fileType: string): string => {
+      if (fileType === 'folder') return 'Folder';
+      const lastDot = filename.lastIndexOf('.');
+      if (lastDot === -1 || lastDot === filename.length - 1) return 'File';
+      return filename.substring(lastDot + 1).toUpperCase();
+    };
+    
     const sortData = items.map((item, index) => ({
       item,
       index,
       nameValue: item.name.toLowerCase(), // Use lowercase for consistent sorting
       sizeValue: typeof item.size === 'string' ? parseFloat(item.size) || 0 : 0,
-      modifiedValue: item.modified ? new Date(item.modified).getTime() : 0
+      modifiedValue: item.modified ? new Date(item.modified).getTime() : 0,
+      typeValue: getFileExtension(item.name, item.type).toLowerCase()
     }));
     
     // Sort with optimized comparison
@@ -618,6 +676,10 @@ export const FileGrid: React.FC = () => {
         return sortDirection === 'asc' 
           ? a.modifiedValue - b.modifiedValue
           : b.modifiedValue - a.modifiedValue;
+      } else if (sortColumn === 'type') {
+        return sortDirection === 'asc' 
+          ? a.typeValue.localeCompare(b.typeValue)
+          : b.typeValue.localeCompare(a.typeValue);
       }
       return 0;
     });
@@ -681,7 +743,6 @@ export const FileGrid: React.FC = () => {
         addLog(`Loaded directory: ${formatPathForLog(normalizedPath)}`)
         setStatus(`Loaded ${filtered.length} items`, 'info')
       } catch (error) {
-        console.error('Failed to load directory:', error)
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         addLog(`Failed to load directory: ${errorMessage}`, 'error')
         setStatus(`Failed to load directory: ${errorMessage}`, 'error')
@@ -702,7 +763,21 @@ export const FileGrid: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [currentDirectory, debouncedLoadDirectory])
 
+  // Listen for manual refresh events from FolderInfoBar
+  useEffect(() => {
+    const handleDirectoryRefreshed = (event: CustomEvent) => {
+      const eventDirectory = event.detail?.directory;
+      if (eventDirectory === currentDirectory) {
+        // Force reload the current directory
+        debouncedLoadDirectory(currentDirectory);
+      }
+    };
 
+    window.addEventListener('directoryRefreshed', handleDirectoryRefreshed as EventListener);
+    return () => {
+      window.removeEventListener('directoryRefreshed', handleDirectoryRefreshed as EventListener);
+    };
+  }, [currentDirectory, debouncedLoadDirectory])
 
   // Handle column header click for sorting - OPTIMIZED with useCallback
   const handleSort = useCallback((column: SortColumn) => {
@@ -732,7 +807,6 @@ export const FileGrid: React.FC = () => {
           const msg = 'Electron API not available: openFile';
           addLog(msg, 'error');
           setStatus('File API not available', 'error');
-          console.error(msg);
           return;
         }
         (window.electronAPI as any).openFile(file.path);
@@ -741,7 +815,6 @@ export const FileGrid: React.FC = () => {
       } catch (error: any) {
         addLog(`Failed to open file: ${file.name} (${file.path})\n${error?.message || error}`,'error');
         setStatus(`Failed to open: ${file.name}`, 'error');
-        console.error('Failed to open file:', file.path, error);
       }
     }
   }, [setCurrentDirectory, addLog, setStatus]);
@@ -818,7 +891,6 @@ export const FileGrid: React.FC = () => {
       if (!window.electronAPI || typeof (window.electronAPI as any).confirmDelete !== 'function') {
         const msg = 'Electron API not available: confirmDelete';
         addLog(msg, 'error');
-        console.error(msg);
         return;
       }
       
@@ -843,7 +915,6 @@ export const FileGrid: React.FC = () => {
           const errorMessage = error?.message || error;
           failedFiles.push({ name: f.name, error: errorMessage });
           addLog(`Failed to delete: ${f.name} - ${errorMessage}`, 'error');
-          console.error('Failed to delete:', f.name, error);
         }
       }
       
@@ -885,7 +956,6 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error?.message || error;
       addLog(`Delete operation failed: ${errorMessage}`, 'error');
       setStatus('Delete operation failed', 'error');
-      console.error('Delete operation failed:', error);
     }
   }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, setFolderItems, filterFiles, toast])
 
@@ -1117,9 +1187,43 @@ export const FileGrid: React.FC = () => {
             : contextMenu.fileItem && contextMenu.fileItem.type === 'file'
               ? [contextMenu.fileItem]
               : [];
-          console.log('[FileGrid] Opening assign prefix dialog', { filesToUpdate: filesToUpdate.map(f => f.name) });
           setPrefixDialogFiles(filesToUpdate);
           setIsIndexPrefixDialogOpen(true);
+          break;
+        }
+        case 'remove_prefix': {
+          // Remove prefix from selected files directly
+          const filesToUpdate = selectedFiles.length > 1 && contextMenu.fileItem && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name) && f.type === 'file')
+            : contextMenu.fileItem && contextMenu.fileItem.type === 'file'
+              ? [contextMenu.fileItem]
+              : [];
+          
+          if (filesToUpdate.length === 0) {
+            handleCloseContextMenu();
+            return;
+          }
+          
+          // Filter only files that have a prefix to remove
+          const filesWithPrefix = filesToUpdate.filter(f => extractIndexPrefix(f.name) !== null);
+          
+          if (filesWithPrefix.length === 0) {
+            toast({
+              title: 'No Prefix to Remove',
+              description: 'Selected file(s) do not have an index prefix.',
+              status: 'info',
+              duration: 3000,
+              isClosable: true,
+              position: 'top',
+            });
+            handleCloseContextMenu();
+            return;
+          }
+          
+          // Call handleAssignPrefix with null to remove prefix
+          setPrefixDialogFiles(filesWithPrefix);
+          handleCloseContextMenu();
+          await handleAssignPrefix(null, false);
           break;
         }
         case 'smart_rename':
@@ -1133,7 +1237,6 @@ export const FileGrid: React.FC = () => {
           addLog(`Function: ${action} on ${contextMenu.fileItem.name}`)
       }
     } catch (error) {
-      console.error(`Error performing ${action}:`, error)
       addLog(`Failed to ${action}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
     }
 
@@ -1174,7 +1277,6 @@ export const FileGrid: React.FC = () => {
         addLog(`Warning: Directory refresh returned invalid data`, 'info');
       }
     } catch (error) {
-      console.error('Failed to refresh directory:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to refresh directory: ${errorMessage}`, 'error');
     }
@@ -1182,34 +1284,33 @@ export const FileGrid: React.FC = () => {
 
   // Handler for assigning/changing index prefix (or copying if isCopy is true)
   const handleAssignPrefix = useCallback(async (indexKey: string | null, isCopy?: boolean) => {
-    console.log('[FileGrid] handleAssignPrefix called', { indexKey, isCopy, prefixDialogFiles: prefixDialogFiles.map(f => f.name) });
-    
     const filesToUpdate = prefixDialogFiles;
     
-    console.log('[FileGrid] handleAssignPrefix: Files to update', { 
-      filesToUpdate: filesToUpdate.map(f => ({ name: f.name, path: f.path })),
-      filesCount: filesToUpdate.length,
-      isCopy
-    });
+    console.log('[FileGrid] handleAssignPrefix called', { indexKey, isCopy, filesCount: filesToUpdate.length });
     
     if (filesToUpdate.length === 0) {
-      console.warn('[FileGrid] handleAssignPrefix: No files to update');
+      console.warn('[FileGrid] No files to update');
       return;
     }
     
+    // Validate: if copying, indexKey must be provided (but allow removing prefix without copy)
+    if (isCopy && !indexKey) {
+      console.error('[FileGrid] Copy operation requires an index key');
+      toast({
+        title: 'Invalid Operation',
+        description: 'Cannot copy file without selecting an index prefix.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+        position: 'top',
+      });
+      return;
+    }
+    
+    // Allow removing prefix when not copying
     if (!indexKey && !isCopy) {
-      // Removing prefix - only works for rename, not copy
-      if (isCopy) {
-        toast({
-          title: 'Invalid Operation',
-          description: 'Cannot remove prefix when copying files.',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-          position: 'top',
-        });
-        return;
-      }
+      // Removing prefix - this is valid for rename operations
+      console.log('[FileGrid] Removing prefix from files');
     }
     
     try {
@@ -1218,103 +1319,257 @@ export const FileGrid: React.FC = () => {
       
       const results = await Promise.allSettled(
         filesToUpdate.map(async (file) => {
-          console.log('[FileGrid] handleAssignPrefix: Processing file', { 
+          const sourcePath = normalizePath(file.path);
+          const parentDir = normalizePath(file.path.slice(0, file.path.length - file.name.length).replace(/[\\/]+$/, ''));
+          const baseDir = normalizePath(parentDir || currentDirectory);
+          
+          console.log('[FileGrid] Processing file:', { 
             fileName: file.name, 
-            filePath: file.path,
-            indexKey,
-            isCopy,
-            currentPrefix: extractIndexPrefix(file.name)
+            sourcePath, 
+            parentDir, 
+            baseDir, 
+            currentDirectory,
+            isCopy 
           });
-          
-          const newName = indexKey === null ? removeIndexPrefix(file.name) : setIndexPrefix(file.name, indexKey);
-          
-          console.log('[FileGrid] handleAssignPrefix: Name transformation', {
-            oldName: file.name,
-            newName,
-            willRename: newName !== file.name
-          });
-          
-          if (newName === file.name && !isCopy) {
-            console.log('[FileGrid] handleAssignPrefix: Skipping file (name unchanged)', { fileName: file.name });
-            return { file: file.name, skipped: true };
-          }
-          
-          const sourcePath = file.path;
-          const parentDir = file.path.slice(0, file.path.length - file.name.length).replace(/[\\/]+$/, '');
-          const baseDir = parentDir || currentDirectory;
-          const destPath = joinPath(baseDir, newName);
           
           if (isCopy) {
-            // Copy file with new name
-            console.log('[FileGrid] handleAssignPrefix: Copying file', {
+            // Copy file - always copy, even if prefix is the same
+            // First, determine the new name with the selected prefix
+            if (!indexKey) {
+              // If no index key selected, we can't copy (shouldn't happen, but handle it)
+              throw new Error('Cannot copy file without selecting an index prefix');
+            }
+            
+            const newName = setIndexPrefix(file.name, indexKey);
+            const destPath = normalizePath(joinPath(baseDir, newName));
+            
+            console.log('[FileGrid] Copy operation details:', {
               sourcePath,
-              destPath,
               baseDir,
-              parentDir
+              newName,
+              destPath,
+              sourceEqualsDest: sourcePath === destPath
             });
             
-            // Copy file with conflict resolution
-            const copyResults = await (window.electronAPI as any).copyFilesWithConflictResolution([sourcePath], baseDir);
+            // Safety check: don't copy file to itself
+            if (sourcePath === destPath) {
+              console.warn('[FileGrid] Source and destination are the same, skipping copy');
+              return { file: file.name, skipped: true, reason: 'Source and destination are the same' };
+            }
             
-            if (copyResults && copyResults.length > 0 && copyResults[0].status === 'success') {
-              // If the copied file has a different name (due to conflict resolution), rename it to target name
-              const copiedFileName = copyResults[0].path ? copyResults[0].path.split(/[\\/]/).pop() : file.name;
-              const copiedPath = joinPath(baseDir, copiedFileName);
-              
-              // Only rename if the copied file name doesn't already match the target name
-              if (copiedFileName !== newName) {
-                await (window.electronAPI as any).renameItem(copiedPath, destPath);
+            // Strategy: Temporarily rename existing target file (if it exists) to avoid conflict dialog
+            // Then copy source file, rename copy to target, and restore original with conflict resolution
+            let existingFileMoved = false;
+            let existingFileTempPath: string | null = null;
+            
+            try {
+              // Check if target file already exists (and is different from source)
+              let targetExists = false;
+              if (destPath !== sourcePath) {
+                try {
+                  const stats = await (window.electronAPI as any).getFileStats(destPath);
+                  targetExists = stats && stats.isFile;
+                } catch (err) {
+                  // File doesn't exist, targetExists remains false
+                  targetExists = false;
+                }
               }
               
-              console.log('[FileGrid] handleAssignPrefix: Successfully copied', { fileName: file.name, newName });
-              return { file: file.name, success: true };
-            } else {
-              throw new Error(`Failed to copy file: ${file.name}`);
+              if (targetExists) {
+                // Temporarily move the existing target file to avoid conflict dialog
+                existingFileTempPath = joinPath(baseDir, `~temp_existing_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${newName}`);
+                try {
+                  await (window.electronAPI as any).renameItem(destPath, existingFileTempPath);
+                  existingFileMoved = true;
+                } catch (moveError) {
+                  // If move fails, the file might have been deleted - continue anyway
+                  existingFileMoved = false;
+                }
+              }
+              
+              // Copy the source file silently with a temporary unique name first to avoid conflict dialog
+              const tempFileName = `~temp_copy_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.tmp`;
+              const tempFilePath = normalizePath(joinPath(baseDir, tempFileName));
+              
+              console.log('[FileGrid] Silently copying file to temp name first:', { sourcePath, baseDir, tempFileName, tempFilePath });
+              
+              // Use the new silent copy method to avoid any dialogs
+              try {
+                const copyResult = await (window.electronAPI as any).copyFileSilent(sourcePath, tempFilePath);
+                console.log('[FileGrid] Silent copy result:', copyResult);
+                
+                if (!copyResult || !copyResult.success) {
+                  throw new Error(copyResult?.error || 'Silent copy failed');
+                }
+                
+                // Now rename the temp file to the final destination
+                console.log('[FileGrid] Renaming temp file to final destination:', { tempFilePath, destPath });
+                await (window.electronAPI as any).renameItem(tempFilePath, destPath);
+                console.log('[FileGrid] Rename completed successfully');
+                
+                // If we moved an existing file, restore it with conflict resolution
+                if (existingFileMoved && existingFileTempPath) {
+                  // Find an available name for the existing file
+                  let restored = false;
+                  for (let i = 1; i <= 100 && !restored; i++) {
+                    const conflictName = i === 1 
+                      ? newName.replace(/(\.[^.]+)$/, ' (1)$1')
+                      : newName.replace(/(\.[^.]+)$/, ` (${i})$1`);
+                    const conflictPath = joinPath(baseDir, conflictName);
+                    
+                    // Check if conflict path exists
+                    let conflictExists = false;
+                    try {
+                      const stats = await (window.electronAPI as any).getFileStats(conflictPath);
+                      conflictExists = stats && (stats.isFile || stats.isDirectory);
+                    } catch (err) {
+                      conflictExists = false;
+                    }
+                    
+                    if (!conflictExists) {
+                      await (window.electronAPI as any).renameItem(existingFileTempPath, conflictPath);
+                      restored = true;
+                    }
+                  }
+                  
+                  if (!restored) {
+                    // Couldn't find available name - try to restore to original (might fail)
+                    try {
+                      await (window.electronAPI as any).renameItem(existingFileTempPath, destPath);
+                    } catch (e) {
+                      // If that fails, keep it with temp name
+                    }
+                  }
+                }
+                
+                console.log('[FileGrid] Copy operation successful for:', file.name);
+                return { file: file.name, success: true };
+              } catch (copyError) {
+                // Clean up temp file if it exists
+                try {
+                  const tempStats = await (window.electronAPI as any).getFileStats(tempFilePath);
+                  if (tempStats && tempStats.isFile) {
+                    await (window.electronAPI as any).deleteFile(tempFilePath);
+                  }
+                } catch (cleanupError) {
+                  // Ignore cleanup errors
+                }
+                
+                // Restore existing file if we moved it
+                if (existingFileMoved && existingFileTempPath) {
+                  try {
+                    await (window.electronAPI as any).renameItem(existingFileTempPath, destPath);
+                  } catch (restoreError) {
+                    // If restore fails, try conflict resolution
+                    for (let i = 1; i <= 100; i++) {
+                      const conflictName = i === 1 
+                        ? newName.replace(/(\.[^.]+)$/, ' (1)$1')
+                        : newName.replace(/(\.[^.]+)$/, ` (${i})$1`);
+                      const conflictPath = joinPath(baseDir, conflictName);
+                      try {
+                        await (window.electronAPI as any).renameItem(existingFileTempPath, conflictPath);
+                        break;
+                      } catch (e) {
+                        // Continue to next
+                      }
+                    }
+                  }
+                }
+                
+                const errorMsg = `Failed to copy file: ${file.name}. ${copyError instanceof Error ? copyError.message : String(copyError)}`;
+                console.error('[FileGrid] Copy failed:', { file: file.name, error: copyError, errorMsg });
+                throw new Error(errorMsg);
+              }
+            } catch (error) {
+              // If anything fails and we moved an existing file, try to restore it
+              if (existingFileMoved && existingFileTempPath) {
+                try {
+                  await (window.electronAPI as any).renameItem(existingFileTempPath, destPath);
+                } catch (restoreError) {
+                  // If restore fails, try conflict resolution
+                  for (let i = 1; i <= 100; i++) {
+                    const conflictName = i === 1 
+                      ? newName.replace(/(\.[^.]+)$/, ' (1)$1')
+                      : newName.replace(/(\.[^.]+)$/, ` (${i})$1`);
+                    const conflictPath = joinPath(baseDir, conflictName);
+                    try {
+                      await (window.electronAPI as any).renameItem(existingFileTempPath, conflictPath);
+                      break;
+                    } catch (e) {
+                      // Continue to next
+                    }
+                  }
+                }
+              }
+              throw error;
             }
           } else {
-            // Rename file
-            console.log('[FileGrid] handleAssignPrefix: Renaming file', {
-              oldPath: sourcePath,
-              newPath: destPath,
-              baseDir,
-              parentDir
-            });
+            // Rename file (not copy)
+            const newName = indexKey === null ? removeIndexPrefix(file.name) : setIndexPrefix(file.name, indexKey);
+            
+            if (newName === file.name) {
+              return { file: file.name, skipped: true };
+            }
+            
+            const destPath = joinPath(baseDir, newName);
             
             await (window.electronAPI as any).renameItem(sourcePath, destPath);
             
-            console.log('[FileGrid] handleAssignPrefix: Successfully renamed', { fileName: file.name, newName });
             return { file: file.name, success: true };
           }
         })
       );
       
-      console.log('[FileGrid] handleAssignPrefix: All operations completed', { results });
-      
       const successful = results.filter(r => r.status === 'fulfilled' && (r.value as any).success).length;
       const skipped = results.filter(r => r.status === 'fulfilled' && (r.value as any).skipped).length;
       const failed = results.filter(r => r.status === 'rejected').length;
       
-      console.log('[FileGrid] handleAssignPrefix: Summary', { successful, skipped, failed });
-      
-      if (failed > 0) {
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            console.error('[FileGrid] handleAssignPrefix: Failed file', {
-              index,
-              file: filesToUpdate[index]?.name,
-              error: result.reason
-            });
-          }
-        });
+      // Log detailed results including errors
+      const failedResults = results.filter(r => r.status === 'rejected');
+      if (failedResults.length > 0) {
+        console.error('[FileGrid] Failed operations:', failedResults.map(r => ({
+          reason: r.reason,
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          stack: r.reason instanceof Error ? r.reason.stack : undefined
+        })));
       }
       
+      console.log('[FileGrid] Operation results:', { successful, skipped, failed, isCopy, totalFiles: filesToUpdate.length });
+      
       const actionText = isCopy ? 'Copied' : 'Updated';
-      setStatus(successful > 0 ? `${actionText} ${successful} file(s)` : 'No changes needed', successful > 0 ? 'success' : 'info');
+      
+      // Show error toast if any operations failed
+      if (failed > 0) {
+        const errorMessages = failedResults.map(r => {
+          if (r.reason instanceof Error) {
+            return r.reason.message;
+          }
+          return String(r.reason);
+        }).join('; ');
+        
+        toast({
+          title: isCopy ? 'Copy Failed' : 'Prefix Assignment Failed',
+          description: `${failed} file(s) failed: ${errorMessages}`,
+          status: 'error',
+          duration: 8000,
+          isClosable: true,
+          position: 'top',
+        });
+        
+        setStatus(`Failed to ${actionText.toLowerCase()} ${failed} file(s)`, 'error');
+        addLog(`Failed to ${actionText.toLowerCase()} ${failed} file(s): ${errorMessages}`, 'error');
+      } else {
+        setStatus(successful > 0 ? `${actionText} ${successful} file(s)` : 'No changes needed', successful > 0 ? 'success' : 'info');
+      }
+      
+      // Always refresh directory after copy/rename operations
+      console.log('[FileGrid] Refreshing directory:', currentDirectory);
       await refreshDirectory(currentDirectory);
+      console.log('[FileGrid] Directory refresh completed');
     } catch (error) {
-      console.error('[FileGrid] handleAssignPrefix: Error', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const actionText = isCopy ? 'copy' : 'assign prefix';
+      console.error('[FileGrid] Unexpected error in handleAssignPrefix:', error);
       addLog(`Failed to ${actionText}: ${errorMessage}`, 'error');
       setStatus(`Failed to ${actionText}`, 'error');
       toast({
@@ -1584,7 +1839,6 @@ export const FileGrid: React.FC = () => {
       // Refresh directory to show renamed file
       await refreshDirectory(currentDirectory)
     } catch (error) {
-      console.error('Error renaming:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to rename: ${errorMessage}`, 'error')
       setStatus(`Failed to rename "${isRenaming}": ${errorMessage}`, 'error')
@@ -1626,9 +1880,7 @@ export const FileGrid: React.FC = () => {
       }
     }
     const handleFolderContentsChanged = (_event: any, data: { directory: string; newFiles?: string[]; event?: string; filePath?: string }) => {
-      console.log('[FileGrid] Folder contents changed event received:', data);
       if (data && data.directory === currentDirectory) {
-        console.log('[FileGrid] Refreshing current directory:', currentDirectory);
         
         // Handle file watcher events (new files detected)
         if (data.event === 'add' && data.filePath) {
@@ -1638,7 +1890,6 @@ export const FileGrid: React.FC = () => {
           const fileName = data.filePath.split('\\').pop() || data.filePath;
           const dirName = currentDirectory.split('\\').pop() || currentDirectory;
           logFileOperation(`${fileName} transferred to ${dirName}`);
-          console.log('[FileGrid] Logged file operation:', fileName);
           
           // Set timeout to remove the "new" indicator (15 seconds)
           setTimeout(() => {
@@ -1648,7 +1899,6 @@ export const FileGrid: React.FC = () => {
         
         // Handle transfer events (existing functionality)
         if (data.newFiles && data.newFiles.length > 0) {
-          console.log('[FileGrid] Adding new files to recently transferred list:', data.newFiles);
           addRecentlyTransferredFiles(data.newFiles);
           
           // Log file operations for task timer - one entry per file
@@ -1657,7 +1907,6 @@ export const FileGrid: React.FC = () => {
             const fileName = filePath.split('\\').pop() || filePath;
             logFileOperation(`${fileName} transferred to ${dirName}`);
           });
-          console.log('[FileGrid] Logged file operations for', data.newFiles.length, 'files');
           
           // Set individual timeouts for each file (15 seconds each)
           data.newFiles.forEach(filePath => {
@@ -1738,7 +1987,6 @@ export const FileGrid: React.FC = () => {
         setStatus('Invalid directory data received', 'error');
       }
     } catch (error) {
-      console.error('Failed to load directory:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to load directory: ${errorMessage}`, 'error');
       setStatus(`Failed to load directory: ${errorMessage}`, 'error');
@@ -1855,20 +2103,10 @@ export const FileGrid: React.FC = () => {
 
   // Add this function for selection on click - OPTIMIZED with useCallback
   const handleFileItemClick = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
-    console.log('[FileGrid] handleFileItemClick called', { 
-      fileName: file.name, 
-      fileType: file.type, 
-      isSelected: selectedFilesSet.has(file.name),
-      lastClickedFile: lastClickedFileRef.current,
-      lastClickTime: lastClickTimeRef.current,
-      timeSinceLastClick: Date.now() - lastClickTimeRef.current
-    });
-    
     const now = Date.now();
     
     // Check if this is a double-click (same file clicked within 500ms) using refs for reliable comparison
     if (lastClickedFileRef.current === file.name && now - lastClickTimeRef.current < 500) {
-      console.log('[FileGrid] Double-click detected!', { fileName: file.name, fileType: file.type, selectedFilesCount: selectedFiles.length });
       clearTimeout(clickTimer as NodeJS.Timeout);
       lastClickTimeRef.current = 0;
       lastClickedFileRef.current = null;
@@ -1879,10 +2117,8 @@ export const FileGrid: React.FC = () => {
       // Handle double-click: open file or navigate to folder
       (async () => {
         if (file.type === 'folder') {
-          console.log('[FileGrid] Double-click on folder, navigating to:', file.path);
           handleOpenOrNavigate(file);
         } else {
-          console.log('[FileGrid] Double-click on file, opening:', file.path);
           // If multiple files selected, open all selected files (including the one being double-clicked)
           // Check selectedFiles array directly to get accurate count
           if (selectedFiles.length > 1) {
@@ -1890,7 +2126,6 @@ export const FileGrid: React.FC = () => {
             // Only open multiple files if they're all files (not folders)
             const selectedFilesOnly = selectedFileObjs.filter(f => f.type !== 'folder');
             if (selectedFilesOnly.length > 1) {
-              console.log('[FileGrid] Opening multiple selected files:', selectedFilesOnly.length);
               for (const f of selectedFilesOnly) {
                 await handleOpenOrNavigate(f);
               }
@@ -1905,10 +2140,6 @@ export const FileGrid: React.FC = () => {
       })();
     } else {
       // First click - record for potential double-click
-      console.log('[FileGrid] First click, recording timestamp', { 
-        previousFile: lastClickedFileRef.current,
-        timeSinceLastClick: lastClickTimeRef.current > 0 ? now - lastClickTimeRef.current : 'N/A'
-      });
       lastClickTimeRef.current = now;
       lastClickedFileRef.current = file.name;
       setLastClickTime(now);
@@ -1954,7 +2185,6 @@ export const FileGrid: React.FC = () => {
       } else if (e.key === 'Enter' && selectedFiles.length === 0) {
         // Prevent Enter from doing anything when no files are selected
         // This prevents unwanted behavior after navigation
-        console.log('[FileGrid] Enter pressed with no files selected, preventing default');
         e.preventDefault();
         return;
       } else if (e.key === 'Delete' && selectedFiles.length > 0) {
@@ -2002,7 +2232,7 @@ export const FileGrid: React.FC = () => {
           }
         }
       } catch (error) {
-        console.error('[FileGrid] Error starting file watcher:', error);
+        // Error starting file watcher - silently fail
       }
     };
 
@@ -2013,7 +2243,7 @@ export const FileGrid: React.FC = () => {
           isWatching = false;
         }
       } catch (error) {
-        console.error('[FileGrid] Error stopping file watcher:', error);
+        // Error stopping file watcher - silently fail
       }
     };
 
@@ -2070,12 +2300,6 @@ export const FileGrid: React.FC = () => {
     
     setDragCounter(prev => prev + 1);
     
-    // Debug drag enter
-    console.log('=== DRAG ENTER DEBUG ===');
-    console.log('DataTransfer types:', e.dataTransfer.types);
-    console.log('DataTransfer items.length:', e.dataTransfer.items.length);
-    console.log('DataTransfer effectAllowed:', e.dataTransfer.effectAllowed);
-    
     // Check for external files (from OS file explorer) - NOT internal drags
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
@@ -2087,9 +2311,6 @@ export const FileGrid: React.FC = () => {
     }
     
     const isInternalDrag = hasCustomType || (!hasFilesType && internalDragFlag);
-    
-    console.log('Has external Files type:', hasFilesType);
-    console.log('Is internal drag:', isInternalDrag);
     
     // Only show upload overlay for external files, not internal drags
     if (hasFilesType && !isInternalDrag) {
@@ -2183,18 +2404,9 @@ export const FileGrid: React.FC = () => {
 
     const targetElement = e.target as HTMLElement;
     if (targetElement && targetElement.closest('[data-group-drop-zone="true"]')) {
-      console.log('[FileGrid] handleDrop: event occurred on group header, skipping main drop handler');
       return;
     }
 
-    // Debug: Log all available data transfer info
-    console.log('=== DROP EVENT DEBUG ===');
-    console.log('DataTransfer types:', e.dataTransfer.types);
-    console.log('DataTransfer files.length:', e.dataTransfer.files.length);
-    console.log('DataTransfer items.length:', e.dataTransfer.items.length);
-    console.log('DataTransfer effectAllowed:', e.dataTransfer.effectAllowed);
-    console.log('Files array:', Array.from(e.dataTransfer.files));
-    
     // Check what type of drag this is
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
@@ -2207,27 +2419,11 @@ export const FileGrid: React.FC = () => {
     
     const isInternalDrag = hasCustomType || (!hasFilesType && internalDragFlag);
     
-    console.log('Has external Files type:', hasFilesType);
-    console.log('Is internal drag:', isInternalDrag);
-    
-    // Log each file's properties
-    Array.from(e.dataTransfer.files).forEach((file, index) => {
-      console.log(`File ${index}:`, {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        lastModified: file.lastModified,
-        path: (file as any).path, // Electron-specific path property
-        webkitRelativePath: file.webkitRelativePath
-      });
-    });
-
     // Handle external files (from OS file explorer)
     if (hasFilesType && e.dataTransfer.files.length > 0) {
       try {
-        const files = Array.from(e.dataTransfer.files).map((f, index) => {
+        const files = Array.from(e.dataTransfer.files).map((f) => {
           const filePath = (f as any).path || f.name; // Fallback to name if path not available
-          console.log(`Processing file ${index}: ${f.name}, path: ${filePath}`);
           
           return {
             path: filePath,
@@ -2238,7 +2434,6 @@ export const FileGrid: React.FC = () => {
         // Validate that we have valid file paths
         const validFiles = files.filter(f => f.path && f.path !== f.name);
         if (validFiles.length === 0) {
-          console.error('No valid file paths found. This might be a web browser drag, not OS drag.');
           addLog('Failed to upload: No valid file paths found. Please drag files from your file explorer, not from a web browser.', 'error');
           setStatus('Upload failed: Invalid file source', 'error');
           return;
@@ -2267,7 +2462,6 @@ export const FileGrid: React.FC = () => {
         }
         
       } catch (error) {
-        console.error('Upload failed:', error);
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         addLog(`Upload failed: ${errorMessage}`, 'error');
         setStatus('Upload failed', 'error');
@@ -2275,12 +2469,8 @@ export const FileGrid: React.FC = () => {
     } 
     // Handle internal drags (files dragged within the app)
     else if (isInternalDrag) {
-      console.log('This is an internal drag operation - ignoring at grid level');
       // Internal drags are handled by individual DraggableFileItem components
       // We don't need to do anything here for internal drags
-    }
-    else {
-      console.log('Unknown drag type or no valid data');
     }
   }, [currentDirectory, addLog, setStatus, refreshDirectory]);
 
@@ -2490,7 +2680,6 @@ export const FileGrid: React.FC = () => {
       }
     } catch (err) {
       // If clipboard read fails, continue with normal file paste logic
-      console.log('Clipboard image check failed, continuing with file paste');
     }
 
     // If no image found or clipboard read failed, proceed with normal file paste
@@ -2597,9 +2786,9 @@ export const FileGrid: React.FC = () => {
     e.stopPropagation();
     clearFolderHoverStates();
     
-    console.log('[FileGrid] handleGroupHeaderDrop called', { targetIndexKey });
-    console.log('[FileGrid] handleGroupHeaderDrop: dataTransfer types', Array.from(e.dataTransfer.types));
-    console.log('[FileGrid] handleGroupHeaderDrop: dataTransfer.files', e.dataTransfer.files.length);
+    // Detect if Ctrl key is pressed for copy operation
+    const isCopyOperation = e.ctrlKey;
+    console.log('[FileGrid] handleGroupHeaderDrop', { targetIndexKey, isCopyOperation, ctrlKey: e.ctrlKey });
     
     let filePaths: string[] = [];
     
@@ -2618,16 +2807,13 @@ export const FileGrid: React.FC = () => {
     
     if (isExternalDrag && hasExternalFiles) {
       // External files - get paths from FileList
-      console.log('[FileGrid] handleGroupHeaderDrop: Processing external file drag');
       filePaths = Array.from(e.dataTransfer.files).map(file => {
         // For external files, we need to get the full path
         // In Electron, file.path should be available
         return (file as any).path || file.name;
       });
-      console.log('[FileGrid] handleGroupHeaderDrop: External file paths', { filePaths });
     } else if (isInternalDrag) {
       // Internal drag - get paths from dataTransfer or window flag
-      console.log('[FileGrid] handleGroupHeaderDrop: Processing internal drag');
       
       // Try multiple ways to get the dragged file data
       // 1. Custom type (for web drag)
@@ -2636,13 +2822,11 @@ export const FileGrid: React.FC = () => {
       // 2. text/plain fallback (for Electron native drag)
       if (!draggedFiles) {
         draggedFiles = e.dataTransfer.getData('text/plain');
-        console.log('[FileGrid] handleGroupHeaderDrop: Using text/plain fallback', { draggedFiles });
       }
       
       // 3. Window flag (for Electron native drag that doesn't preserve dataTransfer)
       if (!draggedFiles && (window as any).__docuframeInternalDrag?.files) {
         draggedFiles = JSON.stringify((window as any).__docuframeInternalDrag.files);
-        console.log('[FileGrid] handleGroupHeaderDrop: Using window flag', { draggedFiles });
       }
       
       // 4. Legacy fallback
@@ -2650,30 +2834,20 @@ export const FileGrid: React.FC = () => {
         draggedFiles = e.dataTransfer.getData('application/x-file-list');
       }
       
-      console.log('[FileGrid] handleGroupHeaderDrop: Drag data', { 
-        draggedFiles: draggedFiles ? 'present' : 'missing',
-        length: draggedFiles?.length
-      });
-      
       if (!draggedFiles) {
-        console.warn('[FileGrid] handleGroupHeaderDrop: No drag data found in any format');
         return;
       }
       
       try {
         filePaths = JSON.parse(draggedFiles) as string[];
-        console.log('[FileGrid] handleGroupHeaderDrop: Parsed file paths', { filePaths });
       } catch (error) {
-        console.error('[FileGrid] handleGroupHeaderDrop: Failed to parse drag data', error);
         return;
       }
     } else {
-      console.warn('[FileGrid] handleGroupHeaderDrop: Unknown drag type');
       return;
     }
     
     if (filePaths.length === 0) {
-      console.warn('[FileGrid] handleGroupHeaderDrop: No file paths found');
       return;
     }
     
@@ -2696,10 +2870,6 @@ export const FileGrid: React.FC = () => {
           if (f.type !== 'file') return false;
           return fileNames.includes(f.name);
         });
-        console.log('[FileGrid] handleGroupHeaderDrop: External files matched by name', {
-          fileNames,
-          filesToRename: filesToRename.map(f => ({ name: f.name, path: f.path }))
-        });
       } else {
         // Internal files - match by full path
         filesToRename = sortedFiles.filter(f => {
@@ -2707,80 +2877,131 @@ export const FileGrid: React.FC = () => {
           const normalizedFilePath = f.path.replace(/\\/g, '/');
           return normalizedDragPaths.has(normalizedFilePath);
         });
-        console.log('[FileGrid] handleGroupHeaderDrop: Internal files matched by path', {
-          filesToRename: filesToRename.map(f => ({ name: f.name, path: f.path }))
-        });
       }
       
-      console.log('[FileGrid] handleGroupHeaderDrop: Files to rename', { 
-        filesToRename: filesToRename.map(f => ({ name: f.name, path: f.path }))
-      });
-      
       if (filesToRename.length === 0) {
-        console.warn('[FileGrid] handleGroupHeaderDrop: No matching files found');
         return;
       }
       
-      setStatus(`Assigning prefix to ${filesToRename.length} file(s)...`, 'info');
+      const action = isCopyOperation ? 'Copying' : 'Assigning prefix to';
+      setStatus(`${action} ${filesToRename.length} file(s)...`, 'info');
       
       const results = await Promise.allSettled(
         filesToRename.map(async (file) => {
-          console.log('[FileGrid] handleGroupHeaderDrop: Processing file', { 
-            fileName: file.name, 
-            filePath: file.path,
-            targetIndexKey
-          });
-          
           // Check if file already has an index prefix
           const currentIndex = extractIndexPrefix(file.name);
-          console.log('[FileGrid] handleGroupHeaderDrop: Current index', { currentIndex });
           
           let newName: string;
           if (currentIndex) {
             // Replace existing index with target index
             newName = setIndexPrefix(file.name, targetIndexKey);
-            console.log('[FileGrid] handleGroupHeaderDrop: Replacing index', { 
-              oldName: file.name, 
-              newName,
-              oldIndex: currentIndex,
-              newIndex: targetIndexKey
-            });
           } else {
             // Add prefix to unassigned filename
             newName = setIndexPrefix(file.name, targetIndexKey);
-            console.log('[FileGrid] handleGroupHeaderDrop: Adding prefix', { 
-              oldName: file.name, 
-              newName,
-              newIndex: targetIndexKey
-            });
           }
           
-          if (newName === file.name) {
-            console.log('[FileGrid] handleGroupHeaderDrop: Name unchanged, skipping', { fileName: file.name });
+          if (!isCopyOperation && newName === file.name) {
             return { file: file.name, success: true, skipped: true };
           }
           
           // Use the file's actual path instead of constructing it
-          const oldPath = file.path;
-          const parentDir = file.path.slice(0, file.path.length - file.name.length).replace(/[\\/]+$/, '');
-          const baseDir = parentDir || currentDirectory;
-          const newPath = joinPath(baseDir, newName);
+          const sourcePath = normalizePath(file.path);
+          const parentDir = normalizePath(file.path.slice(0, file.path.length - file.name.length).replace(/[\\/]+$/, ''));
+          const baseDir = normalizePath(parentDir || currentDirectory);
+          const destPath = normalizePath(joinPath(baseDir, newName));
           
-          console.log('[FileGrid] handleGroupHeaderDrop: Renaming', { 
-            oldPath, 
-            newPath,
-            parentDir,
-            baseDir
-          });
-          
-          await (window.electronAPI as any).renameItem(oldPath, newPath);
-          
-          console.log('[FileGrid] handleGroupHeaderDrop: Successfully renamed', { 
-            fileName: file.name, 
-            newName 
-          });
-          
-          return { file: file.name, success: true };
+          if (isCopyOperation) {
+            // Copy operation - use silent copy to avoid dialogs
+            console.log('[FileGrid] Copying file via drag:', { sourcePath, destPath, newName });
+            
+            // Check if destination already exists
+            let targetExists = false;
+            if (destPath !== sourcePath) {
+              try {
+                const stats = await (window.electronAPI as any).getFileStats(destPath);
+                targetExists = stats && stats.isFile;
+              } catch (err) {
+                targetExists = false;
+              }
+            }
+            
+            let existingFileMoved = false;
+            let existingFileTempPath: string | null = null;
+            
+            try {
+              // If target exists, move it temporarily
+              if (targetExists) {
+                existingFileTempPath = joinPath(baseDir, `~temp_existing_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${newName}`);
+                try {
+                  await (window.electronAPI as any).renameItem(destPath, existingFileTempPath);
+                  existingFileMoved = true;
+                } catch (moveError) {
+                  existingFileMoved = false;
+                }
+              }
+              
+              // Copy to temp name first
+              const tempFileName = `~temp_copy_${Date.now()}_${Math.random().toString(36).substring(2, 15)}.tmp`;
+              const tempFilePath = normalizePath(joinPath(baseDir, tempFileName));
+              
+              const copyResult = await (window.electronAPI as any).copyFileSilent(sourcePath, tempFilePath);
+              
+              if (!copyResult || !copyResult.success) {
+                throw new Error(copyResult?.error || 'Silent copy failed');
+              }
+              
+              // Rename temp file to final destination
+              await (window.electronAPI as any).renameItem(tempFilePath, destPath);
+              
+              // If we moved an existing file, restore it with a numbered suffix
+              if (existingFileMoved && existingFileTempPath) {
+                let restored = false;
+                for (let i = 1; i <= 100 && !restored; i++) {
+                  const conflictName = i === 1 
+                    ? newName.replace(/(\.[^.]+)$/, ' (1)$1')
+                    : newName.replace(/(\.[^.]+)$/, ` (${i})$1`);
+                  const conflictPath = joinPath(baseDir, conflictName);
+                  
+                  let conflictExists = false;
+                  try {
+                    const stats = await (window.electronAPI as any).getFileStats(conflictPath);
+                    conflictExists = stats && (stats.isFile || stats.isDirectory);
+                  } catch (err) {
+                    conflictExists = false;
+                  }
+                  
+                  if (!conflictExists) {
+                    await (window.electronAPI as any).renameItem(existingFileTempPath, conflictPath);
+                    restored = true;
+                  }
+                }
+                
+                if (!restored) {
+                  try {
+                    await (window.electronAPI as any).renameItem(existingFileTempPath, destPath);
+                  } catch (e) {
+                    // Keep temp name if restore fails
+                  }
+                }
+              }
+              
+              return { file: file.name, success: true };
+            } catch (error) {
+              // Restore existing file if copy failed
+              if (existingFileMoved && existingFileTempPath) {
+                try {
+                  await (window.electronAPI as any).renameItem(existingFileTempPath, destPath);
+                } catch (restoreError) {
+                  // Ignore restore errors
+                }
+              }
+              throw error;
+            }
+          } else {
+            // Rename operation (existing behavior)
+            await (window.electronAPI as any).renameItem(sourcePath, destPath);
+            return { file: file.name, success: true };
+          }
         })
       );
       
@@ -2788,25 +3009,35 @@ export const FileGrid: React.FC = () => {
       const skipped = results.filter(r => r.status === 'fulfilled' && (r.value as any).skipped).length;
       const failed = results.filter(r => r.status === 'rejected').length;
       
-      console.log('[FileGrid] handleGroupHeaderDrop: Summary', { successful, skipped, failed });
+      if (isCopyOperation) {
+        addLog(`Copied ${successful} file(s) with prefix "${targetIndexKey}"`);
+        setStatus(`Copied ${successful} file(s)`, 'success');
+      } else {
+        addLog(`Assigned prefix "${targetIndexKey}" to ${successful} file(s)`);
+        setStatus(`Prefix assigned to ${successful} file(s)`, 'success');
+      }
       
       if (failed > 0) {
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            console.error('[FileGrid] handleGroupHeaderDrop: Failed file', {
-              index,
-              file: filesToRename[index]?.name,
-              error: result.reason
-            });
+        const failedResults = results.filter(r => r.status === 'rejected');
+        const errorMessages = failedResults.map(r => {
+          if (r.reason instanceof Error) {
+            return r.reason.message;
           }
+          return String(r.reason);
+        }).join('; ');
+        
+        toast({
+          title: isCopyOperation ? 'Copy Failed' : 'Prefix Assignment Failed',
+          description: `${failed} file(s) failed: ${errorMessages}`,
+          status: 'error',
+          duration: 8000,
+          isClosable: true,
+          position: 'top',
         });
       }
       
-      addLog(`Assigned prefix "${targetIndexKey}" to ${successful} file(s)`);
-      setStatus(`Prefix assigned to ${successful} file(s)`, 'success');
       await refreshDirectory(currentDirectory);
     } catch (error) {
-      console.error('[FileGrid] handleGroupHeaderDrop: Error', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to assign prefix: ${errorMessage}`, 'error');
       setStatus('Failed to assign prefix', 'error');
@@ -2837,6 +3068,7 @@ export const FileGrid: React.FC = () => {
     mt: number;
   }> = ({ groupKey, indexInfo, fileCount, onDrop, pillBg, pillText, dividerColor, dropZoneBg, maxPillWidth, mt }) => {
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [isCopyMode, setIsCopyMode] = useState(false);
     
     const checkAndSetDropEffect = (e: React.DragEvent): 'internal' | 'external' | 'none' => {
       const internalDragFlag = !!(window as any).__docuframeInternalDrag;
@@ -2844,15 +3076,6 @@ export const FileGrid: React.FC = () => {
       const hasFilesType = e.dataTransfer.types.includes('Files');
       const hasExternalFiles = hasFilesType || (e.dataTransfer.files && e.dataTransfer.files.length > 0);
       const effectAllowed = e.dataTransfer.effectAllowed;
-      
-      console.log('[GroupHeaderDropZone] checkAndSetDropEffect', {
-        internalDragFlag,
-        hasCustomType,
-        hasFilesType,
-        hasExternalFiles,
-        effectAllowed,
-        types: Array.from(e.dataTransfer.types)
-      });
       
       if (hasFilesType && !hasCustomType && internalDragFlag) {
         try { delete (window as any).__docuframeInternalDrag; } catch {}
@@ -2872,17 +3095,14 @@ export const FileGrid: React.FC = () => {
         } else {
           e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
         }
-        console.log('[GroupHeaderDropZone] Allowing internal drag', { dropEffect: e.dataTransfer.dropEffect });
         return 'internal';
       } else if (hasFilesType || hasExternalFiles) {
         // External file drag - allow on headers (for assigning prefix)
         e.dataTransfer.dropEffect = 'copy';
-        console.log('[GroupHeaderDropZone] Allowing external file drag');
         return 'external';
       } else {
         // Unknown drag type - reject
         e.dataTransfer.dropEffect = 'none';
-        console.log('[GroupHeaderDropZone] Rejecting unknown drag type');
         return 'none';
       }
     };
@@ -2899,6 +3119,7 @@ export const FileGrid: React.FC = () => {
           const dragType = checkAndSetDropEffect(e);
           if (dragType !== 'none') {
             setIsDraggingOver(true);
+            setIsCopyMode(e.ctrlKey);
           }
         }}
         onDragOver={(e) => {
@@ -2907,6 +3128,9 @@ export const FileGrid: React.FC = () => {
           const dragType = checkAndSetDropEffect(e);
           if (dragType === 'none') {
             setIsDraggingOver(false);
+            setIsCopyMode(false);
+          } else {
+            setIsCopyMode(e.ctrlKey);
           }
         }}
         onDragLeave={(e) => {
@@ -2914,16 +3138,12 @@ export const FileGrid: React.FC = () => {
           e.stopPropagation();
           if (!e.currentTarget.contains(e.relatedTarget as Node)) {
             setIsDraggingOver(false);
+            setIsCopyMode(false);
           }
         }}
         onDrop={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          
-          console.log('[GroupHeaderDropZone] onDrop called', {
-            types: Array.from(e.dataTransfer.types),
-            effectAllowed: e.dataTransfer.effectAllowed
-          });
           
           // Headers accept both internal drags AND external files
           const internalDragFlag = !!(window as any).__docuframeInternalDrag;
@@ -2940,24 +3160,12 @@ export const FileGrid: React.FC = () => {
             try { delete (window as any).__docuframeInternalDrag; } catch {}
           }
           
-          console.log('[GroupHeaderDropZone] onDrop check', {
-            internalDragFlag,
-            hasCustomType,
-            hasFilesType,
-            hasExternalFiles,
-            effectAllowed,
-            isInternal,
-            isExternal
-          });
-          
           if (isInternal || isExternal) {
-            console.log('[GroupHeaderDropZone] Processing drop', { isInternal, isExternal });
             onDrop(e);
-          } else {
-            console.warn('[GroupHeaderDropZone] Drop rejected - unknown drag type');
           }
           
           setIsDraggingOver(false);
+          setIsCopyMode(false);
           clearFolderHoverStates();
         }}
       >
@@ -2987,6 +3195,7 @@ export const FileGrid: React.FC = () => {
             minWidth={maxPillWidth}
             textAlign="left"
           >
+            {isDraggingOver && isCopyMode && '📋 Copy to '}
             {groupKey}
             {indexInfo.description && ` - ${indexInfo.description}`}
           </Box>
@@ -3615,12 +3824,15 @@ const renderListView = () => {
           >
             {/* Column width management */}
             <colgroup>
-              {columnOrder.map((column) => (
-                <col
-                  key={column}
-                  style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
-                />
-              ))}
+              {columnOrder.map((column) => {
+                if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
+                return (
+                  <col
+                    key={column}
+                    style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
+                  />
+                );
+              })}
             </colgroup>
 
             {/* Table header - rendered once */}
@@ -3630,6 +3842,12 @@ const renderListView = () => {
                   const isName = column === 'name';
                   const isSize = column === 'size';
                   const isModified = column === 'modified';
+                  const isType = column === 'type';
+                  
+                  // Skip rendering if column is hidden
+                  if (!columnVisibility[column as keyof typeof columnVisibility]) {
+                    return null;
+                  }
                   
                   return (
                     <Box
@@ -3644,6 +3862,14 @@ const renderListView = () => {
                       _hover={{ bg: headerHoverBg }}
                       role="group"
                       verticalAlign="middle"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setHeaderContextMenu({
+                          isOpen: true,
+                          position: { x: e.clientX, y: e.clientY }
+                        });
+                      }}
                       onClick={(e) => {
                         if (hasDraggedColumn) return;
                         const rect = e.currentTarget.getBoundingClientRect();
@@ -3673,7 +3899,7 @@ const renderListView = () => {
                       transition="all 0.2s ease"
                     >
                       <Flex alignItems="center">
-                        {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : ''}
+                        {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isType ? 'Type' : ''}
                         {sortColumn === column && (
                           <Icon
                             as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
@@ -3744,6 +3970,7 @@ const renderListView = () => {
                         fileState={fileState}
                         finalBg={finalBg}
                         columnOrder={columnOrder}
+                        columnVisibility={columnVisibility}
                         cellStyles={{ ...cellStyles, bg: finalBg }}
                         nativeIcons={nativeIcons}
                         fileTextColor={fileTextColor}
@@ -3845,6 +4072,7 @@ const renderListView = () => {
                             fileState={fileState}
                             finalBg={finalBg}
                             columnOrder={columnOrder}
+                            columnVisibility={columnVisibility}
                             cellStyles={{ ...cellStyles, bg: finalBg }}
                             nativeIcons={nativeIcons}
                             fileTextColor={fileTextColor}
@@ -3883,12 +4111,15 @@ const renderListView = () => {
     >
       {/* Column width management */}
       <colgroup>
-        {columnOrder.map((column) => (
-          <col
-            key={column}
-            style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
-          />
-        ))}
+        {columnOrder.map((column) => {
+          if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
+          return (
+            <col
+              key={column}
+              style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
+            />
+          );
+        })}
       </colgroup>
 
       {/* Table header */}
@@ -3898,6 +4129,12 @@ const renderListView = () => {
             const isName = column === 'name';
             const isSize = column === 'size';
             const isModified = column === 'modified';
+            const isType = column === 'type';
+            
+            // Skip rendering if column is hidden
+            if (!columnVisibility[column as keyof typeof columnVisibility]) {
+              return null;
+            }
             
             return (
               <Box
@@ -3912,6 +4149,14 @@ const renderListView = () => {
                 _hover={{ bg: headerHoverBg }}
                 role="group"
                 verticalAlign="middle"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setHeaderContextMenu({
+                    isOpen: true,
+                    position: { x: e.clientX, y: e.clientY }
+                  });
+                }}
                 onClick={(e) => {
                   // Prevent sorting if a drag operation just occurred
                   if (hasDraggedColumn) {
@@ -3951,7 +4196,7 @@ const renderListView = () => {
                 transition="all 0.2s ease"
               >
                 <Flex alignItems="center">
-                  {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : ''}
+                  {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isType ? 'Type' : ''}
                   {sortColumn === column && (
                     <Icon
                       as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
@@ -4047,6 +4292,7 @@ const renderListView = () => {
               fileState={fileState}
               finalBg={finalBg}
               columnOrder={columnOrder}
+              columnVisibility={columnVisibility}
               cellStyles={{ ...cellStyles, bg: finalBg }}
               nativeIcons={nativeIcons}
               fileTextColor={fileTextColor}
@@ -4150,7 +4396,7 @@ const renderListView = () => {
         top={contextMenu.position.y}
         left={contextMenu.position.x}
         bg={boxBg}
-        borderRadius="md"
+        borderRadius="0"
         boxShadow="lg"
         zIndex="modal"
         minW="200px"
@@ -4184,11 +4430,18 @@ const renderListView = () => {
               </Flex>
             </>
           )}
+          
+          {/* Index Prefix Group */}
           {contextMenu.fileItem.type === 'file' && (
             <>
+              <Divider />
               <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('assign_prefix')}>
                 <Layers size={16} style={{ marginRight: '8px' }} />
                 <Text fontSize="sm">Manage Index Prefix</Text>
+              </Flex>
+              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('remove_prefix')}>
+                <X size={16} style={{ marginRight: '8px' }} />
+                <Text fontSize="sm">Remove Prefix</Text>
               </Flex>
             </>
           )}
@@ -4304,7 +4557,7 @@ const renderListView = () => {
     }, [blankContextMenu, setBlankContextMenu]);
     if (!blankContextMenu.isOpen) return null;
     return (
-      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} bg={boxBg} borderRadius="md" boxShadow="lg" zIndex="modal" minW="200px" border="1px solid" borderColor={borderCol}>
+      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} bg={boxBg} borderRadius="0" boxShadow="lg" zIndex="modal" minW="200px" border="1px solid" borderColor={borderCol}>
         <Box py={1}>
           <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
             <FileSymlink size={16} style={{ marginRight: '8px' }} />
@@ -4346,13 +4599,76 @@ const renderListView = () => {
     });
   }, [refreshDirectory, currentDirectory, addLog, setStatus, toast]);
 
-  // Column management state
-  const [columnWidths, setColumnWidths] = useState({
-    name: 400,
-    size: 100,
-    modified: 180
+  // Column management state - load from localStorage if available
+  const [columnWidths, setColumnWidths] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fileGrid_columnWidths');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Ensure all columns have widths, use defaults for missing ones
+        return {
+          name: parsed.name || 400,
+          size: parsed.size || 100,
+          modified: parsed.modified || 180,
+          type: parsed.type || 100
+        };
+      }
+    } catch (e) {
+      console.error('Error loading column widths:', e);
+    }
+    return {
+      name: 400,
+      size: 100,
+      modified: 180,
+      type: 100
+    };
   });
-  const [columnOrder, setColumnOrder] = useState(['name', 'size', 'modified']);
+  
+  const [columnOrder, setColumnOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fileGrid_columnOrder');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Validate that it's an array with valid column names
+        if (Array.isArray(parsed) && parsed.every((col: string) => ['name', 'size', 'modified', 'type'].includes(col))) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Error loading column order:', e);
+    }
+    return ['name', 'type', 'modified', 'size'];
+  });
+  
+  const [columnVisibility, setColumnVisibility] = useState(() => {
+    try {
+      const saved = localStorage.getItem('fileGrid_columnVisibility');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Ensure all columns have visibility settings
+        return {
+          name: parsed.name !== undefined ? parsed.name : true,
+          size: parsed.size !== undefined ? parsed.size : true,
+          modified: parsed.modified !== undefined ? parsed.modified : true,
+          type: parsed.type !== undefined ? parsed.type : true
+        };
+      }
+    } catch (e) {
+      console.error('Error loading column visibility:', e);
+    }
+    return {
+      name: true,
+      size: true,
+      modified: true,
+      type: true
+    };
+  });
+  const [headerContextMenu, setHeaderContextMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({ isOpen: false, position: { x: 0, y: 0 } });
+  
+  // Filter columnOrder based on visibility
+  const visibleColumns = useMemo(() => {
+    return columnOrder.filter(col => columnVisibility[col as keyof typeof columnVisibility]);
+  }, [columnOrder, columnVisibility]);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
@@ -4462,6 +4778,9 @@ const renderListView = () => {
     } else if (column === 'modified') {
       // For modified column, use fixed width for "Modified" header + padding
       optimalWidth = 140; // Fixed width for modified column
+    } else if (column === 'type') {
+      // For type column, use fixed width
+      optimalWidth = 80; // Fixed width for type column
     }
     
     // Apply the optimal width
@@ -4475,9 +4794,72 @@ const renderListView = () => {
 
   // Auto-fit all columns at once - OPTIMIZED with useCallback
   const autoFitAllColumns = useCallback(() => {
-    ['name', 'size', 'modified'].forEach(col => autoFitColumn(col));
+    ['name', 'size', 'modified', 'type'].forEach(col => autoFitColumn(col));
     addLog('Auto-fitted all columns');
   }, [autoFitColumn, addLog]);
+  
+  // Handle column visibility toggle
+  const toggleColumnVisibility = useCallback((column: string) => {
+    setColumnVisibility(prev => {
+      const newVisibility = {
+        ...prev,
+        [column]: !prev[column as keyof typeof prev]
+      };
+      // Save to localStorage
+      try {
+        localStorage.setItem('fileGrid_columnVisibility', JSON.stringify(newVisibility));
+      } catch (e) {
+        console.error('Error saving column visibility:', e);
+      }
+      return newVisibility;
+    });
+  }, []);
+  
+  // Save column widths to localStorage when they change
+  useEffect(() => {
+    try {
+      localStorage.setItem('fileGrid_columnWidths', JSON.stringify(columnWidths));
+    } catch (e) {
+      console.error('Error saving column widths:', e);
+    }
+  }, [columnWidths]);
+  
+  // Save column order to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('fileGrid_columnOrder', JSON.stringify(columnOrder));
+    } catch (e) {
+      console.error('Error saving column order:', e);
+    }
+  }, [columnOrder]);
+  
+  // Close header context menu
+  const closeHeaderContextMenu = useCallback(() => {
+    setHeaderContextMenu({ isOpen: false, position: { x: 0, y: 0 } });
+  }, []);
+  
+  // Header menu color values (must be at top level, not conditional) - match ContextMenu style
+  const menuBg = useColorModeValue('white', 'gray.800');
+  const menuBorderColor = useColorModeValue('gray.200', 'gray.700');
+  const menuTextColor = useColorModeValue('gray.700', 'gray.200');
+  const menuHoverBg = useColorModeValue('gray.100', 'gray.700');
+  
+  // Close header context menu when clicking outside
+  useEffect(() => {
+    if (!headerContextMenu.isOpen) return;
+    
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Don't close if clicking inside the menu
+      if (target.closest('[data-column-menu]')) return;
+      closeHeaderContextMenu();
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [headerContextMenu.isOpen, closeHeaderContextMenu]);
 
 
 
@@ -4671,7 +5053,6 @@ const renderListView = () => {
         });
       }
     } catch (error) {
-      console.warn(`Failed to get icon for ${filePath}:`, error);
       // Don't retry failed icons immediately - they'll be retried on next view
     } finally {
       loadingQueue.current.delete(filePath);
@@ -4796,19 +5177,16 @@ const renderListView = () => {
     onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
     draggable: file.type !== 'folder', // Only make files draggable, folders receive drops
     onDragStart: (e: React.DragEvent) => {
-      console.log('[FileGrid] Row dragStart:', file.name, file.type);
       // Optimized: Use Map for O(1) lookups instead of find()
       const filesToDrag: string[] = selectedFiles.length > 0 && selectedFilesSet.has(file.name)
         ? selectedFiles.map(name => fileNameToPathMap.get(name)).filter((path): path is string => path !== null && path !== undefined)
         : [file.path];
       
-      console.log('[FileGrid] Files to drag:', filesToDrag);
       e.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
       e.dataTransfer.effectAllowed = 'copyMove';
       handleFileItemDragStart(file, index, e);
     },
     onDragEnd: (e: React.DragEvent) => {
-      console.log('[FileGrid] Row dragEnd:', file.name);
       e.preventDefault();
       e.stopPropagation();
       setIsDragStarted(false);
@@ -4825,7 +5203,6 @@ const renderListView = () => {
     
     return {
       onDragEnter: (e: React.DragEvent) => {
-        console.log('[FileGrid] onDragEnter folder:', file.name);
         e.preventDefault();
         e.stopPropagation();
         handleFolderDragEnter(file.path);
@@ -4835,8 +5212,6 @@ const renderListView = () => {
         e.stopPropagation();
         const hasExternalFiles = e.dataTransfer.types.includes('Files');
         const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
-        
-        console.log('[FileGrid] onDragOver folder:', file.name, { hasExternalFiles, isInternalDrag, types: Array.from(e.dataTransfer.types) });
         
         if (hasExternalFiles) {
           e.dataTransfer.dropEffect = 'copy';
@@ -4851,14 +5226,11 @@ const renderListView = () => {
         e.stopPropagation();
         const relatedTarget = e.relatedTarget as Element;
         
-        console.log('[FileGrid] onDragLeave folder:', file.name);
-        
         if (!relatedTarget || typeof (relatedTarget as any).closest !== 'function' || !relatedTarget.closest(`[data-row-index="${index}"]`)) {
           handleFolderDragLeave(file.path);
         }
       },
       onDrop: async (e: React.DragEvent) => {
-        console.log('[FileGrid] onDrop folder:', file.name);
         e.preventDefault();
         e.stopPropagation();
         handleFolderDragLeave(file.path);
@@ -4867,23 +5239,18 @@ const renderListView = () => {
         const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
         const isInternal = isInternalDrag || !!((window as any).__docuframeInternalDrag?.files?.length);
         
-        console.log('[FileGrid] Drop details:', { hasExternalFiles, isInternalDrag, isInternal, types: Array.from(e.dataTransfer.types) });
-        
         if (isInternal) {
           try {
             let filesToTransfer: string[] = [];
             const draggedFilesData = e.dataTransfer.getData('application/x-docuframe-files');
-            console.log('[FileGrid] draggedFilesData:', draggedFilesData);
             if (draggedFilesData) {
               filesToTransfer = JSON.parse(draggedFilesData) as string[];
             } else if ((window as any).__docuframeInternalDrag?.files) {
               filesToTransfer = (window as any).__docuframeInternalDrag.files as string[];
             } else {
-              console.log('[FileGrid] No files found in drag data');
               return;
             }
             
-            console.log('[FileGrid] Files to transfer:', filesToTransfer);
             const targetFolderPath = file.path.replace(/\\/g, '/');
             const isSameFolder = filesToTransfer.some(path => {
               const sourceFolder = path.substring(0, path.lastIndexOf('/')).replace(/\\/g, '/');
@@ -4897,7 +5264,6 @@ const renderListView = () => {
             }
             
             const operation = e.ctrlKey ? 'copy' : 'move';
-            console.log('[FileGrid] Operation:', operation, 'to folder:', file.name);
             
             if (window.electronAPI) {
               if (operation === 'copy') {
@@ -4995,6 +5361,59 @@ const renderListView = () => {
         setBlankContextMenu={setBlankContextMenu}
         onPasteImage={() => setImagePasteOpen(true)}
       />
+      {/* Header Column Visibility Menu */}
+      {headerContextMenu.isOpen && (
+        <Portal>
+          <Box
+            data-column-menu
+            position="fixed"
+            left={headerContextMenu.position.x}
+            top={headerContextMenu.position.y}
+            zIndex={10000}
+            bg={menuBg}
+            border="1px solid"
+            borderColor={menuBorderColor}
+            borderRadius="0"
+            boxShadow="lg"
+            minW="200px"
+            py={1}
+          >
+            {['name', 'size', 'modified', 'type'].map((column) => {
+              const columnLabels: Record<string, string> = {
+                name: 'Name',
+                size: 'Size',
+                modified: 'Modified',
+                type: 'Type'
+              };
+              const isChecked = columnVisibility[column as keyof typeof columnVisibility];
+              return (
+                <Flex
+                  key={column}
+                  align="center"
+                  px={3}
+                  py={2}
+                  cursor="pointer"
+                  _hover={{ bg: menuHoverBg }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleColumnVisibility(column);
+                  }}
+                >
+                  <Checkbox
+                    isChecked={isChecked}
+                    onChange={() => toggleColumnVisibility(column)}
+                    mr={2}
+                    pointerEvents="none"
+                    size="sm"
+                  >
+                    <Text fontSize="sm">{columnLabels[column]}</Text>
+                  </Checkbox>
+                </Flex>
+              );
+            })}
+          </Box>
+        </Portal>
+      )}
       <MergePDFDialog 
         isOpen={isMergePDFOpen} 
         onClose={() => setMergePDFOpen(false)} 

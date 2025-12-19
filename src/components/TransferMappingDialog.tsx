@@ -220,6 +220,9 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
         isClosable: true,
       });
       
+      // Dispatch custom event to notify CommandLine to reload mappings
+      window.dispatchEvent(new CustomEvent('transferMappingsUpdated'));
+      
       onClose();
     } catch (error) {
       console.error('Error saving transfer mappings:', error);

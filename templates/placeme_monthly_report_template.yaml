@@ -1,0 +1,21 @@
+name: PlaceMe Monthly Report
+description: Template for PlaceMe Monthly Report
+categories:
+  - Monthly Report
+template: |-
+  Good morning {{recipient_names}}
+
+  I hope you're both keeping well.  Attached is a copy of the {{current_month_year}} Management Report for your records.
+
+  The key takeaways are:
+
+  August generated a net profit of {{net_profit_current_month}}, which is a large increase from July's {{net_profit_previous_month}} mainly as a result of increased permanent placements invoiced and a reduction in repairs & maintenance
+  Net margin improved significantly to {{net_margin_current_month}} in August, up from July's {{net_margin_previous_month}}
+  Permanent placements invoiced in August were {{permanent_placements_invoiced_current_month}}, representing a substantial {{increase_permanent_placements}} increase from July's {{permanent_placements_invoiced_previous_month}}
+  Contractor income decreased to {{contractor_income_current_month}} from July's {{contractor_income_previous_month}} ({{decrease_contractor_income}})
+  Overheads decreased to {{overheads_current_month}} from July's {{overheads_previous_month}} ({{decrease_overheads}}), with salaries at {{salaries_current_month}}, down from July's {{salaries_previous_month}}
+  Debtors' days increased slightly to {{debtors_days_current_month}} compared to July's {{debtors_days_previous_month}}
+  The year to date net profit of {{year_to_date_net_profit}} represents a {{increase_year_to_date_net_profit}} increase from prior year's {{prior_year_net_profit}} and demonstrates exceptionally strong performance through the first {{months_financial_year}} of the financial year
+  Cash balance improved dramatically by {{increase_cash_balance}} to {{cash_balance_current_month}} from July's {{cash_balance_previous_month}}
+  Let me know if you have any questions.
+created: '2025-12-05'

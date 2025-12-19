@@ -53,10 +53,21 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
 
   const indexKeys = useMemo(() => getAllIndexKeys(), []);
 
-  const handleConfirm = () => {
-    console.log('[IndexPrefixDialog] handleConfirm called', { selectedIndex, currentPrefix, isCopyMode });
+  const handleConfirm = (forceCopyMode?: boolean) => {
+    // If removing prefix (selectedIndex is null), never use copy mode
+    const copyMode = selectedIndex === null ? false : (forceCopyMode !== undefined ? forceCopyMode : isCopyMode);
+    console.log('[IndexPrefixDialog] handleConfirm called', { 
+      selectedIndex, 
+      currentPrefix, 
+      isCopyMode,
+      forceCopyMode,
+      finalCopyMode: copyMode,
+      filesCount: files.length,
+      fileNames: files.map(f => f.name)
+    });
     // Allow null to remove prefix, or any selected index
-    onSelect(selectedIndex, isCopyMode);
+    console.log('[IndexPrefixDialog] Calling onSelect with:', { indexKey: selectedIndex, isCopy: copyMode });
+    onSelect(selectedIndex, copyMode);
     onClose();
   };
 
@@ -104,6 +115,10 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
                 const info = getIndexInfo(indexKey);
                 const isSelected = selectedIndex === indexKey;
                 
+                // Calculate row and column for row-first layout
+                const row = Math.floor(index / 2);
+                const col = index % 2;
+                
                 return (
                   <Box
                     key={indexKey}
@@ -116,8 +131,8 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
                     onClick={() => setSelectedIndex(indexKey)}
                     _hover={{ bg: hoverBg }}
                     transition="all 0.2s"
-                    gridColumn={index < Math.ceil(indexKeys.length / 2) ? 1 : 2}
-                    gridRow={index < Math.ceil(indexKeys.length / 2) ? index + 1 : index - Math.ceil(indexKeys.length / 2) + 1}
+                    gridColumn={col + 1}
+                    gridRow={row + 1}
                   >
                     <Flex align="center" gap={2}>
                       <Text fontWeight="semibold" fontSize="sm" color={textColor}>
@@ -162,8 +177,16 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
             <Button 
               colorScheme="green" 
               onClick={() => {
+                console.log('[IndexPrefixDialog] Add a Copy button clicked', { 
+                  selectedIndex, 
+                  filesCount: files.length,
+                  fileNames: files.map(f => f.name),
+                  willSetCopyMode: true
+                });
                 setIsCopyMode(true);
-                handleConfirm();
+                // Pass copy mode directly to avoid state update timing issues
+                console.log('[IndexPrefixDialog] Executing copy operation with forceCopyMode=true');
+                handleConfirm(true);
               }}
               isDisabled={selectedIndex === null} 
               size="sm"
