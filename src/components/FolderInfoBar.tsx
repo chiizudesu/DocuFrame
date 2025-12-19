@@ -70,6 +70,7 @@ export const FolderInfoBar: React.FC = () => {
   const [isCreateSpreadsheetOpen, setIsCreateSpreadsheetOpen] = useState(false)
   const [newSpreadsheetName, setNewSpreadsheetName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const addressBarRef = useRef<HTMLDivElement>(null)
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
   const [clickCount, setClickCount] = useState(0)
@@ -190,6 +191,51 @@ export const FolderInfoBar: React.FC = () => {
       }, 0);
     }
   }
+
+  // Exit edit mode when clicking outside the address bar
+  useEffect(() => {
+    if (!isEditing) return;
+    
+    const handleDocumentClick = async (e: MouseEvent) => {
+      if (addressBarRef.current && !addressBarRef.current.contains(e.target as Node)) {
+        setIsEditing(false);
+        // If value changed, save changes (same logic as handleBlur)
+        if (editValue !== currentDirectory) {
+          const normalizedPath = normalizePath(editValue);
+          if (normalizedPath) {
+            try {
+              // Validate path before setting it
+              const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+              if (isValid) {
+                setCurrentDirectory(normalizedPath)
+                addLog(`Changed directory to: ${normalizedPath}`)
+                setStatus(`Navigated to ${normalizedPath}`, 'info')
+              } else {
+                addLog(`Invalid path: ${editValue}`, 'error')
+                setStatus(`Invalid path: ${editValue}`, 'error')
+                setEditValue(currentDirectory) // Reset to current directory
+              }
+            } catch (error) {
+              addLog(`Failed to access path: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+              setStatus(`Cannot access path: ${editValue}`, 'error')
+              setEditValue(currentDirectory) // Reset to current directory
+            }
+          } else {
+            addLog(`Invalid path format: ${editValue}`, 'error')
+            setStatus(`Invalid path format`, 'error')
+            setEditValue(currentDirectory) // Reset to current directory
+          }
+        } else {
+          // Reset to current directory if no changes
+          setEditValue(currentDirectory);
+        }
+      }
+    };
+    
+    // Use mousedown instead of click to catch the event before blur
+    document.addEventListener('mousedown', handleDocumentClick);
+    return () => document.removeEventListener('mousedown', handleDocumentClick);
+  }, [isEditing, editValue, currentDirectory, setCurrentDirectory, addLog, setStatus]);
 
   const handleBlur = async () => {
     setIsEditing(false)
@@ -631,6 +677,8 @@ export const FolderInfoBar: React.FC = () => {
             mr={1}
             color={iconColor}
             onClick={handleBackClick}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
           />
           <IconButton
             icon={<ChevronRight size={16} />}
@@ -640,6 +688,8 @@ export const FolderInfoBar: React.FC = () => {
             mr={1}
             color={iconColor}
             onClick={handleForwardClick}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
           />
           <IconButton
             icon={<Home size={16} />}
@@ -649,6 +699,8 @@ export const FolderInfoBar: React.FC = () => {
             mr={1}
             color={useColorModeValue('#3b82f6', 'blue.200')}
             onClick={handleHomeClick}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
           />
           <IconButton
             icon={<Download size={16} />}
@@ -658,6 +710,8 @@ export const FolderInfoBar: React.FC = () => {
             mr={1}
             color={useColorModeValue('#10b981', 'green.200')}
             onClick={handleDownloadsClick}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
           />
           <Tooltip label={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
             <IconButton
@@ -668,6 +722,8 @@ export const FolderInfoBar: React.FC = () => {
               mr={1}
               color={useColorModeValue('#f59e0b', 'yellow.300')}
               onClick={() => addQuickAccessPath(currentDirectory)}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
             />
           </Tooltip>
           <IconButton
@@ -679,10 +735,12 @@ export const FolderInfoBar: React.FC = () => {
             onClick={handleRefresh}
             color={iconColor}
             _hover={{ bg: hoverBgColor }}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
           />
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Flex flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="none">
+        <Flex ref={addressBarRef} flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="none">
           {isRefreshing && (
             <Box
               position="absolute"

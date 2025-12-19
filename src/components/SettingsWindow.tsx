@@ -32,6 +32,8 @@ import {
   Spacer,
   IconButton,
   Textarea,
+  SimpleGrid,
+  Image,
 } from '@chakra-ui/react';
 import { 
   Folder, 
@@ -47,7 +49,10 @@ import {
   X,
   Edit,
   Sun,
-  Moon
+  Moon,
+  Image as ImageIcon,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
@@ -56,6 +61,127 @@ interface SettingsWindowProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+interface BackgroundThumbnailProps {
+  img: { filename: string; path: string; relativePath: string };
+  isSelected: boolean;
+  borderColor: string;
+  onSelect: () => void;
+  onDelete: () => void;
+}
+
+const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelected, borderColor, onSelect, onDelete }) => {
+  const [thumbnailUrl, setThumbnailUrl] = useState<string>('');
+  const bgColor = useColorModeValue('white', 'gray.700');
+  const overlayBg = useColorModeValue('blackAlpha.600', 'blackAlpha.800');
+
+  useEffect(() => {
+    const loadThumbnail = async () => {
+      if (window.electronAPI && (window.electronAPI as any).readImageAsDataUrl) {
+        try {
+          const result = await (window.electronAPI as any).readImageAsDataUrl(img.path);
+          if (result.success && result.dataUrl) {
+            setThumbnailUrl(result.dataUrl);
+          } else {
+            setThumbnailUrl(`file://${img.path.replace(/\\/g, '/')}`);
+          }
+        } catch (error) {
+          setThumbnailUrl(`file://${img.path.replace(/\\/g, '/')}`);
+        }
+      } else {
+        setThumbnailUrl(`file://${img.path.replace(/\\/g, '/')}`);
+      }
+    };
+    loadThumbnail();
+  }, [img.path]);
+
+  return (
+    <Box
+      position="relative"
+      border="2px solid"
+      borderColor={isSelected ? 'blue.500' : borderColor}
+      borderRadius="sm"
+      overflow="hidden"
+      cursor="pointer"
+      bg={bgColor}
+      _hover={{
+        borderColor: 'blue.400',
+        '& .delete-button': {
+          opacity: 1,
+        },
+      }}
+      onClick={onSelect}
+      width="150px"
+      sx={{
+        aspectRatio: '16 / 9',
+      }}
+    >
+      {thumbnailUrl && (
+        <Image
+          src={thumbnailUrl}
+          alt={img.filename}
+          w="100%"
+          h="100%"
+          objectFit="contain"
+          onError={(e) => {
+            console.error('Failed to load thumbnail:', img.path);
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
+        />
+      )}
+      {isSelected && (
+        <Box
+          position="absolute"
+          top={1}
+          right={1}
+          bg="blue.500"
+          color="white"
+          borderRadius="full"
+          w={5}
+          h={5}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Icon as={Save} boxSize={3} />
+        </Box>
+      )}
+      <IconButton
+        aria-label="Delete background"
+        icon={<Icon as={Trash2} boxSize={3.5} />}
+        size="xs"
+        colorScheme="red"
+        position="absolute"
+        top={1}
+        left={1}
+        opacity={0}
+        className="delete-button"
+        transition="opacity 0.2s"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+      />
+      <Box
+        p={1}
+        bg={overlayBg}
+        position="absolute"
+        bottom={0}
+        left={0}
+        right={0}
+      >
+        <Text
+          fontSize="xs"
+          color="white"
+          isTruncated
+          title={img.filename}
+        >
+          {img.filename}
+        </Text>
+      </Box>
+    </Box>
+  );
+};
 
 interface Settings {
   rootPath: string;
@@ -84,6 +210,8 @@ interface Settings {
   productivityTargetHours?: number;
   enableActivityTracking?: boolean;
   fileGridBackgroundPath?: string;
+  backgroundType?: 'watermark' | 'backgroundFill';
+  backgroundFillPath?: string;
 
 }
 
@@ -119,6 +247,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
   const [enableActivityTracking, setEnableActivityTracking] = useState(true);
   const [fileGridBackgroundPath, setFileGridBackgroundPath] = useState('');
+  const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>('watermark');
+  const [backgroundFillPath, setBackgroundFillPath] = useState('');
+  const [backgroundImages, setBackgroundImages] = useState<Array<{ filename: string; path: string; relativePath: string }>>([]);
+  const [selectedBackground, setSelectedBackground] = useState<string>('');
 
   
   // Keyboard recorder state
@@ -170,6 +302,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setProductivityTargetHours(loadedSettings.productivityTargetHours || 7.5);
         setEnableActivityTracking(loadedSettings.enableActivityTracking !== false);
         setFileGridBackgroundPath(loadedSettings.fileGridBackgroundPath || '');
+        // Migration: if fileGridBackgroundPath exists but backgroundType is not set, default to corner mascot (watermark)
+        if (loadedSettings.fileGridBackgroundPath && !loadedSettings.backgroundType) {
+          setBackgroundType('watermark');
+        } else {
+          setBackgroundType(loadedSettings.backgroundType || 'watermark');
+        }
+        setBackgroundFillPath(loadedSettings.backgroundFillPath || '');
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -187,6 +326,38 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       loadSettings();
     }
   }, [isOpen, toast]);
+
+  // Load background images when background type changes
+  useEffect(() => {
+    const loadBackgroundImages = async () => {
+      try {
+        if (window.electronAPI && (window.electronAPI as any).listBackgroundImages) {
+          const result = await (window.electronAPI as any).listBackgroundImages(backgroundType);
+          if (result.success && result.images) {
+            setBackgroundImages(result.images);
+            // Set selected background based on current path
+            if (backgroundType === 'watermark' && fileGridBackgroundPath) {
+              const matchingImage = result.images.find((img: any) => img.path === fileGridBackgroundPath || img.relativePath === fileGridBackgroundPath);
+              if (matchingImage) {
+                setSelectedBackground(matchingImage.relativePath);
+              }
+            } else if (backgroundType === 'backgroundFill' && backgroundFillPath) {
+              const matchingImage = result.images.find((img: any) => img.path === backgroundFillPath || img.relativePath === backgroundFillPath);
+              if (matchingImage) {
+                setSelectedBackground(matchingImage.relativePath);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading background images:', error);
+      }
+    };
+    
+    if (isOpen) {
+      loadBackgroundImages();
+    }
+  }, [isOpen, backgroundType, fileGridBackgroundPath, backgroundFillPath]);
 
   // Cleanup event listeners on unmount
   useEffect(() => {
@@ -225,6 +396,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         productivityTargetHours,
         enableActivityTracking,
         fileGridBackgroundPath,
+        backgroundType,
+        backgroundFillPath,
 
       };
       
@@ -411,6 +584,180 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       toast({
         title: 'Error',
         description: 'Failed to select background image',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleAddBackground = async () => {
+    try {
+      const result = await (window.electronAPI as any).selectFile({
+        title: `Select ${backgroundType === 'watermark' ? 'Corner Mascot' : 'Background Fill'} Image`,
+        filters: [
+          { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
+          { name: 'All Files', extensions: ['*'] }
+        ]
+      });
+      if (result && window.electronAPI && (window.electronAPI as any).copyBackgroundImage) {
+        const copyResult = await (window.electronAPI as any).copyBackgroundImage(result, backgroundType);
+        if (copyResult.success) {
+          // Reload background images
+          const listResult = await (window.electronAPI as any).listBackgroundImages(backgroundType);
+          if (listResult.success && listResult.images) {
+            setBackgroundImages(listResult.images);
+            // Auto-select the newly added image
+            setSelectedBackground(copyResult.relativePath);
+            if (backgroundType === 'watermark') {
+              setFileGridBackgroundPath(copyResult.path);
+            } else {
+              setBackgroundFillPath(copyResult.path);
+            }
+            
+            // Auto-save the newly added background
+            const currentSettings = await settingsService.getSettings();
+            const updatedSettings = {
+              ...currentSettings,
+              backgroundType,
+              ...(backgroundType === 'watermark' 
+                ? { fileGridBackgroundPath: copyResult.path } 
+                : { backgroundFillPath: copyResult.path }
+              ),
+            };
+            
+            await settingsService.setSettings(updatedSettings as any);
+            (settingsService as any).clearCache();
+            window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
+          }
+          toast({
+            title: 'Success',
+            description: 'Background image added and applied successfully',
+            status: 'success',
+            duration: 2000,
+            isClosable: true,
+          });
+        } else {
+          throw new Error(copyResult.error || 'Failed to copy image');
+        }
+      }
+    } catch (error) {
+      console.error('Error adding background image:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to add background image',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleSelectBackground = async (relativePath: string, fullPath: string) => {
+    setSelectedBackground(relativePath);
+    
+    // Update the appropriate state based on background type
+    if (backgroundType === 'watermark') {
+      setFileGridBackgroundPath(fullPath);
+    } else {
+      setBackgroundFillPath(fullPath);
+    }
+    
+    // Auto-save the selection immediately
+    try {
+      const currentSettings = await settingsService.getSettings();
+      const updatedSettings = {
+        ...currentSettings,
+        backgroundType,
+        ...(backgroundType === 'watermark' 
+          ? { fileGridBackgroundPath: fullPath } 
+          : { backgroundFillPath: fullPath }
+        ),
+      };
+      
+      console.log('Saving background selection:', {
+        backgroundType,
+        fullPath,
+        updatedSettings
+      });
+      
+      await settingsService.setSettings(updatedSettings as any);
+      
+      // Clear cache and dispatch event to notify other components
+      (settingsService as any).clearCache();
+      
+      // Wait a bit for cache to clear
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('Dispatching settings-updated event');
+      window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
+      
+      toast({
+        title: 'Background applied',
+        description: `${backgroundType === 'watermark' ? 'Corner mascot' : 'Background fill'} has been set successfully.`,
+        status: 'success',
+        duration: 2000,
+      });
+    } catch (error) {
+      console.error('Failed to save background selection:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to save background selection.',
+        status: 'error',
+        duration: 3000,
+      });
+    }
+  };
+
+  const handleDeleteBackground = async (filename: string, relativePath: string) => {
+    try {
+      if (window.electronAPI && (window.electronAPI as any).deleteBackgroundImage) {
+        const result = await (window.electronAPI as any).deleteBackgroundImage(backgroundType, filename);
+        if (result.success) {
+          // Reload background images
+          const listResult = await (window.electronAPI as any).listBackgroundImages(backgroundType);
+          if (listResult.success && listResult.images) {
+            setBackgroundImages(listResult.images);
+          }
+          // Clear selection if deleted image was selected
+          if (selectedBackground === relativePath) {
+            setSelectedBackground('');
+            if (backgroundType === 'watermark') {
+              setFileGridBackgroundPath('');
+            } else {
+              setBackgroundFillPath('');
+            }
+            
+            // Auto-save to clear the background from settings
+            const currentSettings = await settingsService.getSettings();
+            const updatedSettings = {
+              ...currentSettings,
+              ...(backgroundType === 'watermark' 
+                ? { fileGridBackgroundPath: '' } 
+                : { backgroundFillPath: '' }
+              ),
+            };
+            
+            await settingsService.setSettings(updatedSettings as any);
+            (settingsService as any).clearCache();
+            window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
+          }
+          toast({
+            title: 'Success',
+            description: 'Background image deleted',
+            status: 'success',
+            duration: 2000,
+            isClosable: true,
+          });
+        } else {
+          throw new Error(result.error || 'Failed to delete image');
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting background image:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete background image',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -658,6 +1005,25 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Interface</Text>
+            </Tab>
+            <Tab 
+              justifyContent="flex-start" 
+              px={2.5} 
+              py={2}
+              borderRadius="sm"
+              fontSize="sm"
+              fontWeight="500"
+              _selected={{ 
+                bg: 'blue.50', 
+                color: 'blue.600', 
+                borderLeft: '3px solid',
+                borderLeftColor: 'blue.500',
+                _dark: { bg: 'blue.900', color: 'blue.200' } 
+              }}
+              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              transition="all 0.2s"
+            >
+              <Text>Display</Text>
             </Tab>
             <Tab 
               justifyContent="flex-start" 
@@ -1297,33 +1663,14 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               <VStack spacing={0} align="stretch">
                 <Box pb={3.5}>
                   <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Display Options
+                    Interface Options
                   </Heading>
                   <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Control interface visibility and behavior
+                    Control interface behavior and functionality
                   </Text>
                 </Box>
                 
                 <VStack spacing={2.5} align="stretch">
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Show Output Log</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Toggle the visibility of the output log at the bottom
-                          </Text>
-                        </VStack>
-                        <Switch
-                          isChecked={showOutputLog}
-                          onChange={(e) => setShowOutputLog(e.target.checked)}
-                          colorScheme="blue"
-                          size="sm"
-                        />
-                      </HStack>
-                    </FormControl>
-                  </Box>
-
                   <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
                     <FormControl>
                       <HStack justify="space-between">
@@ -1339,82 +1686,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           colorScheme="blue"
                           size="sm"
                         />
-                      </HStack>
-                    </FormControl>
-                  </Box>
-
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-  <FormControl>
-    <HStack justify="space-between">
-      <VStack align="start" spacing={1}>
-        <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Sidebar Collapsed by Default</FormLabel>
-        <Text fontSize="xs" color={secondaryTextColor}>
-          Start with the sidebar in collapsed state when opening the app
-        </Text>
-      </VStack>
-      <Switch
-        isChecked={sidebarCollapsedByDefault}
-        onChange={(e) => setSidebarCollapsedByDefault(e.target.checked)}
-        colorScheme="blue"
-        size="sm"
-      />
-    </HStack>
-  </FormControl>
-</Box>
-
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Theme</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Switch between light and dark mode
-                          </Text>
-                        </VStack>
-                        <HStack spacing={2}>
-                          <IconButton
-                            aria-label="Light mode"
-                            icon={<Sun size={16} />}
-                            size="sm"
-                            variant={colorMode === 'light' ? 'solid' : 'ghost'}
-                            colorScheme={colorMode === 'light' ? 'blue' : 'gray'}
-                            onClick={() => {
-                              setColorMode('light');
-                              localStorage.setItem('chakra-ui-color-mode', 'light');
-                              // Broadcast theme change to all windows via IPC
-                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
-                                (window.electronAPI as any).broadcastThemeChange('light');
-                              }
-                              // Trigger storage event for same-window listeners
-                              window.dispatchEvent(new StorageEvent('storage', {
-                                key: 'chakra-ui-color-mode',
-                                newValue: 'light',
-                                storageArea: localStorage
-                              }));
-                            }}
-                          />
-                          <IconButton
-                            aria-label="Dark mode"
-                            icon={<Moon size={16} />}
-                            size="sm"
-                            variant={colorMode === 'dark' ? 'solid' : 'ghost'}
-                            colorScheme={colorMode === 'dark' ? 'blue' : 'gray'}
-                            onClick={() => {
-                              setColorMode('dark');
-                              localStorage.setItem('chakra-ui-color-mode', 'dark');
-                              // Broadcast theme change to all windows via IPC
-                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
-                                (window.electronAPI as any).broadcastThemeChange('dark');
-                              }
-                              // Trigger storage event for same-window listeners
-                              window.dispatchEvent(new StorageEvent('storage', {
-                                key: 'chakra-ui-color-mode',
-                                newValue: 'dark',
-                                storageArea: localStorage
-                              }));
-                            }}
-                          />
-                        </HStack>
                       </HStack>
                     </FormControl>
                   </Box>
@@ -1499,6 +1770,221 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               </VStack>
             </TabPanel>
 
+            {/* Display Tab */}
+            <TabPanel 
+              h="full" 
+              overflowY="auto" 
+              overflowX="hidden"
+              px={6}
+              py={4}
+              sx={{
+                '&::-webkit-scrollbar': {
+                  width: '6px',
+                },
+                '&::-webkit-scrollbar-track': {
+                  background: 'transparent',
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  background: useColorModeValue('gray.300', 'gray.600'),
+                  borderRadius: '2px',
+                },
+              }}
+            >
+              <VStack spacing={0} align="stretch">
+                <Box pb={3.5}>
+                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
+                    Display Options
+                  </Heading>
+                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
+                    Control interface visibility and appearance
+                  </Text>
+                </Box>
+                
+                <VStack spacing={2.5} align="stretch">
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <FormControl>
+                      <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Show Output Log</FormLabel>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            Toggle the visibility of the output log at the bottom
+                          </Text>
+                        </VStack>
+                        <Switch
+                          isChecked={showOutputLog}
+                          onChange={(e) => setShowOutputLog(e.target.checked)}
+                          colorScheme="blue"
+                          size="sm"
+                        />
+                      </HStack>
+                    </FormControl>
+                  </Box>
+
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <FormControl>
+                      <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Sidebar Collapsed by Default</FormLabel>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            Start with the sidebar in collapsed state when opening the app
+                          </Text>
+                        </VStack>
+                        <Switch
+                          isChecked={sidebarCollapsedByDefault}
+                          onChange={(e) => setSidebarCollapsedByDefault(e.target.checked)}
+                          colorScheme="blue"
+                          size="sm"
+                        />
+                      </HStack>
+                    </FormControl>
+                  </Box>
+
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <FormControl>
+                      <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Theme</FormLabel>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            Switch between light and dark mode
+                          </Text>
+                        </VStack>
+                        <HStack spacing={2}>
+                          <IconButton
+                            aria-label="Light mode"
+                            icon={<Sun size={16} />}
+                            size="sm"
+                            variant={colorMode === 'light' ? 'solid' : 'ghost'}
+                            colorScheme={colorMode === 'light' ? 'blue' : 'gray'}
+                            onClick={() => {
+                              setColorMode('light');
+                              localStorage.setItem('chakra-ui-color-mode', 'light');
+                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
+                                (window.electronAPI as any).broadcastThemeChange('light');
+                              }
+                              window.dispatchEvent(new StorageEvent('storage', {
+                                key: 'chakra-ui-color-mode',
+                                newValue: 'light',
+                                storageArea: localStorage
+                              }));
+                            }}
+                          />
+                          <IconButton
+                            aria-label="Dark mode"
+                            icon={<Moon size={16} />}
+                            size="sm"
+                            variant={colorMode === 'dark' ? 'solid' : 'ghost'}
+                            colorScheme={colorMode === 'dark' ? 'blue' : 'gray'}
+                            onClick={() => {
+                              setColorMode('dark');
+                              localStorage.setItem('chakra-ui-color-mode', 'dark');
+                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
+                                (window.electronAPI as any).broadcastThemeChange('dark');
+                              }
+                              window.dispatchEvent(new StorageEvent('storage', {
+                                key: 'chakra-ui-color-mode',
+                                newValue: 'dark',
+                                storageArea: localStorage
+                              }));
+                            }}
+                          />
+                        </HStack>
+                      </HStack>
+                    </FormControl>
+                  </Box>
+
+                  <Divider my={3.5} />
+
+                  <Box>
+                    <Heading size="sm" mb={1.5} color={textColor}>Background Images</Heading>
+                    <Text fontSize="sm" color={secondaryTextColor} mb={2}>
+                      Customize background images for the file grid
+                    </Text>
+                    
+                    <FormControl mb={4}>
+                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Background Type</FormLabel>
+                      <Select
+                        value={backgroundType}
+                        onChange={(e) => setBackgroundType(e.target.value as 'watermark' | 'backgroundFill')}
+                        bg="white"
+                        color="black"
+                        _dark={{ bg: 'gray.600', color: 'white' }}
+                        borderRadius="0"
+                        fontSize="xs"
+                        h="46px"
+                        size="sm"
+                        sx={{
+                          '& option': {
+                            minHeight: '46px',
+                            lineHeight: '46px',
+                            paddingTop: '8px',
+                            paddingBottom: '8px',
+                          },
+                        }}
+                      >
+                        <option value="watermark" style={{ background: 'inherit', color: 'inherit' }}>Corner Mascot (Bottom-right corner, 100% opacity)</option>
+                        <option value="backgroundFill" style={{ background: 'inherit', color: 'inherit' }}>Background Fill (Fills filegrid, 15% opacity)</option>
+                      </Select>
+                    </FormControl>
+
+                    <Box mb={4}>
+                      <HStack justify="space-between" mb={2}>
+                        <Text fontSize="xs" fontWeight="500" color={textColor}>
+                          Available {backgroundType === 'watermark' ? 'Corner Mascots' : 'Background Fills'}
+                        </Text>
+                        <Button
+                          size="xs"
+                          leftIcon={<Icon as={Plus} boxSize={3.5} />}
+                          onClick={handleAddBackground}
+                          colorScheme="blue"
+                        >
+                          Add Background
+                        </Button>
+                      </HStack>
+                      
+                      {backgroundImages.length === 0 ? (
+                        <Box
+                          p={8}
+                          border="2px dashed"
+                          borderColor={borderColor}
+                          borderRadius="sm"
+                          textAlign="center"
+                          bg={useColorModeValue('gray.50', 'gray.700')}
+                        >
+                          <Icon as={ImageIcon} boxSize={8} color={secondaryTextColor} mb={2} />
+                          <Text fontSize="sm" color={secondaryTextColor}>
+                            No {backgroundType === 'watermark' ? 'corner mascots' : 'background fills'} available
+                          </Text>
+                          <Text fontSize="xs" color={secondaryTextColor} mt={1}>
+                            Click "Add Background" to add your first image
+                          </Text>
+                        </Box>
+                      ) : (
+                        <SimpleGrid 
+                          columns={{ base: 2, md: 3, lg: 4 }} 
+                          spacing={3}
+                          justifyItems="start"
+                        >
+                          {backgroundImages.map((img) => {
+                            const isSelected = selectedBackground === img.relativePath;
+                            return (
+                              <BackgroundThumbnail
+                                key={img.relativePath}
+                                img={img}
+                                isSelected={isSelected}
+                                borderColor={borderColor}
+                                onSelect={() => handleSelectBackground(img.relativePath, img.path)}
+                                onDelete={() => handleDeleteBackground(img.filename, img.relativePath)}
+                              />
+                            );
+                          })}
+                        </SimpleGrid>
+                      )}
+                    </Box>
+                  </Box>
+                </VStack>
+              </VStack>
+            </TabPanel>
+
             {/* File Grid Tab */}
             <TabPanel 
               h="full" 
@@ -1565,46 +2051,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </FormControl>
                 </Box>
 
-                <Divider my={3.5} />
-
-                <Box>
-                  <Heading size="sm" mb={1.5} color={textColor}>Background Image</Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Set a custom background image for the file grid (JPEG/PNG). PNG images support transparency.
-                  </Text>
-                  <FormControl>
-                    <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Background Image Path</FormLabel>
-                    <InputGroup size="sm">
-                      <Input
-                        value={fileGridBackgroundPath}
-                        onChange={(e) => setFileGridBackgroundPath(e.target.value)}
-                        placeholder="No background image selected"
-                        bg="white"
-                        _dark={{ bg: 'gray.600' }}
-                        borderRadius="sm"
-                        fontSize="xs"
-                        h="31px"
-                        isReadOnly
-                      />
-                      <InputRightElement width="3.5rem" h="31px">
-                        <Button h="22px" size="xs" onClick={handleBrowseFileGridBackground} borderRadius="sm">
-                          <Icon as={FolderOpen} boxSize={3.5} />
-                        </Button>
-                      </InputRightElement>
-                    </InputGroup>
-                    {fileGridBackgroundPath && (
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        colorScheme="red"
-                        mt={2}
-                        onClick={() => setFileGridBackgroundPath('')}
-                      >
-                        Clear Background
-                      </Button>
-                    )}
-                  </FormControl>
-                </Box>
               </VStack>
             </TabPanel>
 

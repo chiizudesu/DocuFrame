@@ -3562,6 +3562,125 @@ ipcMain.handle('read-image-as-data-url', async (_, filePath: string) => {
   }
 });
 
+// Background image management handlers
+ipcMain.handle('get-user-data-path', async () => {
+  try {
+    return { success: true, path: app.getPath('userData') };
+  } catch (error) {
+    console.error('[Main] Error getting userData path:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('copy-background-image', async (_, sourcePath: string, backgroundType: 'watermark' | 'backgroundFill') => {
+  try {
+    if (!fs.existsSync(sourcePath)) {
+      return { success: false, error: 'Source file does not exist' };
+    }
+
+    const userDataPath = app.getPath('userData');
+    const backgroundsDir = path.join(userDataPath, 'Backgrounds');
+    const typeDir = path.join(backgroundsDir, backgroundType);
+
+    // Ensure directories exist
+    if (!fs.existsSync(backgroundsDir)) {
+      fs.mkdirSync(backgroundsDir, { recursive: true });
+    }
+    if (!fs.existsSync(typeDir)) {
+      fs.mkdirSync(typeDir, { recursive: true });
+    }
+
+    // Get filename and handle duplicates
+    const filename = path.basename(sourcePath);
+    let destPath = path.join(typeDir, filename);
+    let counter = 1;
+    const ext = path.extname(filename);
+    const baseName = path.basename(filename, ext);
+
+    while (fs.existsSync(destPath)) {
+      const newFilename = `${baseName}_${counter}${ext}`;
+      destPath = path.join(typeDir, newFilename);
+      counter++;
+    }
+
+    // Copy file
+    fs.copyFileSync(sourcePath, destPath);
+
+    // Return relative path from Backgrounds directory
+    const relativePath = path.join(backgroundType, path.basename(destPath)).replace(/\\/g, '/');
+    
+    return { success: true, path: destPath, relativePath };
+  } catch (error) {
+    console.error('[Main] Error copying background image:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('list-background-images', async (_, backgroundType: 'watermark' | 'backgroundFill') => {
+  try {
+    const userDataPath = app.getPath('userData');
+    const typeDir = path.join(userDataPath, 'Backgrounds', backgroundType);
+
+    if (!fs.existsSync(typeDir)) {
+      return { success: true, images: [] };
+    }
+
+    const files = fs.readdirSync(typeDir);
+    const imageFiles = files.filter(file => {
+      const ext = path.extname(file).toLowerCase();
+      return ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
+    });
+
+    const images = imageFiles.map(file => {
+      const fullPath = path.join(typeDir, file);
+      const relativePath = path.join(backgroundType, file).replace(/\\/g, '/');
+      return {
+        filename: file,
+        path: fullPath,
+        relativePath
+      };
+    });
+
+    return { success: true, images };
+  } catch (error) {
+    console.error('[Main] Error listing background images:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error', images: [] };
+  }
+});
+
+ipcMain.handle('delete-background-image', async (_, backgroundType: 'watermark' | 'backgroundFill', filename: string) => {
+  try {
+    const userDataPath = app.getPath('userData');
+    const filePath = path.join(userDataPath, 'Backgrounds', backgroundType, filename);
+
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File does not exist' };
+    }
+
+    fs.unlinkSync(filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error deleting background image:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('resolve-background-path', async (_, relativePath: string) => {
+  try {
+    const userDataPath = app.getPath('userData');
+    const fullPath = path.join(userDataPath, 'Backgrounds', relativePath);
+    
+    if (!fs.existsSync(fullPath)) {
+      return { success: false, error: 'File does not exist' };
+    }
+
+    return { success: true, path: fullPath };
+  } catch (error) {
+    console.error('[Main] Error resolving background path:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 // Note: PDF viewer functionality has been moved to inline preview pane
 // The separate PDF viewer window is no longer needed
 

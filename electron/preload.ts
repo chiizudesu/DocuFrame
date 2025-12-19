@@ -97,6 +97,12 @@ interface ElectronAPI {
   getScreenInfo: () => Promise<{ success: boolean; workArea?: { width: number; height: number } }>;
   resizeFloatingTimer: (width: number, height: number) => Promise<void>;
   checkPanelProximity: () => Promise<{ isNearPanel: boolean }>;
+  // Background image management methods
+  getUserDataPath: () => Promise<{ success: boolean; path?: string; error?: string }>;
+  copyBackgroundImage: (sourcePath: string, backgroundType: 'watermark' | 'backgroundFill') => Promise<{ success: boolean; path?: string; relativePath?: string; error?: string }>;
+  listBackgroundImages: (backgroundType: 'watermark' | 'backgroundFill') => Promise<{ success: boolean; images?: Array<{ filename: string; path: string; relativePath: string }>; error?: string }>;
+  deleteBackgroundImage: (backgroundType: 'watermark' | 'backgroundFill', filename: string) => Promise<{ success: boolean; error?: string }>;
+  resolveBackgroundPath: (relativePath: string) => Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -349,6 +355,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   checkPanelProximity: async () => {
     return await ipcRenderer.invoke('check-panel-proximity');
+  },
+  // Background image management methods
+  getUserDataPath: async () => {
+    return await ipcRenderer.invoke('get-user-data-path');
+  },
+  copyBackgroundImage: async (sourcePath: string, backgroundType: 'watermark' | 'backgroundFill') => {
+    return await ipcRenderer.invoke('copy-background-image', sourcePath, backgroundType);
+  },
+  listBackgroundImages: async (backgroundType: 'watermark' | 'backgroundFill') => {
+    return await ipcRenderer.invoke('list-background-images', backgroundType);
+  },
+  deleteBackgroundImage: async (backgroundType: 'watermark' | 'backgroundFill', filename: string) => {
+    return await ipcRenderer.invoke('delete-background-image', backgroundType, filename);
+  },
+  resolveBackgroundPath: async (relativePath: string) => {
+    return await ipcRenderer.invoke('resolve-background-path', relativePath);
   },
 
 }); 

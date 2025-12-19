@@ -160,6 +160,9 @@ export const FileGrid: React.FC = () => {
   const [isImagePasteOpen, setImagePasteOpen] = useState(false)
   const [fileGridBackgroundPath, setFileGridBackgroundPath] = useState<string>('')
   const [fileGridBackgroundUrl, setFileGridBackgroundUrl] = useState<string>('')
+  const [backgroundFillPath, setBackgroundFillPath] = useState<string>('')
+  const [backgroundFillUrl, setBackgroundFillUrl] = useState<string>('')
+  const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>('watermark')
   
   // Drag selection state
   const [isSelecting, setIsSelecting] = useState(false)
@@ -3329,48 +3332,90 @@ export const FileGrid: React.FC = () => {
     }
   }, [hideTemporaryFiles, hideDotFiles, currentDirectory, refreshDirectory]);
 
-  // Load file grid background image setting
+  // Load file grid background image settings
   useEffect(() => {
     const loadBackgroundSetting = async () => {
       try {
+        console.log('FileGrid: Loading background settings...');
         const settings = await settingsService.getSettings();
-        const path = settings.fileGridBackgroundPath || '';
-        setFileGridBackgroundPath(path);
+        console.log('FileGrid: Loaded settings:', {
+          backgroundType: settings.backgroundType,
+          fileGridBackgroundPath: settings.fileGridBackgroundPath,
+          backgroundFillPath: settings.backgroundFillPath
+        });
+
+        // Migration: if fileGridBackgroundPath exists but backgroundType is not set, default to corner mascot (watermark)
+        const bgType = settings.backgroundType || (settings.fileGridBackgroundPath ? 'watermark' : 'watermark');
+        setBackgroundType(bgType);
+
+        // Load corner mascot (watermark) path
+        const watermarkPath = settings.fileGridBackgroundPath || '';
+        setFileGridBackgroundPath(watermarkPath);
         
-        // Convert file path to data URL for display (works for files outside Clients directory)
-        if (path) {
+        // Load background fill path
+        let fillPath = settings.backgroundFillPath || '';
+        
+        // If backgroundFillPath is a relative path, resolve it
+        if (fillPath && !isAbsolutePath(fillPath) && window.electronAPI && (window.electronAPI as any).resolveBackgroundPath) {
+          try {
+            const resolveResult = await (window.electronAPI as any).resolveBackgroundPath(fillPath);
+            if (resolveResult.success && resolveResult.path) {
+              fillPath = resolveResult.path;
+            }
+          } catch (error) {
+            console.error('Error resolving background fill path:', error);
+          }
+        }
+        setBackgroundFillPath(fillPath);
+        
+        // Helper function to load image URL
+        const loadImageUrl = async (imagePath: string): Promise<string> => {
+          if (!imagePath) return '';
+          
           if (window.electronAPI?.readImageAsDataUrl) {
             try {
-              const result = await window.electronAPI.readImageAsDataUrl(path);
+              const result = await window.electronAPI.readImageAsDataUrl(imagePath);
               if (result.success && result.dataUrl) {
-                setFileGridBackgroundUrl(result.dataUrl);
-              } else {
-                console.error('Error reading image as data URL:', result.error);
-                setFileGridBackgroundUrl('');
+                return result.dataUrl;
               }
             } catch (error) {
-              console.error('Error reading image file:', error);
-              setFileGridBackgroundUrl('');
-            }
-          } else {
-            // Fallback: try HTTP URL first, then file:// protocol
-            if (window.electronAPI?.convertFilePathToHttpUrl) {
-              try {
-                const httpResult = await window.electronAPI.convertFilePathToHttpUrl(path);
-                if (httpResult.success && httpResult.url) {
-                  setFileGridBackgroundUrl(httpResult.url);
-                } else {
-                  setFileGridBackgroundUrl(`file://${path.replace(/\\/g, '/')}`);
-                }
-              } catch (error) {
-                setFileGridBackgroundUrl(`file://${path.replace(/\\/g, '/')}`);
-              }
-            } else {
-              setFileGridBackgroundUrl(`file://${path.replace(/\\/g, '/')}`);
+              console.error('Error reading image as data URL:', error);
             }
           }
+          
+          // Fallback: try HTTP URL first, then file:// protocol
+          if (window.electronAPI?.convertFilePathToHttpUrl) {
+            try {
+              const httpResult = await window.electronAPI.convertFilePathToHttpUrl(imagePath);
+              if (httpResult.success && httpResult.url) {
+                return httpResult.url;
+              }
+            } catch (error) {
+              // Fall through to file:// protocol
+            }
+          }
+          
+          return `file://${imagePath.replace(/\\/g, '/')}`;
+        };
+        
+        // Load corner mascot (watermark) URL
+        if (watermarkPath) {
+          const watermarkUrl = await loadImageUrl(watermarkPath);
+          console.log('FileGrid: Loaded watermark URL:', watermarkUrl.substring(0, 50) + '...');
+          setFileGridBackgroundUrl(watermarkUrl);
         } else {
+          console.log('FileGrid: No watermark path, clearing URL');
           setFileGridBackgroundUrl('');
+        }
+        
+        // Load background fill URL
+        if (fillPath) {
+          const fillUrl = await loadImageUrl(fillPath);
+          console.log('FileGrid: Loaded background fill URL:', fillUrl.substring(0, 50) + '...');
+          setBackgroundFillUrl(fillUrl);
+        } else {
+          console.log('FileGrid: No fill path, clearing URL');
+          setBackgroundFillUrl('');
         }
       } catch (error) {
         console.error('Error loading file grid background setting:', error);
@@ -3379,7 +3424,8 @@ export const FileGrid: React.FC = () => {
     loadBackgroundSetting();
 
     // Listen for settings updates
-    const handleSettingsUpdate = () => {
+    const handleSettingsUpdate = (event?: any) => {
+      console.log('FileGrid received settings-updated event', event?.detail);
       loadBackgroundSetting();
     };
     window.addEventListener('settings-updated', handleSettingsUpdate);
@@ -3792,6 +3838,9 @@ export const FileGrid: React.FC = () => {
         renameValue={renameValue}
         fileGridBackgroundUrl={fileGridBackgroundUrl}
         fileGridBackgroundPath={fileGridBackgroundPath}
+        backgroundFillUrl={backgroundFillUrl}
+        backgroundFillPath={backgroundFillPath}
+        backgroundType={backgroundType}
         nativeIcons={nativeIcons}
         memoizedFileStates={memoizedFileStates}
         memoizedRowBackgrounds={memoizedRowBackgrounds}

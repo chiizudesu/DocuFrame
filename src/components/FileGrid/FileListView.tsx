@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
   Box,
   Text,
@@ -446,6 +446,9 @@ export interface FileListViewProps {
   renameValue: string;
   fileGridBackgroundUrl: string;
   fileGridBackgroundPath: string;
+  backgroundFillUrl: string;
+  backgroundFillPath: string;
+  backgroundType: 'watermark' | 'backgroundFill';
   nativeIcons: Map<string, string>;
   memoizedFileStates: Array<{
     isFileSelected: boolean;
@@ -535,6 +538,9 @@ export const FileListView: React.FC<FileListViewProps> = ({
   renameValue,
   fileGridBackgroundUrl,
   fileGridBackgroundPath,
+  backgroundFillUrl,
+  backgroundFillPath,
+  backgroundType,
   nativeIcons,
   memoizedFileStates,
   memoizedRowBackgrounds,
@@ -586,54 +592,124 @@ export const FileListView: React.FC<FileListViewProps> = ({
     return `${Math.max(maxLength * 7, 140)}px`;
   }, []);
   
+  // Debug: Log when background props change
+  useEffect(() => {
+    console.log('FileListView: Background props changed:', {
+      backgroundType,
+      fileGridBackgroundUrl: fileGridBackgroundUrl.substring(0, 50) + '...',
+      backgroundFillUrl: backgroundFillUrl.substring(0, 50) + '...',
+    });
+  }, [backgroundType, fileGridBackgroundUrl, backgroundFillUrl]);
+  
   return (
     <Box 
-      ref={dropAreaRef}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
       position="relative"
       height="100%"
       width="100%"
-      overflowY="auto"
-      overflowX="auto"
-      pl={3}
-      onMouseDown={handleSelectionMouseDown}
-      style={{ userSelect: isSelecting ? 'none' : 'auto' }}
-      onContextMenu={e => {
-        if (e.target === e.currentTarget) {
-          e.preventDefault();
-          const position = getSmartMenuPosition(e.clientX, e.clientY, 150);
-          setBlankContextMenu({ isOpen: true, position });
-        }
-      }}
-      onClick={handleBackgroundClick}
+      overflow="hidden"
     >
-      {/* Background Image */}
-      {fileGridBackgroundUrl && (
-        <Image
-          src={fileGridBackgroundUrl}
-          alt="File grid background"
+      {/* Background Fill - Full filegrid coverage, 15% opacity - Fixed to container, doesn't scroll */}
+      {backgroundType === 'backgroundFill' && backgroundFillUrl && (
+        <Box
           position="absolute"
-          bottom={0}
+          top="35px"
+          left={0}
           right={0}
-          maxW="480px"
-          maxH="480px"
-          objectFit="contain"
-          opacity={1}
+          bottom={0}
           zIndex={0}
           pointerEvents="none"
-          userSelect="none"
-          draggable={false}
-          style={{ WebkitUserSelect: 'none', userSelect: 'none' }}
-          onError={(e) => {
-            console.error('Failed to load background image:', fileGridBackgroundPath);
-            setFileGridBackgroundUrl('');
+          style={{
+            backgroundImage: `url(${backgroundFillUrl})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            opacity: 0.15,
           }}
         />
       )}
       
+      {/* Watermark - Bottom-right corner, 100% opacity - Fixed to container, doesn't scroll */}
+      {backgroundType === 'watermark' && fileGridBackgroundUrl && (
+        <Box
+          position="absolute"
+          bottom="150px"
+          right={0}
+          zIndex={0}
+          pointerEvents="none"
+          maxW="320px"
+          maxH="320px"
+        >
+          <Image
+            src={fileGridBackgroundUrl}
+            alt="File grid corner mascot"
+            maxW="100%"
+            maxH="100%"
+            objectFit="contain"
+            opacity={1}
+            userSelect="none"
+            draggable={false}
+            style={{ WebkitUserSelect: 'none', userSelect: 'none', display: 'block' }}
+            onError={(e) => {
+              console.error('Failed to load watermark image:', fileGridBackgroundPath);
+              setFileGridBackgroundUrl('');
+            }}
+          />
+        </Box>
+      )}
+      
+      {/* Legacy support: if backgroundType is not set but fileGridBackgroundUrl exists, show as corner mascot */}
+      {!backgroundType && fileGridBackgroundUrl && (
+        <Box
+          position="absolute"
+          bottom="150px"
+          right={0}
+          zIndex={0}
+          pointerEvents="none"
+          maxW="320px"
+          maxH="320px"
+        >
+          <Image
+            src={fileGridBackgroundUrl}
+            alt="File grid background"
+            maxW="100%"
+            maxH="100%"
+            objectFit="contain"
+            opacity={1}
+            userSelect="none"
+            draggable={false}
+            style={{ WebkitUserSelect: 'none', userSelect: 'none', display: 'block' }}
+            onError={(e) => {
+              console.error('Failed to load background image:', fileGridBackgroundPath);
+              setFileGridBackgroundUrl('');
+            }}
+          />
+        </Box>
+      )}
+      
+      {/* Scrollable content container */}
+      <Box 
+        ref={dropAreaRef}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        position="relative"
+        height="100%"
+        width="100%"
+        overflowY="auto"
+        overflowX="auto"
+        pl={3}
+        onMouseDown={handleSelectionMouseDown}
+        style={{ userSelect: isSelecting ? 'none' : 'auto' }}
+        onContextMenu={e => {
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            const position = getSmartMenuPosition(e.clientX, e.clientY, 150);
+            setBlankContextMenu({ isOpen: true, position });
+          }
+        }}
+        onClick={handleBackgroundClick}
+      >
       {/* Drag overlay */}
       {isDragOver && (
         <Box
@@ -1209,6 +1285,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
           )}
         </>
       )}
+      </Box>
     </Box>
   );
 };
