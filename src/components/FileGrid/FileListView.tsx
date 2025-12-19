@@ -858,8 +858,13 @@ export const FileListView: React.FC<FileListViewProps> = ({
               {Object.entries(groupedFiles)
                 .filter(([key]) => key !== 'folders')
                 .sort(([a], [b]) => {
+                  // AA always comes first
+                  if (a === 'AA') return -1;
+                  if (b === 'AA') return 1;
+                  // Other always comes last
                   if (a === 'Other') return 1;
                   if (b === 'Other') return -1;
+                  // Everything else sorted alphabetically
                   return a.localeCompare(b);
                 })
                 .map(([groupKey, groupFiles], groupIndex) => {
@@ -1207,4 +1212,5 @@ export const FileListView: React.FC<FileListViewProps> = ({
     </Box>
   );
 };
+
 

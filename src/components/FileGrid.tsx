@@ -171,6 +171,7 @@ export const FileGrid: React.FC = () => {
   } | null>(null)
   const selectionModifiersRef = useRef<{ shiftKey: boolean; ctrlKey: boolean }>({ shiftKey: false, ctrlKey: false })
   const justFinishedSelectingRef = useRef(false)
+  const containerPaddingLeftRef = useRef<number>(0)
 
 
 
@@ -3610,8 +3611,14 @@ export const FileGrid: React.FC = () => {
       const container = gridContainerRef.current || dropAreaRef.current;
       if (!container) return;
       
+      // Get container padding-left to account for offset
+      if (containerPaddingLeftRef.current === 0) {
+        const computedStyle = window.getComputedStyle(container);
+        containerPaddingLeftRef.current = parseFloat(computedStyle.paddingLeft) || 0;
+      }
+      
       const rect = container.getBoundingClientRect();
-      const startX = e.clientX - rect.left;
+      const startX = e.clientX - rect.left - containerPaddingLeftRef.current;
       const startY = e.clientY - rect.top + container.scrollTop;
       
       setIsSelecting(true);
@@ -3661,8 +3668,14 @@ export const FileGrid: React.FC = () => {
         const container = gridContainerRef.current || dropAreaRef.current;
         if (!container || !selectionRect) return;
         
+        // Get container padding-left if not cached
+        if (containerPaddingLeftRef.current === 0) {
+          const computedStyle = window.getComputedStyle(container);
+          containerPaddingLeftRef.current = parseFloat(computedStyle.paddingLeft) || 0;
+        }
+        
         const rect = container.getBoundingClientRect();
-        const currentX = e.clientX - rect.left;
+        const currentX = e.clientX - rect.left - containerPaddingLeftRef.current;
         const currentY = e.clientY - rect.top + container.scrollTop;
         
         setSelectionRect({

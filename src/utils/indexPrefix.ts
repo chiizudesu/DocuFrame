@@ -8,6 +8,7 @@ export interface IndexInfo {
 
 // Workpaper section descriptions mapping
 export const WORKPAPER_DESCRIPTIONS: { [key: string]: string } = {
+  'AA': 'Prior Year Files',
   'A1': 'Permanent',
   'A2': 'Job Notes', 
   'A3': 'Other Checks',
@@ -41,10 +42,10 @@ export const WORKPAPER_DESCRIPTIONS: { [key: string]: string } = {
 };
 
 /**
- * Extract index prefix from filename (e.g., "A5 - File.xlsx" -> "A5")
+ * Extract index prefix from filename (e.g., "A5 - File.xlsx" -> "A5", "AA - File.xlsx" -> "AA")
  */
 export function extractIndexPrefix(filename: string): string | null {
-  const match = filename.match(/^([A-Z](?:\d+)?)\s*-/);
+  const match = filename.match(/^([A-Z]+(?:\d+)?)\s*-/);
   return match ? match[1] : null;
 }
 
@@ -87,7 +88,7 @@ export function getAllIndexKeys(): string[] {
  * Remove index prefix from filename
  */
 export function removeIndexPrefix(filename: string): string {
-  const match = filename.match(/^[A-Z](?:\d+)?\s*-\s*(.+)$/);
+  const match = filename.match(/^[A-Z]+(?:\d+)?\s*-\s*(.+)$/);
   const result = match ? match[1].trim() : filename;
   console.log('[indexPrefix] removeIndexPrefix', { filename, result, matched: !!match });
   return result;

@@ -197,7 +197,7 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
           )}
           <Button 
             colorScheme="blue" 
-            onClick={handleConfirm} 
+            onClick={() => handleConfirm(false)} 
             isDisabled={selectedIndex === null && !currentPrefix} 
             size="sm"
           >

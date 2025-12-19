@@ -216,13 +216,12 @@ export const QuickNavigateOverlay: React.FC = () => {
     };
   }, [loadTransferMappings]);
 
-  // Re-trigger command info update and preview when mappings are loaded/updated
+  // Re-trigger preview when mappings are loaded/updated (command info updates immediately via main effect)
   useEffect(() => {
-    if (Object.keys(transferMappings).length > 0 && inputValue) {
+    if (Object.keys(transferMappings).length > 0 && inputValue && !isSearchMode) {
       const commandText = inputValue.trim().toLowerCase();
-      handleCommandInfoUpdate(commandText);
       
-      // Also re-trigger preview if the current command is a mapping command
+      // Only re-trigger preview if the current command is a mapping command
       const commandParts = commandText.split(' ');
       const command = commandParts[0];
       const mappingKey = Object.keys(transferMappings).find(key => key.toLowerCase() === command.toLowerCase());
@@ -234,7 +233,7 @@ export const QuickNavigateOverlay: React.FC = () => {
         }, 100);
       }
     }
-  }, [transferMappings, inputValue, handleTransferMappingPreview]);
+  }, [transferMappings, inputValue, isSearchMode, handleTransferMappingPreview]);
 
   // Focus input when overlay opens and set initial mode
   useEffect(() => {
@@ -284,163 +283,8 @@ export const QuickNavigateOverlay: React.FC = () => {
     transferMappingsRef.current = transferMappings;
   }, [transferMappings]);
 
-  const debouncedCommandProcessing = useCallback(
-    debounce((commandText: string, inputValue: string) => {
-      if (!commandText) {
-        setCommandInfo(null);
-        setPreviewFiles([]);
-        return;
-      }
-      
-      // Get the latest mappings from ref to avoid stale closure
-      const currentMappings = transferMappingsRef.current;
-      
-      handleCommandInfoUpdate(commandText);
-      
-      // Auto-preview for transfer commands (including mapping commands)
-      const commandParts = commandText.split(' ');
-      const command = commandParts[0];
-      const mappingKey = Object.keys(currentMappings).find(key => key.toLowerCase() === command.toLowerCase());
-      
-      if (commandText.startsWith('transfer ')) {
-        // Parse argument, supporting quoted strings
-        const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
-        let arg = match && (match[1] || match[2] || match[3]);
-        let numFiles: number | undefined = 1;
-        let newName: string | undefined = undefined;
-        if (arg) {
-          if (!isNaN(Number(arg))) {
-            numFiles = Number(arg);
-          } else {
-            newName = arg;
-          }
-        }
-        // Always call preview API for transfer command
-        window.electronAPI.transfer({
-          numFiles,
-          newName,
-          command: 'preview',
-          currentDirectory
-        }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (mappingKey) {
-        // Auto-preview for mapping commands
-        handleTransferMappingPreview(command);
-      } else if (command === 'finals') {
-        // Auto-preview for finals command
-        window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (command === 'edsby') {
-        // Auto-preview for edsby command
-        let period = commandParts.slice(1).join(' ').trim();
-        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
-          period = period.slice(1, -1);
-        }
-        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (command === 'pdfinc') {
-        // Auto-preview for pdfinc command
-        window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else if (command === 'sc') {
-        // Auto-preview for sc (screenshot) command
-        let newName: string | undefined;
-        if (commandParts.length > 1) {
-          newName = commandParts.slice(1).join(' ').trim();
-          // Remove quotes if present
-          if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
-            newName = newName.slice(1, -1);
-          }
-        }
-        
-        window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
-      } else {
-        setPreviewFiles([]); // Clear preview for non-transfer commands
-      }
-    }, 300), // 300ms debounce delay
-    [handleTransferMappingPreview, currentDirectory, setPreviewFiles]
-  );
-
-  // Process input changes with debouncing
-  useEffect(() => {
-    if (isSearchMode) {
-      // Search mode - filter current directory instead of showing dropdown
-      // Set the filter directly (no debounce needed for live filtering)
-      setFileSearchFilter(searchQuery);
-      
-      // Clear local search results since we're not showing dropdown anymore
-      setLocalSearchResults([]);
-      
-      // Perform content search if enabled
-      if (searchInDocuments && searchQuery.trim()) {
-        setIsContentSearching(true);
-        (async () => {
-          try {
-            const results = await window.electronAPI.searchInDocuments({
-              query: searchQuery,
-              currentDirectory,
-              maxResults: 100 // Get more results for filtering
-            });
-            setContentSearchResults(results || []);
-          } catch (error) {
-            setContentSearchResults([]);
-          } finally {
-            setIsContentSearching(false);
-          }
-        })();
-      } else {
-        // Clear content search results when content search is disabled or query is empty
-        setContentSearchResults([]);
-        setIsContentSearching(false);
-      }
-    } else {
-      // Command mode - handle command input with debouncing
-      if (!inputValue) {
-        setCommandInfo(null);
-        setPreviewFiles([]); // Clear preview when input is empty
-        return;
-      }
-      
-      const commandText = inputValue.trim().toLowerCase();
-      debouncedCommandProcessing(commandText, inputValue);
-      
-      // Clear content search results in command mode
-      setContentSearchResults([]);
-    }
-  }, [inputValue, searchQuery, isSearchMode, searchInDocuments, currentDirectory, debouncedCommandProcessing, performSearch, setContentSearchResults]);
-
-  // Sync search results to filtered results for display
-  useEffect(() => {
-    // This useEffect is no longer needed as search functionality is removed
-  }, []);
-
-  const handleCommandInfoUpdate = (commandText: string) => {
+  // Command info update handler - memoized and called immediately (no debounce)
+  const handleCommandInfoUpdate = useCallback((commandText: string) => {
     if (!commandText) {
       setCommandInfo({
         title: 'Command Info',
@@ -453,8 +297,9 @@ export const QuickNavigateOverlay: React.FC = () => {
     const commandParts = commandText.split(' ');
     const command = commandParts[0];
     
-    // Check for transfer mapping commands
-    const mappingKey = Object.keys(transferMappings).find(key => {
+    // Check for transfer mapping commands - use ref to avoid stale closure
+    const currentMappings = transferMappingsRef.current;
+    const mappingKey = Object.keys(currentMappings).find(key => {
       const matches = key.toLowerCase() === command.toLowerCase();
       return matches;
     });
@@ -462,7 +307,7 @@ export const QuickNavigateOverlay: React.FC = () => {
     if (mappingKey) {
       setCommandInfo({
         title: `Transfer Mapping: ${mappingKey}`,
-        description: `Transfer file(s) using mapping: ${transferMappings[mappingKey]}`,
+        description: `Transfer file(s) using mapping: ${currentMappings[mappingKey]}`,
         usage: `$ ${mappingKey.toLowerCase()}`
       });
       return;
@@ -554,7 +399,167 @@ export const QuickNavigateOverlay: React.FC = () => {
         usage: 'Type $ help for a list of available commands'
       });
     }
-  };
+  }, []);
+
+  const debouncedCommandProcessing = useCallback(
+    debounce((commandText: string, inputValue: string) => {
+      if (!commandText) {
+        setPreviewFiles([]);
+        return;
+      }
+      
+      // Get the latest mappings from ref to avoid stale closure
+      const currentMappings = transferMappingsRef.current;
+      
+      // Note: handleCommandInfoUpdate is now called immediately, not here
+      
+      // Auto-preview for transfer commands (including mapping commands)
+      const commandParts = commandText.split(' ');
+      const command = commandParts[0];
+      const mappingKey = Object.keys(currentMappings).find(key => key.toLowerCase() === command.toLowerCase());
+      
+      if (commandText.startsWith('transfer ')) {
+        // Parse argument, supporting quoted strings
+        const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
+        let arg = match && (match[1] || match[2] || match[3]);
+        let numFiles: number | undefined = 1;
+        let newName: string | undefined = undefined;
+        if (arg) {
+          if (!isNaN(Number(arg))) {
+            numFiles = Number(arg);
+          } else {
+            newName = arg;
+          }
+        }
+        // Always call preview API for transfer command
+        window.electronAPI.transfer({
+          numFiles,
+          newName,
+          command: 'preview',
+          currentDirectory
+        }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (mappingKey) {
+        // Auto-preview for mapping commands
+        handleTransferMappingPreview(command);
+      } else if (command === 'finals') {
+        // Auto-preview for finals command
+        window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'edsby') {
+        // Auto-preview for edsby command
+        let period = commandParts.slice(1).join(' ').trim();
+        if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
+          period = period.slice(1, -1);
+        }
+        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'pdfinc') {
+        // Auto-preview for pdfinc command
+        window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else if (command === 'sc') {
+        // Auto-preview for sc (screenshot) command
+        let newName: string | undefined;
+        if (commandParts.length > 1) {
+          newName = commandParts.slice(1).join(' ').trim();
+          // Remove quotes if present
+          if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
+            newName = newName.slice(1, -1);
+          }
+        }
+        
+        window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
+          if (previewResult.success && previewResult.files) {
+            setPreviewFiles(previewResult.files);
+          } else {
+            setPreviewFiles([]);
+          }
+        }).catch(() => setPreviewFiles([]));
+      } else {
+        setPreviewFiles([]); // Clear preview for non-transfer commands
+      }
+    }, 100), // 100ms debounce delay for snappier response
+    [handleTransferMappingPreview, currentDirectory, setPreviewFiles]
+  );
+
+  // Process input changes with debouncing
+  useEffect(() => {
+    if (isSearchMode) {
+      // Search mode - filter current directory instead of showing dropdown
+      // Set the filter directly (no debounce needed for live filtering)
+      setFileSearchFilter(searchQuery);
+      
+      // Clear local search results since we're not showing dropdown anymore
+      setLocalSearchResults([]);
+      
+      // Perform content search if enabled
+      if (searchInDocuments && searchQuery.trim()) {
+        setIsContentSearching(true);
+        (async () => {
+          try {
+            const results = await window.electronAPI.searchInDocuments({
+              query: searchQuery,
+              currentDirectory,
+              maxResults: 100 // Get more results for filtering
+            });
+            setContentSearchResults(results || []);
+          } catch (error) {
+            setContentSearchResults([]);
+          } finally {
+            setIsContentSearching(false);
+          }
+        })();
+      } else {
+        // Clear content search results when content search is disabled or query is empty
+        setContentSearchResults([]);
+        setIsContentSearching(false);
+      }
+    } else {
+      // Command mode - handle command input
+      if (!inputValue) {
+        setCommandInfo(null);
+        setPreviewFiles([]); // Clear preview when input is empty
+        return;
+      }
+      
+      const commandText = inputValue.trim().toLowerCase();
+      
+      // Update command info immediately (no debounce) for instant UI feedback
+      handleCommandInfoUpdate(commandText);
+      
+      // Debounce API preview calls to prevent excessive requests
+      debouncedCommandProcessing(commandText, inputValue);
+      
+      // Clear content search results in command mode
+      setContentSearchResults([]);
+    }
+  }, [inputValue, searchQuery, isSearchMode, searchInDocuments, currentDirectory, debouncedCommandProcessing, handleCommandInfoUpdate, setContentSearchResults]);
+
+  // Sync search results to filtered results for display
+  useEffect(() => {
+    // This useEffect is no longer needed as search functionality is removed
+  }, []);
   const navigateHistory = (direction: number) => {
     const newIndex = historyIndex + direction;
     if (newIndex >= -1 && newIndex < commandHistory.length) {
