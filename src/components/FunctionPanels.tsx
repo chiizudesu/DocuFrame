@@ -10,6 +10,7 @@ import { LateClaimsDialog } from './LateClaimsDialog';
 import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
 import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
+import { PdfToCsvDialog } from './PdfToCsvDialog';
 import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
 import { Calculator as CalculatorDialog } from './Calculator';
@@ -153,6 +154,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   const [isAIEditorOpen, setAIEditorOpen] = useState(false);
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
   const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
+  const [isPdfToCsvOpen, setPdfToCsvOpen] = useState(false);
   const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   
   // Keys to force remount and reset dialog state when closing minimized dialogs
@@ -160,6 +162,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     aiEditor: 0,
     aiTemplater: 0,
     documentAnalysis: 0,
+    pdfToCsv: 0,
     manageTemplates: 0,
   });
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
@@ -350,6 +353,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     if (action === 'analyze_docs') {
       setDocumentAnalysisOpen(true);
       setStatus('Opened Document Analysis', 'info');
+      return;
+    }
+
+    if (action === 'pdf_to_csv') {
+      setPdfToCsvOpen(true);
+      setStatus('Opened PDF to CSV', 'info');
       return;
     }
 
@@ -616,6 +625,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       case 'aiTemplater':
         setAITemplaterOpen(false);
         break;
+      case 'pdfToCsv':
+        setPdfToCsvOpen(false);
+        break;
       case 'manageTemplates':
         setManageTemplatesOpen(false);
         break;
@@ -628,6 +640,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         documentAnalysis: 'Analyze Documents',
         aiEditor: 'AI Editor',
         aiTemplater: 'AI Templater',
+        pdfToCsv: 'PDF to CSV',
         manageTemplates: 'Templates'
       };
       
@@ -647,6 +660,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         break;
       case 'aiTemplater':
         setAITemplaterOpen(true);
+        break;
+      case 'pdfToCsv':
+        setPdfToCsvOpen(true);
         break;
       case 'manageTemplates':
         setManageTemplatesOpen(true);
@@ -673,6 +689,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         break;
       case 'aiTemplater':
         setAITemplaterOpen(false);
+        break;
+      case 'pdfToCsv':
+        setPdfToCsvOpen(false);
         break;
       case 'manageTemplates':
         setManageTemplatesOpen(false);
@@ -896,6 +915,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           color="blue.400" 
         />
         <FunctionButton 
+          icon={FileSpreadsheet} 
+          action="pdf_to_csv" 
+          description="Convert PDF tables to CSV format" 
+          color="green.400" 
+        />
+        <FunctionButton 
           icon={FileEdit} 
           action="manage_templates" 
           description="Create, edit, and manage template YAMLs" 
@@ -929,6 +954,8 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
                     return Mail;
                   case 'aiTemplater':
                     return FileType;
+                  case 'pdfToCsv':
+                    return FileSpreadsheet;
                   case 'manageTemplates':
                     return FileText;
                   default:
@@ -1246,6 +1273,15 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       selectedFiles={selectedFiles}
       folderItems={folderItems}
       onMinimize={() => handleMinimizeDialog('documentAnalysis')}
+    />
+    <PdfToCsvDialog 
+      key={`pdfToCsv-${dialogKeys.pdfToCsv}`}
+      isOpen={isPdfToCsvOpen} 
+      onClose={() => setPdfToCsvOpen(false)} 
+      currentDirectory={currentDirectory}
+      selectedFiles={selectedFiles}
+      folderItems={folderItems}
+      onMinimize={() => handleMinimizeDialog('pdfToCsv')}
     />
     <ManageTemplatesDialog 
       key={`manageTemplates-${dialogKeys.manageTemplates}`}

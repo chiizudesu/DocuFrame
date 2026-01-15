@@ -7,9 +7,9 @@ import {
   useColorModeValue,
   Flex,
 } from '@chakra-ui/react';
-import { Brain, Mail, FileType, FileText, X } from 'lucide-react';
+import { Brain, Mail, FileType, FileText, FileSpreadsheet, X } from 'lucide-react';
 
-export type DialogType = 'documentAnalysis' | 'aiEditor' | 'aiTemplater' | 'manageTemplates';
+export type DialogType = 'documentAnalysis' | 'aiEditor' | 'aiTemplater' | 'pdfToCsv' | 'manageTemplates';
 
 export interface MinimizedDialog {
   type: DialogType;
@@ -30,6 +30,8 @@ const getDialogIcon = (type: DialogType) => {
       return Mail; // Changed from Sparkles to Mail
     case 'aiTemplater':
       return FileType; // Changed from Sparkles to FileType
+    case 'pdfToCsv':
+      return FileSpreadsheet;
     case 'manageTemplates':
       return FileText;
     default:

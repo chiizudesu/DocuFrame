@@ -194,3 +194,39 @@ export async function analyzeMultiplePdfDocumentsStream(
   const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
   return await claudeService.analyzeMultiplePdfDocumentsStream(pdfFiles, prompt, model, onChunk);
 }
+
+// Detect PDF table headers - scans first page, then all pages if needed
+export async function detectPdfHeaders(
+  pdfFilePath: string,
+  fileName: string,
+  selectedAgent: DocumentAIAgent = 'claude',
+  scanFirstPageOnly: boolean = true,
+  onProgress?: (status: string) => void
+): Promise<string[]> {
+  const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
+  return await claudeService.detectPdfHeaders(pdfFilePath, fileName, model, scanFirstPageOnly, onProgress);
+}
+
+// Extract PDF table data based on column mappings
+export async function extractPdfTableData(
+  pdfFilePath: string,
+  fileName: string,
+  columnMappings: { [fixedColumn: string]: string[] },
+  selectedAgent: DocumentAIAgent = 'claude'
+): Promise<Array<{ [key: string]: string }>> {
+  const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
+  return await claudeService.extractPdfTableData(pdfFilePath, fileName, columnMappings, model);
+}
+
+// Page-by-page extraction with progress callback
+export async function extractPdfTableDataStream(
+  pdfFilePath: string,
+  fileName: string,
+  columnMappings: { [fixedColumn: string]: string[] },
+  selectedAgent: DocumentAIAgent = 'claude',
+  onChunk: (rows: Array<{ [key: string]: string }>) => void,
+  onProgress?: (progress: { currentPage: number; totalPages: number; status: string }) => void
+): Promise<Array<{ [key: string]: string }>> {
+  const model = selectedAgent === 'claude-haiku' ? 'haiku' : 'sonnet';
+  return await claudeService.extractPdfTableDataStream(pdfFilePath, fileName, columnMappings, model, onChunk, onProgress);
+}

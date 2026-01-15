@@ -81,6 +81,7 @@ declare global {
       moveFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
       copyFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
       readPdfText: (filePath: string) => Promise<string>;
+      readPdfPagesText: (filePath: string) => Promise<string[]>;
       readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
       getPdfPageCount: (filePath: string) => Promise<{ success: boolean; pageCount: number; error?: string }>;
       loadYamlTemplate: (filePath: string) => Promise<any>;

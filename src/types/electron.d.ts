@@ -47,6 +47,7 @@ interface ElectronAPI {
   
   // PDF operations
   readPdfText: (filePath: string) => Promise<string>;
+  readPdfPagesText: (filePath: string) => Promise<string[]>;
   readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
   
   // Image operations

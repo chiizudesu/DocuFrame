@@ -1719,6 +1719,57 @@ ipcMain.handle('read-pdf-text', async (_, filePath: string) => {
   }
 });
 
+// Read PDF text by page
+ipcMain.handle('read-pdf-pages-text', async (_, filePath: string) => {
+  try {
+    console.log(`Reading PDF page text from: ${filePath}`);
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error('PDF file not found');
+    }
+
+    const pdfParser = new PDFParser();
+    const pdfBuffer = fs.readFileSync(filePath);
+
+    const pdfData = await new Promise<PDFData>((resolve, reject) => {
+      pdfParser.on('pdfParser_dataReady', (pdfData) => {
+        resolve(pdfData as PDFData);
+      });
+
+      pdfParser.on('pdfParser_dataError', (error) => {
+        reject(error);
+      });
+
+      pdfParser.parseBuffer(pdfBuffer);
+    });
+
+    const pagesText: string[] = [];
+    if (pdfData && pdfData.Pages) {
+      for (const page of pdfData.Pages) {
+        let pageText = '';
+        if (page.Texts) {
+          for (const text of page.Texts) {
+            if (text.R && text.R[0] && text.R[0].T) {
+              pageText += decodeURIComponent(text.R[0].T) + ' ';
+            }
+          }
+        }
+        pageText = pageText
+          .replace(/\r\n/g, '\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/\s+/g, ' ')
+          .trim();
+        pagesText.push(pageText);
+      }
+    }
+
+    return pagesText;
+  } catch (error) {
+    console.error('Error reading PDF pages text:', error);
+    throw error;
+  }
+});
+
 // Add PDF page counting handler
 ipcMain.handle('get-pdf-page-count', async (_, filePath: string) => {
   try {
