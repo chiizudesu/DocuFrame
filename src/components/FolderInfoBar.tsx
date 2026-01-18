@@ -71,6 +71,9 @@ export const FolderInfoBar: React.FC = () => {
   const [newSpreadsheetName, setNewSpreadsheetName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const addressBarRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchInputContainerRef = useRef<HTMLDivElement>(null)
+  const [searchValue, setSearchValue] = useState('')
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
   const [clickCount, setClickCount] = useState(0)
@@ -191,6 +194,25 @@ export const FolderInfoBar: React.FC = () => {
       }, 0);
     }
   }
+
+  // Handle click outside search input to blur and clear
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchInputContainerRef.current && !searchInputContainerRef.current.contains(e.target as Node)) {
+        // Clicked outside the search input container
+        if (searchInputRef.current && document.activeElement === searchInputRef.current) {
+          searchInputRef.current.blur();
+          setSearchValue('');
+          setFileSearchFilter('');
+          setStatus('', 'info');
+        }
+      }
+    };
+
+    // Use mousedown instead of click to catch the event before focus changes
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [setFileSearchFilter, setStatus]);
 
   // Exit edit mode when clicking outside the address bar
   useEffect(() => {
@@ -336,31 +358,31 @@ export const FolderInfoBar: React.FC = () => {
   }
 
   const handleRefresh = async () => {
-    addLog(`Refreshing directory: ${currentDirectory}`)
+    addLog(`Cold reloading directory: ${currentDirectory}`)
     setIsRefreshing(true)
     
     try {
-      // Start both the refresh operation and a minimum delay
-      const [contents] = await Promise.all([
-        (window.electronAPI as any).getDirectoryContents(currentDirectory),
-        new Promise(resolve => setTimeout(resolve, 600)) // Match animation duration
-      ])
-      
-      // Reset states on refresh
+      // Clear all state first for a true cold reload
       setSelectedFiles([])
       setSelectedFile(null)
       setClipboard({ files: [], operation: null })
+      setFileSearchFilter('') // Clear search filter
       
-      // Apply filtering to match FileGrid behavior
-      const filtered = filterFiles(Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []))
-      setFolderItems(filtered)
-      setStatus('Folder refreshed', 'info')
+      // Dispatch a force reload event that FileGrid will listen to for immediate reload
+      // This bypasses debouncing and forces a fresh load
+      window.dispatchEvent(new CustomEvent('forceDirectoryReload', { 
+        detail: { 
+          directory: currentDirectory,
+          timestamp: Date.now() // Add timestamp to force reload even if directory hasn't changed
+        } 
+      }));
       
-      // Dispatch custom event to notify other components (like downloads panel) to refresh
+      // Also dispatch for other components
       window.dispatchEvent(new CustomEvent('folderRefresh'));
       
-      // Also dispatch a directory refresh event that FileGrid can listen to
-      window.dispatchEvent(new CustomEvent('directoryRefreshed', { detail: { directory: currentDirectory } }));
+      // Wait for animation
+      await new Promise(resolve => setTimeout(resolve, 600))
+      setStatus('Directory reloaded', 'success')
     } catch (error) {
       // Even on error, wait for the animation to complete
       await new Promise(resolve => setTimeout(resolve, 600))
@@ -845,12 +867,14 @@ export const FolderInfoBar: React.FC = () => {
           </Box>
         </Flex>
         {/* Search Input Field - Same style as address bar, no border */}
-        <InputGroup maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <InputGroup ref={searchInputContainerRef} maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
           <InputLeftElement pointerEvents="none" h="33px" pl={2}>
             <Search size={16} color={useColorModeValue('#94a3b8', 'gray.400')} />
           </InputLeftElement>
           <Input
-            placeholder={`Search ${getDirectoryName(currentDirectory)}`}
+            ref={searchInputRef}
+            value={searchValue}
+            placeholder="Search Clients"
             size="sm"
             h="33px"
             borderRadius="md"
@@ -859,14 +883,26 @@ export const FolderInfoBar: React.FC = () => {
             color={textColor}
             fontSize="sm"
             pl={7}
+            tabIndex={-1}
             _placeholder={{ color: useColorModeValue('#94a3b8', 'gray.400') }}
             _focus={{
               bg: inputFocusBgColor,
               boxShadow: 'none',
               outline: 'none'
             }}
+            onClick={(e) => {
+              // Only focus when clicking directly on the input
+              e.currentTarget.focus();
+            }}
+            onBlur={(e) => {
+              // Clear text when input loses focus
+              setSearchValue('');
+              setFileSearchFilter('');
+              setStatus('', 'info');
+            }}
             onChange={(e) => {
               const query = e.target.value;
+              setSearchValue(query);
               // Filter files directly using fileSearchFilter (FileGrid handles the filtering)
               setFileSearchFilter(query);
               if (query.trim()) {

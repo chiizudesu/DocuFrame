@@ -499,9 +499,22 @@ export const FileGrid: React.FC = () => {
       }
     };
 
+    // Listen for force reload events (cold reload - bypasses debounce)
+    const handleForceReload = (event: CustomEvent) => {
+      const eventDirectory = event.detail?.directory;
+      if (eventDirectory === currentDirectory) {
+        // Clear any loading flags to allow immediate reload
+        isLoadingRef.current = false;
+        // Force immediate reload without debounce
+        debouncedLoadDirectory(currentDirectory);
+      }
+    };
+
     window.addEventListener('directoryRefreshed', handleDirectoryRefreshed as EventListener);
+    window.addEventListener('forceDirectoryReload', handleForceReload as EventListener);
     return () => {
       window.removeEventListener('directoryRefreshed', handleDirectoryRefreshed as EventListener);
+      window.removeEventListener('forceDirectoryReload', handleForceReload as EventListener);
     };
   }, [currentDirectory, debouncedLoadDirectory])
 
@@ -3493,7 +3506,7 @@ export const FileGrid: React.FC = () => {
     onClick: (e: React.MouseEvent) => handleFileItemClick(file, index, e),
     onMouseDown: (e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
     onMouseUp: (e: React.MouseEvent) => handleFileItemMouseUp?.(file, index, e),
-    draggable: file.type !== 'folder', // Only make files draggable, folders receive drops
+    draggable: true, // Make both files and folders draggable
     onDragStart: (e: React.DragEvent) => {
       // Optimized: Use Map for O(1) lookups instead of find()
       const filesToDrag: string[] = selectedFiles.length > 0 && selectedFilesSet.has(file.name)
