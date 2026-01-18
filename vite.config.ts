@@ -23,7 +23,8 @@ export default defineConfig({
             rollupOptions: {
               external: [
                 'electron',
-                'get-windows' // Native module - must not be bundled
+                'get-windows', // Native module - must not be bundled
+                'uiohook-napi' // Native module - must not be bundled
               ]
             }
           }
@@ -38,7 +39,8 @@ export default defineConfig({
             rollupOptions: {
               external: [
                 'electron',
-                'get-windows' // Native module - must not be bundled
+                'get-windows', // Native module - must not be bundled
+                'uiohook-napi' // Native module - must not be bundled
               ]
             }
           }

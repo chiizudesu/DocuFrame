@@ -2,7 +2,7 @@
 // Set GitHub token for auto-updates (replace with your actual token)
 // GH_TOKEN should be set via environment variable or .env file
 
-import { app, BrowserWindow, shell, ipcMain, globalShortcut, Menu, dialog, nativeImage, MenuItem, MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, globalShortcut, Menu, dialog, nativeImage, MenuItem, MenuItemConstructorOptions, clipboard } from 'electron';
 import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, promises as fsPromises } from 'fs';
 import * as fs from 'fs';
@@ -27,6 +27,7 @@ const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
 import { autoUpdaterService } from '../src/main/autoUpdater';
 import * as chokidar from 'chokidar';
+import { uIOhook, UiohookKey } from 'uiohook-napi';
 
 // Fix __dirname in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -382,6 +383,135 @@ async function saveConfig(config: Config) {
 let settingsWindow: BrowserWindow | null = null;
 let isSettingsWindowOpen = false;
 let mainWindow: BrowserWindow | null = null;
+let pathOverlayWindow: BrowserWindow | null = null;
+let currentDirectoryPath: string = '';
+let isPathPasteActive: boolean = false;
+
+// Global key state tracking for Ctrl+Alt+V chord
+const pressedKeys = new Set<number>();
+const CTRL_KEY = UiohookKey.Ctrl;
+const ALT_KEY = UiohookKey.Alt;
+const V_KEY = UiohookKey.V;
+
+// Check if the path paste chord (Ctrl+Alt+V) is complete
+function isPathPasteChordPressed(): boolean {
+  return pressedKeys.has(CTRL_KEY) && pressedKeys.has(ALT_KEY) && pressedKeys.has(V_KEY);
+}
+
+// Initialize global keyboard hook for path paste feature
+function initializePathPasteHook() {
+  uIOhook.on('keydown', (e) => {
+    const keyCode = e.keycode;
+    const wasChordComplete = isPathPasteChordPressed();
+    
+    // Track the key
+    pressedKeys.add(keyCode);
+    
+    // Check if chord just became complete
+    if (!wasChordComplete && isPathPasteChordPressed() && !isPathPasteActive) {
+      console.log('[Main] Path paste chord activated (Ctrl+Alt+V pressed)');
+      handlePathPasteActivate();
+    }
+  });
+
+  uIOhook.on('keyup', (e) => {
+    const keyCode = e.keycode;
+    const wasChordComplete = isPathPasteChordPressed();
+    
+    // Remove the key from tracking
+    pressedKeys.delete(keyCode);
+    
+    // Check if chord just broke (any chord key released while overlay is active)
+    if (wasChordComplete && !isPathPasteChordPressed() && isPathPasteActive) {
+      console.log('[Main] Path paste chord released, pasting');
+      handlePathPasteRelease();
+    }
+  });
+
+  // Start the hook
+  uIOhook.start();
+  console.log('[Main] Global keyboard hook initialized for path paste');
+}
+
+// Called when Ctrl+Alt+V chord is first completed
+async function handlePathPasteActivate() {
+  isPathPasteActive = true;
+
+  const directoryPath = currentDirectoryPath;
+  if (!directoryPath) {
+    console.log('[Main] No current directory set, skipping path paste');
+    isPathPasteActive = false;
+    return;
+  }
+
+  // Extract client name from path to get IRD number
+  let irdNumber: string | null = null;
+  try {
+    const config = await loadConfig();
+    const csvPath = (config as any).clientbasePath;
+    const rootDirectory = (config as any).rootPath;
+    
+    if (csvPath && rootDirectory) {
+      const pathSegments = directoryPath.split(/[\/\\]/).filter(segment => segment && segment !== '');
+      const rootSegments = rootDirectory.split(/[\/\\]/).filter(Boolean);
+      const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === (rootSegments[rootSegments.length - 1] || '').toLowerCase());
+      const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 2 ? pathSegments[rootIdx + 2] : '';
+      
+      if (clientName) {
+        const rows = await new Promise<any[]>((resolve, reject) => {
+          try {
+            const content = fs.readFileSync(csvPath, 'utf8');
+            const records = parse(content, { columns: true, skip_empty_lines: true });
+            resolve(records);
+          } catch (err) {
+            reject(err);
+          }
+        });
+        
+        if (rows && rows.length > 0) {
+          const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
+          const match = rows.find((row: any) => {
+            const field = clientNameFields.find(f => row[f] !== undefined);
+            if (!field) return false;
+            return String(row[field]).toLowerCase().replace(/\s+/g, '') === clientName.toLowerCase().replace(/\s+/g, '');
+          }) || rows.find((row: any) => {
+            const field = clientNameFields.find(f => row[f] !== undefined);
+            if (!field) return false;
+            return String(row[field]).toLowerCase().includes(clientName.toLowerCase());
+          });
+          
+          if (match) {
+            irdNumber = match['IRD No.'] || match['IRD Number'] || match['ird number'] || match['ird_number'] || null;
+            if (irdNumber === '-' || irdNumber === '') {
+              irdNumber = null;
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[Main] Error fetching IRD number:', error);
+  }
+
+  // Copy path to clipboard by default
+  clipboard.writeText(directoryPath);
+  console.log('[Main] Copied path to clipboard:', directoryPath);
+  if (irdNumber) {
+    console.log('[Main] IRD number found:', irdNumber);
+  }
+
+  // Show overlay window with both path and IRD
+  createPathOverlayWindow(directoryPath, irdNumber);
+}
+
+// Called when any chord key is released
+function handlePathPasteRelease() {
+  // Close overlay first
+  closePathOverlayWindow();
+  
+  // Then perform paste
+  performPasteAction();
+}
 
 const createWindow = () => {
   // Create the browser window.
@@ -455,6 +585,9 @@ app.whenReady().then(async () => {
   
   // Register global shortcut for app activation
   await registerGlobalShortcut(config);
+  
+  // Initialize global keyboard hook for Ctrl+Alt+V path paste
+  initializePathPasteHook();
 });
 
 // Global shortcut management
@@ -487,9 +620,28 @@ async function registerGlobalShortcut(config: Config) {
       }
     }
 
+    // Note: Ctrl+Alt+V for path paste is handled via uIOhook for proper keyup detection
     
   } catch (error) {
     console.error('[Main] Error registering global shortcut:', error);
+  }
+}
+
+// Perform the paste action using Windows SendKeys
+function performPasteAction() {
+  try {
+    if (process.platform === 'win32') {
+      const pasteScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')`;
+      exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${pasteScript}"`, { maxBuffer: 1024 }, (error) => {
+        if (error) {
+          console.error('[Main] Error simulating paste:', error);
+        } else {
+          console.log('[Main] Simulated Ctrl+V paste');
+        }
+      });
+    }
+  } catch (error) {
+    console.error('[Main] Error performing paste action:', error);
   }
 }
 
@@ -632,6 +784,8 @@ app.on('quit', () => {
     backendProcess.kill();
     backendProcess = null;
   }
+  // Stop global keyboard hook
+  uIOhook.stop();
   // Stop all file watchers
   stopAllWatchers();
   // Cleanup Express server
@@ -2058,6 +2212,120 @@ ipcMain.handle('close-calculator', async () => {
   }
   return { success: true };
 });
+
+// Path paste overlay window management
+const createPathOverlayWindow = (directoryPath: string, irdNumber: string | null = null) => {
+  // If overlay window already exists, update it
+  if (pathOverlayWindow && !pathOverlayWindow.isDestroyed()) {
+    console.log('[Main] Overlay window already exists, updating path');
+    pathOverlayWindow.webContents.send('update-path-data', { path: directoryPath, irdNumber });
+    pathOverlayWindow.show();
+    return;
+  }
+  
+  const { screen } = require('electron');
+  
+  // Get the screen where the cursor is (active screen)
+  const cursorPoint = screen.getCursorScreenPoint();
+  const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
+  const workArea = activeDisplay.workArea;
+  
+  // Calculate center position on active screen
+  const windowWidth = 600;
+  const windowHeight = 140;
+  const centerX = workArea.x + Math.floor((workArea.width - windowWidth) / 2);
+  const centerY = workArea.y + Math.floor((workArea.height - windowHeight) / 2);
+
+  // Create independent window (no parent/modal) - similar to floating timer window
+  pathOverlayWindow = new BrowserWindow({
+    x: centerX,
+    y: centerY,
+    width: windowWidth,
+    height: windowHeight,
+    show: false,
+    resizable: false,
+    frame: false,
+    titleBarStyle: 'hidden',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    minimizable: false,
+    maximizable: false,
+    closable: false,
+    focusable: true,
+    movable: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    title: 'Path Paste Overlay',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  // Load the overlay HTML
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    pathOverlayWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}/path-overlay.html`);
+  } else {
+    pathOverlayWindow.loadFile(path.join(__dirname, '../dist/path-overlay.html'));
+  }
+
+  // Send initial path and IRD after load
+  pathOverlayWindow.webContents.once('did-finish-load', () => {
+    pathOverlayWindow?.webContents.send('update-path-data', { path: directoryPath, irdNumber });
+  });
+
+  // Show window when ready (like floating timer window pattern)
+  pathOverlayWindow.once('ready-to-show', () => {
+    // Re-apply position to ensure it's correct (sometimes needed for multi-monitor)
+    pathOverlayWindow?.setPosition(centerX, centerY);
+    pathOverlayWindow?.show();
+  });
+
+  // Handle window closed
+  pathOverlayWindow.on('closed', () => {
+    pathOverlayWindow = null;
+  });
+
+  // Make window clickable (don't ignore mouse events so buttons work)
+  pathOverlayWindow.setIgnoreMouseEvents(false);
+};
+
+// IPC handler for selecting which value to paste
+ipcMain.handle('select-paste-value', async (_, value: string) => {
+  try {
+    clipboard.writeText(value);
+    console.log('[Main] Selected value copied to clipboard:', value);
+    performPasteAction();
+    closePathOverlayWindow();
+    return { success: true };
+  } catch (error) {
+    console.error('[Main] Error selecting paste value:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+const closePathOverlayWindow = () => {
+  if (pathOverlayWindow && !pathOverlayWindow.isDestroyed()) {
+    pathOverlayWindow.destroy();
+    pathOverlayWindow = null;
+  }
+  // Reset flag immediately - keyup detection handles preventing re-trigger
+  isPathPasteActive = false;
+};
+
+// IPC handler to get current directory
+ipcMain.handle('get-current-directory', async () => {
+  return currentDirectoryPath;
+});
+
+// IPC handler for directory change notifications
+ipcMain.on('current-directory-changed', (_, directory: string) => {
+  currentDirectoryPath = directory || '';
+  console.log('[Main] Current directory updated:', currentDirectoryPath);
+});
+
 
 // New window creation for tab drag-out functionality
 ipcMain.handle('open-new-window', async (_, initialPath?: string) => {

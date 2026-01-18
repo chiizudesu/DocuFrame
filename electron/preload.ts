@@ -82,6 +82,7 @@ interface ElectronAPI {
   onMessage: (channel: string, callback: (event: any, ...args: any[]) => void) => void;
   removeListener: (channel: string, callback: (event: any, ...args: any[]) => void) => void;
   openNewWindow: (path: string) => Promise<void>;
+  selectPasteValue: (value: string) => Promise<{ success: boolean; error?: string }>;
   // PDF file serving
   convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
   // Image clipboard methods
@@ -98,12 +99,19 @@ interface ElectronAPI {
   getScreenInfo: () => Promise<{ success: boolean; workArea?: { width: number; height: number } }>;
   resizeFloatingTimer: (width: number, height: number) => Promise<void>;
   checkPanelProximity: () => Promise<{ isNearPanel: boolean }>;
+  // Path paste methods
+  getCurrentDirectory: () => Promise<string>;
+  onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
+  sendCurrentDirectoryChanged: (directory: string) => void;
   // Background image management methods
   getUserDataPath: () => Promise<{ success: boolean; path?: string; error?: string }>;
   copyBackgroundImage: (sourcePath: string, backgroundType: 'watermark' | 'backgroundFill') => Promise<{ success: boolean; path?: string; relativePath?: string; error?: string }>;
   listBackgroundImages: (backgroundType: 'watermark' | 'backgroundFill') => Promise<{ success: boolean; images?: Array<{ filename: string; path: string; relativePath: string }>; error?: string }>;
   deleteBackgroundImage: (backgroundType: 'watermark' | 'backgroundFill', filename: string) => Promise<{ success: boolean; error?: string }>;
   resolveBackgroundPath: (relativePath: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  // Path paste methods
+  getCurrentDirectory: () => Promise<string>;
+  onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -375,6 +383,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   resolveBackgroundPath: async (relativePath: string) => {
     return await ipcRenderer.invoke('resolve-background-path', relativePath);
+  },
+  // Path paste methods
+  getCurrentDirectory: async () => {
+    return await ipcRenderer.invoke('get-current-directory');
+  },
+  onCurrentDirectoryChanged: (callback: (directory: string) => void) => {
+    ipcRenderer.on('current-directory-changed', (_, directory: string) => {
+      callback(directory);
+    });
+  },
+  sendCurrentDirectoryChanged: (directory: string) => {
+    ipcRenderer.send('current-directory-changed', directory);
+  },
+  selectPasteValue: async (value: string) => {
+    return await ipcRenderer.invoke('select-paste-value', value);
   },
 
 }); 

@@ -236,6 +236,20 @@ export const AppProvider: React.FC<{
     loadSettings();
   }, [loadSettings]);
 
+  // Send current directory changes to main process for path paste shortcut
+  useEffect(() => {
+    if (currentDirectory) {
+      try {
+        // Send directly to main process via IPC
+        if ((window as any).electronAPI?.sendCurrentDirectoryChanged) {
+          (window as any).electronAPI.sendCurrentDirectoryChanged(currentDirectory);
+        }
+      } catch (error) {
+        console.error('Error sending directory change to main process:', error);
+      }
+    }
+  }, [currentDirectory]);
+
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
     setRootDirectoryState(path);
