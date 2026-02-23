@@ -12,6 +12,7 @@ import {
   Checkbox,
   useColorModeValue,
   Icon,
+  Tooltip,
 } from '@chakra-ui/react'
 import {
   FolderOpen,
@@ -86,6 +87,8 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const boxBg = useColorModeValue('white', 'gray.800');
   const borderCol = useColorModeValue('gray.200', 'gray.700');
   const hoverBg = useColorModeValue('gray.100', 'gray.700');
+  const [latestFileName, setLatestFileName] = useState<string | null>(null);
+  
   if (!contextMenu.isOpen || !contextMenu.fileItem) return null;
 
   const selectedPDFs = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'));
@@ -142,14 +145,60 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
         )}
         {contextMenu.fileItem.type === 'file' && selectedFiles.length === 1 && (
           <>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('smart_rename')}>
+            <Flex
+              align="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: hoverBg }}
+              onClick={() => handleMenuAction('smart_rename')}
+            >
               <Sparkles size={16} style={{ marginRight: '8px' }} />
               <Text fontSize="sm">Smart Rename</Text>
             </Flex>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('proper_case_rename')}>
+            <Flex
+              align="center"
+              px={3}
+              py={2}
+              cursor="pointer"
+              _hover={{ bg: hoverBg }}
+              onClick={() => handleMenuAction('proper_case_rename')}
+            >
               <Type size={16} style={{ marginRight: '8px' }} />
               <Text fontSize="sm">Proper Case</Text>
             </Flex>
+            <Tooltip
+              label={latestFileName ?`${latestFileName}` : 'Loading...'}
+              placement="right"
+              hasArrow
+              bg={useColorModeValue('gray.800', 'gray.200')}
+              color={useColorModeValue('white', 'gray.800')}
+              openDelay={300}
+            >
+              <Flex
+                align="center"
+                px={3}
+                py={2}
+                cursor="pointer"
+                _hover={{ bg: hoverBg }}
+                onClick={() => handleMenuAction('replace_with_latest')}
+                onMouseEnter={async () => {
+                  if (!latestFileName) {
+                    try {
+                      const result = await (window.electronAPI as any).transfer({ preview: true, numFiles: 1 });
+                      if (result?.files && result.files.length > 0) {
+                        setLatestFileName(result.files[0].originalName || result.files[0].name);
+                      }
+                    } catch (error) {
+                      console.error('Failed to fetch latest file name:', error);
+                    }
+                  }
+                }}
+              >
+                <ArrowRightLeft size={16} style={{ marginRight: '8px' }} />
+                <Text fontSize="sm">Replace with Latest File</Text>
+              </Flex>
+            </Tooltip>
           </>
         )}
         

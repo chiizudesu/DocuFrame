@@ -1002,6 +1002,28 @@ export const FileGrid: React.FC = () => {
         case 'proper_case_rename':
           await handleProperCaseRename(contextMenu.fileItem);
           break;
+        case 'replace_with_latest':
+          if (contextMenu.fileItem.type === 'file') {
+            setStatus(`Replacing ${contextMenu.fileItem.name} with latest file from Downloads...`, 'info');
+            addLog(`Replacing ${contextMenu.fileItem.name} with latest file from Downloads`, 'command');
+            try {
+              const result = await (window.electronAPI as any).replaceWithLatestFile(contextMenu.fileItem.path);
+              if (result && result.success) {
+                addLog(result.message || `Replaced ${contextMenu.fileItem.name} with latest file from Downloads`, 'response');
+                setStatus('File replaced with latest download', 'success');
+                await refreshDirectory(currentDirectory);
+              } else {
+                const message = result?.message || 'Replace with latest file failed';
+                addLog(message, 'error');
+                setStatus('Replace with latest file failed', 'error');
+              }
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+              addLog(`Replace with latest file failed: ${errorMessage}`, 'error');
+              setStatus('Replace with latest file failed', 'error');
+            }
+          }
+          break;
         default:
           addLog(`Function: ${action} on ${contextMenu.fileItem.name}`)
       }
@@ -1009,7 +1031,7 @@ export const FileGrid: React.FC = () => {
       addLog(`Failed to ${action}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
     }
 
-    handleCloseContextMenu()
+  handleCloseContextMenu()
   }, [contextMenu.fileItem, selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath])
 
   // Separate refresh function that doesn't show loading state (for background refreshes)

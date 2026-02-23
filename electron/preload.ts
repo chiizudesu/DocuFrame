@@ -112,6 +112,8 @@ interface ElectronAPI {
   // Path paste methods
   getCurrentDirectory: () => Promise<string>;
   onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
+  // Replace selected file with latest Downloads file
+  replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -395,6 +397,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   sendCurrentDirectoryChanged: (directory: string) => {
     ipcRenderer.send('current-directory-changed', directory);
+  },
+  // Replace selected file with latest Downloads file
+  replaceWithLatestFile: async (targetFilePath: string) => {
+    return await ipcRenderer.invoke('replace-with-latest-file', targetFilePath);
   },
   selectPasteValue: async (value: string) => {
     return await ipcRenderer.invoke('select-paste-value', value);

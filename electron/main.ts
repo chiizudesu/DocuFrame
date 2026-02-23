@@ -823,6 +823,78 @@ ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName
   }
 });
 
+ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string) => {
+  try {
+    if (!targetFilePath || typeof targetFilePath !== 'string') {
+      return {
+        success: false,
+        message: 'Invalid target file path'
+      };
+    }
+
+    const downloadsPath = app.getPath('downloads');
+
+    if (!fs.existsSync(downloadsPath)) {
+      console.error('[Main] Downloads directory not found:', downloadsPath);
+      return { success: false, message: `Downloads directory not found: ${downloadsPath}` };
+    }
+
+    const files = fs.readdirSync(downloadsPath)
+      .map(file => {
+        const filePath = path.join(downloadsPath, file);
+        const stats = fs.statSync(filePath);
+        return { file, filePath, mtime: stats.mtime, stats };
+      })
+      .filter(f => f.stats.isFile())
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+    if (files.length === 0) {
+      return { success: false, message: 'No files found in Downloads folder' };
+    }
+
+    const latest = files[0];
+    const targetDir = path.dirname(targetFilePath);
+    const targetName = path.basename(targetFilePath);
+
+    if (!fs.existsSync(targetDir)) {
+      return { success: false, message: `Target directory does not exist: ${targetDir}` };
+    }
+
+    // Copy latest download over the target file (overwrite) then delete original
+    fs.copyFileSync(latest.filePath, targetFilePath);
+
+    if (!fs.existsSync(targetFilePath)) {
+      return { success: false, message: 'File replace failed - destination file not found after copy' };
+    }
+
+    try {
+      fs.unlinkSync(latest.filePath);
+    } catch (error) {
+      console.warn('[Main] Failed to delete original downloads file after replace:', error);
+    }
+
+    // Notify renderer so FileGrid can refresh and highlight the updated file
+    const mainWindow = BrowserWindow.getFocusedWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('folderContentsChanged', {
+        directory: targetDir,
+        newFiles: [targetFilePath]
+      });
+    }
+
+    return {
+      success: true,
+      message: `Replaced ${targetName} with latest file from Downloads (${latest.file})`
+    };
+  } catch (error) {
+    console.error('[Main] Error in replace-with-latest-file:', error);
+    return {
+      success: false,
+      message: `Error replacing file: ${(error as Error).message}`
+    };
+  }
+});
+
 ipcMain.handle('get-config', async () => {
   try {
     return await loadConfig();

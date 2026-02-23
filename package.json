@@ -72,6 +72,7 @@
     "@electron-forge/publisher-github": "^7.8.1",
     "@electron/rebuild": "^4.0.2",
     "@types/adm-zip": "^0.5.7",
+    "@types/mailparser": "^3.4.6",
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@typescript-eslint/eslint-plugin": "^6.21.0",

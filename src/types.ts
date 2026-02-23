@@ -122,6 +122,8 @@ declare global {
       openNewWindow: (path: string) => Promise<void>;
       // PDF file serving
       convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+      // Replace selected file with latest Downloads file
+      replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
     };
   }
 } 
