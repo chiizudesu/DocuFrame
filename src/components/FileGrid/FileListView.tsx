@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Box,
   Text,
@@ -7,12 +7,18 @@ import {
   Input,
   Image,
   useColorModeValue,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuDivider,
+  IconButton,
 } from '@chakra-ui/react'
 import {
   FolderOpen,
   ChevronUp,
   ChevronDown,
   Upload,
+  Plus,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { FileTableRowProps } from './FileGridUtils'
@@ -224,6 +230,8 @@ interface GroupHeaderDropZoneProps {
   indexInfo: ReturnType<typeof getIndexInfo>;
   fileCount: number;
   onDrop: (e: React.DragEvent) => void;
+  transferTemplates: Array<{ command: string; filename: string }>;
+  onTransfer: (opts: { command?: string; newName?: string }) => Promise<void>;
   pillBg: string;
   pillText: string;
   dividerColor: string;
@@ -238,6 +246,8 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
   indexInfo,
   fileCount,
   onDrop,
+  transferTemplates,
+  onTransfer,
   pillBg,
   pillText,
   dividerColor,
@@ -248,7 +258,30 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
 }) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isCopyMode, setIsCopyMode] = useState(false);
-  
+  const [manualFilename, setManualFilename] = useState('');
+  const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
+  const manualInputRef = useRef<HTMLInputElement>(null);
+  const menuListBg = useColorModeValue('white', 'gray.800');
+  const menuListBorder = useColorModeValue('gray.200', 'gray.700');
+  const menuItemBg = useColorModeValue('gray.50', 'gray.700');
+  const menuHoverBg = useColorModeValue('gray.100', 'gray.600');
+  const menuPlaceholderColor = useColorModeValue('gray.400', 'gray.500');
+  const inputBg = useColorModeValue('gray.50', 'gray.700');
+
+  const handleTransferTemplate = (command: string) => {
+    onTransfer({ command });
+    setIsTransferMenuOpen(false);
+  };
+
+  const handleTransferManual = () => {
+    const trimmed = manualFilename.trim();
+    if (trimmed) {
+      onTransfer({ newName: trimmed });
+      setManualFilename('');
+      setIsTransferMenuOpen(false);
+    }
+  };
+
   const checkAndSetDropEffect = (e: React.DragEvent): 'internal' | 'external' | 'none' => {
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
@@ -370,20 +403,108 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
           {indexInfo.description && ` - ${indexInfo.description}`}
         </Box>
         <Box flex="1" />
-        <Box
-          as="span"
-          px={3}
-          py={1.5}
-          bg={pillBg}
-          color={pillText}
-          borderRadius={0}
-          fontSize="xs"
-          fontWeight="semibold"
-          width="56px"
-          textAlign="center"
-        >
-          {fileCount}
-        </Box>
+        <Flex align="center" gap={1}>
+          <Box
+            as="span"
+            px={3}
+            py={1.5}
+            bg={pillBg}
+            color={pillText}
+            borderRadius={0}
+            fontSize="xs"
+            fontWeight="semibold"
+            width="56px"
+            textAlign="center"
+          >
+            {fileCount}
+          </Box>
+          <Menu closeOnSelect={false} isOpen={isTransferMenuOpen} onClose={() => { setManualFilename(''); setIsTransferMenuOpen(false); }} onOpen={() => setIsTransferMenuOpen(true)}>
+            <MenuButton
+              as={IconButton}
+              aria-label="Transfer to this group"
+              icon={<Plus size={12} />}
+              size="xs"
+              variant="ghost"
+              minW={6}
+              h={6}
+              color={pillText}
+              bg={pillBg}
+              borderRadius={0}
+              _hover={{ bg: dropZoneBg }}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
+            />
+            <MenuList
+              bg={menuListBg}
+              borderColor={menuListBorder}
+              minW="200px"
+              maxW="50ch"
+              p={3}
+              zIndex={1500}
+            >
+              {transferTemplates.length === 0 ? (
+                <Box py={2.5} px={4} my={0.5} borderRadius="md" bg={menuItemBg}>
+                  <Text fontSize="sm" color={menuPlaceholderColor}>No templates</Text>
+                </Box>
+              ) : (
+                transferTemplates.map((t) => {
+                  const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
+                  return (
+                    <Box
+                      key={t.command}
+                      as="button"
+                      type="button"
+                      w="100%"
+                      textAlign="left"
+                      py={2.5}
+                      px={4}
+                      my={0.5}
+                      fontSize="sm"
+                      borderRadius="md"
+                      bg={menuItemBg}
+                      cursor="pointer"
+                      border="none"
+                      onClick={() => handleTransferTemplate(t.command)}
+                      _hover={{ bg: menuHoverBg }}
+                      _focus={{ bg: menuHoverBg }}
+                      _focusVisible={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
+                      title={t.filename}
+                    >
+                      {displayText}
+                    </Box>
+                  );
+                })
+              )}
+              <MenuDivider borderColor={menuListBorder} my={2} />
+              <Box w="100%" my={0.5} onClick={(e) => e.stopPropagation()}>
+                <Input
+                  ref={manualInputRef}
+                  w="100%"
+                  py={2.5}
+                  px={4}
+                  h="auto"
+                  minH="40px"
+                  fontSize="sm"
+                  borderRadius="md"
+                  bg={inputBg}
+                  border="1px solid"
+                  borderColor={menuListBorder}
+                  placeholder="New filename to transfer..."
+                  value={manualFilename}
+                  onChange={(e) => setManualFilename(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleTransferManual();
+                    }
+                  }}
+                  _placeholder={{ color: menuPlaceholderColor }}
+                  _hover={{ borderColor: menuHoverBg }}
+                  _focus={{ borderColor: 'blue.400', boxShadow: '0 0 0 1px var(--chakra-colors-blue-400)' }}
+                />
+              </Box>
+            </MenuList>
+          </Menu>
+        </Flex>
       </Flex>
       <Box 
         height="1px" 
@@ -486,6 +607,8 @@ export interface FileListViewProps {
   handleColumnDragStart: (column: string, e: React.MouseEvent) => void;
   handleResizeStart: (column: string, e: React.MouseEvent) => void;
   handleGroupHeaderDrop: (e: React.DragEvent, groupKey: string) => Promise<void>;
+  groupedTransferTemplates: Record<string, Array<{ command: string; filename: string }>>;
+  onTransferFromGroupHeader: (opts: { command?: string; newName?: string }) => Promise<void>;
   createRowHandlers: (file: FileItem, index: number) => any;
   createFolderDropHandlers: (file: FileItem, index: number) => any;
   observeFileElement: (element: HTMLElement | null, filePath: string) => void;
@@ -569,6 +692,8 @@ export const FileListView: React.FC<FileListViewProps> = ({
   handleColumnDragStart,
   handleResizeStart,
   handleGroupHeaderDrop,
+  groupedTransferTemplates,
+  onTransferFromGroupHeader,
   createRowHandlers,
   createFolderDropHandlers,
   observeFileElement,
@@ -965,6 +1090,8 @@ export const FileListView: React.FC<FileListViewProps> = ({
                             indexInfo={indexInfo}
                             fileCount={groupFiles.length}
                             onDrop={(e) => handleGroupHeaderDrop(e, groupKey)}
+                            transferTemplates={groupedTransferTemplates[groupKey] ?? []}
+                            onTransfer={onTransferFromGroupHeader}
                             pillBg={pillBg}
                             pillText={pillText}
                             dividerColor={dividerColor}

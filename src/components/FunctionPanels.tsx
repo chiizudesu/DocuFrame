@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Flex, Button, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, Menu, MenuButton, MenuList, MenuItem, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton, Input } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, FolderPlus, PanelRightClose, ExternalLink, Plus, FileSpreadsheet, X, FileType, Wand2 } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Box, Flex, Button, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton, Input, Popover, PopoverTrigger, PopoverContent, PopoverBody } from '@chakra-ui/react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, FolderPlus, PanelRightClose, ExternalLink, Plus, FileSpreadsheet, X, FileType, Wand2, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { OrgCodesDialog } from './OrgCodesDialog';
@@ -19,6 +19,7 @@ import { TaskTimerSummaryDialog } from './TaskTimerSummaryDialog';
 import { type DialogType, type MinimizedDialog } from './MinimizedDialogsBar';
 import { getAppVersion } from '../utils/version';
 import { taskTimerService, TimerState } from '../services/taskTimer';
+import { extractIndexPrefix, getAllIndexKeys } from '../utils/indexPrefix';
 
 // Add client search shortcut functionality
 const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) => {
@@ -54,6 +55,346 @@ const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) =
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [enableClientSearchShortcut, setClientSearchOpen]);
+};
+
+// Transfer dropdown (single row: 25% index | 75% template/filename)
+const TransferDropdownMenu: React.FC<{
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  buttonColor: string;
+  buttonHoverBg: string;
+  indexesNotInDir: string[];
+  groupedTransferTemplates: Record<string, Array<{ command: string; filename: string }>>;
+  transferSelectedIndex: string | null;
+  transferCustomIndex: string;
+  transferManualFilename: string;
+  setTransferSelectedIndex: (s: string | null) => void;
+  setTransferCustomIndex: (s: string) => void;
+  setTransferManualFilename: (s: string) => void;
+  onTransfer: (opts: { command?: string; newName?: string }) => Promise<void>;
+  onClose: () => void;
+}> = ({
+  isOpen,
+  onOpenChange,
+  buttonColor,
+  buttonHoverBg,
+  indexesNotInDir,
+  groupedTransferTemplates,
+  transferSelectedIndex,
+  transferCustomIndex,
+  transferManualFilename,
+  setTransferSelectedIndex,
+  setTransferCustomIndex,
+  setTransferManualFilename,
+  onTransfer,
+  onClose,
+}) => {
+  const [indexMode, setIndexMode] = useState<'dropdown' | 'custom'>('dropdown');
+  const [templateMode, setTemplateMode] = useState<'dropdown' | 'custom'>('dropdown');
+  const [indexPopoverOpen, setIndexPopoverOpen] = useState(false);
+  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
+
+  // Default index to "AA" when menu opens
+  useEffect(() => {
+    if (isOpen && transferSelectedIndex === null) {
+      setTransferSelectedIndex('AA');
+    }
+  }, [isOpen, transferSelectedIndex, setTransferSelectedIndex]);
+
+  const menuListBg = useColorModeValue('white', 'gray.800');
+  const menuListBorder = useColorModeValue('gray.200', 'gray.700');
+  const menuItemBg = useColorModeValue('gray.50', 'gray.700');
+  const menuHoverBg = useColorModeValue('gray.100', 'gray.600');
+  const menuPlaceholderColor = useColorModeValue('gray.400', 'gray.500');
+  const inputBg = useColorModeValue('gray.50', 'gray.700');
+
+  const indexKeys = useMemo(() => {
+    const keys = getAllIndexKeys().filter(k => k !== 'Other');
+    // Put AA first
+    const aa = keys.indexOf('AA');
+    if (aa > 0) {
+      const arr = [...keys];
+      arr.splice(aa, 1);
+      return ['AA', ...arr];
+    }
+    return keys;
+  }, []);
+  const templates = transferSelectedIndex ? (groupedTransferTemplates[transferSelectedIndex] ?? []) : [];
+  const effectiveIndex = indexMode === 'custom' && transferCustomIndex.trim() ? transferCustomIndex.trim() : transferSelectedIndex;
+
+  const handleSelectIndex = (index: string) => {
+    setTransferSelectedIndex(index);
+    setTransferCustomIndex('');
+    setIndexMode('dropdown');
+    setIndexPopoverOpen(false);
+  };
+
+  const handleTransferTemplate = (command: string) => {
+    onTransfer({ command });
+    onOpenChange(false);
+    onClose();
+  };
+
+  const handleTransferManual = () => {
+    const trimmed = transferManualFilename.trim();
+    if (trimmed && effectiveIndex) {
+      const fullName = trimmed.includes(' - ') ? trimmed : `${effectiveIndex} - ${trimmed}`;
+      onTransfer({ newName: fullName });
+      setTransferManualFilename('');
+      onOpenChange(false);
+      onClose();
+    }
+  };
+
+  const handleMenuClose = () => {
+    onOpenChange(false);
+    onClose();
+  };
+
+  const indexDisplay = indexMode === 'custom'
+    ? (transferCustomIndex || 'Custom...')
+    : (transferSelectedIndex || 'Index');
+
+  const templateDisplay = templateMode === 'custom'
+    ? (transferManualFilename || 'Custom...')
+    : 'Template';
+
+  return (
+    <Menu closeOnSelect={false} isOpen={isOpen} onClose={handleMenuClose} onOpen={() => onOpenChange(true)} placement="bottom">
+      <Tooltip label="Transfer file from Downloads" placement="bottom" hasArrow>
+        <MenuButton
+          as={IconButton}
+          icon={<Icon as={Download} boxSize={5} />}
+          aria-label="Transfer file from Downloads"
+          variant="ghost"
+          size="sm"
+          color={buttonColor}
+          _hover={{ bg: buttonHoverBg }}
+          h="40px"
+          w="40px"
+        />
+      </Tooltip>
+      <MenuList
+        bg={menuListBg}
+        borderColor={menuListBorder}
+        minW="320px"
+        maxW="50ch"
+        px={3}
+        py={3}
+        zIndex={1500}
+      >
+        <Flex gap={2} align="stretch" w="100%">
+          {/* Left column: 25% - Index selector */}
+          <Box w="25%" minW="0" onClick={(e) => e.stopPropagation()}>
+            {indexMode === 'dropdown' ? (
+              <Popover isOpen={indexPopoverOpen} onOpen={() => setIndexPopoverOpen(true)} onClose={() => setIndexPopoverOpen(false)} placement="bottom-start" closeOnBlur={true}>
+                <PopoverTrigger>
+                  <Flex
+                    as="button"
+                    type="button"
+                    w="100%"
+                    h="40px"
+                    minH="40px"
+                    align="center"
+                    justify="space-between"
+                    gap={1}
+                    py={2}
+                    px={3}
+                    fontSize="sm"
+                    borderRadius="md"
+                    bg={menuItemBg}
+                    border="1px solid"
+                    borderColor={menuListBorder}
+                    cursor="pointer"
+                    _hover={{ bg: menuHoverBg }}
+                    _focus={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
+                    onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setIndexPopoverOpen(false); setIndexMode('custom'); setTransferCustomIndex(transferSelectedIndex || ''); }}
+                    title="Double-click to edit manually"
+                  >
+                    <Text noOfLines={1} fontSize="sm" fontWeight="medium">
+                      {indexDisplay}
+                    </Text>
+                    <ChevronDown size={14} flexShrink={0} />
+                  </Flex>
+                </PopoverTrigger>
+                <PopoverContent w="auto" minW="120px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }}>
+                  <PopoverBody p={0}>
+                    <Box display="flex" flexDirection="column" py={1}>
+                      {indexKeys.map((index) => (
+                        <Box
+                          key={index}
+                          as="button"
+                          type="button"
+                          w="100%"
+                          textAlign="left"
+                          py={2}
+                          px={3}
+                          fontSize="sm"
+                          bg="transparent"
+                          cursor="pointer"
+                          border="none"
+                          onClick={() => handleSelectIndex(index)}
+                          _hover={{ bg: menuHoverBg }}
+                          _focus={{ bg: menuHoverBg }}
+                        >
+                          {index}
+                        </Box>
+                      ))}
+                    </Box>
+                  </PopoverBody>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <Box w="100%" h="40px" minH="40px">
+                <Input
+                  size="sm"
+                  w="100%"
+                  h="100%"
+                  minH="40px"
+                  py={2}
+                  px={3}
+                  fontSize="sm"
+                  borderRadius="md"
+                  bg={inputBg}
+                  border="1px solid"
+                  borderColor={menuListBorder}
+                  placeholder="Custom index"
+                  value={transferCustomIndex}
+                  onChange={(e) => setTransferCustomIndex(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const t = transferCustomIndex.trim();
+                      if (t) setTransferSelectedIndex(t);
+                      setIndexMode('dropdown');
+                      setTransferCustomIndex('');
+                    }
+                  }}
+                  onBlur={() => {
+                    const t = transferCustomIndex.trim();
+                    if (t) setTransferSelectedIndex(t);
+                    setIndexMode('dropdown');
+                    setTransferCustomIndex('');
+                  }}
+                  _placeholder={{ color: menuPlaceholderColor }}
+                />
+              </Box>
+            )}
+          </Box>
+
+          {/* Right column: 75% - Template/filename selector */}
+          <Box w="75%" minW="0" onClick={(e) => e.stopPropagation()}>
+            {templateMode === 'dropdown' ? (
+              <Popover isOpen={templatePopoverOpen} onOpen={() => setTemplatePopoverOpen(true)} onClose={() => setTemplatePopoverOpen(false)} placement="bottom-start" closeOnBlur={true}>
+                <PopoverTrigger>
+                  <Flex
+                    as="button"
+                    type="button"
+                    w="100%"
+                    h="40px"
+                    minH="40px"
+                    align="center"
+                    justify="space-between"
+                    gap={1}
+                    py={2}
+                    px={3}
+                    fontSize="sm"
+                    borderRadius="md"
+                    bg={menuItemBg}
+                    border="1px solid"
+                    borderColor={menuListBorder}
+                    cursor="pointer"
+                    _hover={{ bg: menuHoverBg }}
+                    _focus={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
+                    isDisabled={!effectiveIndex}
+                    onDoubleClick={(e) => { if (effectiveIndex) { e.preventDefault(); e.stopPropagation(); setTemplatePopoverOpen(false); setTemplateMode('custom'); } }}
+                    title="Double-click to edit manually"
+                  >
+                    <Text noOfLines={1} fontSize="sm" fontWeight="medium">
+                      {!effectiveIndex ? 'Select index first' : templateDisplay}
+                    </Text>
+                    <ChevronDown size={14} flexShrink={0} />
+                  </Flex>
+                </PopoverTrigger>
+                <PopoverContent w="auto" minW="200px" maxW="400px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }}>
+                  <PopoverBody p={0}>
+                    <Box display="flex" flexDirection="column" py={1}>
+                      {templates.length === 0 ? (
+                        <Box py={2} px={3} fontSize="sm" color={menuPlaceholderColor}>
+                          No templates
+                        </Box>
+                      ) : (
+                        templates.map((t) => {
+                          const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
+                          return (
+                            <Box
+                              key={t.command}
+                              as="button"
+                              type="button"
+                              w="100%"
+                              textAlign="left"
+                              py={2}
+                              px={3}
+                              fontSize="sm"
+                              bg="transparent"
+                              cursor="pointer"
+                              border="none"
+                              onClick={() => handleTransferTemplate(t.command)}
+                              _hover={{ bg: menuHoverBg }}
+                              _focus={{ bg: menuHoverBg }}
+                              title={t.filename}
+                            >
+                              {displayText}
+                            </Box>
+                          );
+                        })
+                      )}
+                    </Box>
+                  </PopoverBody>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <Box w="100%" h="40px" minH="40px">
+                <Input
+                  size="sm"
+                  w="100%"
+                  h="100%"
+                  minH="40px"
+                  py={2}
+                  px={3}
+                  fontSize="sm"
+                  borderRadius="md"
+                  bg={inputBg}
+                  border="1px solid"
+                  borderColor={menuListBorder}
+                  placeholder="Custom filename"
+                  value={transferManualFilename}
+                  onChange={(e) => setTransferManualFilename(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const trimmed = transferManualFilename.trim();
+                      if (trimmed && effectiveIndex) {
+                        handleTransferManual();
+                      } else {
+                        setTemplateMode('dropdown');
+                        setTransferManualFilename('');
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    setTemplateMode('dropdown');
+                    setTransferManualFilename('');
+                  }}
+                  _placeholder={{ color: menuPlaceholderColor }}
+                />
+              </Box>
+            )}
+          </Box>
+        </Flex>
+      </MenuList>
+    </Menu>
+  );
 };
 
 const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
@@ -187,6 +528,13 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   // Templates state
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+  // Transfer dropdown state
+  const [transferCommandMappings, setTransferCommandMappings] = useState<{ [key: string]: string }>({});
+  const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
+  const [transferSelectedIndex, setTransferSelectedIndex] = useState<string | null>(null);
+  const [transferCustomIndex, setTransferCustomIndex] = useState('');
+  const [transferManualFilename, setTransferManualFilename] = useState('');
   
   // Task Timer state (kept for logFileOperation functionality)
   const [timerState, setTimerState] = useState<TimerState>({ currentTask: null, isRunning: false, isPaused: false });
@@ -724,6 +1072,56 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     }
   };
 
+  // Load transfer mappings on mount and when updated
+  const loadTransferMappings = useCallback(async () => {
+    try {
+      const config = await (window.electronAPI as any).getConfig();
+      const mappings = config?.transferCommandMappings || {};
+      setTransferCommandMappings(mappings);
+    } catch (error) {
+      console.error('[FunctionPanels] Error loading transfer mappings:', error);
+      setTransferCommandMappings({});
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTransferMappings();
+    const handleMappingsUpdate = () => loadTransferMappings();
+    window.addEventListener('transferMappingsUpdated', handleMappingsUpdate);
+    return () => window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
+  }, [loadTransferMappings]);
+
+  // Group transfer templates by index key (same rule as TransferMappingDialog)
+  const groupedTransferTemplates = useMemo(() => {
+    const groups: Record<string, Array<{ command: string; filename: string }>> = {};
+    Object.entries(transferCommandMappings).forEach(([command, filename]) => {
+      const match = (filename as string).match(/^([A-Z](?:-?\d+)?)\s*-/);
+      const groupKey = match ? match[1] : 'Other';
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push({ command, filename: filename as string });
+    });
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => a.command.localeCompare(b.command));
+    });
+    return groups;
+  }, [transferCommandMappings]);
+
+  // Indexes not available in current directory (same source as group headers: getAllIndexKeys, exclude Other)
+  const indexesNotInDir = useMemo(() => {
+    const indexesInDir = new Set<string>();
+    (folderItems || []).forEach((item: { name: string; type?: string }) => {
+      if (item.type === 'folder') return;
+      const key = extractIndexPrefix(item.name);
+      if (key) indexesInDir.add(key);
+    });
+    const allIndexes = getAllIndexKeys();
+    return allIndexes
+      .filter(k => !indexesInDir.has(k))
+      .sort((a, b) => a.localeCompare(b));
+  }, [folderItems]);
+
+  const toast = useToast();
+
   // Handle creating file from template
   const handleCreateFromTemplate = async (templatePath: string, templateName: string) => {
     try {
@@ -743,6 +1141,57 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       setStatus('Failed to create from template', 'error');
     }
   };
+
+  // Handle transfer from panel (two-phase dropdown)
+  const handleTransferFromPanel = useCallback(async (opts: { command?: string; newName?: string }) => {
+    try {
+      setStatus('Transferring...', 'info');
+      const transferOptions: { numFiles: number; command?: string; newName?: string; currentDirectory: string } = {
+        numFiles: 1,
+        currentDirectory,
+      };
+      if (opts.command) {
+        transferOptions.command = opts.command;
+      } else if (opts.newName?.trim()) {
+        transferOptions.newName = opts.newName.trim();
+        transferOptions.command = 'transfer';
+      } else {
+        setStatus('No template or filename provided', 'error');
+        return;
+      }
+      const result = await (window.electronAPI as any).transfer(transferOptions);
+      if (result.success) {
+        addLog(result.message, 'response');
+        setStatus('Transfer completed', 'success');
+        window.dispatchEvent(new CustomEvent('folderRefresh'));
+        const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+        setFolderItems(Array.isArray(contents) ? contents : (contents?.files ?? []));
+      } else {
+        addLog(result.message, 'error');
+        setStatus('Transfer failed', 'error');
+        toast({
+          title: 'Transfer Failed',
+          description: result.message,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Transfer failed: ${errorMessage}`, 'error');
+      setStatus('Transfer failed', 'error');
+      toast({
+        title: 'Transfer Failed',
+        description: errorMessage,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+        position: 'top',
+      });
+    }
+  }, [currentDirectory, addLog, setStatus, setFolderItems, toast]);
 
   // Icon-only function button component
   const FunctionButton: React.FC<{
@@ -1053,6 +1502,27 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             w="40px"
           />
         </Tooltip>
+
+        <TransferDropdownMenu
+          isOpen={isTransferMenuOpen}
+          onOpenChange={setIsTransferMenuOpen}
+          buttonColor={buttonColor}
+          buttonHoverBg={buttonHoverBg}
+          indexesNotInDir={indexesNotInDir}
+          groupedTransferTemplates={groupedTransferTemplates}
+          transferSelectedIndex={transferSelectedIndex}
+          transferCustomIndex={transferCustomIndex}
+          transferManualFilename={transferManualFilename}
+          setTransferSelectedIndex={setTransferSelectedIndex}
+          setTransferCustomIndex={setTransferCustomIndex}
+          setTransferManualFilename={setTransferManualFilename}
+          onTransfer={handleTransferFromPanel}
+          onClose={() => {
+            setTransferSelectedIndex(null);
+            setTransferCustomIndex('');
+            setTransferManualFilename('');
+          }}
+        />
         
         <Menu onOpen={loadTemplates}>
           <MenuButton

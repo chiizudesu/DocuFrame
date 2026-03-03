@@ -88,6 +88,27 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const borderCol = useColorModeValue('gray.200', 'gray.700');
   const hoverBg = useColorModeValue('gray.100', 'gray.700');
   const [latestFileName, setLatestFileName] = useState<string | null>(null);
+
+  // Fetch latest download file whenever context menu opens (for Replace with latest file tooltip)
+  useEffect(() => {
+    if (!contextMenu.isOpen || !contextMenu.fileItem || contextMenu.fileItem.type !== 'file') return;
+    setLatestFileName(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await (window.electronAPI as any).transfer({ preview: true, numFiles: 1 });
+        if (!cancelled && result?.files && result.files.length > 0) {
+          setLatestFileName(result.files[0].originalName || result.files[0].name);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to fetch latest file name:', error);
+          setLatestFileName(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [contextMenu.isOpen, contextMenu.fileItem?.path]);
   
   if (!contextMenu.isOpen || !contextMenu.fileItem) return null;
 
@@ -168,7 +189,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
               <Text fontSize="sm">Proper Case</Text>
             </Flex>
             <Tooltip
-              label={latestFileName ?`${latestFileName}` : 'Loading...'}
+              label={latestFileName ? `${latestFileName}` : 'Loading...'}
               placement="right"
               hasArrow
               bg={useColorModeValue('gray.800', 'gray.200')}
@@ -182,18 +203,6 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
                 cursor="pointer"
                 _hover={{ bg: hoverBg }}
                 onClick={() => handleMenuAction('replace_with_latest')}
-                onMouseEnter={async () => {
-                  if (!latestFileName) {
-                    try {
-                      const result = await (window.electronAPI as any).transfer({ preview: true, numFiles: 1 });
-                      if (result?.files && result.files.length > 0) {
-                        setLatestFileName(result.files[0].originalName || result.files[0].name);
-                      }
-                    } catch (error) {
-                      console.error('Failed to fetch latest file name:', error);
-                    }
-                  }
-                }}
               >
                 <ArrowRightLeft size={16} style={{ marginRight: '8px' }} />
                 <Text fontSize="sm">Replace with Latest File</Text>

@@ -164,6 +164,7 @@ export const FileGrid: React.FC = () => {
   const [backgroundFillUrl, setBackgroundFillUrl] = useState<string>('')
   const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>('watermark')
   const [enableBackgrounds, setEnableBackgrounds] = useState(true)
+  const [transferCommandMappings, setTransferCommandMappings] = useState<{ [key: string]: string }>({})
   
   // Drag selection state
   const [isSelecting, setIsSelecting] = useState(false)
@@ -194,6 +195,40 @@ export const FileGrid: React.FC = () => {
       }
     };
   }, []);
+
+  // Load transfer mappings on mount and when updated (same source as TransferMappingDialog)
+  const loadTransferMappings = useCallback(async () => {
+    try {
+      const config = await (window.electronAPI as any).getConfig();
+      const mappings = config?.transferCommandMappings || {};
+      setTransferCommandMappings(mappings);
+    } catch (error) {
+      console.error('[FileGrid] Error loading transfer mappings:', error);
+      setTransferCommandMappings({});
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTransferMappings();
+    const handleMappingsUpdate = () => loadTransferMappings();
+    window.addEventListener('transferMappingsUpdated', handleMappingsUpdate);
+    return () => window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
+  }, [loadTransferMappings]);
+
+  // Group transfer templates by index key (same rule as TransferMappingDialog: /^([A-Z](?:-?\d+)?)\s*-/)
+  const groupedTransferTemplates = useMemo(() => {
+    const groups: Record<string, Array<{ command: string; filename: string }>> = {};
+    Object.entries(transferCommandMappings).forEach(([command, filename]) => {
+      const match = (filename as string).match(/^([A-Z](?:-?\d+)?)\s*-/);
+      const groupKey = match ? match[1] : 'Other';
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push({ command, filename: filename as string });
+    });
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => a.command.localeCompare(b.command));
+    });
+    return groups;
+  }, [transferCommandMappings]);
 
   const [blankContextMenu, setBlankContextMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({ isOpen: false, position: { x: 0, y: 0 } });
 
@@ -1073,6 +1108,56 @@ export const FileGrid: React.FC = () => {
     }
   }, [setFolderItems, addLog, filterFiles]);
 
+  // Handler for transfer from group header (plus button dropdown)
+  const handleTransferFromGroupHeader = useCallback(async (opts: { command?: string; newName?: string }) => {
+    try {
+      setStatus('Transferring...', 'info');
+      const transferOptions: { numFiles: number; command?: string; newName?: string; currentDirectory: string } = {
+        numFiles: 1,
+        currentDirectory,
+      };
+      if (opts.command) {
+        transferOptions.command = opts.command;
+      } else if (opts.newName?.trim()) {
+        transferOptions.newName = opts.newName.trim();
+        transferOptions.command = 'transfer';
+      } else {
+        setStatus('No template or filename provided', 'error');
+        return;
+      }
+      const result = await (window.electronAPI as any).transfer(transferOptions);
+      if (result.success) {
+        addLog(result.message, 'response');
+        setStatus('Transfer completed', 'success');
+        window.dispatchEvent(new CustomEvent('folderRefresh'));
+        await refreshDirectory(currentDirectory);
+      } else {
+        addLog(result.message, 'error');
+        setStatus('Transfer failed', 'error');
+        toast({
+          title: 'Transfer Failed',
+          description: result.message,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Transfer failed: ${errorMessage}`, 'error');
+      setStatus('Transfer failed', 'error');
+      toast({
+        title: 'Transfer Failed',
+        description: errorMessage,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+        position: 'top',
+      });
+    }
+  }, [currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+
   // Handler for assigning/changing index prefix (or copying if isCopy is true)
   const handleAssignPrefix = useCallback(async (indexKey: string | null, isCopy?: boolean) => {
     const filesToUpdate = prefixDialogFiles;
@@ -1784,6 +1869,9 @@ export const FileGrid: React.FC = () => {
       return;
     }
 
+    // Ignore right-click (button 2) - selection is handled by handleContextMenu
+    if (event.button !== 0) return;
+
     // Reset drag state
     setIsDragStarted(false);
     setPendingSelectionChange(null);
@@ -1830,6 +1918,9 @@ export const FileGrid: React.FC = () => {
 
   // Add this function for handling mouse up - completes smart selection logic - OPTIMIZED with useCallback
   const handleFileItemMouseUp = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
+    // Ignore right-click (button 2) - prevents clearing multi-selection when releasing right button after context menu
+    if (event && event.button !== 0) return;
+
     // If we have a pending selection change and no drag started, complete the selection
     if (pendingSelectionChange && !isDragStarted && pendingSelectionChange.fileName === file.name) {
       setSelectedFiles([file.name]);
@@ -3908,6 +3999,8 @@ export const FileGrid: React.FC = () => {
         handleColumnDragStart={handleColumnDragStart}
         handleResizeStart={handleResizeStart}
         handleGroupHeaderDrop={handleGroupHeaderDrop}
+        groupedTransferTemplates={groupedTransferTemplates}
+        onTransferFromGroupHeader={handleTransferFromGroupHeader}
         createRowHandlers={createRowHandlers}
         createFolderDropHandlers={createFolderDropHandlers}
         observeFileElement={observeFileElement}
