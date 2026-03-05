@@ -87,6 +87,8 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const boxBg = useColorModeValue('white', 'gray.800');
   const borderCol = useColorModeValue('gray.200', 'gray.700');
   const hoverBg = useColorModeValue('gray.100', 'gray.700');
+  const tooltipBg = useColorModeValue('gray.800', 'gray.200');
+  const tooltipColor = useColorModeValue('white', 'gray.800');
   const [latestFileName, setLatestFileName] = useState<string | null>(null);
 
   // Fetch latest download file whenever context menu opens (for Replace with latest file tooltip)
@@ -192,8 +194,8 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
               label={latestFileName ? `${latestFileName}` : 'Loading...'}
               placement="right"
               hasArrow
-              bg={useColorModeValue('gray.800', 'gray.200')}
-              color={useColorModeValue('white', 'gray.800')}
+              bg={tooltipBg}
+              color={tooltipColor}
               openDelay={300}
             >
               <Flex

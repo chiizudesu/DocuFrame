@@ -214,7 +214,7 @@ const TransferDropdownMenu: React.FC<{
                     <Text noOfLines={1} fontSize="sm" fontWeight="medium">
                       {indexDisplay}
                     </Text>
-                    <ChevronDown size={14} flexShrink={0} />
+                    <ChevronDown size={14} style={{ flexShrink: 0 }} />
                   </Flex>
                 </PopoverTrigger>
                 <PopoverContent w="auto" minW="120px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }}>
@@ -306,14 +306,15 @@ const TransferDropdownMenu: React.FC<{
                     cursor="pointer"
                     _hover={{ bg: menuHoverBg }}
                     _focus={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
-                    isDisabled={!effectiveIndex}
+                    disabled={!effectiveIndex}
+                    opacity={!effectiveIndex ? 0.5 : 1}
                     onDoubleClick={(e) => { if (effectiveIndex) { e.preventDefault(); e.stopPropagation(); setTemplatePopoverOpen(false); setTemplateMode('custom'); } }}
                     title="Double-click to edit manually"
                   >
                     <Text noOfLines={1} fontSize="sm" fontWeight="medium">
                       {!effectiveIndex ? 'Select index first' : templateDisplay}
                     </Text>
-                    <ChevronDown size={14} flexShrink={0} />
+                    <ChevronDown size={14} style={{ flexShrink: 0 }} />
                   </Flex>
                 </PopoverTrigger>
                 <PopoverContent w="auto" minW="200px" maxW="400px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }}>
@@ -603,6 +604,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   } | null>(null);
   const buttonHoverBg = useColorModeValue('#e2e8f0', 'gray.700');
   const dividerColor = useColorModeValue('#e2e8f0', 'gray.600');
+  const minimizedIconActiveBg = useColorModeValue('#64748b', 'blue.800');
+  const minimizedIconColor = useColorModeValue('#e2e8f0', 'gray.300');
+  const minimizedIconHoverBg = useColorModeValue('#5a6c7d', 'blue.700');
 
   const handleAction = async (action: string) => {
     if (action === 'transfer_mapping') {
@@ -1091,11 +1095,11 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     return () => window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
   }, [loadTransferMappings]);
 
-  // Group transfer templates by index key (same rule as TransferMappingDialog)
+  // Group transfer templates by index key
   const groupedTransferTemplates = useMemo(() => {
     const groups: Record<string, Array<{ command: string; filename: string }>> = {};
     Object.entries(transferCommandMappings).forEach(([command, filename]) => {
-      const match = (filename as string).match(/^([A-Z](?:-?\d+)?)\s*-/);
+      const match = (filename as string).match(/^([A-Z]+\d*)\s*-/);
       const groupKey = match ? match[1] : 'Other';
       if (!groups[groupKey]) groups[groupKey] = [];
       groups[groupKey].push({ command, filename: filename as string });
@@ -1412,7 +1416,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
                 }
               };
               const DialogIcon = getDialogIcon(dialog.type);
-              const iconActiveBg = useColorModeValue('#64748b', 'blue.800');
               return (
                 <Box
                   key={dialog.type}
@@ -1429,10 +1432,10 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
                       icon={<Icon as={DialogIcon} boxSize={5} />}
                       size="sm"
                       variant="solid"
-                      bg={iconActiveBg}
-                      color={useColorModeValue('#e2e8f0', 'gray.300')}
+                      bg={minimizedIconActiveBg}
+                      color={minimizedIconColor}
                       onClick={() => handleRestoreDialog(dialog.type)}
-                      _hover={{ bg: useColorModeValue('#5a6c7d', 'blue.700') }}
+                      _hover={{ bg: minimizedIconHoverBg }}
                       h="40px"
                       w="40px"
                     />

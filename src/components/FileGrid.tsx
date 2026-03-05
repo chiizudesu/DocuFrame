@@ -215,11 +215,11 @@ export const FileGrid: React.FC = () => {
     return () => window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
   }, [loadTransferMappings]);
 
-  // Group transfer templates by index key (same rule as TransferMappingDialog: /^([A-Z](?:-?\d+)?)\s*-/)
+  // Group transfer templates by index key
   const groupedTransferTemplates = useMemo(() => {
     const groups: Record<string, Array<{ command: string; filename: string }>> = {};
     Object.entries(transferCommandMappings).forEach(([command, filename]) => {
-      const match = (filename as string).match(/^([A-Z](?:-?\d+)?)\s*-/);
+      const match = (filename as string).match(/^([A-Z]+\d*)\s*-/);
       const groupKey = match ? match[1] : 'Other';
       if (!groups[groupKey]) groups[groupKey] = [];
       groups[groupKey].push({ command, filename: filename as string });

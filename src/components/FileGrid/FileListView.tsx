@@ -276,7 +276,8 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
   const handleTransferManual = () => {
     const trimmed = manualFilename.trim();
     if (trimmed) {
-      onTransfer({ newName: trimmed });
+      const fullName = trimmed.includes(' - ') ? trimmed : `${groupKey} - ${trimmed}`;
+      onTransfer({ newName: fullName });
       setManualFilename('');
       setIsTransferMenuOpen(false);
     }
