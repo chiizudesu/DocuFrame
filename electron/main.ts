@@ -1138,6 +1138,39 @@ ipcMain.handle('select-directory', async () => {
   }
 });
 
+// Return data URL for audio — Chromium blocks file:// in renderer
+const AUDIO_MIME: Record<string, string> = {
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4', '.flac': 'audio/flac', '.aac': 'audio/aac',
+  '.opus': 'audio/opus', '.wma': 'audio/x-ms-wma',
+};
+ipcMain.handle('get-file-url-for-audio', async (_, filePath: string) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+    const buffer = fs.readFileSync(filePath);
+    const base64 = buffer.toString('base64');
+    const ext = path.extname(filePath).toLowerCase();
+    const mime = AUDIO_MIME[ext] || 'audio/mpeg';
+    const dataUrl = `data:${mime};base64,${base64}`;
+    return { success: true, url: dataUrl };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('list-sound-files', async (_, folderPath: string) => {
+  try {
+    const AUDIO_EXTS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac', '.opus', '.wma']);
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    const files = entries
+      .filter(e => e.isFile() && AUDIO_EXTS.has(path.extname(e.name).toLowerCase()))
+      .map(e => path.join(folderPath, e.name));
+    return { success: true, files };
+  } catch (error: any) {
+    return { success: false, files: [], error: error.message };
+  }
+});
+
 ipcMain.handle('select-file', async (_, options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
   try {
     const result = await dialog.showOpenDialog({
@@ -3429,70 +3462,6 @@ ipcMain.handle('open-floating-timer', async () => {
     return await createFloatingTimerWindow();
   } catch (error) {
     console.error('[Main] Error opening floating timer:', error);
-    return { success: false, error: String(error) };
-  }
-});
-
-// Task Summary Window
-let taskSummaryWindow: BrowserWindow | null = null;
-
-const createTaskSummaryWindow = async (): Promise<{ success: boolean }> => {
-  // Don't create multiple instances
-  if (taskSummaryWindow && !taskSummaryWindow.isDestroyed()) {
-    taskSummaryWindow.focus();
-    return { success: true };
-  }
-
-  try {
-    const { screen } = require('electron');
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width, height } = primaryDisplay.workAreaSize;
-
-    taskSummaryWindow = new BrowserWindow({
-      width: 1000,
-      height: 700,
-      minWidth: 800,
-      minHeight: 600,
-      x: Math.floor((width - 1000) / 2), // Center horizontally
-      y: Math.floor((height - 700) / 2), // Center vertically
-      frame: false, // Frameless for custom title bar
-      alwaysOnTop: false,
-      resizable: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        preload: join(__dirname, 'preload.js'),
-      },
-    });
-
-    // Load the task summary route
-    if (process.env.NODE_ENV === 'development') {
-      await taskSummaryWindow.loadURL('http://localhost:5173/#task-summary');
-    } else {
-      await taskSummaryWindow.loadFile(join(__dirname, '../dist/index.html'), {
-        hash: 'task-summary',
-      });
-    }
-
-    taskSummaryWindow.on('closed', () => {
-      taskSummaryWindow = null;
-    });
-
-    console.log('[Main] Task summary window created successfully');
-    return { success: true };
-  } catch (error) {
-    console.error('[Main] Error creating task summary window:', error);
-    taskSummaryWindow = null;
-    throw error;
-  }
-};
-
-// Task summary window IPC handler
-ipcMain.handle('open-task-summary-window', async () => {
-  try {
-    return await createTaskSummaryWindow();
-  } catch (error) {
-    console.error('[Main] Error opening task summary window:', error);
     return { success: false, error: String(error) };
   }
 });

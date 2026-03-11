@@ -99,6 +99,13 @@ class TaskTimerService {
     
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
+
+  // Format duration as MM:SS for Pomodoro (no hours)
+  formatPomodoroDuration(seconds: number): string {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
   
   // Log a file operation to the current task (store actual UTC time)
   logFileOperation(task: Task, operation: string, details?: string): Task {

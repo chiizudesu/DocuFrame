@@ -93,7 +93,6 @@ interface ElectronAPI {
   deleteTaskLog: (dateString: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
   getActiveWindowTitle: () => Promise<{ success: boolean; title: string }>;
   openFloatingTimer: () => Promise<{ success: boolean }>;
-  openTaskSummaryWindow: () => Promise<{ success: boolean }>;
   sendToMainWindow: (channel: string, ...args: any[]) => void;
   updateFloatingTimerPosition: (x: number, y: number) => Promise<{ success: boolean; snappedCorner: string | null; x: number; y: number }>;
   getScreenInfo: () => Promise<{ success: boolean; workArea?: { width: number; height: number } }>;
@@ -114,6 +113,9 @@ interface ElectronAPI {
   onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
+  // Pomodoro sound folder
+  listSoundFiles: (folderPath: string) => Promise<{ success: boolean; files: string[]; error?: string }>;
+  getFileUrlForAudio: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -352,9 +354,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFloatingTimer: async () => {
     return await ipcRenderer.invoke('open-floating-timer');
   },
-  openTaskSummaryWindow: async () => {
-    return await ipcRenderer.invoke('open-task-summary-window');
-  },
   sendToMainWindow: (channel: string, ...args: any[]) => {
     ipcRenderer.send('send-to-main-window', channel, ...args);
   },
@@ -401,6 +400,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: async (targetFilePath: string) => {
     return await ipcRenderer.invoke('replace-with-latest-file', targetFilePath);
+  },
+  // Pomodoro sound folder
+  listSoundFiles: async (folderPath: string) => {
+    return await ipcRenderer.invoke('list-sound-files', folderPath);
+  },
+  getFileUrlForAudio: async (filePath: string) => {
+    return await ipcRenderer.invoke('get-file-url-for-audio', filePath);
   },
   selectPasteValue: async (value: string) => {
     return await ipcRenderer.invoke('select-paste-value', value);

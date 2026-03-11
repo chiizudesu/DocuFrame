@@ -15,7 +15,6 @@ import { ManageTemplatesDialog } from './ManageTemplatesDialog';
 import { UpdateDialog } from './UpdateDialog';
 import { Calculator as CalculatorDialog } from './Calculator';
 import { ClientSearchOverlay } from './ClientSearchOverlay';
-import { TaskTimerSummaryDialog } from './TaskTimerSummaryDialog';
 import { type DialogType, type MinimizedDialog } from './MinimizedDialogsBar';
 import { getAppVersion } from '../utils/version';
 import { taskTimerService, TimerState } from '../services/taskTimer';
@@ -511,8 +510,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
-  const [isTaskTimerSummaryOpen, setTaskTimerSummaryOpen] = useState(false);
-  
   // Input dialog state
   const [inputDialog, setInputDialog] = useState<{
     isOpen: boolean;
@@ -1777,11 +1774,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       isOpen={isClientSearchOpen} 
       onClose={() => setClientSearchOpen(false)} 
     />
-    <TaskTimerSummaryDialog
-      isOpen={isTaskTimerSummaryOpen}
-      onClose={() => setTaskTimerSummaryOpen(false)}
-    />
-    
     {/* Input Dialog */}
     <Modal 
       isOpen={inputDialog.isOpen} 

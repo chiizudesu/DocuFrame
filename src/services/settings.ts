@@ -41,6 +41,13 @@ export interface AppSettings {
   enableBackgrounds?: boolean; // Enable/disable background images
   showClientInfoBar?: boolean; // Enable/disable client info bar in header
   isGroupedByIndex?: boolean; // Group files by index prefix in file grid (default true)
+  // Pomodoro timer settings
+  pomodoroSessionMinutes?: number; // Session duration in minutes (default 25)
+  pomodoroBreakMinutes?: number; // Break duration in minutes (default 5)
+  pomodoroSoundEnabled?: boolean; // Play ringing sound on session/break start and end (default true)
+  pomodoroTargetHours?: number; // Daily target work hours used to calculate total sessions (default 8)
+  pomodoroCustomSoundPath?: string; // Currently selected sound file (absolute path)
+  pomodoroSoundFolder?: string; // Folder containing ringtone files to cycle through
 
 }
 
