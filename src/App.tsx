@@ -13,6 +13,9 @@ import { eventMatchesShortcut } from './utils/shortcuts';
 import { normalizePath, joinPath } from './utils/path';
 import type { FileItem } from './types';
 
+// Invalid path characters for folder names (Windows)
+const INVALID_FOLDER_CHARS = /[\\/:*?"<>|]/;
+
 // Jump mode overlay component - simple 2 rows
 const JumpModeOverlay: React.FC<{
   isOpen: boolean;
@@ -23,31 +26,37 @@ const JumpModeOverlay: React.FC<{
   onOpenFile: (file: FileItem) => void;
   initialKey?: string;
   rootDirectory: string;
-}> = ({ isOpen, onClose, currentDirectory, sortedFiles, onNavigate, onOpenFile, initialKey, rootDirectory }) => {
+  initialDirectoryOverride?: string | null;
+}> = ({ isOpen, onClose, currentDirectory, sortedFiles, onNavigate, onOpenFile, initialKey, rootDirectory, initialDirectoryOverride }) => {
+  const { addLog, setStatus } = useAppContext();
   const [searchText, setSearchText] = useState('');
   const [overlayPath, setOverlayPath] = useState(currentDirectory);
   const [overlayFiles, setOverlayFiles] = useState<FileItem[]>([]);
   const [searchResults, setSearchResults] = useState<FileItem[]>([]);
+  const [selectedResultIndex, setSelectedResultIndex] = useState(0); // Which result is highlighted for arrow navigation
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null); // Track which segment is "selected" for backspace navigation
   const [isNavigating, setIsNavigating] = useState(false); // Track if we're actively navigating (not just searching)
   const [overlayWorkingDirectory, setOverlayWorkingDirectory] = useState(currentDirectory); // Track overlay's current working directory context
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   // Reset overlay when opening
+  const effectiveInitialDir = initialDirectoryOverride ?? currentDirectory;
   useEffect(() => {
     if (isOpen) {
-      setOverlayPath(currentDirectory);
-      setOverlayWorkingDirectory(currentDirectory); // Reset overlay working directory
+      const dirToLoad = effectiveInitialDir;
+      setOverlayPath(dirToLoad);
+      setOverlayWorkingDirectory(dirToLoad); // Reset overlay working directory
       // Load files from the current directory instead of using sortedFiles from root
-      (window.electronAPI as any).getDirectoryContents(currentDirectory).then((contents: any) => {
+      (window.electronAPI as any).getDirectoryContents(dirToLoad).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-      }).catch((error: any) => {
+      }).catch((_error: any) => {
         // Fallback to sortedFiles if loading fails
       setOverlayFiles(sortedFiles);
       });
       setSearchText(initialKey || '');
       setSearchResults([]);
+      setSelectedResultIndex(0);
       setSelectedSegmentIndex(null); // Reset selected segment
       setIsNavigating(false); // Reset navigation flag
       // Focus input immediately to capture first keystroke
@@ -61,21 +70,22 @@ const JumpModeOverlay: React.FC<{
       setOverlayWorkingDirectory(currentDirectory); // Reset overlay working directory
       setOverlayFiles([]); // Clear files when closing
       setSearchResults([]);
+      setSelectedResultIndex(0);
       setSelectedSegmentIndex(null); // Reset selected segment
       setIsNavigating(false); // Reset navigation flag
     }
-  }, [isOpen, currentDirectory, sortedFiles, initialKey]);
+  }, [isOpen, currentDirectory, sortedFiles, initialKey, effectiveInitialDir]);
   
   // Update search results when search text or overlay files change
   useEffect(() => {
     if (!searchText.trim()) {
       setSearchResults([]);
       
-      // When search text is completely cleared, only reset to current directory
-      // if we're not actively navigating (preserves Tab navigation state)
+      // When search text is cleared, reset to overlay's base dir (effectiveInitialDir)
+      // Use effectiveInitialDir not currentDirectory - preserves parent when opened via Ctrl+Backspace
       if (!isNavigating) {
-        setOverlayPath(currentDirectory);
-        setOverlayWorkingDirectory(currentDirectory);
+        setOverlayPath(effectiveInitialDir);
+        setOverlayWorkingDirectory(effectiveInitialDir);
       }
       return;
     }
@@ -96,7 +106,7 @@ const JumpModeOverlay: React.FC<{
       (window.electronAPI as any).getDirectoryContents(pathToLoad).then((contents: any) => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
         setOverlayFiles(files);
-      }).catch((error: any) => {
+      }).catch((_error: any) => {
         // Failed to load directory contents
       });
       return; // Wait for files to load before searching
@@ -122,59 +132,45 @@ const JumpModeOverlay: React.FC<{
         
         return a.name.localeCompare(b.name);
       })
-      .slice(0, 1); // Only take first result
+      .slice(0, 20); // Allow multiple results for arrow-key navigation
     
     setSearchResults(matches);
+    setSelectedResultIndex(0); // Reset selection when search changes
     
-    // Update preview path as user types - this is the key for dynamic preview
-    if (matches.length > 0) {
-      const match = matches[0];
-
-      
-      // Always update overlayPath to show the preview path
-      // This allows users to see what they're about to navigate to
-      // Validate that match.path is a proper full path
-      if (match.path && match.path.length > 2 && match.path.includes('\\')) {
-        // If it's a file, extract the directory path; if it's a folder, use the path directly
-        let pathToSet = match.path;
-        if (match.type === 'file') {
-          // Extract directory from file path
-          const pathParts = normalizePath(match.path).split(/[\\/]/).filter(Boolean);
-          if (pathParts.length > 1) {
-            pathParts.pop(); // Remove filename
-            pathToSet = normalizePath(joinPath(...pathParts));
-          } else {
-            // Fallback to overlay working directory if we can't extract directory
-            pathToSet = overlayWorkingDirectory;
-          }
-        }
-        
-        // Only update if the path is actually different to prevent unnecessary re-renders
-        if (overlayPath !== pathToSet) {
-          console.log('Setting overlayPath to:', pathToSet, match.type === 'file' ? '(extracted from file)' : '');
-          setOverlayPath(pathToSet);
-        }
-      } else {
-        // Fallback to overlay working directory
-        if (overlayPath !== overlayWorkingDirectory) {
-          console.log('Fallback: setting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
-          setOverlayPath(overlayWorkingDirectory);
-        }
-      }
-    } else {
-      // If no matches, reset to the overlay working directory (not original currentDirectory)
-      // This preserves navigation state when user clears search or has no matches
+    // If no matches, reset to the overlay working directory
+    if (matches.length === 0) {
       if (overlayPath !== overlayWorkingDirectory && !isNavigating) {
-        console.log('No matches, resetting overlayPath to overlayWorkingDirectory:', overlayWorkingDirectory);
         setOverlayPath(overlayWorkingDirectory);
       }
     }
-  }, [searchText, overlayFiles, currentDirectory, overlayWorkingDirectory, isNavigating, selectedSegmentIndex]);
+  }, [searchText, overlayFiles, currentDirectory, overlayWorkingDirectory, isNavigating, selectedSegmentIndex, effectiveInitialDir]);
+  
+  // Update preview path when selected result changes (search or arrow keys)
+  useEffect(() => {
+    if (searchResults.length === 0) return;
+    const idx = Math.min(selectedResultIndex, searchResults.length - 1);
+    const match = searchResults[idx];
+    if (!match.path || match.path.length <= 2 || !match.path.includes('\\')) {
+      if (overlayPath !== overlayWorkingDirectory) setOverlayPath(overlayWorkingDirectory);
+      return;
+    }
+    let pathToSet = match.path;
+    if (match.type === 'file') {
+      const pathParts = normalizePath(match.path).split(/[\\/]/).filter(Boolean);
+      if (pathParts.length > 1) {
+        pathParts.pop();
+        pathToSet = normalizePath(joinPath(...pathParts));
+      } else {
+        pathToSet = overlayWorkingDirectory;
+      }
+    }
+    if (overlayPath !== pathToSet) setOverlayPath(pathToSet);
+  }, [searchResults, selectedResultIndex, overlayWorkingDirectory, overlayPath]);
   
   const handleTab = async () => {
     if (searchResults.length === 0) return;
-    
-    const currentResult = searchResults[0];
+    const idx = Math.min(selectedResultIndex, searchResults.length - 1);
+    const currentResult = searchResults[idx];
     if (currentResult.type === 'folder') {
       try {
         // Load files from the new folder
@@ -189,6 +185,7 @@ const JumpModeOverlay: React.FC<{
         // Reset search text for new directory
         setSearchText('');
         setSearchResults([]);
+        setSelectedResultIndex(0);
         setSelectedSegmentIndex(null); // Reset segment selection
         
         console.log('Tab navigation to:', currentResult.path);
@@ -202,6 +199,7 @@ const JumpModeOverlay: React.FC<{
         setIsNavigating(true); // Mark that we're actively navigating
         setSearchText('');
         setSearchResults([]);
+        setSelectedResultIndex(0);
         setSelectedSegmentIndex(null); // Reset segment selection
       }
     } else {
@@ -299,11 +297,12 @@ const JumpModeOverlay: React.FC<{
     }
   };
 
-  const handleEnter = () => {
+  const handleEnter = async () => {
     
-    // If we have search results, use the first one
+    // If we have search results, use the selected one
     if (searchResults.length > 0) {
-      const currentResult = searchResults[0];
+      const idx = Math.min(selectedResultIndex, searchResults.length - 1);
+      const currentResult = searchResults[idx];
       
       if (currentResult.type === 'folder') {
         // Navigate to this folder in the real app
@@ -327,10 +326,43 @@ const JumpModeOverlay: React.FC<{
       return;
     }
     
+    // No matches: create new folder with typed name
+    const folderName = searchText.trim();
+    if (folderName.length > 0) {
+      if (folderName === '.' || folderName === '..') {
+        setStatus('Invalid folder name', 'error');
+        addLog('Invalid folder name: . or ..', 'error');
+        return;
+      }
+      if (INVALID_FOLDER_CHARS.test(folderName)) {
+        setStatus('Folder name contains invalid characters', 'error');
+        addLog('Folder name contains invalid characters: \\ / : * ? " < > |', 'error');
+        return;
+      }
+      try {
+        const fullPath = joinPath(overlayWorkingDirectory === '/' ? '' : overlayWorkingDirectory, folderName);
+        await (window.electronAPI as any).createDirectory(fullPath);
+        addLog(`Created folder: ${folderName}`);
+        setStatus(`Created folder: ${folderName}`, 'success');
+        onNavigate(fullPath);
+        onClose();
+      } catch (error) {
+        console.error('Error creating folder:', error);
+        const errMsg = error instanceof Error ? error.message : 'Unknown error';
+        addLog(`Failed to create folder: ${errMsg}`, 'error');
+        setStatus(`Failed to create folder: ${folderName}`, 'error');
+      }
+    }
   };
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab') {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedResultIndex(prev => Math.min(prev + 1, searchResults.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedResultIndex(prev => Math.max(0, prev - 1));
+    } else if (e.key === 'Tab') {
       e.preventDefault();
       handleTab();
     } else if (e.key === 'Enter') {
@@ -443,8 +475,9 @@ const JumpModeOverlay: React.FC<{
     // For preview paths, we want to show the path relative to the overlay working directory
     let pathToDisplay: string;
     if (searchText.trim() && searchResults.length > 0) {
-      // This is a preview path - show the search result in context
-      const match = searchResults[0];
+      // This is a preview path - show the selected search result in context
+      const idx = Math.min(selectedResultIndex, searchResults.length - 1);
+      const match = searchResults[idx];
       const matchPath = match.path;
       const matchName = match.name;
       
@@ -469,7 +502,7 @@ const JumpModeOverlay: React.FC<{
     const pathSegments = pathToDisplay.includes(' / ') ? pathToDisplay.split(' / ') : [pathToDisplay];
     
     return { pathToDisplay, pathSegments };
-  }, [searchText, overlayPath, currentDirectory, overlayWorkingDirectory, rootDirectory, getRelativePath, searchResults]);
+  }, [searchText, overlayPath, currentDirectory, overlayWorkingDirectory, rootDirectory, getRelativePath, searchResults, selectedResultIndex]);
 
   // Memoize the path segments rendering to prevent unnecessary re-renders
   const pathSegmentsDisplay = React.useMemo(() => {
@@ -649,6 +682,10 @@ const AppContent: React.FC = () => {
     rootDirectory,
     // Bring in shortcuts from context
     calculatorShortcut,
+    jumpModeShortcut,
+    jumpModeOnParentShortcut,
+    backspaceNavigationShortcut,
+    enableBackspaceNavigationShortcut,
   } = useAppContext();
   
   // Calculator state
@@ -656,6 +693,7 @@ const AppContent: React.FC = () => {
   
   // Jump mode state
   const [initialJumpKey, setInitialJumpKey] = useState<string>('');
+  const [jumpModeInitialDirectory, setJumpModeInitialDirectory] = useState<string | null>(null);
   
   // Check if this is the settings window
   const isSettingsWindow = window.location.hash === '#settings';
@@ -785,8 +823,9 @@ const AppContent: React.FC = () => {
         altKey: e.altKey,
       });
 
-      // Backspace to go up one directory level (only when jump mode is not active)
-      if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Backspace') {
+      // Navigate up one directory level (configurable shortcut, default Backspace)
+      // Uses eventMatchesShortcut so modifiers like Ctrl are not matched (e.g. Ctrl+Backspace = jump mode on parent)
+      if (enableBackspaceNavigationShortcut && !isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, backspaceNavigationShortcut)) {
         console.log('[App] Backspace navigation triggered:', { isInputFocused, isQuickNavigating, isJumpModeActive });
         e.preventDefault();
         const parentPath = getParentDirectory(currentDirectory);
@@ -822,6 +861,31 @@ const AppContent: React.FC = () => {
         console.log('[App] Calculator shortcut detected');
         setIsCalculatorOpen(true);
         e.preventDefault();
+        return;
+      }
+      
+      // Jump mode shortcut (configurable) - open on current directory
+      if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, jumpModeShortcut)) {
+        console.log('[App] Jump mode shortcut detected');
+        e.preventDefault();
+        setJumpModeInitialDirectory(null);
+        setInitialJumpKey('');
+        setIsJumpModeActive(true);
+        return;
+      }
+      
+      // Jump mode on parent shortcut (configurable) - open on parent directory
+      if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, jumpModeOnParentShortcut)) {
+        console.log('[App] Jump mode on parent shortcut detected');
+        e.preventDefault();
+        const parentPath = getParentDirectory(currentDirectory);
+        if (parentPath && parentPath !== currentDirectory) {
+          setJumpModeInitialDirectory(parentPath);
+        } else {
+          setJumpModeInitialDirectory(null);
+        }
+        setInitialJumpKey('');
+        setIsJumpModeActive(true);
         return;
       }
       
@@ -870,7 +934,7 @@ const AppContent: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen, isJumpModeActive]);
+  }, [isQuickNavigating, setIsQuickNavigating, setInitialCommandMode, currentDirectory, setCurrentDirectory, addLog, setStatus, isCalculatorOpen, isJumpModeActive, jumpModeShortcut, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut]);
   
   // If this is the settings window, render only the settings
   if (isSettingsWindow) {
@@ -924,6 +988,7 @@ const AppContent: React.FC = () => {
         onClose={() => {
           setIsJumpModeActive(false);
           setInitialJumpKey('');
+          setJumpModeInitialDirectory(null);
         }}
         currentDirectory={currentDirectory}
         sortedFiles={folderItems}
@@ -943,6 +1008,7 @@ const AppContent: React.FC = () => {
         }}
         initialKey={initialJumpKey}
         rootDirectory={rootDirectory}
+        initialDirectoryOverride={jumpModeInitialDirectory}
       />
     </Box>;
 };

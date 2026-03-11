@@ -1,43 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, Flex, Divider, Button, useColorModeValue, VStack, Tooltip, IconButton, Icon, Portal, Popover, PopoverTrigger, PopoverContent, PopoverArrow, PopoverBody } from '@chakra-ui/react';
-import { ExternalLink, FileText, Info, Folder, Star } from 'lucide-react';
+import { Box, Text, Flex, Divider, useColorModeValue, Icon } from '@chakra-ui/react';
+import { Folder, Star } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-// Removed ReactMarkdown and related imports - document insights moved to dedicated dialog
 
 export const ClientInfoPane: React.FC = () => {
   const {
-    currentDirectory,
     setCurrentDirectory,
-    addLog,
     rootDirectory,
     quickAccessPaths,
     removeQuickAccessPath,
   } = useAppContext();
 
-  // Removed modal state - document insights moved to dedicated dialog
-
-  // Removed document insights functionality - now available as a dedicated dialog
-
   const bgColor = useColorModeValue('#e8eef3', 'gray.850'); // Match FileGrid background
   const textColor = useColorModeValue('#334155', 'white');
   const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
-  
-  // Additional color mode values for conditional rendering
-  const popoverBg = useColorModeValue('white', 'gray.800');
-  const popoverBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
   const dividerBorderColor = useColorModeValue('gray.300', 'gray.600');
-  const clientInfoBg = useColorModeValue('blue.50', 'blue.900');
-  const clientInfoColor = useColorModeValue('blue.900', 'blue.100');
-  const noClientBg = useColorModeValue('gray.100', 'gray.700');
-  const noClientColor = useColorModeValue('gray.600', 'gray.300');
   const transferBg = 'transparent';
   const transferSectionBg = useColorModeValue('#f8fafc', 'gray.700');
 
-  // State for loaded client info
-  const [clientInfo, setClientInfo] = useState<any | null>(null);
-  const [loadingClient, setLoadingClient] = useState(false);
-
-  // Quick access state
   const [quickAccessOpen] = useState(true);
   const [rootFolders, setRootFolders] = useState<Array<{ name: string; path: string }>>([]);
 
@@ -63,80 +43,6 @@ export const ClientInfoPane: React.FC = () => {
     loadRootFolders();
   }, [rootDirectory]);
 
-  // Extract client name and tax year from path (ensure clientName is always defined)
-  const pathSegments = currentDirectory ? currentDirectory.split(/[\/\\]/).filter(segment => segment && segment !== '') : [];
-  const rootSegments = rootDirectory ? rootDirectory.split(/[\/\\]/).filter(Boolean) : [];
-  const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === (rootSegments[rootSegments.length - 1] || '').toLowerCase());
-  const taxYear = rootIdx !== -1 && pathSegments.length > rootIdx + 1 ? pathSegments[rootIdx + 1] : '';
-  const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 2 ? pathSegments[rootIdx + 2] : '';
-
-  // --- Auto-load client info when entering a client folder ---
-  useEffect(() => {
-    if (clientName) {
-      handleLoadClientInfo();
-    } else {
-      setClientInfo(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientName]);
-
-  // Extract document name from current directory (unused display removed)
-  const documentName = pathSegments.length > 0 ? pathSegments[pathSegments.length - 1] : 'Current Folder';
-  
-  const getFileExtension = (filename: string) => {
-    const ext = filename.split('.').pop();
-    return ext && ext !== filename ? ext.toLowerCase() : null;
-  };
-  getFileExtension(documentName);
-
-  // Handler for loading client info
-  const handleLoadClientInfo = async () => {
-    addLog(`[ClientInfoPane] pathSegments: ${JSON.stringify(pathSegments)}, rootIdx: ${rootIdx}, rootDirectory: ${rootDirectory}`);
-    setLoadingClient(true);
-    // Log the extracted clientName for debugging
-    console.log('[ClientInfoPane] Extracted clientName:', clientName);
-    addLog(`[ClientInfoPane] Extracted clientName: ${clientName}`);
-    if (!clientName) {
-      setClientInfo(null);
-      setLoadingClient(false);
-      return;
-    }
-    try {
-      const config = await window.electronAPI.getConfig();
-      const csvPath = (config as any).clientbasePath;
-      if (!csvPath) {
-        setLoadingClient(false);
-        return;
-      }
-      const rows = await window.electronAPI.readCsv(csvPath);
-      if (!rows || rows.length === 0) {
-        setLoadingClient(false);
-        return;
-      }
-      // Fuzzy/case-insensitive match
-      const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
-      const match = rows.find((row: any) => {
-        const field = clientNameFields.find(f => row[f] !== undefined);
-        if (!field) return false;
-        return String(row[field]).toLowerCase().replace(/\s+/g, '') === clientName.toLowerCase().replace(/\s+/g, '');
-      }) || rows.find((row: any) => {
-        const field = clientNameFields.find(f => row[f] !== undefined);
-        if (!field) return false;
-        return String(row[field]).toLowerCase().includes(clientName.toLowerCase());
-      });
-      if (!match) {
-        setClientInfo(null);
-        setLoadingClient(false);
-        return;
-      }
-      setClientInfo(match);
-    } catch (err: any) {
-      setClientInfo(null);
-    }
-    setLoadingClient(false);
-  };
-
-  // Section header style for all three sections
   const sectionHeaderHoverBg = useColorModeValue('gray.50', 'gray.800');
   const sectionHeaderStyle = {
     w: "100%",
@@ -153,33 +59,6 @@ export const ClientInfoPane: React.FC = () => {
     mb: 0,
   };
 
-  // Expanded sidebar: replace Xero/XPM with Client/Job buttons
-  const handleOpenClientLink = () => {
-    if (clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink'])) {
-      window.open(clientInfo['Client Link'] || clientInfo['ClientLink'], '_blank');
-    }
-  };
-  const handleOpenJobLink = (year?: string) => {
-    if (!clientInfo) return;
-    
-    if (year) {
-      // Open specific year
-      const link = clientInfo[`${year} Job Link`];
-      if (link) {
-        window.open(link, '_blank');
-      }
-    } else {
-      // Open current year if available, otherwise any available year
-      if (taxYear && clientInfo[`${taxYear} Job Link`]) {
-        window.open(clientInfo[`${taxYear} Job Link`], '_blank');
-      } else if (clientInfo['2025 Job Link']) {
-        window.open(clientInfo['2025 Job Link'], '_blank');
-      } else if (clientInfo['2026 Job Link']) {
-        window.open(clientInfo['2026 Job Link'], '_blank');
-      }
-    }
-  };
-
   return (
     <Box 
       p={4} 
@@ -189,156 +68,6 @@ export const ClientInfoPane: React.FC = () => {
       flexDirection="column"
       overflow="hidden"
     >
-      {/* --- Combined Client Info and Actions Section --- */}
-      <Flex mb={4} align="center" justify="space-between">
-        <Box
-          flex="1"
-          borderRadius="lg"
-          px={3}
-          py={2}
-          bg={clientInfo ? clientInfoBg : noClientBg}
-          color={clientInfo ? clientInfoColor : noClientColor}
-          boxShadow={clientInfo ? 'sm' : 'none'}
-          transition="background 0.2s, color 0.2s"
-        >
-          {clientInfo ? (
-            <Flex align="center" justify="space-between">
-              <Box flex="1" minW="0">
-                <Text 
-                  fontSize="md" 
-                  fontWeight="bold" 
-                  lineHeight={1.2} 
-                  noOfLines={1}
-                  cursor={clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) ? 'pointer' : 'default'}
-                  onClick={clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) ? handleOpenClientLink : undefined}
-                  _hover={clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink']) ? {
-                    textDecoration: 'underline',
-                    opacity: 0.8
-                  } : undefined}
-                  mb={0.5}
-                >
-                  {clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name']}
-                </Text>
-                <Text fontSize="xs" fontWeight="medium" opacity={0.85} noOfLines={1}>
-                  {clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || '-'}
-                </Text>
-              </Box>
-              {(() => {
-                const has2025 = clientInfo['2025 Job Link'];
-                const has2026 = clientInfo['2026 Job Link'];
-                const currentYearLink = taxYear && clientInfo[`${taxYear} Job Link`];
-
-                if (has2025 && has2026) {
-                  // Both years available - show popover
-                  return (
-                    <Popover placement="right-start">
-                      <PopoverTrigger>
-                        <Box ml={2} cursor="pointer" display="flex" alignItems="center">
-                          <FileText size={20} color="currentColor" opacity={0.7} />
-                        </Box>
-                      </PopoverTrigger>
-                      <Portal>
-                        <PopoverContent
-                          bg={popoverBg}
-                          border="1px solid"
-                          borderColor={popoverBorderColor}
-                          boxShadow="lg"
-                          w="auto"
-                          minW="120px"
-                          maxW="150px"
-                          zIndex={9999}
-                        >
-                          <PopoverArrow 
-                            bg={popoverBg}
-                            borderColor={popoverBorderColor}
-                          />
-                          <PopoverBody p={3}>
-                            <VStack spacing={2}>
-                              <Button
-                                onClick={() => handleOpenJobLink('2025')}
-                                bg="green.500"
-                                color="white"
-                                fontWeight="bold"
-                                fontSize="sm"
-                                borderRadius="md"
-                                px={4}
-                                py={2}
-                                w="100%"
-                                h="auto"
-                                _hover={{ 
-                                  bg: "green.600"
-                                }}
-                                _focus={{ 
-                                  bg: "green.600"
-                                }}
-                                _active={{
-                                  bg: "green.700"
-                                }}
-                              >
-                                2025
-                              </Button>
-                              <Button
-                                onClick={() => handleOpenJobLink('2026')}
-                                bg="green.500"
-                                color="white"
-                                fontWeight="bold"
-                                fontSize="sm"
-                                borderRadius="md"
-                                px={4}
-                                py={2}
-                                w="100%"
-                                h="auto"
-                                _hover={{ 
-                                  bg: "green.600"
-                                }}
-                                _focus={{ 
-                                  bg: "green.600"
-                                }}
-                                _active={{
-                                  bg: "green.700"
-                                }}
-                              >
-                                2026
-                              </Button>
-                            </VStack>
-                          </PopoverBody>
-                        </PopoverContent>
-                      </Portal>
-                    </Popover>
-                  );
-                } else {
-                  // Single year or current year available
-                  const isDisabled = !(currentYearLink || has2025 || has2026);
-                  
-                  return (
-                    <Box 
-                      ml={2} 
-                      cursor={isDisabled ? 'default' : 'pointer'} 
-                      display="flex" 
-                      alignItems="center"
-                      onClick={isDisabled ? undefined : () => handleOpenJobLink()}
-                    >
-                      <FileText 
-                        size={20} 
-                        color="currentColor" 
-                        opacity={isDisabled ? 0.3 : 0.7} 
-                      />
-                    </Box>
-                  );
-                }
-              })()}
-            </Flex>
-          ) : (
-            <Text fontSize="sm" fontWeight="medium" opacity={0.7}>
-              No client loaded
-            </Text>
-          )}
-        </Box>
-      </Flex>
-
-      {/* Add separator above Quick Access */}
-      <Divider mb={2} borderColor={dividerBorderColor} />
-      
       {/* Quick Access Section */}
       <Box mb={1} flexShrink={0}>
         <Box {...sectionHeaderStyle} py={1} mb={0}>

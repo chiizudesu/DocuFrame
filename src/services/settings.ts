@@ -19,6 +19,12 @@ export interface AppSettings {
   enableFileWatching?: boolean;
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
+  jumpModeShortcut?: string;
+  enableJumpModeShortcut?: boolean;
+  jumpModeOnParentShortcut?: string;
+  enableJumpModeOnParentShortcut?: boolean;
+  backspaceNavigationShortcut?: string;
+  enableBackspaceNavigationShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
@@ -33,6 +39,8 @@ export interface AppSettings {
   backgroundType?: 'watermark' | 'backgroundFill'; // Type of background to display (watermark = corner mascot)
   backgroundFillPath?: string; // Path to background fill image (fills entire filegrid, 10% opacity)
   enableBackgrounds?: boolean; // Enable/disable background images
+  showClientInfoBar?: boolean; // Enable/disable client info bar in header
+  isGroupedByIndex?: boolean; // Group files by index prefix in file grid (default true)
 
 }
 

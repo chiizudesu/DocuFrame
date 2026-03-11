@@ -16,6 +16,12 @@ export interface Config {
   enableCloseTabShortcut?: boolean;
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
+  jumpModeShortcut?: string;
+  enableJumpModeShortcut?: boolean;
+  jumpModeOnParentShortcut?: string;
+  enableJumpModeOnParentShortcut?: boolean;
+  backspaceNavigationShortcut?: string;
+  enableBackspaceNavigationShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   aiEditorInstructions?: string;

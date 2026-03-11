@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Grid, GridItem, Box, Flex, useColorModeValue, Text, HStack, IconButton } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
+import { ClientInfoBar } from './ClientInfoBar';
 import { PreviewPane } from './PreviewPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
@@ -10,11 +11,13 @@ import { FileGrid } from './FileGrid';
 import { FolderTabSystem } from './FolderTabSystem';
 import { Footer } from './Footer';
 import { useAppContext } from '../context/AppContext';
+import { useClientInfo } from '../hooks/useClientInfo';
 import { settingsService } from '../services/settings';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 
 export const Layout: React.FC = () => {
-  const { showOutputLog, isPreviewPaneOpen } = useAppContext();
+  const { showOutputLog, isPreviewPaneOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
+  const { clientInfo } = useClientInfo(currentDirectory, rootDirectory);
   const [sidebarWidth, setSidebarWidth] = useState(263);
   const [logHeight, setLogHeight] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -150,8 +153,15 @@ export const Layout: React.FC = () => {
       `} gridTemplateRows={`auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
     {/* Folder Info Bar and Function Bar */}
     <GridItem area="header" bg={headerBgColor} p={0} overflow="hidden">
-      <Box p={2}>
-        <FolderInfoBar />
+      <Box>
+        <Box p={2}>
+          <FolderInfoBar />
+        </Box>
+        {showClientInfoBar && clientInfo && (
+          <Box borderTop="1px" borderColor={accentBorderColor} overflow="hidden">
+            <ClientInfoBar />
+          </Box>
+        )}
       </Box>
       <Box borderTop="1px" borderColor={accentBorderColor} bg={bgColor} overflow="hidden">
         <FunctionPanels 

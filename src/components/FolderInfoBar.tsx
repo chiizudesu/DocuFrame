@@ -36,7 +36,8 @@ import {
   Download,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
-import { joinPath, getParentPath, isAbsolutePath, normalizePath, isChildPath } from '../utils/path'
+import { useClientInfo } from '../hooks/useClientInfo'
+import { joinPath, getParentPath, normalizePath, isChildPath } from '../utils/path'
 
 declare global {
   interface Window {
@@ -55,6 +56,7 @@ declare global {
 
 export const FolderInfoBar: React.FC = () => {
   const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter } = useAppContext()
+  const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   
   // Helper function to get directory name from path
   const getDirectoryName = (path: string): string => {
@@ -483,67 +485,63 @@ export const FolderInfoBar: React.FC = () => {
   }
 
   // Breadcrumbs logic
-  // Show appropriate breadcrumbs based on whether current path is within root or outside
-  const getBreadcrumbs = () => {
+  // Shows the full path as breadcrumbs. When a client is detected, the client folder crumb
+  // is tagged as `isClientPill` so it renders as a compact pill rather than a full breadcrumb,
+  // reducing visual redundancy while preserving hierarchy context.
+  const getBreadcrumbs = (): { label: string; path: string; isClientPill?: boolean }[] => {
     const normalizedRoot = normalizePath(rootDirectory);
     const normalizedCurrent = normalizePath(currentDirectory);
-    
-    // If current directory is empty or invalid, show root
+    const normalizedClientFolder = clientFolderPath ? normalizePath(clientFolderPath) : null;
+
     if (!normalizedCurrent) {
       return [{ label: normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root', path: normalizedRoot }];
     }
-    
-    // If at root directory, show only the root
+
     if (normalizedCurrent === normalizedRoot) {
       return [{ label: normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root', path: normalizedRoot }];
     }
-    
-    // Check if current directory is within the root directory
+
+    const buildCrumbs = (parts: string[], pathPrefix: string): { label: string; path: string; isClientPill?: boolean }[] => {
+      const crumbs: { label: string; path: string; isClientPill?: boolean }[] = [];
+      let path = pathPrefix;
+      for (const part of parts) {
+        path = joinPath(path, part);
+        const normalizedPath = normalizePath(path);
+        crumbs.push({
+          label: part,
+          path: normalizedPath,
+          isClientPill: !!(normalizedClientFolder && normalizedPath === normalizedClientFolder),
+        });
+      }
+      return crumbs;
+    };
+
     if (isChildPath(normalizedRoot, normalizedCurrent)) {
-      // Current is within root - show root + relative path
       const relativePath = normalizedCurrent.substring(normalizedRoot.length);
       const segments = relativePath.split(/[\\/]/).filter(Boolean);
-      const breadcrumbs = [];
-      
-      let path = normalizedRoot;
-      breadcrumbs.push({ label: normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root', path });
-      
-      for (const seg of segments) {
-        path = joinPath(path, seg);
-        breadcrumbs.push({ label: seg, path });
-      }
-      
-      return breadcrumbs;
+      const rootLabel = normalizedRoot.split(/[\\/]/).filter(Boolean).pop() || 'Root';
+      return [
+        { label: rootLabel, path: normalizedRoot },
+        ...buildCrumbs(segments, normalizedRoot),
+      ];
     } else {
-      // Current is outside root - show full absolute path
       const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
       const parts = normalizedCurrent.split(/[\\/]/).filter(Boolean);
-      const breadcrumbs = [];
-      
+
       if (isWindows && parts.length > 0 && /^[a-zA-Z]:$/.test(parts[0])) {
-        // Windows: Start with drive root
-        let path = parts[0] + '\\';
-        breadcrumbs.push({ label: parts[0], path });
-        
-        for (let i = 1; i < parts.length; i++) {
-          path = joinPath(path, parts[i]);
-          breadcrumbs.push({ label: parts[i], path });
-        }
+        const driveRoot = parts[0] + '\\';
+        return [
+          { label: parts[0], path: driveRoot },
+          ...buildCrumbs(parts.slice(1), driveRoot),
+        ];
       } else if (!isWindows) {
-        // Unix: Start with root /
-        breadcrumbs.push({ label: 'Root', path: '/' });
-        
-        let path = '/';
-        for (const part of parts) {
-          path = joinPath(path, part);
-          breadcrumbs.push({ label: part, path });
-        }
+        return [
+          { label: 'Root', path: '/' },
+          ...buildCrumbs(parts, '/'),
+        ];
       } else {
-        // Fallback: treat as single segment
-        breadcrumbs.push({ label: normalizedCurrent, path: normalizedCurrent });
+        return [{ label: normalizedCurrent, path: normalizedCurrent }];
       }
-      
-      return breadcrumbs;
     }
   }
 
@@ -809,57 +807,89 @@ export const FolderInfoBar: React.FC = () => {
               />
             ) : (
               breadcrumbs.map((crumb, idx) => (
-                <Flex key={crumb.path} align="center">
-                  <Flex
-                    align="center"
-                    px={2}
-                    py="2px"
-                    cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
-                    bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
-                    borderRadius="md"
-                    _hover={idx !== breadcrumbs.length - 1 ? { 
-                      bg: breadcrumbHoverBg
-                    } : undefined}
-                    transition="background 0.2s ease"
-                    position="relative"
-                    zIndex={1}
-                    onClick={async (e) => {
-                      e.stopPropagation(); // Prevent triggering the parent's onClick
-                      if (idx !== breadcrumbs.length - 1) {
-                        const normalizedPath = normalizePath(crumb.path);
-                        try {
-                          const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
-                          if (isValid) {
-                            setCurrentDirectory(normalizedPath)
-                            addLog(`Changed directory to: ${normalizedPath}`)
-                            setStatus(`Navigated to ${crumb.label}`, 'info')
-                          } else {
-                            addLog(`Cannot access path: ${crumb.path}`, 'error')
-                            setStatus(`Cannot access ${crumb.label}`, 'error')
+                <Flex key={crumb.path} align="center" flexShrink={crumb.isClientPill ? 1 : 0}>
+                  {crumb.isClientPill ? (
+                    <Tooltip label={hasClientLink ? `${getClientName() || crumb.label} — Ctrl+click to open client page` : getClientName() || crumb.label} placement="bottom" hasArrow openDelay={400}>
+                      <Box
+                        as="span"
+                        px={3}
+                        py={0.9}
+                        borderRadius="full"
+                        bg="green.600"
+                        color="white"
+                        fontSize="sm"
+                        fontWeight="medium"
+                        cursor="pointer"
+                        _hover={{ bg: 'green.500' }}
+                        transition="background 0.15s"
+                        userSelect="none"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if ((e.ctrlKey || e.metaKey) && hasClientLink) {
+                            openClientLink();
+                            return;
                           }
-                        } catch (error) {
-                          addLog(`Failed to navigate to ${crumb.path}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
-                          setStatus(`Navigation failed`, 'error')
+                          const normalizedPath = normalizePath(crumb.path);
+                          try {
+                            const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+                            if (isValid) {
+                              setCurrentDirectory(normalizedPath);
+                              addLog(`Changed directory to: ${normalizedPath}`);
+                              setStatus(`Navigated to ${crumb.label}`, 'info');
+                            }
+                          } catch {}
+                        }}
+                      >
+                        {crumb.label}
+                      </Box>
+                    </Tooltip>
+                  ) : (
+                    <Flex
+                      align="center"
+                      px={2}
+                      py="2px"
+                      cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
+                      bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
+                      borderRadius="md"
+                      _hover={idx !== breadcrumbs.length - 1 ? { bg: breadcrumbHoverBg } : undefined}
+                      transition="background 0.2s ease"
+                      position="relative"
+                      zIndex={1}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (idx !== breadcrumbs.length - 1) {
+                          const normalizedPath = normalizePath(crumb.path);
+                          try {
+                            const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+                            if (isValid) {
+                              setCurrentDirectory(normalizedPath);
+                              addLog(`Changed directory to: ${normalizedPath}`);
+                              setStatus(`Navigated to ${crumb.label}`, 'info');
+                            } else {
+                              addLog(`Cannot access path: ${crumb.path}`, 'error');
+                              setStatus(`Cannot access ${crumb.label}`, 'error');
+                            }
+                          } catch (error) {
+                            addLog(`Failed to navigate to ${crumb.path}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+                            setStatus(`Navigation failed`, 'error');
+                          }
                         }
-                      }
-                    }}
-                  >
-                    <Text
-                      fontSize="sm"
-                      fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
-                      color={idx === breadcrumbs.length - 1 ? 'white' : textColor}
-                      userSelect="none"
+                      }}
                     >
-                      {crumb.label}
-                    </Text>
-                  </Flex>
+                      <Text
+                        fontSize="sm"
+                        fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
+                        color={idx === breadcrumbs.length - 1 ? 'white' : textColor}
+                        userSelect="none"
+                      >
+                        {crumb.label}
+                      </Text>
+                    </Flex>
+                  )}
                   {idx < breadcrumbs.length - 1 && (
-                    <Text
-                      color={textColor}
-                      style={{ margin: '0 2px', opacity: 0.8 }}
-                    >
-                      \
-                    </Text>
+                    <Box as="span" display="inline-flex" alignItems="center" mx={1} opacity={0.8} color={textColor}>
+                      <ChevronRight size={14} />
+                    </Box>
                   )}
                 </Flex>
               ))

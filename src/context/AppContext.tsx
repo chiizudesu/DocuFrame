@@ -97,6 +97,15 @@ interface AppContextType {
   setCalculatorShortcut: (shortcut: string) => void;
   clientSearchShortcut: string;
   setClientSearchShortcut: (shortcut: string) => void;
+  jumpModeShortcut: string;
+  setJumpModeShortcut: (shortcut: string) => void;
+  jumpModeOnParentShortcut: string;
+  setJumpModeOnParentShortcut: (shortcut: string) => void;
+  backspaceNavigationShortcut: string;
+  setBackspaceNavigationShortcut: (shortcut: string) => void;
+  enableBackspaceNavigationShortcut: boolean;
+  showClientInfoBar: boolean;
+  setShowClientInfoBar: (show: boolean) => void;
 
   // Tab Management Functions
   addTabToCurrentWindow: (path?: string) => void;
@@ -113,7 +122,7 @@ interface AppContextType {
   removeQuickAccessPath: (path: string) => Promise<void>;
   // File grouping by index prefix
   isGroupedByIndex: boolean;
-  setIsGroupedByIndex: (value: boolean) => void;
+  setIsGroupedByIndex: (value: boolean) => void | Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -164,13 +173,18 @@ export const AppProvider: React.FC<{
   const [activationShortcut, setActivationShortcut] = useState<string>('`');
   const [calculatorShortcut, setCalculatorShortcut] = useState<string>('Alt+Q');
   const [clientSearchShortcut, setClientSearchShortcut] = useState<string>('Alt+F');
+  const [jumpModeShortcut, setJumpModeShortcut] = useState<string>('Ctrl+J');
+  const [jumpModeOnParentShortcut, setJumpModeOnParentShortcut] = useState<string>('Ctrl+Backspace');
+  const [backspaceNavigationShortcut, setBackspaceNavigationShortcut] = useState<string>('Backspace');
+  const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState<boolean>(true);
+  const [showClientInfoBar, setShowClientInfoBar] = useState<boolean>(true);
 
   // Jump mode state
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
-  // File grouping by index prefix
-  const [isGroupedByIndex, setIsGroupedByIndex] = useState<boolean>(false);
+  // File grouping by index prefix (default true, persisted)
+  const [isGroupedByIndex, setIsGroupedByIndexState] = useState<boolean>(true);
   
   // Task Timer file operation logging
   const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
@@ -220,6 +234,18 @@ export const AppProvider: React.FC<{
       if (settings.clientSearchShortcut) {
         setClientSearchShortcut(settings.clientSearchShortcut);
       }
+      if (settings.jumpModeShortcut) {
+        setJumpModeShortcut(settings.jumpModeShortcut);
+      }
+      if (settings.jumpModeOnParentShortcut) {
+        setJumpModeOnParentShortcut(settings.jumpModeOnParentShortcut);
+      }
+      if (settings.backspaceNavigationShortcut) {
+        setBackspaceNavigationShortcut(settings.backspaceNavigationShortcut);
+      }
+      setEnableBackspaceNavigationShortcut(settings.enableBackspaceNavigationShortcut !== false);
+      setShowClientInfoBar(settings.showClientInfoBar !== false);
+      setIsGroupedByIndexState(settings.isGroupedByIndex !== false);
 
       // Load quick access pinned paths
       if (Array.isArray(settings.quickAccessPaths)) {
@@ -367,6 +393,16 @@ export const AppProvider: React.FC<{
     }
   }, [setStatus]);
 
+  const setIsGroupedByIndex = useCallback(async (value: boolean) => {
+    setIsGroupedByIndexState(value);
+    try {
+      const current = await settingsService.getSettings();
+      await settingsService.setSettings({ ...current, isGroupedByIndex: value });
+    } catch (e) {
+      console.error('Failed to persist group by index setting:', e);
+    }
+  }, []);
+
   return (
     <AppContext.Provider value={{
       currentDirectory,
@@ -433,6 +469,15 @@ export const AppProvider: React.FC<{
       setCalculatorShortcut,
       clientSearchShortcut,
       setClientSearchShortcut,
+      jumpModeShortcut,
+      setJumpModeShortcut,
+      jumpModeOnParentShortcut,
+      setJumpModeOnParentShortcut,
+      backspaceNavigationShortcut,
+      setBackspaceNavigationShortcut,
+      enableBackspaceNavigationShortcut,
+      showClientInfoBar,
+      setShowClientInfoBar,
 
       addTabToCurrentWindow,
       closeCurrentTab,

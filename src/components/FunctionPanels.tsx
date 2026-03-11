@@ -138,7 +138,8 @@ const TransferDropdownMenu: React.FC<{
   const handleTransferManual = () => {
     const trimmed = transferManualFilename.trim();
     if (trimmed && effectiveIndex) {
-      const fullName = trimmed.includes(' - ') ? trimmed : `${effectiveIndex} - ${trimmed}`;
+      const hasIndexPrefix = /^[A-Z]+\d*\s+-\s+/.test(trimmed);
+      const fullName = hasIndexPrefix ? trimmed : `${effectiveIndex} - ${trimmed}`;
       onTransfer({ newName: fullName });
       setTransferManualFilename('');
       onOpenChange(false);

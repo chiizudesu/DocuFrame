@@ -190,6 +190,7 @@ interface Settings {
   gstTemplatePath?: string;
   clientbasePath?: string;
   showOutputLog?: boolean;
+  showClientInfoBar?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
   calculatorShortcut?: string;
@@ -201,6 +202,12 @@ interface Settings {
   enableFileWatching?: boolean;
   clientSearchShortcut?: string;
   enableClientSearchShortcut?: boolean;
+  jumpModeShortcut?: string;
+  enableJumpModeShortcut?: boolean;
+  jumpModeOnParentShortcut?: string;
+  enableJumpModeOnParentShortcut?: boolean;
+  backspaceNavigationShortcut?: string;
+  enableBackspaceNavigationShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
@@ -236,6 +243,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
   const [clientSearchShortcut, setClientSearchShortcut] = useState('Alt+F');
   const [enableClientSearchShortcut, setEnableClientSearchShortcut] = useState(true);
+  const [jumpModeShortcut, setJumpModeShortcut] = useState('Ctrl+J');
+  const [enableJumpModeShortcut, setEnableJumpModeShortcut] = useState(true);
+  const [jumpModeOnParentShortcut, setJumpModeOnParentShortcut] = useState('Ctrl+Backspace');
+  const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState(true);
+  const [backspaceNavigationShortcut, setBackspaceNavigationShortcut] = useState('Backspace');
+  const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState(true);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
@@ -260,7 +273,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
   
   const toast = useToast();
-  const { setRootDirectory, showOutputLog, setShowOutputLog, reloadSettings, setAiEditorInstructions: setContextAiEditorInstructions } = useAppContext();
+  const { setRootDirectory, showOutputLog, setShowOutputLog, showClientInfoBar, setShowClientInfoBar, reloadSettings, setAiEditorInstructions: setContextAiEditorInstructions } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -289,6 +302,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setEnableFileWatching(loadedSettings.enableFileWatching !== false);
         setClientSearchShortcut(loadedSettings.clientSearchShortcut || 'Alt+F');
         setEnableClientSearchShortcut(loadedSettings.enableClientSearchShortcut !== false);
+        setJumpModeShortcut(loadedSettings.jumpModeShortcut || 'Ctrl+J');
+        setEnableJumpModeShortcut(loadedSettings.enableJumpModeShortcut !== false);
+        setJumpModeOnParentShortcut(loadedSettings.jumpModeOnParentShortcut || 'Ctrl+Backspace');
+        setEnableJumpModeOnParentShortcut(loadedSettings.enableJumpModeOnParentShortcut !== false);
+        setBackspaceNavigationShortcut(loadedSettings.backspaceNavigationShortcut || 'Backspace');
+        setEnableBackspaceNavigationShortcut(loadedSettings.enableBackspaceNavigationShortcut !== false);
         setSidebarCollapsedByDefault(loadedSettings.sidebarCollapsedByDefault || false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
@@ -378,6 +397,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
         showOutputLog,
+        showClientInfoBar,
         activationShortcut,
         enableActivationShortcut,
         calculatorShortcut,
@@ -389,6 +409,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         enableFileWatching,
         clientSearchShortcut,
         enableClientSearchShortcut,
+        jumpModeShortcut,
+        enableJumpModeShortcut,
+        jumpModeOnParentShortcut,
+        enableJumpModeOnParentShortcut,
+        backspaceNavigationShortcut,
+        enableBackspaceNavigationShortcut,
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
         hideDotFiles,
@@ -818,6 +844,15 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         break;
       case 'clientSearchShortcut':
         setClientSearchShortcut(newShortcut);
+        break;
+      case 'jumpModeShortcut':
+        setJumpModeShortcut(newShortcut);
+        break;
+      case 'jumpModeOnParentShortcut':
+        setJumpModeOnParentShortcut(newShortcut);
+        break;
+      case 'backspaceNavigationShortcut':
+        setBackspaceNavigationShortcut(newShortcut);
         break;
 
     }
@@ -1533,6 +1568,84 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         </td>
                       </tr>
 
+                      {/* Jump Mode Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('jumpModeShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Jump Mode
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {jumpModeShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Open jump mode on current directory
+                        </td>
+                      </tr>
+
+                      {/* Jump Mode on Parent Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('jumpModeOnParentShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Jump Mode on Parent
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {jumpModeOnParentShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Open jump mode on parent directory
+                        </td>
+                      </tr>
+
+                      {/* Navigate Up Shortcut */}
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={Edit} boxSize={2.5} />}
+                            onClick={() => openKeyRecorder('backspaceNavigationShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
+                          />
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Navigate Up
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {backspaceNavigationShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Go up one directory level
+                        </td>
+                      </tr>
+
 
                     </tbody>
                   </table>
@@ -1816,6 +1929,25 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         <Switch
                           isChecked={showOutputLog}
                           onChange={(e) => setShowOutputLog(e.target.checked)}
+                          colorScheme="blue"
+                          size="sm"
+                        />
+                      </HStack>
+                    </FormControl>
+                  </Box>
+
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                    <FormControl>
+                      <HStack justify="space-between">
+                        <VStack align="start" spacing={1}>
+                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Show Client Info Bar</FormLabel>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            Show the client info row (name, IRD, job links) between the address bar and function row
+                          </Text>
+                        </VStack>
+                        <Switch
+                          isChecked={showClientInfoBar}
+                          onChange={(e) => setShowClientInfoBar(e.target.checked)}
                           colorScheme="blue"
                           size="sm"
                         />
