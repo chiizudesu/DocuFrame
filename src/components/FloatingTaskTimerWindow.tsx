@@ -22,8 +22,12 @@ import {
   Switch,
   IconButton,
   Badge,
+  Slider,
+  SliderTrack,
+  SliderFilledTrack,
+  SliderThumb,
 } from '@chakra-ui/react';
-import { Play, Pause, Square, X, GripVertical, Settings, SkipForward, Minus, Plus, ChevronLeft, ChevronRight, Folder } from 'lucide-react';
+import { Play, Pause, Square, X, Settings, SkipForward, Minus, Plus, ChevronLeft, ChevronRight, Folder } from 'lucide-react';
 import { taskTimerService, Task } from '../services/taskTimer';
 import { settingsService } from '../services/settings';
 
@@ -55,9 +59,10 @@ const TEST_MODE = false;
 const TEST_SESSION_SEC = 10;
 const TEST_BREAK_SEC = 10;
 
-// Default: three ascending bell tones — C5, E5, G5
-const playDefaultBell = () => {
+// Default: three ascending bell tones — C5, E5, G5; volume 50-200%
+const playDefaultBell = (volumePercent: number = 100) => {
   try {
+    const mult = volumePercent / 100;
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     ([[523, 0], [659, 0.28], [784, 0.56]] as [number, number][]).forEach(([freq, delay]) => {
       const osc = audioContext.createOscillator();
@@ -68,7 +73,7 @@ const playDefaultBell = () => {
       osc.type = 'sine';
       const t = audioContext.currentTime + delay;
       gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.35, t + 0.04);
+      gain.gain.linearRampToValueAtTime(0.35 * mult, t + 0.04);
       gain.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
       osc.start(t);
       osc.stop(t + 0.7);
@@ -88,25 +93,32 @@ const stopCurrentSound = () => {
   }
 };
 
-// Play custom file (max 5s) or default bell
-const playPomodoroSound = async (customSoundPath?: string) => {
+// Play custom file (max 5s) or default bell; volumePercent 50-200
+const playPomodoroSound = async (customSoundPath?: string, volumePercent: number = 100) => {
   stopCurrentSound();
+  const vol = volumePercent / 100;
   if (!customSoundPath) {
-    playDefaultBell();
+    playDefaultBell(volumePercent);
     return;
   }
   try {
     const result = await (window.electronAPI as any).getFileUrlForAudio?.(customSoundPath);
     if (!result?.success || !result.url) {
-      playDefaultBell();
+      playDefaultBell(volumePercent);
       return;
     }
     const audio = new Audio(result.url);
     currentPlayingAudio = audio;
-    audio.volume = 0.7;
+    // Use Web Audio API for volume > 100%
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const src = ctx.createMediaElementSource(audio);
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = Math.min(2, Math.max(0, vol * 0.7));
+    src.connect(gainNode);
+    gainNode.connect(ctx.destination);
     audio.play().catch(() => {
       currentPlayingAudio = null;
-      playDefaultBell();
+      playDefaultBell(volumePercent);
     });
     const stopAt = setTimeout(() => {
       if (currentPlayingAudio === audio) currentPlayingAudio = null;
@@ -118,7 +130,7 @@ const playPomodoroSound = async (customSoundPath?: string) => {
       if (currentPlayingAudio === audio) currentPlayingAudio = null;
     });
   } catch {
-    playDefaultBell();
+    playDefaultBell(volumePercent);
   }
 };
 
@@ -345,6 +357,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [breakMinutes, setBreakMinutes] = useState(DEFAULT_BREAK_MIN);
   const [targetHours, setTargetHours] = useState(DEFAULT_TARGET_HOURS);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundVolume, setSoundVolume] = useState(100);
   const [customSoundPath, setCustomSoundPath] = useState('');
   const [soundFolder, setSoundFolder] = useState('');
   const [soundFiles, setSoundFiles] = useState<string[]>([]);
@@ -354,6 +367,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const { isOpen: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
   const soundEnabledRef = useRef(true);
   const customSoundPathRef = useRef('');
+  const soundVolumeRef = useRef(100);
 
   useEffect(() => {
     const load = async () => {
@@ -363,12 +377,15 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         const breakMin = s.pomodoroBreakMinutes ?? DEFAULT_BREAK_MIN;
         const tgtHrs = s.pomodoroTargetHours ?? DEFAULT_TARGET_HOURS;
         const sound = s.pomodoroSoundEnabled !== false;
+        const vol = s.pomodoroSoundVolume ?? 100;
         const customPath = s.pomodoroCustomSoundPath || '';
         const folder = s.pomodoroSoundFolder || '';
         setSessionMinutes(sessionMin);
         setBreakMinutes(breakMin);
         setTargetHours(tgtHrs);
         setSoundEnabled(sound);
+        setSoundVolume(vol);
+        soundVolumeRef.current = vol;
         setCustomSoundPath(folder ? customPath : '');
         setSoundFolder(folder);
         soundEnabledRef.current = sound;
@@ -449,7 +466,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         await (window.electronAPI as any).saveTaskLog(today, finalTask);
         window.dispatchEvent(new Event('task-updated'));
       }
-      if (soundEnabledRef.current) playPomodoroSound(customSoundPathRef.current || undefined);
+      if (soundEnabledRef.current) playPomodoroSound(customSoundPathRef.current || undefined, soundVolumeRef.current);
       if (pomodoroState.phase === 'session') {
         setPomodoroState(prev => ({
           ...prev,
@@ -547,20 +564,23 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     setPomodoroState(prev => ({ ...prev, phase: 'session', currentTime: prev.sessionTargetSeconds, currentTask: taskTimerService.startTask('Session') }));
   };
 
-  const saveSettings = async (sessionMin: number, breakMin: number, sound: boolean, tgtHrs: number, customPath?: string, folder?: string) => {
+  const saveSettings = async (sessionMin: number, breakMin: number, sound: boolean, tgtHrs: number, customPath?: string, folder?: string, volume?: number) => {
     const cp = customPath !== undefined ? customPath : customSoundPath;
     const sf = folder !== undefined ? folder : soundFolder;
+    const vol = volume !== undefined ? volume : soundVolume;
     setSessionMinutes(sessionMin);
     setBreakMinutes(breakMin);
     setSoundEnabled(sound);
     setTargetHours(tgtHrs);
+    setSoundVolume(vol);
     setCustomSoundPath(cp);
     setSoundFolder(sf);
     soundEnabledRef.current = sound;
     customSoundPathRef.current = cp;
+    soundVolumeRef.current = vol;
     setPomodoroState(prev => ({ ...prev, sessionTargetSeconds: TEST_MODE ? TEST_SESSION_SEC : sessionMin * 60, breakTargetSeconds: TEST_MODE ? TEST_BREAK_SEC : breakMin * 60 }));
     const s = await settingsService.getSettings() as any;
-    await settingsService.setSettings({ ...s, pomodoroSessionMinutes: sessionMin, pomodoroBreakMinutes: breakMin, pomodoroSoundEnabled: sound, pomodoroTargetHours: tgtHrs, pomodoroCustomSoundPath: cp, pomodoroSoundFolder: sf });
+    await settingsService.setSettings({ ...s, pomodoroSessionMinutes: sessionMin, pomodoroBreakMinutes: breakMin, pomodoroSoundEnabled: sound, pomodoroTargetHours: tgtHrs, pomodoroCustomSoundPath: cp, pomodoroSoundFolder: sf, pomodoroSoundVolume: vol });
   };
 
   // soundOptions = [default, ...custom files]; index 0 = default ('')
@@ -635,9 +655,15 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         <Box bg={bgColor} boxShadow="0 4px 16px rgba(0,0,0,0.4)" border="1px solid" borderColor="whiteAlpha.200" overflow="hidden" w="100%" h="300px">
           {/* Title bar */}
           <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg="gray.800" borderBottom="1px solid" borderColor="whiteAlpha.100" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-            <Flex align="center" gap={1}>
-              <Icon as={GripVertical} boxSize={3.5} color="gray.500" />
-              <Text fontSize="10px" fontWeight="semibold" color="white">Pomodoro</Text>
+            <Flex align="center" gap={2}>
+              <Box px={3} py={1} borderRadius="md" bg={phaseBg} color="white" fontSize="12px" fontWeight="600">
+                {pomodoroState.phase === 'idle' ? 'Ready' : pomodoroState.phase === 'session' ? 'Session' : 'Break'}
+              </Box>
+              {pomodoroState.phase === 'session' && (
+                <Box px={3} py={1} borderRadius="md" bg="green.500" color="white" fontSize="12px" fontWeight="600">
+                  #{sessionNumber}
+                </Box>
+              )}
             </Flex>
             <Flex gap={1}>
               <Tooltip label="Settings">
@@ -658,18 +684,18 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             {/* Left sidebar: controls */}
             <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg="gray.800" borderRight="1px solid" borderColor="whiteAlpha.100" minW="60px">
               <Tooltip label="Start" placement="right">
-                <Button size="md" onClick={handleStartTimer} isDisabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "whiteAlpha.200" : "whiteAlpha.100"} color="white" _hover={{ bg: 'whiteAlpha.300' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon as={Play} boxSize={5} color="green.400" />
+                <Button size="md" onClick={handleStartTimer} isDisabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.500"} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                  <Icon as={Play} boxSize={5} color="white" />
                 </Button>
               </Tooltip>
               <Tooltip label="Pause" placement="right">
-                <Button size="md" onClick={handlePauseTimer} isDisabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg="whiteAlpha.100" color="white" _hover={{ bg: 'whiteAlpha.300' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon as={Pause} boxSize={5} color="yellow.400" />
+                <Button size="md" onClick={handlePauseTimer} isDisabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg={pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                  <Icon as={Pause} boxSize={5} color="white" />
                 </Button>
               </Tooltip>
               <Tooltip label="Stop" placement="right">
-                <Button size="md" onClick={handleStopTimer} isDisabled={pomodoroState.phase === 'idle'} bg="whiteAlpha.100" color="white" _hover={{ bg: 'whiteAlpha.300' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon as={Square} boxSize={5} color="red.400" />
+                <Button size="md" onClick={handleStopTimer} isDisabled={pomodoroState.phase === 'idle'} bg={pomodoroState.phase === 'idle' ? "gray.600" : "red.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' ? "gray.600" : "red.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                  <Icon as={Square} boxSize={5} color="white" />
                 </Button>
               </Tooltip>
               {pomodoroState.phase === 'break' && (
@@ -684,16 +710,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             {/* Center + right */}
             <Flex direction="row" flex={1} bg="gray.900">
               {/* Center: timer */}
-              <Flex direction="column" flex={1} px={6} py={3} position="relative">
-                {/* Phase badge - top left, out of flow so timer centering ignores it */}
-                <Flex position="absolute" top={2} left={6} align="center" gap={2} zIndex={1}>
-                  <Box px={3} py={1} borderRadius="md" bg={phaseBg} color="white" fontSize="13px" fontWeight="600">
-                    {pomodoroState.phase === 'idle' ? 'Ready' : pomodoroState.phase === 'session' ? 'Session' : 'Break'}
-                  </Box>
-                  {pomodoroState.phase === 'session' && (
-                    <Text fontSize="13px" color="gray.400" fontWeight="500">#{sessionNumber}</Text>
-                  )}
-                </Flex>
+              <Flex direction="column" flex={1} px={6} py={3}>
                 {/* Timer: MM | : | SS — fixed widths so no shifting; colon blinks per second */}
                 <Flex flex={1} align="center" justify="center" direction="column" gap={3}>
                   <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize="129px" fontWeight="700" color="white" lineHeight="1">
@@ -730,10 +747,13 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
 
       <Modal isOpen={isSettingsOpen} onClose={onSettingsClose} size="sm" isCentered>
         <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-        <ModalContent bg="gray.800" maxH="90vh" maxW="520px">
+        <ModalContent bg="gray.800" maxH="90vh" maxW="600px">
           <ModalHeader fontSize="md" pb={2}>Pomodoro Settings</ModalHeader>
           <ModalCloseButton />
           <ModalBody pb={5} overflowY="auto">
+            <Flex gap={6}>
+              {/* Column 1: Session, Break, Daily target, Sound */}
+              <Box flex={1}>
             {/* Row 1: Session, Break, Daily target — 3 columns */}
             <SimpleGrid columns={3} spacing={4} mb={4}>
               <FormControl>
@@ -747,9 +767,9 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               <FormControl>
                 <FormLabel fontSize="sm" mb={2} color="gray.300">Break (30s steps)</FormLabel>
                 <Flex align="center" gap={2}>
-                  <IconButton aria-label="Decrease break" icon={<Icon as={Minus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.max(1, Math.round((breakMinutes - 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }} />
+                  <IconButton aria-label="Decrease break" icon={<Icon as={Minus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.max(0.5, Math.round((breakMinutes - 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }} />
                   <Text fontSize="lg" fontWeight="bold" minW="44px" textAlign="center">
-                    {breakMinutes % 1 === 0 ? `${breakMinutes}m` : `${Math.floor(breakMinutes)}:30`}
+                    {breakMinutes < 1 ? `${Math.round(breakMinutes * 60)}s` : breakMinutes % 1 === 0 ? `${breakMinutes}m` : `${Math.floor(breakMinutes)}:30`}
                   </Text>
                   <IconButton aria-label="Increase break" icon={<Icon as={Plus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.min(30, Math.round((breakMinutes + 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }} />
                 </Flex>
@@ -823,7 +843,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                     size="xs"
                     colorScheme="green"
                     variant="solid"
-                    onClick={() => playPomodoroSound(customSoundPath || undefined)}
+                    onClick={() => playPomodoroSound(customSoundPath || undefined, soundVolumeRef.current)}
                   />
                 </Tooltip>
                 <IconButton
@@ -852,6 +872,35 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 />
               </Flex>
             </FormControl>
+              </Box>
+
+              {/* Column 2: Sound amplifier vertical slider */}
+              <Flex direction="column" align="center" w="80px" borderLeft="1px solid" borderColor="whiteAlpha.200" pl={4}>
+                <FormLabel fontSize="xs" color="gray.400" mb={2} whiteSpace="nowrap">Volume</FormLabel>
+                <Text fontSize="xs" color="gray.500" mb={1}>{soundVolume}%</Text>
+                <Box h="120px">
+                <Slider
+                  aria-label="Sound volume"
+                  value={soundVolume}
+                  min={50}
+                  max={200}
+                  step={5}
+                  orientation="vertical"
+                  h="100%"
+                  onChange={(v) => {
+                    setSoundVolume(v);
+                    soundVolumeRef.current = v;
+                    saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, undefined, undefined, v);
+                  }}
+                >
+                  <SliderTrack>
+                    <SliderFilledTrack bg="green.500" />
+                  </SliderTrack>
+                  <SliderThumb boxSize={4} />
+                </Slider>
+                </Box>
+              </Flex>
+            </Flex>
           </ModalBody>
         </ModalContent>
       </Modal>

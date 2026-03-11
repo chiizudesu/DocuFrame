@@ -48,6 +48,7 @@ export interface AppSettings {
   pomodoroTargetHours?: number; // Daily target work hours used to calculate total sessions (default 8)
   pomodoroCustomSoundPath?: string; // Currently selected sound file (absolute path)
   pomodoroSoundFolder?: string; // Folder containing ringtone files to cycle through
+  pomodoroSoundVolume?: number; // Sound volume 50-200% (default 100)
 
 }
 
