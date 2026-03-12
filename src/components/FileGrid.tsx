@@ -1909,11 +1909,47 @@ export const FileGrid: React.FC = () => {
 
     if (event.shiftKey && lastSelectedIndex !== null) {
       // Shift+click: Select range from last selected to current
-      const start = Math.min(lastSelectedIndex, index);
-      const end = Math.max(lastSelectedIndex, index);
-      const rangeSelection = sortedFiles.slice(start, end + 1).map(f => f.name);
-      setSelectedFiles(rangeSelection);
-      setSelectedFile(file.name);
+      // In grouped mode, use the visual display order so the range stays within
+      // the displayed sequence (files from the same group may have non-consecutive
+      // indices in sortedFiles when sorted by date/size/type).
+      if (isGroupedByIndex && groupedFiles) {
+        const visualOrder: FileItem[] = [];
+        if (groupedFiles.folders) visualOrder.push(...groupedFiles.folders);
+        Object.entries(groupedFiles)
+          .filter(([key]) => key !== 'folders')
+          .sort(([a], [b]) => {
+            if (a === 'AA') return -1;
+            if (b === 'AA') return 1;
+            if (a === 'Other') return 1;
+            if (b === 'Other') return -1;
+            return a.localeCompare(b);
+          })
+          .forEach(([, files]) => visualOrder.push(...files));
+
+        const anchorFile = sortedFiles[lastSelectedIndex];
+        const anchorVisualIndex = anchorFile ? visualOrder.findIndex(f => f.path === anchorFile.path) : -1;
+        const currentVisualIndex = visualOrder.findIndex(f => f.path === file.path);
+
+        if (anchorVisualIndex >= 0 && currentVisualIndex >= 0) {
+          const start = Math.min(anchorVisualIndex, currentVisualIndex);
+          const end = Math.max(anchorVisualIndex, currentVisualIndex);
+          const rangeSelection = visualOrder.slice(start, end + 1).map(f => f.name);
+          setSelectedFiles(rangeSelection);
+          setSelectedFile(file.name);
+        } else {
+          // Fallback: flat sort order
+          const start = Math.min(lastSelectedIndex, index);
+          const end = Math.max(lastSelectedIndex, index);
+          setSelectedFiles(sortedFiles.slice(start, end + 1).map(f => f.name));
+          setSelectedFile(file.name);
+        }
+      } else {
+        const start = Math.min(lastSelectedIndex, index);
+        const end = Math.max(lastSelectedIndex, index);
+        const rangeSelection = sortedFiles.slice(start, end + 1).map(f => f.name);
+        setSelectedFiles(rangeSelection);
+        setSelectedFile(file.name);
+      }
       // Don't update lastSelectedIndex for shift-click to maintain range anchor
     } else if (event.ctrlKey || event.metaKey) {
       // Ctrl+click: Toggle selection - use functional updates
@@ -1945,7 +1981,7 @@ export const FileGrid: React.FC = () => {
       setLastSelectedIndex(index);
       setSelectedFile(file.name);
     }
-  }, [lastSelectedIndex, selectedFiles, sortedFiles]);
+  }, [lastSelectedIndex, selectedFiles, sortedFiles, isGroupedByIndex, groupedFiles]);
 
   // Add this function for handling mouse up - completes smart selection logic - OPTIMIZED with useCallback
   const handleFileItemMouseUp = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
@@ -2045,8 +2081,16 @@ export const FileGrid: React.FC = () => {
       setLastClickTime(now);
       setLastClickedFile(file.name);
       if (clickTimer) clearTimeout(clickTimer);
+
+      // UX: When multiple files are selected and user clicks (no ctrl/shift) on a file within that selection,
+      // deselect the group and select only the clicked file
+      if (event && selectedFiles.length > 1 && selectedFilesSet.has(file.name) && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        setSelectedFiles([file.name]);
+        setLastSelectedIndex(index);
+        setSelectedFile(file.name);
+      }
     }
-  }, [selectedFiles, selectedFilesSet, clickTimer, sortedFiles, handleOpenOrNavigate, setLastClickTime, setClickTimer, setLastClickedFile]);
+  }, [selectedFiles, selectedFilesSet, clickTimer, sortedFiles, handleOpenOrNavigate, setLastClickTime, setClickTimer, setLastClickedFile, setSelectedFiles, setLastSelectedIndex, setSelectedFile]);
 
   // Add F2 key support for rename
   useEffect(() => {
