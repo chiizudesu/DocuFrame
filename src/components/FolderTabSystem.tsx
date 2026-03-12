@@ -74,7 +74,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   const activeBg = useColorModeValue('white', 'gray.700');
   const inactiveBg = useColorModeValue('gray.100', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
-  const separatorColor = useColorModeValue('gray.300', 'gray.600');
+  // Subtle separator: 3px gap with 1px line on the 2nd pixel (like File Explorer)
+  const separatorColor = useColorModeValue('gray.400', 'gray.600');
   const hoverBg = useColorModeValue('gray.200', 'gray.750');
 
   // Helper function to get directory name from path
@@ -451,9 +452,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
         {/* Tabs Container with top padding */}
         <Box pt={1} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <Flex align="end" gap="0" height="37px">
-            {/* Tabs */}
+            {/* Tabs with | separators and space between */}
             {tabs.map((tab, index) => (
           <React.Fragment key={tab.id}>
+            {index > 0 && (
+              <Box w="1px" h="15px" bg={separatorColor} alignSelf="center" mt="3px" mx="1px" flexShrink={0} opacity={0.5} aria-hidden />
+            )}
             <Box
               draggable={true}
               onDragStart={(e) => {
@@ -600,14 +604,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                       ? activeBg
                       : inactiveBg
                 }
-                borderRight={
-                  activeTabId !== tab.id && 
-                  index < tabs.length - 1 && 
-                  tabs[index + 1] && 
-                  activeTabId !== tabs[index + 1].id
-                    ? `1px solid ${separatorColor}`
-                    : 'none'
-                }
                 borderRadius={activeTabId === tab.id ? '8px 8px 0 0' : '8px 8px 0 0'}
                 px={activeTabId === tab.id ? 4 : 3}
                 py={activeTabId === tab.id ? 2 : 1.5}
@@ -730,7 +726,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
           </React.Fragment>
           ))}
           
-          {/* Add new tab button - immediately after tabs */}
+          {/* Add new tab button */}
           <Flex
             alignItems="center"
             h="37px"

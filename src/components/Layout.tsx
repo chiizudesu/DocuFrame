@@ -151,8 +151,8 @@ export const Layout: React.FC = () => {
         ${showOutputLog ? '"sidebar footer preview"' : ''}
         "status status status"
       `} gridTemplateRows={`auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
-    {/* Folder Info Bar and Function Bar */}
-    <GridItem area="header" bg={headerBgColor} p={0} overflow="hidden">
+    {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
+    <GridItem area="header" bg={headerBgColor} p={0} overflow="hidden" position="relative" zIndex={2}>
       <Box>
         <Box p={2}>
           <FolderInfoBar />
@@ -172,8 +172,8 @@ export const Layout: React.FC = () => {
         />
       </Box>
     </GridItem>
-    {/* Folder Tab System */}
-    <GridItem area="tabs">
+    {/* Folder Tab System - z-index below header so address bar renders on top when tabs overlap */}
+    <GridItem area="tabs" position="relative" zIndex={1}>
       <FolderTabSystem 
         onActiveTabChange={handleActiveTabChange}
         minimizedDialogs={minimizedDialogs}
