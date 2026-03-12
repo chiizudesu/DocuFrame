@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { keyframes } from '@emotion/react';
 import {
   Box,
   Flex,
@@ -8,7 +9,6 @@ import {
   useColorModeValue,
   Progress,
   Tooltip,
-  VStack,
   SimpleGrid,
   useDisclosure,
   Modal,
@@ -143,6 +143,7 @@ const formatTime = (seconds: number) => {
 };
 
 const GMT_8_OFFSET_MS = 8 * 60 * 60 * 1000;
+const sessionBlinkKeyframes = keyframes`0%, 100% { opacity: 1 } 50% { opacity: 0.45 }`;
 
 // ---------------------------------------------------------------------------
 // Work Shift Infographic (right panel)
@@ -151,7 +152,9 @@ const WorkShiftInfographic: React.FC<{
   tasks: Array<{ name: string; duration: number; completed?: boolean }>;
   sessionMinutes: number;
   pomodoroTargetHours: number;
-}> = ({ tasks, sessionMinutes, pomodoroTargetHours }) => {
+  currentSessionIndex?: number; // 0-based; when in session phase, this box blinks blue
+  isSessionActive?: boolean;
+}> = ({ tasks, sessionMinutes, pomodoroTargetHours, currentSessionIndex = -1, isSessionActive = false }) => {
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [currentTimeGMT8, setCurrentTimeGMT8] = useState('');
@@ -168,9 +171,8 @@ const WorkShiftInfographic: React.FC<{
   const completedSessions = validTasks.filter((t) => t.name === 'Session' && t.completed === true).length;
   const breaksCount = validTasks.filter((t) => t.name === 'Break').length;
 
-  // Calculate how many session slots to display
-  const totalSlots = Math.max(1, Math.round((pomodoroTargetHours * 60) / sessionMinutes));
-  const displaySlots = Math.min(totalSlots, 24);
+  // Total session slots from daily target (hours) and session length
+  const totalSlots = Math.max(1, Math.floor((pomodoroTargetHours * 60) / sessionMinutes));
 
   useEffect(() => {
     const load = async () => {
@@ -239,19 +241,6 @@ const WorkShiftInfographic: React.FC<{
     return `${seconds >= 0 ? '+' : '-'}${h}:${m.toString().padStart(2, '0')}`;
   };
 
-  // Logged time segments (session = green, break = blue)
-  const totalLogged = validTasks.reduce((s, x) => s + x.duration, 0);
-  const segments = shiftDurationSeconds > 0 && totalLogged > 0
-    ? validTasks.map((t, idx) => {
-        const prev = validTasks.slice(0, idx).reduce((s, x) => s + x.duration, 0);
-        return {
-          ...t,
-          left: (prev / shiftDurationSeconds) * 100,
-          width: (t.duration / shiftDurationSeconds) * 100,
-        };
-      })
-    : [];
-
   return (
     <Flex direction="column" w="320px" px={3} py={2} bg="gray.800" borderLeft="1px solid" borderColor="whiteAlpha.100" gap={2} overflow="hidden">
       {/* Current time + ahead/behind */}
@@ -290,9 +279,7 @@ const WorkShiftInfographic: React.FC<{
           <Text fontSize="11px" color="blue.400" fontWeight="600">{formatTime(todayTimeWorked)}</Text>
         </Flex>
         <Box position="relative" h="22px" bg="whiteAlpha.100" borderRadius="sm" overflow="hidden">
-          {segments.map((seg, idx) => (
-            <Box key={idx} position="absolute" left={`${seg.left}%`} top="0" h="100%" w={`${seg.width}%`} bg={seg.name === 'Session' ? 'green.500' : 'blue.500'} borderRadius={seg.left === 0 ? 'sm 0 0 sm' : idx === segments.length - 1 ? '0 sm sm 0' : '0'} />
-          ))}
+          <Box position="absolute" left="0" top="0" h="100%" w={`${Math.min(100, loggedTimeProgress)}%`} bg="green.500" borderRadius="sm" transition="width 0.3s ease" />
           {loggedTimeProgress > 0 && (
             <Flex position="absolute" left="0" top="0" w="100%" h="100%" align="center" justify="center" zIndex={2} pointerEvents="none">
               <Text fontSize="10px" fontWeight="700" color="white" textShadow="0 1px 3px rgba(0,0,0,0.8)">{loggedTimeProgress.toFixed(0)}%</Text>
@@ -301,39 +288,34 @@ const WorkShiftInfographic: React.FC<{
         </Box>
       </Box>
 
-      {/* Today's Summary */}
+      {/* Sessions — box grid, directly below Logged Time */}
       <Box>
-        <Text fontSize="11px" fontWeight="700" color="gray.300" textTransform="uppercase" letterSpacing="0.05em" mb={2}>
-          Today's Summary
-        </Text>
-        <VStack spacing={2} align="stretch">
-          <Flex justify="space-between" align="center">
-            <Text fontSize="12px" color="gray.400" fontWeight="500">Total Time</Text>
-            <Text fontSize="13px" color="white" fontWeight="700">{formatTime(todayTimeWorked)}</Text>
-          </Flex>
-          {/* Session/break progress as segmented bar */}
-          <Box>
-            <Flex justify="space-between" align="center" mb={1}>
-              <Text fontSize="12px" color="gray.400" fontWeight="500">Sessions</Text>
-              <Text fontSize="12px" color="gray.300" fontWeight="600">{completedSessions} / {totalSlots}</Text>
-            </Flex>
-            <Flex align="center" gap="2px" wrap="wrap">
-              {Array.from({ length: displaySlots }, (_, i) => (
-                <React.Fragment key={i}>
-                  <Box
-                    w="14px" h="11px" borderRadius="2px"
-                    bg={i < completedSessions ? 'green.500' : 'whiteAlpha.150'}
-                    border="1px solid"
-                    borderColor={i < completedSessions ? 'green.400' : 'whiteAlpha.300'}
-                  />
-                  {i < displaySlots - 1 && (
-                    <Box w="4px" h="4px" borderRadius="full" bg={i < breaksCount ? 'blue.400' : 'whiteAlpha.200'} />
-                  )}
-                </React.Fragment>
-              ))}
-            </Flex>
-          </Box>
-        </VStack>
+        <Flex justify="space-between" align="center" mb={1}>
+          <Text fontSize="11px" color="gray.500" fontWeight="500">Sessions</Text>
+          <Text fontSize="11px" color="green.400" fontWeight="600">{completedSessions} / {totalSlots}</Text>
+        </Flex>
+        <Flex align="center" gap="3px" wrap="wrap">
+          {Array.from({ length: totalSlots }, (_, i) => {
+            const isCurrent = isSessionActive && i === currentSessionIndex;
+            return (
+              <React.Fragment key={i}>
+                <Box
+                  w={totalSlots <= 16 ? "16px" : totalSlots <= 24 ? "14px" : "11px"}
+                  h="14px"
+                  borderRadius="3px"
+                  bg={isCurrent ? 'blue.500' : i < completedSessions ? 'green.500' : 'whiteAlpha.150'}
+                  border="1px solid"
+                  borderColor={isCurrent ? 'blue.400' : i < completedSessions ? 'green.400' : 'whiteAlpha.300'}
+                  flexShrink={0}
+                  animation={isCurrent ? `${sessionBlinkKeyframes} 1s ease-in-out infinite` : undefined}
+                />
+                {i < totalSlots - 1 && (
+                  <Box w="4px" h="4px" borderRadius="full" bg={i < breaksCount ? 'blue.400' : 'whiteAlpha.200'} flexShrink={0} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </Flex>
       </Box>
     </Flex>
   );
@@ -739,7 +721,13 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               </Flex>
 
               {/* Right: infographic */}
-              <WorkShiftInfographic tasks={infographicTasks} sessionMinutes={sessionMinutes} pomodoroTargetHours={targetHours} />
+              <WorkShiftInfographic
+                tasks={infographicTasks}
+                sessionMinutes={sessionMinutes}
+                pomodoroTargetHours={targetHours}
+                currentSessionIndex={pomodoroState.phase === 'session' ? infographicTasks.filter((t) => t.name === 'Session' && t.completed === true).length : -1}
+                isSessionActive={pomodoroState.phase === 'session' && !pomodoroState.isPaused}
+              />
             </Flex>
           </Flex>
         </Box>

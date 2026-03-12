@@ -5,7 +5,6 @@ import {
   IconButton,
   Input,
   InputGroup,
-  InputLeftElement,
   Tooltip,
   Box,
   useColorModeValue,
@@ -31,7 +30,6 @@ import {
   ChevronLeft,
   ChevronRight,
   RefreshCw,
-  Search,
   Star,
   Download,
 } from 'lucide-react'
@@ -55,7 +53,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   
   // Helper function to get directory name from path
@@ -66,7 +64,6 @@ export const FolderInfoBar: React.FC = () => {
   }
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
-  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isCreateSpreadsheetOpen, setIsCreateSpreadsheetOpen] = useState(false)
@@ -110,17 +107,18 @@ export const FolderInfoBar: React.FC = () => {
     });
   }
 
-  // Match the active tab color from FolderTabSystem
-  const bgColor = useColorModeValue('#4a5a68', 'gray.700')
-  const hoverBgColor = useColorModeValue('#64748b', 'blue.700')
+  // Light theme: light header; dark theme: dark header (unchanged)
+  const bgColor = useColorModeValue('white', 'gray.700')
+  const hoverBgColor = useColorModeValue('gray.200', 'blue.700')
   const activeButtonBg = bgColor // Use title bar background color for current path pill
-  const activeButtonColor = useColorModeValue('white', 'blue.200')
-  const breadcrumbHoverBg = useColorModeValue('#64748b', '#6b7280') // Hover color for parent paths - lighter gray for better visibility in dark mode
-  const textColor = useColorModeValue('#e2e8f0', 'gray.100')
-  const iconColor = useColorModeValue('#cbd5e1', 'gray.400')
-  const inputBgColor = useColorModeValue('#475569', 'gray.600')
-  const inputFocusBgColor = useColorModeValue('#64748b', 'gray.500')
-  const separatorColor = useColorModeValue('#64748b', 'gray.400')
+  const activeButtonColor = useColorModeValue('#334155', 'blue.200')
+  const breadcrumbHoverBg = useColorModeValue('gray.200', '#6b7280') // Hover color for parent paths
+  const textColor = useColorModeValue('#334155', 'gray.100')
+  const iconColor = useColorModeValue('#64748b', 'gray.400')
+  const inputBgColor = useColorModeValue('white', 'gray.600')
+  const inputFocusBgColor = useColorModeValue('gray.200', 'gray.500')
+  const inputBorderColor = useColorModeValue('gray.300', 'transparent') // Light: thin border to separate inputs from white header
+  const separatorColor = useColorModeValue('gray.300', 'gray.400')
 
   // Window controls
   const handleMinimize = () => {
@@ -760,7 +758,7 @@ export const FolderInfoBar: React.FC = () => {
           />
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Flex ref={addressBarRef} flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="none">
+        <Flex ref={addressBarRef} flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="1px solid" borderColor={inputBorderColor}>
           {isRefreshing && (
             <Box
               position="absolute"
@@ -879,7 +877,7 @@ export const FolderInfoBar: React.FC = () => {
                       <Text
                         fontSize="sm"
                         fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
-                        color={idx === breadcrumbs.length - 1 ? 'white' : textColor}
+                        color={idx === breadcrumbs.length - 1 ? activeButtonColor : textColor}
                         userSelect="none"
                       >
                         {crumb.label}
@@ -898,9 +896,6 @@ export const FolderInfoBar: React.FC = () => {
         </Flex>
         {/* Search Input Field - Same style as address bar, no border */}
         <InputGroup ref={searchInputContainerRef} maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
-          <InputLeftElement pointerEvents="none" h="33px" pl={2}>
-            <Search size={16} color={useColorModeValue('#94a3b8', 'gray.400')} />
-          </InputLeftElement>
           <Input
             ref={searchInputRef}
             value={searchValue}
@@ -909,12 +904,13 @@ export const FolderInfoBar: React.FC = () => {
             h="33px"
             borderRadius="md"
             bg={inputBgColor}
-            border="none"
+            border="1px solid"
+            borderColor={inputBorderColor}
             color={textColor}
             fontSize="sm"
-            pl={7}
+            pl={3}
             tabIndex={-1}
-            _placeholder={{ color: useColorModeValue('#94a3b8', 'gray.400') }}
+            _placeholder={{ color: useColorModeValue('gray.500', 'gray.400') }}
             _focus={{
               bg: inputFocusBgColor,
               boxShadow: 'none',

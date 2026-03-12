@@ -61,6 +61,7 @@ export const FileGrid: React.FC = () => {
     fileSearchFilter, // File search filter for current directory
     contentSearchResults, // Content search results (files matching content search)
     isGroupedByIndex, // Group files by index prefix
+    setIsCreateFolderOpen,
   } = useAppContext()
 
   // Memoize selectedFiles as Set for O(1) lookup performance (moved early to avoid initialization errors)
@@ -138,6 +139,7 @@ export const FileGrid: React.FC = () => {
   const [isRenaming, setIsRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const isRenamingRef = useRef<string | null>(null)
   const hasPositionedCursor = useRef<boolean>(false)
   const isLoadingRef = useRef<boolean>(false)
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null)
@@ -318,6 +320,8 @@ export const FileGrid: React.FC = () => {
 
   // Utility function to get filename without extension for cursor positioning - OPTIMIZED with useCallback
   const getFilenameWithoutExtension = useCallback((filename: string) => {
+    // When value is extension-only (e.g. ".txt" for new file), put cursor at start (left)
+    if (/^\.[a-z0-9]+$/i.test(filename)) return 0;
     const lastDotIndex = filename.lastIndexOf('.');
     if (lastDotIndex === -1 || lastDotIndex === 0) {
       // No extension or hidden file (starts with .)
@@ -325,6 +329,11 @@ export const FileGrid: React.FC = () => {
     }
     return lastDotIndex;
   }, []);
+
+  // Keep ref in sync so stale closures can check rename mode
+  useEffect(() => {
+    isRenamingRef.current = isRenaming;
+  }, [isRenaming]);
 
   // Position cursor at end of filename (before extension) when rename starts
   useEffect(() => {
@@ -363,6 +372,7 @@ export const FileGrid: React.FC = () => {
   const headerDividerBg = useColorModeValue('gray.300', 'gray.700')
   const rowSelectedBg = useColorModeValue('blue.200', 'blue.900')
   const rowHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const rowDefaultBg = useColorModeValue('white', 'transparent') // Light: opaque for readability; dark: transparent
   const folderDropBgColor = useColorModeValue('blue.100', 'blue.700')
   const searchHighlightBg = useColorModeValue('blue.50', 'blue.900')
   const dragGhostBg = useColorModeValue('gray.50', 'gray.900')
@@ -1051,11 +1061,27 @@ export const FileGrid: React.FC = () => {
                 const message = result?.message || 'Replace with latest file failed';
                 addLog(message, 'error');
                 setStatus('Replace with latest file failed', 'error');
+                toast({
+                  title: 'Replace Failed',
+                  description: message,
+                  status: 'error',
+                  duration: 5000,
+                  isClosable: true,
+                  position: 'top',
+                });
               }
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
               addLog(`Replace with latest file failed: ${errorMessage}`, 'error');
               setStatus('Replace with latest file failed', 'error');
+              toast({
+                title: 'Replace Failed',
+                description: errorMessage,
+                status: 'error',
+                duration: 5000,
+                isClosable: true,
+                position: 'top',
+              });
             }
           }
           break;
@@ -1648,7 +1674,7 @@ export const FileGrid: React.FC = () => {
       setRenameValue('')
       return
     }
-    // If the name is exactly the same (including case), no change needed
+    // Use exactly what the user typed (no extension appending) - user can edit name and extension freely
     if (trimmedName === isRenaming) {
       setIsRenaming(null)
       setRenameValue('')
@@ -1733,6 +1759,11 @@ export const FileGrid: React.FC = () => {
       setRenameValue('')
     }
   }, [isRenaming, renameValue, currentDirectory, addLog, setStatus, refreshDirectory])
+
+  const handleRenameCancel = useCallback(() => {
+    setIsRenaming(null);
+    setRenameValue('');
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -3601,7 +3632,7 @@ export const FileGrid: React.FC = () => {
       
       const rowBg = fileState.isFileSelected 
         ? rowSelectedBg
-        : (fileState.isRowHovered ? rowHoverBg : (isSearchHighlight ? searchHighlightBg : 'transparent'));
+        : (fileState.isRowHovered ? rowHoverBg : (isSearchHighlight ? searchHighlightBg : rowDefaultBg));
       
       const folderDropBg = file.type === 'folder' && folderHoverState.has(file.path) 
         ? folderDropBgColor
@@ -3609,7 +3640,7 @@ export const FileGrid: React.FC = () => {
       
       return folderDropBg || rowBg;
     });
-  }, [memoizedFileStates, sortedFiles, rowSelectedBg, rowHoverBg, folderHoverState, folderDropBgColor, fileSearchFilter, searchHighlightBg]);
+  }, [memoizedFileStates, sortedFiles, rowSelectedBg, rowHoverBg, rowDefaultBg, folderHoverState, folderDropBgColor, fileSearchFilter, searchHighlightBg]);
 
   // Optimized handler factories for row components
   const createRowHandlers = useCallback((file: FileItem, index: number) => ({
@@ -3784,6 +3815,11 @@ export const FileGrid: React.FC = () => {
     const isClickOnInteractive = target.closest('button, input, a, [role="button"]');
     
     if (!isClickOnRow && !isClickOnHeader && !isClickOnInteractive && e.button === 0) {
+      // If rename mode is active, blur the input first so the onBlur handler fires
+      // (e.preventDefault below would otherwise block the browser's focus change)
+      if (isRenamingRef.current && renameInputRef.current) {
+        renameInputRef.current.blur();
+      }
       e.preventDefault();
       const container = gridContainerRef.current || dropAreaRef.current;
       if (!container) return;
@@ -4008,6 +4044,7 @@ export const FileGrid: React.FC = () => {
         formatFileSize={formatFileSize}
         formatDate={formatDate}
         handleRenameSubmit={handleRenameSubmit}
+        handleRenameCancel={handleRenameCancel}
         setIsRenaming={setIsRenaming}
         setRenameValue={setRenameValue}
         setFileGridBackgroundUrl={setFileGridBackgroundUrl}
@@ -4035,12 +4072,89 @@ export const FileGrid: React.FC = () => {
         setIsJumpModeActive={setIsJumpModeActive}
         setIsMoveToDialogOpen={setIsMoveToDialogOpen}
       />
-      <BlankContextMenu 
+      <BlankContextMenu
         blankContextMenu={blankContextMenu}
         clipboard={clipboard}
         handlePaste={handlePaste}
         setBlankContextMenu={setBlankContextMenu}
         onPasteImage={() => setImagePasteOpen(true)}
+        currentDirectory={currentDirectory}
+        onCreateFolder={() => {
+          setIsCreateFolderOpen(true);
+        }}
+        onCreateTextFile={async () => {
+          const fileName = 'Untitled.txt';
+          try {
+            const filePath = joinPath(currentDirectory, fileName);
+            await (window.electronAPI as any).createTextFile(filePath);
+            addLog('Created Untitled.txt');
+            setStatus('Created Untitled.txt', 'success');
+            await refreshDirectory(currentDirectory);
+            setSelectedFiles([fileName]);
+            setSelectedFile(fileName);
+            setIsRenaming(fileName);
+            setRenameValue('.txt');
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            addLog(`Failed to create text file: ${msg}`, 'error');
+            setStatus('Failed to create text file', 'error');
+          }
+        }}
+        onCreateSpreadsheet={async () => {
+          const fileName = 'Untitled.xlsx';
+          try {
+            const filePath = joinPath(currentDirectory, fileName);
+            await (window.electronAPI as any).createBlankSpreadsheet(filePath);
+            addLog('Created Untitled.xlsx');
+            setStatus('Created Untitled.xlsx', 'success');
+            await refreshDirectory(currentDirectory);
+            setSelectedFiles([fileName]);
+            setSelectedFile(fileName);
+            setIsRenaming(fileName);
+            setRenameValue('.xlsx');
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            addLog(`Failed to create spreadsheet: ${msg}`, 'error');
+            setStatus('Failed to create spreadsheet', 'error');
+          }
+        }}
+        onCreateWordDoc={async () => {
+          const fileName = 'Untitled.docx';
+          try {
+            const filePath = joinPath(currentDirectory, fileName);
+            await (window.electronAPI as any).createWordDocument(filePath);
+            addLog('Created Untitled.docx');
+            setStatus('Created Untitled.docx', 'success');
+            await refreshDirectory(currentDirectory);
+            setSelectedFiles([fileName]);
+            setSelectedFile(fileName);
+            setIsRenaming(fileName);
+            setRenameValue('.docx');
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            addLog(`Failed to create Word document: ${msg}`, 'error');
+            setStatus('Failed to create Word document', 'error');
+          }
+        }}
+        onCreateFromTemplate={async (templatePath: string, templateName: string) => {
+          const fileName = templateName.replace(/\.xlsx$/i, '');
+          const fullFileName = `${fileName}.xlsx`;
+          try {
+            const destPath = joinPath(currentDirectory, fullFileName);
+            await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
+            addLog(`Created ${fullFileName} from template`);
+            setStatus(`Created ${fullFileName} from template`, 'success');
+            await refreshDirectory(currentDirectory);
+            setSelectedFiles([fullFileName]);
+            setSelectedFile(fullFileName);
+            setIsRenaming(fullFileName);
+            setRenameValue(fullFileName);
+          } catch (error) {
+            console.error('Error creating from template:', error);
+            addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+            setStatus('Failed to create from template', 'error');
+          }
+        }}
       />
       {contextMenu.fileItem?.type === 'folder' && (
         <TemplateSubmenu

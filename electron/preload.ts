@@ -300,6 +300,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return await ipcRenderer.invoke('enable-file-watching', enabled);
   },
   // Document creation methods
+  createTextFile: async (filePath: string) => {
+    return await ipcRenderer.invoke('create-text-file', filePath);
+  },
   createBlankSpreadsheet: async (filePath: string) => {
     return await ipcRenderer.invoke('create-blank-spreadsheet', filePath);
   },

@@ -1,17 +1,10 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
-import { ChakraProvider, ColorModeScript, extendTheme } from '@chakra-ui/react';
+import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
 import { AppProvider } from './context/AppContext';
+import { theme } from './theme';
 import './styles/scrollbar.css';
-
-// Define theme configuration
-const theme = extendTheme({
-  config: {
-    initialColorMode: 'light',
-    useSystemColorMode: true,
-  },
-});
 
 // Check if this is the floating timer window and make it transparent
 const isFloatingTimer = window.location.hash === '#floating-timer';

@@ -618,6 +618,7 @@ export interface FileListViewProps {
   formatFileSize: (size: string | undefined) => string;
   formatDate: (dateString: string) => string;
   handleRenameSubmit: (e?: React.FormEvent) => void;
+  handleRenameCancel?: () => void;
   setIsRenaming: (name: string | null) => void;
   setRenameValue: (value: string) => void;
   setFileGridBackgroundUrl: (url: string) => void;
@@ -703,6 +704,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
   formatFileSize,
   formatDate,
   handleRenameSubmit,
+  handleRenameCancel,
   setIsRenaming,
   setRenameValue,
   setFileGridBackgroundUrl,
@@ -712,10 +714,12 @@ export const FileListView: React.FC<FileListViewProps> = ({
   clearFolderHoverStates,
   cellStyles,
 }) => {
-  const pillBg = useColorModeValue('blue.50', 'blue.900');
+  const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
+  const pillBg = useColorModeValue('blue.100', 'blue.900'); // Light: more visible; dark: unchanged
   const pillText = useColorModeValue('blue.700', 'blue.200');
   const dividerColor = useColorModeValue('gray.200', 'gray.600');
   const dropZoneBg = useColorModeValue('blue.100', 'blue.800');
+  const bgFillOpacity = useColorModeValue(0.05, 0.10); // Light: subtler; dark: unchanged
   const maxPillWidth = useMemo(() => {
     const maxLength = getMaxIndexPillWidth();
     return `${Math.max(maxLength * 7, 140)}px`;
@@ -737,7 +741,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
       width="100%"
       overflow="hidden"
     >
-      {/* Background Fill - Full filegrid coverage, 10% opacity - Fixed to container, doesn't scroll */}
+      {/* Background Fill - Full filegrid coverage, theme-aware opacity - Fixed to container, doesn't scroll */}
       {enableBackgrounds && backgroundType === 'backgroundFill' && backgroundFillUrl && (
         <Box
           position="absolute"
@@ -752,7 +756,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
-            opacity: 0.10,
+            opacity: bgFillOpacity,
           }}
         />
       )}
@@ -1123,14 +1127,11 @@ export const FileListView: React.FC<FileListViewProps> = ({
                                     ref={renameInputRef}
                                     value={renameValue}
                                     onChange={(e) => setRenameValue(e.target.value)}
-                                    onBlur={handleRenameSubmit}
+                                    onBlur={onRenameCancel}
                                     autoFocus
                                     size="xs"
                                     onKeyDown={(e) => {
-                                      if (e.key === 'Escape') {
-                                        setIsRenaming(null)
-                                        setRenameValue('')
-                                      }
+                                      if (e.key === 'Escape') onRenameCancel()
                                     }}
                                   />
                                 </form>
@@ -1332,14 +1333,11 @@ export const FileListView: React.FC<FileListViewProps> = ({
                             ref={renameInputRef}
                             value={renameValue}
                             onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={handleRenameSubmit}
+                            onBlur={onRenameCancel}
                             autoFocus
                             size="xs"
                             onKeyDown={(e) => {
-                              if (e.key === 'Escape') {
-                                setIsRenaming(null)
-                                setRenameValue('')
-                              }
+                              if (e.key === 'Escape') onRenameCancel()
                             }}
                           />
                         </form>

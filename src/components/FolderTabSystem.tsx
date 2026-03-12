@@ -6,6 +6,7 @@ import {
   IconButton,
   useColorModeValue,
   Button,
+  useToast,
 } from '@chakra-ui/react';
 import { X, Plus, ExternalLink, Minimize2, Maximize2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -30,7 +31,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   onRestoreDialog,
   onCloseMinimizedDialog
 }) => {
-  const { currentDirectory, setCurrentDirectory, rootDirectory, newTabShortcut, closeTabShortcut, addTabToCurrentWindow, closeCurrentTab } = useAppContext();
+  const { currentDirectory, setCurrentDirectory, rootDirectory, newTabShortcut, closeTabShortcut, addTabToCurrentWindow, closeCurrentTab, addLog } = useAppContext();
+  const toast = useToast();
   const [isMaximized, setIsMaximized] = useState(false);
   
   // Window controls
@@ -67,13 +69,13 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null); // For file drag/drop
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  // Colors - Matching active tab to FolderInfoBar
-  const bgColor = useColorModeValue('#2d3748', 'gray.900'); // Dark background like Windows/Edge
-  const activeBg = useColorModeValue('#4a5a68', 'gray.700'); // Active tab - darker slate
-  const inactiveBg = useColorModeValue('#3d4a56', 'gray.800'); // Inactive tabs - darker gray
-  const borderColor = useColorModeValue('#1a202c', 'gray.700');
-  const separatorColor = useColorModeValue('#334155', 'gray.600'); // Subtle separator
-  const hoverBg = useColorModeValue('#4a5a68', 'gray.750');
+  // Light theme: light tab bar; dark theme: dark (unchanged)
+  const bgColor = useColorModeValue('#f1f5f9', 'gray.900');
+  const activeBg = useColorModeValue('white', 'gray.700');
+  const inactiveBg = useColorModeValue('gray.100', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const separatorColor = useColorModeValue('gray.300', 'gray.600');
+  const hoverBg = useColorModeValue('gray.200', 'gray.750');
 
   // Helper function to get directory name from path
   function getDirectoryName(path: string): string {
@@ -517,7 +519,17 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                         await window.electronAPI.moveFiles(filePaths, tab.path);
                         filesMoved = true;
                       } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
                         console.error('Failed to move files:', error);
+                        addLog(`Failed to move files to "${tab.name}": ${errorMessage}`, 'error');
+                        toast({
+                          title: 'Move Failed',
+                          description: errorMessage,
+                          status: 'error',
+                          duration: 5000,
+                          isClosable: true,
+                          position: 'top',
+                        });
                       }
                     }
                   } else if (e.dataTransfer.types.includes('application/x-docuframe-files')) {
@@ -531,7 +543,17 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                         filesMoved = true;
                       }
                     } catch (error) {
-                      console.error('Failed to parse internal drag data:', error);
+                      const errorMessage = error instanceof Error ? error.message : String(error);
+                      console.error('Failed to move files:', error);
+                      addLog(`Failed to move files to "${tab.name}": ${errorMessage}`, 'error');
+                      toast({
+                        title: 'Move Failed',
+                        description: errorMessage,
+                        status: 'error',
+                        duration: 5000,
+                        isClosable: true,
+                        position: 'top',
+                      });
                     }
                   } else if (draggedTab) {
                     // Tab reordering
@@ -629,7 +651,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                     ? useColorModeValue('white', 'blue.200')
                     : activeTabId === tab.id 
                       ? useColorModeValue('#1a202c', 'white')
-                      : useColorModeValue('#e2e8f0', 'gray.300')
+                      : useColorModeValue('#64748b', 'gray.300')
                 }
                 fontWeight={activeTabId === tab.id ? '500' : '400'}
               >
@@ -654,7 +676,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                       opacity: 1,
                       bg: activeTabId === tab.id 
                         ? useColorModeValue('gray.200', 'gray.600')
-                        : useColorModeValue('#64748b', 'gray.600')
+                        : useColorModeValue('gray.200', 'gray.600')
                     }}
                     onClick={(e: React.MouseEvent) => {
                       e.stopPropagation();
@@ -666,7 +688,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                     transition="all 0.15s ease"
                     color={activeTabId === tab.id 
                       ? useColorModeValue('#1a202c', 'white')
-                      : useColorModeValue('#e2e8f0', 'gray.300')
+                      : useColorModeValue('#64748b', 'gray.300')
                     }
                   >
                     <X size={14} strokeWidth={2} />
@@ -722,14 +744,14 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
               opacity={0.7}
               _hover={{ 
                 opacity: 1,
-                bg: useColorModeValue('#4a5a68', 'gray.700')
+                bg: useColorModeValue('gray.200', 'gray.700')
               }}
               onClick={() => addNewTab()}
               display="flex"
               alignItems="center"
               justifyContent="center"
               transition="all 0.15s ease"
-              color={useColorModeValue('#e2e8f0', 'gray.400')}
+              color={useColorModeValue('#64748b', 'gray.400')}
               h="30px"
               w="30px"
             >

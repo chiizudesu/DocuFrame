@@ -95,7 +95,8 @@ export const ClientInfoBar: React.FC = () => {
   const noClientColor = useColorModeValue('gray.600', 'gray.300');
 
   const hasClient = !!clientInfo;
-  const bg = hasClient ? 'green.700' : noClientBg;
+  const clientBg = useColorModeValue('green.600', 'green.700'); // Light theme: softer green; dark: unchanged
+  const bg = hasClient ? clientBg : noClientBg;
   const color = hasClient ? 'white' : noClientColor;
   const [showCopiedIrd, setShowCopiedIrd] = useState(false);
   const [showCopiedAddress, setShowCopiedAddress] = useState(false);

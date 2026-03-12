@@ -29,8 +29,8 @@ export const Layout: React.FC = () => {
   const subtleBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
   const accentBorderColor = useColorModeValue('#d1d5db', 'gray.700');
   const bgColor = useColorModeValue('#ffffff', 'gray.800');
-  const headerBgColor = useColorModeValue('#4a5a68', 'gray.700'); // Match active tab color - darker
-  const mainBgColor = useColorModeValue('#e8eef3', 'gray.850'); // Softer transition for modern UI harmony
+  const headerBgColor = useColorModeValue('white', 'gray.700'); // Light theme: match active tab; dark: unchanged
+  const mainBgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright content area; dark: unchanged
   const isDragging = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);

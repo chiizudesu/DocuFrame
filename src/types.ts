@@ -108,6 +108,7 @@ declare global {
       stopWatchingDirectory: (dirPath: string) => Promise<{ success: boolean; message: string; watchedDirectories: string[] }>;
       getWatchedDirectories: () => Promise<{ success: boolean; directories: string[]; isEnabled: boolean }>;
       enableFileWatching: (enabled: boolean) => Promise<{ success: boolean; message: string; isEnabled: boolean }>;
+      createTextFile: (filePath: string) => Promise<{ success: boolean; filePath: string }>;
       createBlankSpreadsheet: (filePath: string) => Promise<{ success: boolean; filePath: string }>;
       createWordDocument: (filePath: string) => Promise<{ success: boolean; filePath: string }>;
       copyWorkpaperTemplate: (templatePath: string, destPath: string) => Promise<{ success: boolean; destPath: string }>;

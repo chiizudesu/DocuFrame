@@ -600,7 +600,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     extractedFiles: string[];
     sourceFiles: string[];
   } | null>(null);
-  const buttonHoverBg = useColorModeValue('#e2e8f0', 'gray.700');
+  const buttonHoverBg = useColorModeValue('gray.300', 'gray.700');
   const dividerColor = useColorModeValue('#e2e8f0', 'gray.600');
   const minimizedIconActiveBg = useColorModeValue('#64748b', 'blue.800');
   const minimizedIconColor = useColorModeValue('#e2e8f0', 'gray.300');
@@ -856,12 +856,28 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         } else {
           addLog(result.message, 'error');
           setStatus('Transfer Latest failed', 'error');
+          toast({
+            title: 'Transfer Failed',
+            description: result.message,
+            status: 'error',
+            duration: 5000,
+            isClosable: true,
+            position: 'top',
+          });
         }
       } catch (error) {
-        const errorMsg = `Error executing Transfer Latest: ${error}`;
+        const errorMsg = error instanceof Error ? error.message : `Error executing Transfer Latest: ${error}`;
         addLog(errorMsg, 'error');
         setStatus('Transfer Latest failed', 'error');
         console.error('[FunctionPanels] Transfer Latest error:', error);
+        toast({
+          title: 'Transfer Failed',
+          description: errorMsg,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
       }
       return;
     }

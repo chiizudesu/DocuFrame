@@ -11,7 +11,7 @@ export const ClientInfoPane: React.FC = () => {
     removeQuickAccessPath,
   } = useAppContext();
 
-  const bgColor = useColorModeValue('#e8eef3', 'gray.850'); // Match FileGrid background
+  const bgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright sidebar; dark: unchanged
   const textColor = useColorModeValue('#334155', 'white');
   const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
   const dividerBorderColor = useColorModeValue('gray.300', 'gray.600');

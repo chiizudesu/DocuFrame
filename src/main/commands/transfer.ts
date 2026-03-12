@@ -147,7 +147,7 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
         fs.unlinkSync(srcPath);
         
         return { success: true, file: destName };
-      } catch (error) {
+      } catch (error: any) {
         console.error(`Failed to transfer ${file}:`, error);
         // If copy succeeded but delete failed, try to clean up
         if (fs.existsSync(destPath)) {
@@ -157,10 +157,24 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
             console.error('Failed to clean up destination file after error:', cleanupError);
           }
         }
+        let friendlyError: string;
+        switch (error?.code) {
+          case 'EBUSY':
+            friendlyError = `The file is currently in use by another application. Please close it and try again.`;
+            break;
+          case 'EPERM':
+            friendlyError = `Access was denied — the file may be open in another app (e.g. PDF reader, Word). Please close it and try again.`;
+            break;
+          case 'EACCES':
+            friendlyError = `Permission denied. You may not have access to this file or folder.`;
+            break;
+          default:
+            friendlyError = error?.message ?? String(error);
+        }
         return { 
           success: false, 
           file, 
-          error: (error as Error).message,
+          error: friendlyError,
           details: {
             sourcePath: srcPath,
             destinationPath: destPath,
@@ -200,11 +214,25 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
       message,
       files: previewFiles
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error during transfer:', error);
+    let friendlyError: string;
+    switch (error?.code) {
+      case 'EBUSY':
+        friendlyError = `The file is currently in use by another application. Please close it and try again.`;
+        break;
+      case 'EPERM':
+        friendlyError = `Access was denied — the file may be open in another app (e.g. PDF reader, Word). Please close it and try again.`;
+        break;
+      case 'EACCES':
+        friendlyError = `Permission denied. You may not have access to this file or folder.`;
+        break;
+      default:
+        friendlyError = error?.message ?? String(error);
+    }
     return {
       success: false,
-      message: `Error during transfer: ${(error as Error).message}`
+      message: `Error during transfer: ${friendlyError}`
     };
   }
 }

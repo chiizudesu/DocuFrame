@@ -33,6 +33,20 @@ import { uIOhook, UiohookKey } from 'uiohook-napi';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Returns a user-friendly message for common filesystem error codes
+function getFileOperationErrorMessage(error: any): string {
+  switch (error?.code) {
+    case 'EBUSY':
+      return `The file is currently in use by another application. Please close it and try again.`;
+    case 'EPERM':
+      return `Access was denied — the file may be open in another app (e.g. PDF reader, Word). Please close it and try again.`;
+    case 'EACCES':
+      return `Permission denied. You may not have access to this file or folder.`;
+    default:
+      return (error as Error)?.message ?? String(error);
+  }
+}
+
 // Express server for serving PDF files
 let expressApp: express.Application;
 let expressServer: any;
@@ -890,7 +904,7 @@ ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string
     console.error('[Main] Error in replace-with-latest-file:', error);
     return {
       success: false,
-      message: `Error replacing file: ${(error as Error).message}`
+      message: `Error replacing file: ${getFileOperationErrorMessage(error)}`
     };
   }
 });
@@ -1040,6 +1054,7 @@ ipcMain.handle('delete-item', async (_, itemPath: string) => {
             return; // Success with fs.rm
           } catch (rmError) {
             console.log(`fs.rm failed: ${rmError.code}`);
+            throw rmError; // Propagate so CMD/PowerShell fallback is attempted
           }
         } else {
           // For directories, try the newer rmdir approach
@@ -1543,7 +1558,7 @@ ipcMain.handle('move-files', async (_, files: string[], targetDirectory: string)
         } catch (cleanupError) {
           // Ignore cleanup errors
         }
-        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+        results.push({ file: path.basename(filePath), status: 'error', error: getFileOperationErrorMessage(error) });
       }
     }
     
@@ -1612,7 +1627,7 @@ ipcMain.handle('copy-files', async (_, files: string[], targetDirectory: string)
         results.push({ file: fileName, status: 'success', path: targetPath });
       } catch (error) {
         console.error(`Error copying file ${filePath}:`, error);
-        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+        results.push({ file: path.basename(filePath), status: 'error', error: getFileOperationErrorMessage(error) });
       }
     }
     
@@ -1710,7 +1725,7 @@ ipcMain.handle('move-files-with-conflict-resolution', async (_, files: string[],
         } catch (cleanupError) {
           // Ignore cleanup errors
         }
-        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+        results.push({ file: path.basename(filePath), status: 'error', error: getFileOperationErrorMessage(error) });
       }
     }
     
@@ -1780,7 +1795,7 @@ ipcMain.handle('copy-files-with-conflict-resolution', async (_, files: string[],
         results.push({ file: path.basename(targetPath), status: 'success', path: targetPath });
       } catch (error) {
         console.error(`Error copying file ${filePath}:`, error);
-        results.push({ file: path.basename(filePath), status: 'error', error: error.message });
+        results.push({ file: path.basename(filePath), status: 'error', error: getFileOperationErrorMessage(error) });
       }
     }
     
@@ -2573,6 +2588,17 @@ ipcMain.handle('enable-file-watching', async (_, enabled: boolean) => {
 });
 
 // Document creation IPC handlers
+ipcMain.handle('create-text-file', async (_, filePath: string) => {
+  try {
+    writeFileSync(filePath, '', 'utf8');
+    console.log(`[Main] Created text file: ${filePath}`);
+    return { success: true, filePath };
+  } catch (error) {
+    console.error('[Main] Error creating text file:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('create-blank-spreadsheet', async (_, filePath: string) => {
   try {
     // Import ExcelJS dynamically to avoid issues with Electron

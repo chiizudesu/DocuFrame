@@ -106,6 +106,9 @@ interface AppContextType {
   enableBackspaceNavigationShortcut: boolean;
   showClientInfoBar: boolean;
   setShowClientInfoBar: (show: boolean) => void;
+  // Create folder dialog (opened from context menu or shortcut)
+  isCreateFolderOpen: boolean;
+  setIsCreateFolderOpen: (open: boolean) => void;
 
   // Tab Management Functions
   addTabToCurrentWindow: (path?: string) => void;
@@ -178,6 +181,7 @@ export const AppProvider: React.FC<{
   const [backspaceNavigationShortcut, setBackspaceNavigationShortcut] = useState<string>('Backspace');
   const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState<boolean>(true);
   const [showClientInfoBar, setShowClientInfoBar] = useState<boolean>(true);
+  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState<boolean>(false);
 
   // Jump mode state
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
@@ -478,6 +482,8 @@ export const AppProvider: React.FC<{
       enableBackspaceNavigationShortcut,
       showClientInfoBar,
       setShowClientInfoBar,
+      isCreateFolderOpen,
+      setIsCreateFolderOpen,
 
       addTabToCurrentWindow,
       closeCurrentTab,

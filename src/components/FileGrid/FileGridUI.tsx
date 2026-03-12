@@ -37,6 +37,9 @@ import {
   Type,
   X,
   FileSpreadsheet,
+  Folder,
+  FolderPlus,
+  FileEdit,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useAppContext } from '../../context/AppContext'
@@ -374,6 +377,12 @@ export interface BlankContextMenuProps {
   handlePaste: () => void;
   setBlankContextMenu: (menu: { isOpen: boolean; position: { x: number; y: number } }) => void;
   onPasteImage: () => void;
+  currentDirectory: string;
+  onCreateFolder: () => void;
+  onCreateTextFile: () => void;
+  onCreateSpreadsheet: () => void;
+  onCreateWordDoc: () => void;
+  onCreateFromTemplate: (templatePath: string, templateName: string) => void;
 }
 
 export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
@@ -382,35 +391,147 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   handlePaste,
   setBlankContextMenu,
   onPasteImage,
+  currentDirectory,
+  onCreateFolder,
+  onCreateTextFile,
+  onCreateSpreadsheet,
+  onCreateWordDoc,
+  onCreateFromTemplate,
 }) => {
   const boxBg = useColorModeValue('white', 'gray.800');
   const borderCol = useColorModeValue('gray.200', 'gray.700');
   const hoverBg = useColorModeValue('gray.100', 'gray.700');
   const menuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
+  const [newSubmenuOpen, setNewSubmenuOpen] = useState(false);
+  const [newSubmenuPos, setNewSubmenuPos] = useState<{ x: number; y?: number; bottom?: number; flowUp: boolean }>({ x: 0, flowUp: false });
+  const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
+
+  // Estimated submenu height: 4 fixed items + divider + templates. ~36px per row, ~7 templates max = ~400px
+  const SUBMENU_EST_HEIGHT = 420;
+
   useEffect(() => {
     if (!blankContextMenu.isOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const inMenu = menuRef.current?.contains(target);
+      const inSubmenu = submenuRef.current?.contains(target);
+      if (!inMenu && !inSubmenu) {
         setBlankContextMenu({ ...blankContextMenu, isOpen: false });
       }
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [blankContextMenu, setBlankContextMenu]);
+
+  useEffect(() => {
+    if (!blankContextMenu.isOpen) setNewSubmenuOpen(false);
+  }, [blankContextMenu.isOpen]);
+
   if (!blankContextMenu.isOpen) return null;
   return (
-    <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} bg={boxBg} borderRadius="0" boxShadow="lg" zIndex="modal" minW="200px" border="1px solid" borderColor={borderCol}>
-      <Box py={1}>
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
-          <FileSymlink size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Paste</Text>
-        </Flex>
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
-          <ImageIcon size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Paste Image</Text>
-        </Flex>
+    <>
+      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} bg={boxBg} borderRadius="0" boxShadow="lg" zIndex="modal" minW="200px" border="1px solid" borderColor={borderCol}>
+        <Box py={1}>
+          <Flex
+            align="center"
+            px={3}
+            py={2}
+            cursor="pointer"
+            _hover={{ bg: hoverBg }}
+            onMouseEnter={async (e) => {
+              const el = e.currentTarget as HTMLElement;
+              const rect = el.getBoundingClientRect();
+              const flowUp = rect.top + SUBMENU_EST_HEIGHT > window.innerHeight;
+              setNewSubmenuPos(
+                flowUp
+                  ? { x: rect.right + 2, bottom: window.innerHeight - rect.bottom + 3, flowUp: true }
+                  : { x: rect.right + 1, y: rect.top - 5, flowUp: false }
+              );
+              setNewSubmenuOpen(true);
+              try {
+                const result = await (window.electronAPI as any).getWorkpaperTemplates();
+                if (result.success) setTemplates(result.templates || []);
+              } catch {
+                setTemplates([]);
+              }
+            }}
+          >
+            <FolderPlus size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">New</Text>
+            <ChevronRight size={14} style={{ marginLeft: 'auto' }} />
+          </Flex>
+          <Divider my={1} />
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
+            <FileSymlink size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Paste</Text>
+          </Flex>
+          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
+            <ImageIcon size={16} style={{ marginRight: '8px' }} />
+            <Text fontSize="sm">Paste Image</Text>
+          </Flex>
+        </Box>
       </Box>
-    </Box>
+      {newSubmenuOpen && (
+        <Box
+          ref={submenuRef}
+          position="fixed"
+          {...(newSubmenuPos.flowUp
+            ? { bottom: newSubmenuPos.bottom, left: newSubmenuPos.x }
+            : { top: newSubmenuPos.y, left: newSubmenuPos.x })}
+          bg={boxBg}
+          borderRadius="0"
+          boxShadow="lg"
+          zIndex="modal"
+          minW="220px"
+          border="1px solid"
+          borderColor={borderCol}
+          onMouseLeave={() => setNewSubmenuOpen(false)}
+        >
+          <Box py={1}>
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateFolder(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <Folder size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Folder</Text>
+            </Flex>
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateTextFile(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <FileText size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Text File</Text>
+            </Flex>
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateSpreadsheet(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <FileSpreadsheet size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Excel File</Text>
+            </Flex>
+            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateWordDoc(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <FileEdit size={16} style={{ marginRight: '8px' }} />
+              <Text fontSize="sm">Word Document</Text>
+            </Flex>
+            {templates.length > 0 && (
+              <>
+                <Divider my={1} />
+                {templates.map((template) => (
+                  <Flex
+                    key={template.path}
+                    align="center"
+                    px={3}
+                    py={2}
+                    cursor="pointer"
+                    _hover={{ bg: hoverBg }}
+                    onClick={() => {
+                      onCreateFromTemplate(template.path, template.name);
+                      setBlankContextMenu({ ...blankContextMenu, isOpen: false });
+                      setNewSubmenuOpen(false);
+                    }}
+                  >
+                    <FileSpreadsheet size={14} style={{ marginRight: '8px' }} />
+                    <Text fontSize="sm">{template.name.replace(/\.xlsx$/i, '')}</Text>
+                  </Flex>
+                ))}
+              </>
+            )}
+          </Box>
+        </Box>
+      )}
+    </>
   );
 };
 

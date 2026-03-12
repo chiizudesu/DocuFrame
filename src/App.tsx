@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Box, useColorMode, ChakraProvider, Input, useColorModeValue, Text, Flex } from '@chakra-ui/react';
+import { theme } from './theme';
 import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
@@ -1000,7 +1001,7 @@ export const App: React.FC = () => {
     }
   }, []);
   return (
-    <ChakraProvider>
+    <ChakraProvider theme={theme}>
       <AppProvider>
         <AppContent />
       </AppProvider>

@@ -44,9 +44,9 @@ export const MinimizedDialogsBar: React.FC<MinimizedDialogsBarProps> = ({
   onRestore,
   onClose,
 }) => {
-  const iconHoverBg = useColorModeValue('#5a6c7d', 'gray.600');
-  const iconActiveBg = useColorModeValue('#64748b', 'blue.800');
-  const iconColor = useColorModeValue('#e2e8f0', 'gray.300');
+  const iconHoverBg = useColorModeValue('gray.200', 'gray.600');
+  const iconActiveBg = useColorModeValue('gray.100', 'blue.800');
+  const iconColor = useColorModeValue('#334155', 'gray.300');
   
   // Don't render if no minimized dialogs
   if (minimizedDialogs.length === 0) {
