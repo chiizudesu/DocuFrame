@@ -106,7 +106,6 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
     const loadTemplatePath = async () => {
       try {
         const folderPath = await settingsService.getTemplateFolderPath();
-        console.log('[ManageTemplatesDialog] Loaded template folder path:', folderPath);
         setTemplateFolderPath(folderPath || '');
       } catch (error) {
         console.error('Failed to load template folder path:', error);
@@ -120,21 +119,17 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
     setError(null);
     
     try {
-      console.log('[ManageTemplatesDialog] Loading templates from:', templateFolderPath);
       if (!templateFolderPath) {
-        console.log('[ManageTemplatesDialog] No template folder path configured');
         setError('Template folder path not configured. Please set it in Settings.');
         setTemplates([]);
         return;
       }
 
       const files = await (window as any).electronAPI.getDirectoryContents(templateFolderPath);
-      console.log('[ManageTemplatesDialog] Found files in template folder:', files);
       const yamlFiles = files.filter((file: any) => 
         file.type === 'file' && 
         (file.name.endsWith('.yaml') || file.name.endsWith('.yml'))
       );
-      console.log('[ManageTemplatesDialog] Filtered YAML files:', yamlFiles);
       
       const templatePromises = yamlFiles.map(async (file: any) => {
         try {

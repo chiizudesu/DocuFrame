@@ -259,14 +259,7 @@ export const QuickNavigateOverlay: React.FC = () => {
   // Global Ctrl+F shortcut for file search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      console.log('[QuickNavigateOverlay] Key pressed:', e.key, {
-        ctrlKey: e.ctrlKey,
-        target: (e.target as HTMLElement)?.tagName,
-        isQuickNavigating,
-      });
-      
       if (e.ctrlKey && e.key.toLowerCase() === 'f') {
-        console.log('[QuickNavigateOverlay] Ctrl+F detected - opening quick navigate');
         e.preventDefault();
         setIsSearchMode(true);
         setIsQuickNavigating(true);

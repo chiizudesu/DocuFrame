@@ -187,10 +187,6 @@ const JumpModeOverlay: React.FC<{
         setSearchResults([]);
         setSelectedResultIndex(0);
         setSelectedSegmentIndex(null); // Reset segment selection
-        
-        console.log('Tab navigation to:', currentResult.path);
-        console.log('Updated overlay working directory to:', currentResult.path);
-        console.log('Loaded files in new directory:', files.length);
       } catch (error) {
         console.error('Failed to load directory contents:', error);
         // Fallback: just update the path
@@ -810,21 +806,10 @@ const AppContent: React.FC = () => {
       // Only trigger if no input/textarea is focused
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      
-      console.log('[App] Global keydown:', e.key, {
-        isInputFocused,
-        isQuickNavigating,
-        isJumpModeActive,
-        target: target.tagName,
-        ctrlKey: e.ctrlKey,
-        metaKey: e.metaKey,
-        altKey: e.altKey,
-      });
 
       // Navigate up one directory level (configurable shortcut, default Backspace)
       // Uses eventMatchesShortcut so modifiers like Ctrl are not matched (e.g. Ctrl+Backspace = jump mode on parent)
       if (enableBackspaceNavigationShortcut && !isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, backspaceNavigationShortcut)) {
-        console.log('[App] Backspace navigation triggered:', { isInputFocused, isQuickNavigating, isJumpModeActive });
         e.preventDefault();
         const parentPath = getParentDirectory(currentDirectory);
         if (parentPath && parentPath !== currentDirectory) {
@@ -837,9 +822,7 @@ const AppContent: React.FC = () => {
         return;
       }
       
-      // Debug Enter key handling (but allow it to pass through when jump mode is active)
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key === 'Enter') {
-        console.log('[App] Enter key pressed after navigation, preventing default');
         e.preventDefault();
         return;
       }
@@ -848,7 +831,6 @@ const AppContent: React.FC = () => {
       
       // If Ctrl + Space is pressed, open in command mode
       if (!isInputFocused && !isQuickNavigating && e.ctrlKey && e.code === 'Space') {
-        console.log('[App] Ctrl+Space detected - opening command mode');
         setIsQuickNavigating(true);
         setInitialCommandMode(true);
         e.preventDefault();
@@ -856,7 +838,6 @@ const AppContent: React.FC = () => {
       }
       // Calculator shortcut (configurable)
       if (!isInputFocused && eventMatchesShortcut(e, calculatorShortcut)) {
-        console.log('[App] Calculator shortcut detected');
         setIsCalculatorOpen(true);
         e.preventDefault();
         return;
@@ -864,7 +845,6 @@ const AppContent: React.FC = () => {
       
       // Jump mode shortcut (configurable) - open on current directory
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, jumpModeShortcut)) {
-        console.log('[App] Jump mode shortcut detected');
         e.preventDefault();
         setJumpModeInitialDirectory(null);
         setInitialJumpKey('');
@@ -874,7 +854,6 @@ const AppContent: React.FC = () => {
       
       // Jump mode on parent shortcut (configurable) - open on parent directory
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, jumpModeOnParentShortcut)) {
-        console.log('[App] Jump mode on parent shortcut detected');
         e.preventDefault();
         const parentPath = getParentDirectory(currentDirectory);
         if (parentPath && parentPath !== currentDirectory) {
@@ -888,9 +867,7 @@ const AppContent: React.FC = () => {
       }
       
       // Activate jump mode on any key press when no input is focused and app is active
-      // But don't interfere if jump mode is already active
       if (!isInputFocused && !isQuickNavigating && !isJumpModeActive && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        console.log('[App] Activating jump mode with key:', e.key);
         e.preventDefault();
         setInitialJumpKey(e.key);
         setIsJumpModeActive(true);
@@ -901,8 +878,6 @@ const AppContent: React.FC = () => {
       
       // Escape key to cancel any ongoing operations (drag, etc.) - but allow it to pass through when jump mode is active
       if (!isJumpModeActive && e.key === 'Escape') {
-        console.log('[App] Escape key - dispatching escape event');
-        // Dispatch a custom event that components can listen to for resetting their state
         window.dispatchEvent(new CustomEvent('escape-key-pressed'));
       }
     };

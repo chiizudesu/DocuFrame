@@ -337,21 +337,33 @@ export const FileGrid: React.FC = () => {
 
   // Position cursor at end of filename (before extension) when rename starts
   useEffect(() => {
-    if (isRenaming && renameInputRef.current && !hasPositionedCursor.current) {
-      const input = renameInputRef.current;
-      const cursorPosition = getFilenameWithoutExtension(renameValue);
-      
-      // Use setTimeout to ensure the input is fully rendered
-      setTimeout(() => {
-        input.focus();
-        input.setSelectionRange(cursorPosition, cursorPosition);
-        hasPositionedCursor.current = true;
-      }, 0);
+    if (isRenaming && !hasPositionedCursor.current) {
+      const targetName = isRenaming;
+      const tryFocus = (attempt: number) => {
+        // Stop retrying if rename was cancelled or directory changed
+        if (!isRenamingRef.current || isRenamingRef.current !== targetName) return;
+        if (renameInputRef.current) {
+          const input = renameInputRef.current;
+          const cursorPosition = getFilenameWithoutExtension(renameValue);
+          input.focus();
+          input.setSelectionRange(cursorPosition, cursorPosition);
+          hasPositionedCursor.current = true;
+          console.log('[Rename] Rename mode active - input focused and in edit mode:', { name: targetName, value: renameValue, attempt });
+        } else if (attempt < 8) {
+          console.log('[Rename] Rename input ref not ready, retrying...', { name: targetName, attempt });
+          setTimeout(() => tryFocus(attempt + 1), 50);
+        } else {
+          console.log('[Rename] Rename input ref never became available, cancelling rename:', { name: targetName });
+          setIsRenaming(null);
+          setRenameValue('');
+        }
+      };
+      setTimeout(() => tryFocus(0), 0);
     } else if (!isRenaming) {
       // Reset the flag when not renaming
       hasPositionedCursor.current = false;
     }
-  }, [isRenaming]);
+  }, [isRenaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // All useColorModeValue hooks next
   const itemBgHover = useColorModeValue('#f0f9ff', 'blue.700') // Lighter than selection
@@ -761,6 +773,7 @@ export const FileGrid: React.FC = () => {
           handleCloseContextMenu();
           break
         case 'rename':
+          console.log('[Rename] Context menu rename triggered:', { name: contextMenu.fileItem.name, path: contextMenu.fileItem.path });
           setIsRenaming(contextMenu.fileItem.name)
           setRenameValue(contextMenu.fileItem.name)
           setStatus(`Renaming: ${contextMenu.fileItem.name}`, 'info')
@@ -1680,23 +1693,15 @@ export const FileGrid: React.FC = () => {
       setRenameValue('')
       return
     }
+    console.log('[Rename] handleRenameSubmit started:', { oldName: isRenaming, newName: trimmedName, currentDirectory });
     try {
-      // Find the actual file to get its full path
-      const fileToRename = folderItems.find(f => f.name === isRenaming);
+      // Find the actual file to get its full path (fallback for newly created items not yet in folderItems)
+      let fileToRename = folderItems.find(f => f.name === isRenaming);
       if (!fileToRename) {
-        toast({
-          title: 'Rename Failed',
-          description: `File "${isRenaming}" not found.`,
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-          position: 'top',
-        });
-        setIsRenaming(null);
-        setRenameValue('');
-        return;
+        const fallbackPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, isRenaming);
+        fileToRename = { name: isRenaming, path: fallbackPath, type: 'file' };
       }
-      
+
       const oldPath = fileToRename.path;
       const newPath = isAbsolutePath(trimmedName) ? trimmedName : joinPath(currentDirectory === '/' ? '' : currentDirectory, trimmedName)
       
@@ -1731,10 +1736,8 @@ export const FileGrid: React.FC = () => {
       }
       
       await (window.electronAPI as any).renameItem(oldPath, newPath)
+      console.log('[Rename] Success:', { oldPath, newPath });
       addLog(`Renamed ${isRenaming} to ${trimmedName}`)
-      
-      // Show toast notification for successful rename operations
-      
       
       setIsRenaming(null)
       setRenameValue('')
@@ -1742,11 +1745,11 @@ export const FileGrid: React.FC = () => {
       await refreshDirectory(currentDirectory)
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.log('[Rename] Failed:', { oldName: isRenaming, newName: trimmedName, error: errorMessage });
       addLog(`Failed to rename: ${errorMessage}`, 'error')
       setStatus(`Failed to rename "${isRenaming}": ${errorMessage}`, 'error')
       
-      // Show toast notification for failed rename operations
-              toast({
+      toast({
           title: 'Rename Failed',
           description: `Failed to rename "${isRenaming}": ${errorMessage}`,
           status: 'error',
@@ -2015,7 +2018,8 @@ export const FileGrid: React.FC = () => {
       : [file.path];
     
     // Mark this as an internal drag globally and attach JSON payload
-    try { (window as any).__docuframeInternalDrag = { files: filesToDrag }; } catch {}
+    // Clear any stale marker first, then set fresh one with timestamp
+    try { (window as any).__docuframeInternalDrag = { files: filesToDrag, timestamp: Date.now() }; } catch {}
     // Set both custom type and text/plain as fallback (for Electron native drag compatibility)
     event.dataTransfer.setData('application/x-docuframe-files', JSON.stringify(filesToDrag));
     event.dataTransfer.setData('text/plain', JSON.stringify(filesToDrag)); // Fallback for Electron native drag
@@ -2050,6 +2054,11 @@ export const FileGrid: React.FC = () => {
       setClickTimer(null);
       setLastClickedFile(null);
       
+      // Don't navigate/open if rename mode is active for this file (or any file)
+      if (isRenamingRef.current) {
+        return;
+      }
+
       // Handle double-click: open file or navigate to folder
       (async () => {
         if (file.type === 'folder') {
@@ -2095,20 +2104,30 @@ export const FileGrid: React.FC = () => {
   // Add F2 key support for rename
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check if any input field is focused
+      if (e.key !== 'F2') return;
+
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      
-      if (isInputFocused) return;
-      
-      if (e.key === 'F2' && selectedFile && !isRenaming) {
-        setIsRenaming(selectedFile)
-        setRenameValue(selectedFile)
+      const isInModal = target.closest?.('[role="dialog"]') != null;
+
+      if (isInputFocused || isInModal) {
+        console.log('[Rename] F2 pressed but rename NOT triggered:', { reason: isInputFocused ? 'input_focused' : 'in_modal', target: target.tagName, selectedFile, isRenaming });
+        return;
+      }
+
+      if (selectedFile && !isRenaming) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('[Rename] F2 rename triggered:', { selectedFile, currentDirectory });
+        setIsRenaming(selectedFile);
+        setRenameValue(selectedFile);
+      } else {
+        console.log('[Rename] F2 pressed but rename NOT triggered:', { reason: !selectedFile ? 'no_selection' : 'already_renaming', selectedFile, isRenaming, currentDirectory });
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedFile, isRenaming])
+    window.addEventListener('keydown', handleKeyDown, true); // capture phase so we get it before other handlers
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [selectedFile, isRenaming, currentDirectory])
 
   // Keyboard shortcuts: Enter to open, Delete to delete, Escape to cancel drag
   useEffect(() => {
@@ -2244,19 +2263,12 @@ export const FileGrid: React.FC = () => {
     
     setDragCounter(prev => prev + 1);
     
-    // Check for external files (from OS file explorer) - NOT internal drags
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-    const isExternalDrag = hasFilesType && !hasCustomType;
     
-    if (isExternalDrag && internalDragFlag) {
-      try { delete (window as any).__docuframeInternalDrag; } catch {}
-    }
+    const isInternalDrag = hasCustomType || internalDragFlag;
     
-    const isInternalDrag = hasCustomType || (!hasFilesType && internalDragFlag);
-    
-    // Only show upload overlay for external files, not internal drags
     if (hasFilesType && !isInternalDrag) {
       setIsDragOver(true);
     }
@@ -2305,29 +2317,20 @@ export const FileGrid: React.FC = () => {
       dragLeaveTimeoutRef.current = null;
     }
     
-    // Ensure drag overlay stays visible for external files
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-    const isExternalDrag = hasFilesType && !hasCustomType;
     
-    if (isExternalDrag && internalDragFlag) {
-      try { delete (window as any).__docuframeInternalDrag; } catch {}
-    }
-    
-    const isInternalDrag = hasCustomType || (!hasFilesType && internalDragFlag);
+    const isInternalDrag = hasCustomType || internalDragFlag;
     
     if (hasFilesType && !isInternalDrag && !isDragOver) {
       setIsDragOver(true);
     }
     
-    // Set appropriate drop effect based on drag type
-    // Block internal drags on the main directory (they should only work on headers)
-    if (hasFilesType) {
-      e.dataTransfer.dropEffect = 'copy'; // External files are copied/uploaded
-    } else if (isInternalDrag) {
-      // Block internal drags on main directory - they should only work on headers
+    if (isInternalDrag) {
       e.dataTransfer.dropEffect = 'none';
+    } else if (hasFilesType) {
+      e.dataTransfer.dropEffect = 'copy';
     } else {
       e.dataTransfer.dropEffect = 'none';
     }
@@ -2354,28 +2357,34 @@ export const FileGrid: React.FC = () => {
     // Check what type of drag this is
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
-    const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-    const isExternalDrag = hasFilesType && !hasCustomType;
+    const internalDragFiles = (window as any).__docuframeInternalDrag?.files as string[] | undefined;
     
-    if (isExternalDrag && internalDragFlag) {
+    // Detect internal drags that arrive as OS drops (Electron native startDrag)
+    const droppedPathsFromOs = hasFilesType && e.dataTransfer.files.length > 0
+      ? Array.from(e.dataTransfer.files).map((f: File) => (f as any).path).filter(Boolean)
+      : [];
+    const isInternalViaOsDrop = internalDragFiles && droppedPathsFromOs.length > 0
+      && droppedPathsFromOs.length === internalDragFiles.length
+      && droppedPathsFromOs.every((p: string) => internalDragFiles.some((ip: string) =>
+        ip.replace(/\\/g, '/').toLowerCase() === p.replace(/\\/g, '/').toLowerCase()
+      ));
+
+    const isInternalDrag = hasCustomType || !!internalDragFiles?.length || isInternalViaOsDrop;
+
+    // Internal drags onto the background area are no-ops (they're handled by folder drop handlers)
+    if (isInternalDrag) {
       try { delete (window as any).__docuframeInternalDrag; } catch {}
+      return;
     }
-    
-    const isInternalDrag = hasCustomType || (!hasFilesType && internalDragFlag);
     
     // Handle external files (from OS file explorer)
     if (hasFilesType && e.dataTransfer.files.length > 0) {
       try {
         const files = Array.from(e.dataTransfer.files).map((f) => {
-          const filePath = (f as any).path || f.name; // Fallback to name if path not available
-          
-          return {
-            path: filePath,
-            name: f.name
-          };
+          const filePath = (f as any).path || f.name;
+          return { path: filePath, name: f.name };
         });
         
-        // Validate that we have valid file paths
         const validFiles = files.filter(f => f.path && f.path !== f.name);
         if (validFiles.length === 0) {
           addLog('Failed to upload: No valid file paths found. Please drag files from your file explorer, not from a web browser.', 'error');
@@ -2388,7 +2397,6 @@ export const FileGrid: React.FC = () => {
         
         const results = await window.electronAPI.moveFiles(validFiles.map(f => f.path), currentDirectory);
         
-        // Process results
         const successful = results.filter((r: any) => r.status === 'success').length;
         const failed = results.filter((r: any) => r.status === 'error').length;
         const skipped = results.filter((r: any) => r.status === 'skipped').length;
@@ -2400,7 +2408,6 @@ export const FileGrid: React.FC = () => {
         addLog(message);
         setStatus(message, failed > 0 ? 'error' : 'success');
         
-        // Explicitly refresh directory after external file upload to ensure UI updates
         if (successful > 0 || skipped > 0) {
           await refreshDirectory(currentDirectory);
         }
@@ -2410,11 +2417,6 @@ export const FileGrid: React.FC = () => {
         addLog(`Upload failed: ${errorMessage}`, 'error');
         setStatus('Upload failed', 'error');
       }
-    } 
-    // Handle internal drags (files dragged within the app)
-    else if (isInternalDrag) {
-      // Internal drags are handled by individual DraggableFileItem components
-      // We don't need to do anything here for internal drags
     }
   }, [currentDirectory, addLog, setStatus, refreshDirectory]);
 
@@ -2723,20 +2725,14 @@ export const FileGrid: React.FC = () => {
     
     let filePaths: string[] = [];
     
-    // Check if this is an external file drag (from OS file explorer)
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-    const isExternalDrag = hasFilesType && !hasCustomType;
     const hasExternalFiles = hasFilesType || (e.dataTransfer.files && e.dataTransfer.files.length > 0);
     
-    if (isExternalDrag && internalDragFlag) {
-      try { delete (window as any).__docuframeInternalDrag; } catch {}
-    }
+    const isInternalDrag = hasCustomType || internalDragFlag;
     
-    const isInternalDrag = hasCustomType || (!hasFilesType && internalDragFlag);
-    
-    if (isExternalDrag && hasExternalFiles) {
+    if (!isInternalDrag && hasExternalFiles) {
       // External files - get paths from FileList
       filePaths = Array.from(e.dataTransfer.files).map(file => {
         // For external files, we need to get the full path
@@ -3538,14 +3534,7 @@ export const FileGrid: React.FC = () => {
   useEffect(() => {
     const loadBackgroundSetting = async () => {
       try {
-        console.log('FileGrid: Loading background settings...');
         const settings = await settingsService.getSettings();
-        console.log('FileGrid: Loaded settings:', {
-          backgroundType: settings.backgroundType,
-          fileGridBackgroundPath: settings.fileGridBackgroundPath,
-          backgroundFillPath: settings.backgroundFillPath,
-          enableBackgrounds: settings.enableBackgrounds
-        });
 
         // Load enableBackgrounds setting (default to true)
         setEnableBackgrounds(settings.enableBackgrounds !== false);
@@ -3607,20 +3596,16 @@ export const FileGrid: React.FC = () => {
         // Load corner mascot (watermark) URL
         if (watermarkPath) {
           const watermarkUrl = await loadImageUrl(watermarkPath);
-          console.log('FileGrid: Loaded watermark URL:', watermarkUrl.substring(0, 50) + '...');
           setFileGridBackgroundUrl(watermarkUrl);
         } else {
-          console.log('FileGrid: No watermark path, clearing URL');
           setFileGridBackgroundUrl('');
         }
         
         // Load background fill URL
         if (fillPath) {
           const fillUrl = await loadImageUrl(fillPath);
-          console.log('FileGrid: Loaded background fill URL:', fillUrl.substring(0, 50) + '...');
           setBackgroundFillUrl(fillUrl);
         } else {
-          console.log('FileGrid: No fill path, clearing URL');
           setBackgroundFillUrl('');
         }
       } catch (error) {
@@ -3630,8 +3615,7 @@ export const FileGrid: React.FC = () => {
     loadBackgroundSetting();
 
     // Listen for settings updates
-    const handleSettingsUpdate = (event?: any) => {
-      console.log('FileGrid received settings-updated event', event?.detail);
+    const handleSettingsUpdate = (_event?: unknown) => {
       loadBackgroundSetting();
     };
     window.addEventListener('settings-updated', handleSettingsUpdate);
@@ -3647,6 +3631,16 @@ export const FileGrid: React.FC = () => {
     // Clear any pending loads
     loadingQueue.current.clear();
   }, [currentDirectory]);
+
+  // Clear rename state when directory changes to avoid stale isRenaming blocking future F2 presses
+  useEffect(() => {
+    if (isRenaming) {
+      console.log('[Rename] Directory changed while renaming, cancelling rename:', { wasRenaming: isRenaming, newDirectory: currentDirectory });
+    }
+    setIsRenaming(null);
+    setRenameValue('');
+    hasPositionedCursor.current = false;
+  }, [currentDirectory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Memoized expensive computations to prevent recalculation on every render
   const memoizedFileStates = useMemo(() => {
@@ -3711,7 +3705,10 @@ export const FileGrid: React.FC = () => {
       setIsDragStarted(false);
       setDraggedFiles(new Set());
       clearFolderHoverStates();
-      try { delete (window as any).__docuframeInternalDrag; } catch {}
+      // Don't clear __docuframeInternalDrag here - with Electron's native startDrag,
+      // dragEnd fires BEFORE the OS-level drop event arrives. Clearing it here
+      // would make the drop handler think it's an external (copy-only) drop.
+      // It will be cleared by the drop handler or on the next dragStart.
       addLog('Drag operation ended');
     }
   }), [handleRowMouseEnter, handleRowMouseLeave, handleContextMenu, handleFileItemClick, handleFileItemMouseDown, handleFileItemMouseUp, selectedFiles, selectedFilesSet, fileNameToPathMap, handleFileItemDragStart, setIsDragStarted, setDraggedFiles, clearFolderHoverStates, addLog]);
@@ -3732,10 +3729,13 @@ export const FileGrid: React.FC = () => {
         const hasExternalFiles = e.dataTransfer.types.includes('Files');
         const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
         
-        if (hasExternalFiles) {
-          e.dataTransfer.dropEffect = 'copy';
-        } else if (isInternalDrag) {
+        if (isInternalDrag) {
           e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+        } else if (hasExternalFiles) {
+          // Covers both Electron native drags and truly external drops.
+          // Must use 'copy' because the OS effectAllowed may only permit 'copy';
+          // the actual move happens in the onDrop handler.
+          e.dataTransfer.dropEffect = 'copy';
         } else {
           e.dataTransfer.dropEffect = 'none';
         }
@@ -3756,23 +3756,37 @@ export const FileGrid: React.FC = () => {
         
         const hasExternalFiles = e.dataTransfer.types.includes('Files');
         const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
-        const isInternal = isInternalDrag || !!((window as any).__docuframeInternalDrag?.files?.length);
-        
+        // When using Electron's native startDrag, drop comes from OS with Files type only;
+        // getData is empty. Match dropped paths to __docuframeInternalDrag to treat as internal move.
+        const internalDragFiles = (window as any).__docuframeInternalDrag?.files as string[] | undefined;
+        const droppedPathsFromOs = hasExternalFiles && e.dataTransfer.files.length > 0
+          ? Array.from(e.dataTransfer.files).map((f: File) => (f as any).path).filter(Boolean)
+          : [];
+        const isInternalViaOsDrop = internalDragFiles && droppedPathsFromOs.length > 0 && droppedPathsFromOs.length === internalDragFiles.length
+          && droppedPathsFromOs.every((p: string) => internalDragFiles.some((ip: string) =>
+            ip.replace(/\\/g, '/').toLowerCase() === p.replace(/\\/g, '/').toLowerCase()
+          ));
+        const isInternal = isInternalDrag || !!internalDragFiles?.length || isInternalViaOsDrop;
+
         if (isInternal) {
           try {
             let filesToTransfer: string[] = [];
             const draggedFilesData = e.dataTransfer.getData('application/x-docuframe-files');
             if (draggedFilesData) {
               filesToTransfer = JSON.parse(draggedFilesData) as string[];
-            } else if ((window as any).__docuframeInternalDrag?.files) {
-              filesToTransfer = (window as any).__docuframeInternalDrag.files as string[];
+            } else if (internalDragFiles?.length) {
+              filesToTransfer = internalDragFiles;
+            } else if (isInternalViaOsDrop && droppedPathsFromOs.length > 0) {
+              filesToTransfer = droppedPathsFromOs;
             } else {
               return;
             }
             
             const targetFolderPath = file.path.replace(/\\/g, '/');
-            const isSameFolder = filesToTransfer.some(path => {
-              const sourceFolder = path.substring(0, path.lastIndexOf('/')).replace(/\\/g, '/');
+            const isSameFolder = filesToTransfer.some(p => {
+              const norm = p.replace(/\\/g, '/');
+              const lastSep = norm.lastIndexOf('/');
+              const sourceFolder = lastSep >= 0 ? norm.substring(0, lastSep) : '';
               return sourceFolder === targetFolderPath;
             });
             
@@ -3803,8 +3817,8 @@ export const FileGrid: React.FC = () => {
               }
               
               setDraggedFiles(new Set());
-              // Clear folder hover state after successful drop
               clearFolderHoverStates();
+              try { delete (window as any).__docuframeInternalDrag; } catch {}
               await refreshDirectory(currentDirectory);
               
               if (operation === 'move') {
@@ -3815,6 +3829,7 @@ export const FileGrid: React.FC = () => {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             addLog(`${e.ctrlKey ? 'Copy' : 'Move'} operation failed: ${errorMessage}`, 'error');
             setDraggedFiles(new Set());
+            try { delete (window as any).__docuframeInternalDrag; } catch {}
           }
         } else if (hasExternalFiles && e.dataTransfer.files.length > 0) {
           try {

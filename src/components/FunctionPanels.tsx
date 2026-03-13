@@ -481,6 +481,8 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setFolderItems,
     folderItems,
     selectedFiles,
+    setSelectedFiles,
+    setSelectedFile,
     setLogFileOperation,
     setIsSettingsOpen,
     isGroupedByIndex,
@@ -1671,6 +1673,11 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
                 
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
                 setFolderItems(contents);
+                // Select the newly created folder so F2 rename works immediately
+                requestAnimationFrame(() => {
+                  setSelectedFiles([newFolderName]);
+                  setSelectedFile(newFolderName);
+                });
               } catch (error) {
                 console.error('Error creating folder:', error);
                 addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');

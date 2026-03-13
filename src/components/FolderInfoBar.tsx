@@ -53,7 +53,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setSelectedFile, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   
   // Helper function to get directory name from path
@@ -552,10 +552,15 @@ export const FolderInfoBar: React.FC = () => {
       addLog(`Created folder: ${newFolderName}`)
       setStatus(`Created folder: ${newFolderName}`, 'success')
       setIsCreateFolderOpen(false)
+      const createdName = newFolderName
       setNewFolderName('')
       // Refresh the current directory
       const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
       setFolderItems(contents)
+      // Select the newly created folder so F2 rename works immediately
+      requestAnimationFrame(() => {
+        setSelectedFiles([createdName])
+      })
     } catch (error) {
       console.error('Error creating folder:', error)
       addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')

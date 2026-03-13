@@ -1,4 +1,4 @@
-import React, { useEffect, useState, createContext, useContext, useCallback, ReactNode } from 'react';
+import React, { useEffect, useState, useRef, createContext, useContext, useCallback, ReactNode } from 'react';
 import { settingsService } from '../services/settings';
 
 interface FileItem {
@@ -280,6 +280,15 @@ export const AppProvider: React.FC<{
     }
   }, [currentDirectory]);
 
+  // Log directory changes for troubleshooting
+  const prevDirectoryRef = useRef<string>('');
+  useEffect(() => {
+    if (prevDirectoryRef.current !== currentDirectory) {
+      console.log('[Directory] Changed:', { from: prevDirectoryRef.current || '(empty)', to: currentDirectory || '(empty)' });
+      prevDirectoryRef.current = currentDirectory;
+    }
+  }, [currentDirectory]);
+
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
     setRootDirectoryState(path);
@@ -292,7 +301,7 @@ export const AppProvider: React.FC<{
       console.warn('Attempted to set empty current directory');
       return;
     }
-    
+
     // Basic client-side validation - the actual validation happens in components
     try {
       setCurrentDirectory(path);

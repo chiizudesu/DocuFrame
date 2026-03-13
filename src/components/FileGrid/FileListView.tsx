@@ -291,11 +291,7 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
     const hasExternalFiles = hasFilesType || (e.dataTransfer.files && e.dataTransfer.files.length > 0);
     const effectAllowed = e.dataTransfer.effectAllowed;
     
-    if (hasFilesType && !hasCustomType && internalDragFlag) {
-      try { delete (window as any).__docuframeInternalDrag; } catch {}
-    }
-    
-    const isInternal = hasCustomType || (!hasFilesType && internalDragFlag);
+    const isInternal = hasCustomType || internalDragFlag;
     
     if (isInternal) {
       if (effectAllowed === 'copy' || (e.ctrlKey && effectAllowed !== 'move')) {
@@ -356,14 +352,10 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
         const internalDragFlag = !!(window as any).__docuframeInternalDrag;
         const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
         const hasFilesType = e.dataTransfer.types.includes('Files');
-        const hasExternalFiles = hasFilesType || (e.dataTransfer.files && e.dataTransfer.files.length > 0);
         
-        const isInternal = hasCustomType || (!hasFilesType && internalDragFlag);
-        const isExternal = hasFilesType && !hasCustomType;
-        
-        if (isExternal && internalDragFlag) {
-          try { delete (window as any).__docuframeInternalDrag; } catch {}
-        }
+        // Detect internal drags arriving as OS drops (Electron native startDrag)
+        const isInternal = hasCustomType || internalDragFlag;
+        const isExternal = hasFilesType && !isInternal;
         
         if (isInternal || isExternal) {
           onDrop(e);
@@ -725,15 +717,6 @@ export const FileListView: React.FC<FileListViewProps> = ({
     return `${Math.max(maxLength * 7, 140)}px`;
   }, []);
   
-  // Debug: Log when background props change
-  useEffect(() => {
-    console.log('FileListView: Background props changed:', {
-      backgroundType,
-      fileGridBackgroundUrl: fileGridBackgroundUrl.substring(0, 50) + '...',
-      backgroundFillUrl: backgroundFillUrl.substring(0, 50) + '...',
-    });
-  }, [backgroundType, fileGridBackgroundUrl, backgroundFillUrl]);
-  
   return (
     <Box 
       position="relative"
@@ -1035,6 +1018,29 @@ export const FileListView: React.FC<FileListViewProps> = ({
                   {groupedFiles.folders.map((file, fileIndex) => {
                     const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
                     const index = globalIndex >= 0 ? globalIndex : fileIndex;
+
+                    if (isRenaming === file.name) {
+                      return (
+                        <Box as="tr" key={index}>
+                          <Box as="td" colSpan={columnOrder.length} px={2} py={1}>
+                            <form onSubmit={handleRenameSubmit}>
+                              <Input
+                                ref={renameInputRef}
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={onRenameCancel}
+                                autoFocus
+                                size="xs"
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') onRenameCancel()
+                                }}
+                              />
+                            </form>
+                          </Box>
+                        </Box>
+                      )
+                    }
+
                     const fileState = memoizedFileStates[index];
                     const finalBg = memoizedRowBackgrounds[index];
                     const rowHandlers = createRowHandlers(file, index);

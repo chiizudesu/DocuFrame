@@ -225,22 +225,38 @@ export const DraggableFileItem = React.forwardRef<HTMLElement, DraggableFileItem
       const hasExternalFiles = e.dataTransfer.types.includes('Files');
       const isInternalDrag = e.dataTransfer.types.includes('application/x-docuframe-files');
       
-      if (isInternalDrag) {
-        // Get the dragged files from dataTransfer
+      // When using Electron's native startDrag, the drop comes from OS with Files type only;
+      // getData('application/x-docuframe-files') is empty. Check __docuframeInternalDrag and
+      // match dropped paths to treat as internal move (not copy).
+      const internalDragFiles = (window as any).__docuframeInternalDrag?.files as string[] | undefined;
+      const droppedPathsFromOs = hasExternalFiles && e.dataTransfer.files.length > 0
+        ? Array.from(e.dataTransfer.files).map((f: File) => (f as any).path).filter(Boolean)
+        : [];
+      const isInternalViaOsDrop = internalDragFiles && droppedPathsFromOs.length > 0 && droppedPathsFromOs.length === internalDragFiles.length
+        && droppedPathsFromOs.every((p: string) => internalDragFiles.some((ip: string) => 
+          ip.replace(/\\/g, '/').toLowerCase() === p.replace(/\\/g, '/').toLowerCase()
+        ));
+
+      if (isInternalDrag || !!internalDragFiles?.length || isInternalViaOsDrop) {
+        // Get the dragged files from dataTransfer, __docuframeInternalDrag, or OS drop
         let draggedPaths: string[] = [];
         const draggedFilesData = e.dataTransfer.getData('application/x-docuframe-files');
         if (draggedFilesData) {
           draggedPaths = JSON.parse(draggedFilesData) as string[];
-        } else if ((window as any).__docuframeInternalDrag?.files) {
-          draggedPaths = (window as any).__docuframeInternalDrag.files as string[];
+        } else if (internalDragFiles?.length) {
+          draggedPaths = internalDragFiles;
+        } else if (isInternalViaOsDrop && droppedPathsFromOs.length > 0) {
+          draggedPaths = droppedPathsFromOs;
         } else {
           return;
         }
         
-        // FIXED: Check if dragging to same folder
+        // FIXED: Check if dragging to same folder (handle both / and \)
         const targetFolderPath = file.path.replace(/\\/g, '/');
-        const isSameFolder = draggedPaths.some(path => {
-          const sourceFolder = path.substring(0, path.lastIndexOf('/')).replace(/\\/g, '/');
+        const isSameFolder = draggedPaths.some(p => {
+          const norm = p.replace(/\\/g, '/');
+          const lastSep = norm.lastIndexOf('/');
+          const sourceFolder = lastSep >= 0 ? norm.substring(0, lastSep) : '';
           return sourceFolder === targetFolderPath;
         });
         
