@@ -50,6 +50,7 @@ data/
 
 # Electron-builder output
 out/
+release-v*/
 release-v105/builder-debug.yml
 release-v105/builder-effective-config.yaml
 release-v105/DocuFrame Setup 1.0.5.exe

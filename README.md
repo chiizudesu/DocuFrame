@@ -14,7 +14,8 @@ DocuFrame is a modern file explorer built in Electron, designed specifically for
 ## Getting Started
 1. Clone the repository
 2. Copy `config.sample.json` to `config.json` and update your paths
-3. Run `npm install` and `npm run dev`
+3. For Xero integration: Copy `.env.example` to `.env` and set `SESSION_SECRET`, `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`
+4. Run `npm install` and `npm run dev`
 
 ## Security
 Sensitive files and API keys are excluded from the repository. See `.gitignore` for details.

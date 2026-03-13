@@ -32,9 +32,14 @@ app.use(cors({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../build')));
 
-// Session middleware for token storage
+// Session middleware for token storage (SESSION_SECRET required - no fallback for security)
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  console.error('FATAL: SESSION_SECRET environment variable is required. Add it to your .env file.');
+  process.exit(1);
+}
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'xero-oauth-session-secret',
+  secret: sessionSecret,
   resave: false,
   saveUninitialized: true,
   cookie: { 
@@ -289,8 +294,7 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 DocuFrame Server running on port ${PORT}`);
-  console.log(`📊 Xero OAuth configured: ${!!XERO_CLIENT_ID}`);
-  console.log(`🔐 Xero Client ID: ${XERO_CLIENT_ID ? XERO_CLIENT_ID.substring(0, 8) + '...' : 'Not set'}`);
+  console.log(`📊 Xero OAuth configured: ${!!(XERO_CLIENT_ID && XERO_CLIENT_SECRET)}`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📂 Redirect URI: ${XERO_REDIRECT_URI}`);
 });
