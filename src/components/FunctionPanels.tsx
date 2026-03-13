@@ -1755,7 +1755,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     <AITemplaterDialog 
       key={`aiTemplater-${dialogKeys.aiTemplater}`}
       isOpen={isAITemplaterOpen} 
-      onClose={() => setAITemplaterOpen(false)} 
+      onClose={() => handleCloseMinimizedDialog('aiTemplater')}
       currentDirectory={currentDirectory}
       onMinimize={() => handleMinimizeDialog('aiTemplater')}
     />

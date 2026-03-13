@@ -1,5 +1,7 @@
 import { settingsService } from './settings';
 import Anthropic from '@anthropic-ai/sdk';
+import { buildExtractionPrompt } from './templateService';
+import type { TemplateData, ExtractionResult } from './templateService';
 
 const AI_EDITOR_PROMPT = `You are an expert writing assistant. When I input a raw email blurb, your task is to rewrite it using clearer, more professional, and polished language — but without making it sound robotic or overly formal. Favor a direct, confident, and forward tone over excessive politeness.\n\nMaintain the following:\n- My original tone, length, and style\n- A human and personable vibe\n- The intent and overall message of the email\n\nAvoid:\n- Adding or removing content unless needed for clarity\n- Over-sanitizing the language\n- Changing the personal feel or casual-professional balance\n\nRewrite the email blurb below accordingly.`;
 
@@ -249,25 +251,30 @@ export async function analyzeTemplateForPlaceholders(templateText: string, templ
     dangerouslyAllowBrowser: true,
   });
 
-  const PLACEHOLDER_ANALYSIS_PROMPT = `You are an expert template analyzer. Analyze the following document text and identify potential placeholders that should be made dynamic/variable.
+  const PLACEHOLDER_ANALYSIS_PROMPT = `You are an expert template analyzer. Analyze the following document text and identify:
+A) VALUE PLACEHOLDERS - values that should be made dynamic (use type "placeholder")
+B) CONDITIONAL BLOCKS - mutually exclusive paragraphs or alternatives (use type "condition")
 
-Look for:
-1. **Personal Information**: Names, addresses, emails, phone numbers
-2. **Financial Data**: Amounts, percentages, account numbers, tax years
-3. **Dates**: Any date formats (MM/DD/YYYY, DD-MM-YYYY, Month DD, YYYY, etc.)
-4. **Business Data**: Company names, reference numbers, invoice numbers
-5. **Legal/Tax Information**: IRD numbers, GST numbers, case numbers
-6. **Context-Specific Values**: Any values that would likely change between uses
+For VALUE PLACEHOLDERS, look for:
+1. Personal Information: names, addresses, emails, phone numbers
+2. Financial Data: amounts, percentages, account numbers, tax years
+3. Dates: any date formats
+4. Business Data: company names, reference numbers, invoice numbers
+5. Legal/Tax: IRD numbers, GST numbers, case numbers
+6. Context-Specific Values: anything that would change between uses
 
-For each potential placeholder found, suggest a meaningful variable name (use snake_case format).
+For CONDITIONAL BLOCKS, look for:
+- "OR" blocks (mutually exclusive paragraph alternatives)
+- Slash alternatives (e.g. "refund of X / has tax to pay of X")
+- Bracket comments like "[if no comparatives]", "[if X]"
+- Text that indicates one of several paths based on document content
 
-Return your analysis as a JSON array with this exact format:
+For conditions, suggest boolean-style names: has_comparatives, has_refund, is_provisional_taxpayer, no_comparatives, etc.
+
+Return your analysis as a JSON array. Each item must have "type" ("placeholder" or "condition"), "original", "suggested", "accepted":
 [
-  {
-    "original": "exact text found in document",
-    "suggested": "meaningful_variable_name",
-    "accepted": true
-  }
+  { "type": "placeholder", "original": "exact text", "suggested": "variable_name", "accepted": true },
+  { "type": "condition", "original": "OR block or alternative text", "suggested": "condition_name", "accepted": true }
 ]
 
 Only return the JSON array, no other text or explanation.
@@ -280,7 +287,7 @@ Document Text to Analyze:`;
   const response = await retryWithBackoff(async () => {
     return await client.messages.create({
       model: modelName,
-      max_tokens: 1500,
+      max_tokens: 8192,
       messages: [
         { role: 'user', content: `${PLACEHOLDER_ANALYSIS_PROMPT}\n\n${templateText}` }
       ],
@@ -294,20 +301,125 @@ Document Text to Analyze:`;
   }
   
   try {
-    // Parse the JSON response
-    const placeholders = JSON.parse(content.text.trim());
-    
-    // Validate the response format
-    if (!Array.isArray(placeholders)) {
-      throw new Error('Claude response is not an array');
+    let jsonStr = content.text.trim();
+    const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) jsonStr = codeBlockMatch[1].trim();
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      parsed = parsePartialJsonArray(jsonStr);
     }
-    
-    return placeholders.filter((p: any) => 
-      p.original && p.suggested && typeof p.accepted === 'boolean'
-    );
+    if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+    if (!Array.isArray(parsed)) throw new Error('Claude response is not an array');
+
+    return parsed
+      .filter((p: any) => p.original && p.suggested && typeof p.accepted === 'boolean')
+      .map((p: any) => ({
+        type: p.type === 'condition' ? 'condition' : 'placeholder',
+        original: p.original,
+        suggested: p.suggested,
+        accepted: p.accepted
+      }));
   } catch (parseError) {
     console.error('Failed to parse Claude placeholder analysis:', content.text);
     throw new Error('Claude returned invalid format for placeholder analysis');
+  }
+}
+
+/** Attempt to extract a valid array from truncated JSON (e.g. when max_tokens cut off the response) */
+function parsePartialJsonArray(jsonStr: string): any[] {
+  const arr: any[] = [];
+  const objRegex = /\{\s*"type"\s*:\s*"(placeholder|condition)"\s*,\s*"original"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"suggested"\s*:\s*"([^"]*)"\s*,\s*"accepted"\s*:\s*(true|false)\s*\}/g;
+  let m;
+  while ((m = objRegex.exec(jsonStr)) !== null) {
+    const original = m[2].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+    arr.push({ type: m[1], original, suggested: m[3], accepted: m[4] === 'true' });
+  }
+  if (arr.length > 0) return arr;
+  throw new Error('Could not extract valid objects from truncated JSON');
+}
+
+export async function extractTemplateData(
+  template: TemplateData,
+  extractedPdfData: Record<string, string>,
+  model: 'sonnet' | 'haiku' = 'sonnet'
+): Promise<ExtractionResult> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey: apiKey,
+    dangerouslyAllowBrowser: true
+  });
+
+  const prompt = buildExtractionPrompt(template, extractedPdfData);
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: modelName,
+      max_tokens: 8192,
+      messages: [
+        {
+          role: 'user',
+          content: `${prompt}\n\nExtract the data and return only the JSON object. Include ALL placeholders and conditions from the template.`
+        }
+      ],
+      temperature: 0.2
+    });
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    throw new Error('Unexpected response format from Claude');
+  }
+
+  return parseExtractionResult(content.text);
+}
+
+function parseExtractionResult(content: string): ExtractionResult {
+  let jsonStr = content.trim();
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const placeholders: Record<string, string> =
+      typeof parsed.placeholders === 'object' && parsed.placeholders !== null
+        ? Object.fromEntries(
+            Object.entries(parsed.placeholders).map(([k, v]) => [
+              k,
+              String(v ?? '')
+            ])
+          )
+        : {};
+    const conditions: Record<string, boolean> =
+      typeof parsed.conditions === 'object' && parsed.conditions !== null
+        ? Object.fromEntries(
+            Object.entries(parsed.conditions).map(([k, v]) => [k, Boolean(v)])
+          )
+        : {};
+    const expense_items = Array.isArray(parsed.expense_items)
+      ? parsed.expense_items
+          .filter(
+            (x: any) =>
+              x && typeof x.name === 'string' && (x.prior != null || x.current != null)
+          )
+          .map((x: any) => ({
+            name: String(x.name ?? ''),
+            prior: String(x.prior ?? ''),
+            current: String(x.current ?? '')
+          }))
+      : undefined;
+    return { placeholders, conditions, expense_items };
+  } catch (e) {
+    console.error('Failed to parse extraction result:', content);
+    throw new Error('Claude returned invalid JSON for template data extraction');
   }
 }
 
@@ -1882,6 +1994,57 @@ Rules:
         }
       ],
       temperature: 0.7
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+        onChunk(chunk.delta.text);
+      }
+    }
+  });
+}
+
+const TEMPLATE_EDIT_PROMPT = `You are a template editor. You will receive an email template that uses {{placeholder}} syntax for variable values and {{#if condition}}...{{#else}}...{{/if}} syntax for conditional blocks.
+
+The user will give you an editing instruction. Apply the instruction to the template and return ONLY the updated template text. Preserve all existing {{placeholder}} and {{#if}} syntax exactly unless the instruction specifically asks to change them. Do not add any explanation or markdown formatting — output the raw template only.
+
+EXTRACTION & DERIVED VALUES (use these when adding/editing financial comparative sections):
+Placeholders are filled from PDF extraction. Movement/direction/percent are derived from current vs prior year amounts. Use these standard patterns:
+- Revenue: revenue_2024, revenue_2025 (or revenue_prior, revenue_current) → derived: revenue_change_direction ("increase"/"decrease"), revenue_change_percent
+- Overheads: overheads_2024, overheads_2025 (or overheads_prior, overheads_current) → derived: overheads_direction, overheads_movement (absolute $), overheads_movement_percent
+- Gross profit: gross_profit_2024, gross_profit_2025 → derived: gross_profit_direction
+- Expenses (1–7): expenses_N_2024, expenses_N_2025 (or expenses_N_prior, expenses_N_current) for each line → derived: expenses_N_amount (movement $), expenses_N_percent, and condition expenses_N_increased (for {{#if expenses_N_increased}}increased{{#else}}decreased{{/if}})
+- Category names: expenses_1 through expenses_7 hold the expense label (e.g. "Salaries").`;
+
+export async function editTemplateStream(
+  currentTemplate: string,
+  instruction: string,
+  model: 'sonnet' | 'haiku' = 'sonnet',
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set.');
+
+  const client = new Anthropic({
+    apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  return await retryWithBackoff(async () => {
+    const stream = await client.messages.stream({
+      model: modelName,
+      max_tokens: 8192,
+      system: TEMPLATE_EDIT_PROMPT,
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: `TEMPLATE:\n${currentTemplate}\n\nINSTRUCTION:\n${instruction}` }]
+        }
+      ],
+      temperature: 0.3
     });
 
     for await (const chunk of stream) {

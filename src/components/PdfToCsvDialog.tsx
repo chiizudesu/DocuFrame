@@ -95,6 +95,14 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
   const fileBg = useColorModeValue('gray.100', 'gray.700');
   const selectedFileBg = useColorModeValue('blue.100', 'blue.700');
   const hoverBg = useColorModeValue('gray.200', 'gray.600');
+  const headerBg = useColorModeValue('gray.100', 'gray.700');
+  const headerTextColor = useColorModeValue('gray.800', 'gray.100');
+  const fileItemBg = useColorModeValue('white', 'gray.900');
+  const selectedBorderColor = useColorModeValue('blue.400', 'blue.300');
+  const hoverBorderColor = useColorModeValue('blue.200', 'blue.400');
+  const checkIconColor = useColorModeValue('#2563eb', '#60a5fa');
+  const dragOverBg = useColorModeValue('blue.50', 'blue.900');
+  const progressBarBg = useColorModeValue('gray.200', 'gray.600');
 
   useEffect(() => {
     if (isOpen) {
@@ -498,12 +506,12 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
           borderBottom="1px solid" 
           borderColor={borderColor}
           pb={3}
-          bg={useColorModeValue('gray.100', 'gray.700')}
+          bg={headerBg}
         >
           <Flex align="center" justify="space-between" pr={16}>
             <Flex align="center" gap={2}>
               <FileSpreadsheet size={20} />
-              <Text fontWeight="semibold" color={useColorModeValue('gray.800', 'gray.100')}>
+              <Text fontWeight="semibold" color={headerTextColor}>
                 PDF to CSV Converter
               </Text>
             </Flex>
@@ -613,14 +621,14 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
                             <Box
                               key={index}
                               p={3}
-                              bg={isSelected ? selectedFileBg : useColorModeValue('white', 'gray.900')}
+                              bg={isSelected ? selectedFileBg : fileItemBg}
                               borderRadius="md"
                               cursor="pointer"
                               border="1px solid"
-                              borderColor={isSelected ? useColorModeValue('blue.400', 'blue.300') : 'transparent'}
+                              borderColor={isSelected ? selectedBorderColor : 'transparent'}
                               _hover={{
                                 bg: isSelected ? selectedFileBg : hoverBg,
-                                borderColor: useColorModeValue('blue.200', 'blue.400'),
+                                borderColor: hoverBorderColor,
                               }}
                               onClick={() => handleFileSelect(file)}
                               transition="all 0.15s"
@@ -632,7 +640,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
                               <Text fontSize="sm" flex="1" noOfLines={1} title={file.name}>
                                 {file.name}
                               </Text>
-                              {isSelected && <CheckCircle size={16} color={useColorModeValue('#2563eb', '#60a5fa')} />}
+                              {isSelected && <CheckCircle size={16} color={checkIconColor} />}
                             </Box>
                           );
                         })}
@@ -689,7 +697,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
                                 <Box
                                   key={column}
                                   p={2}
-                                  bg={isDragOver ? useColorModeValue('blue.50', 'blue.900') : bgColor}
+                                  bg={isDragOver ? dragOverBg : bgColor}
                                   border="2px dashed"
                                   borderColor={isDragOver ? 'blue.400' : borderColor}
                                   borderRadius="md"
@@ -850,14 +858,14 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
                               <Box
                                 key={index}
                                 p={3}
-                                bg={isSelected ? selectedFileBg : useColorModeValue('white', 'gray.900')}
+                                bg={isSelected ? selectedFileBg : fileItemBg}
                                 borderRadius="md"
                                 cursor="pointer"
                                 border="1px solid"
-                                borderColor={isSelected ? useColorModeValue('blue.400', 'blue.300') : 'transparent'}
+                                borderColor={isSelected ? selectedBorderColor : 'transparent'}
                                 _hover={{
                                   bg: isSelected ? selectedFileBg : hoverBg,
-                                  borderColor: useColorModeValue('blue.200', 'blue.400'),
+                                  borderColor: hoverBorderColor,
                                 }}
                                 onClick={() => handleFileSelect(file)}
                                 transition="all 0.15s"
@@ -869,7 +877,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
                                 <Text fontSize="sm" flex="1" noOfLines={1} title={file.name}>
                                   {file.name}
                                 </Text>
-                                {isSelected && <CheckCircle size={16} color={useColorModeValue('#2563eb', '#60a5fa')} />}
+                                {isSelected && <CheckCircle size={16} color={checkIconColor} />}
                               </Box>
                             );
                           })}
@@ -927,7 +935,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
                       </Text>
                       {progress && progress.totalPages > 0 && (
                         <>
-                          <Box w="100%" bg={useColorModeValue('gray.200', 'gray.600')} borderRadius="full" h="8px" overflow="hidden">
+                          <Box w="100%" bg={progressBarBg} borderRadius="full" h="8px" overflow="hidden">
                             <Box 
                               bg="blue.500" 
                               h="100%" 

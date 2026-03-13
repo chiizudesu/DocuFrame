@@ -3,36 +3,121 @@ description: Email template for summarizing company performance and tax return f
 categories:
   - financial_statements
   - tax_return
-template: |
+placeholders:
+  - name: revenue
+    description: Revenue amount
+  - name: revenue_change_direction
+    description: Direction of revenue change (increase/decrease)
+  - name: revenue_change_percent
+    description: Revenue change percentage
+  - name: revenue_reason
+    description: Reason for revenue change
+  - name: direct_costs_direction
+    description: Direction of direct costs change
+  - name: gross_profit_direction
+    description: Direction of gross profit change
+  - name: gross_profit_2024
+    description: Gross profit percentage 2024
+  - name: gross_profit_2025
+    description: Gross profit percentage 2025
+  - name: gross_profit_reason
+    description: Reason for gross profit change
+  - name: overheads_direction
+    description: Direction of overheads change
+  - name: overheads_movement
+    description: Overheads movement amount
+  - name: overheads_movement_percent
+    description: Overheads movement percentage
+  - name: expenses_1
+    description: Expense category 1
+  - name: expenses_1_amount
+    description: Expense 1 amount
+  - name: expenses_1_percent
+    description: Expense 1 percentage
+  - name: expenses_2
+    description: Expense category 2
+  - name: expenses_2_amount
+    description: Expense 2 amount
+  - name: expenses_2_percent
+    description: Expense 2 percentage
+  - name: expenses_3
+    description: Expense category 3
+  - name: expenses_3_amount
+    description: Expense 3 amount
+  - name: expenses_3_percent
+    description: Expense 3 percentage
+  - name: expenses_4
+    description: Expense category 4
+  - name: expenses_4_amount
+    description: Expense 4 amount
+  - name: expenses_4_percent
+    description: Expense 4 percentage
+  - name: expenses_5
+    description: Expense category 5
+  - name: expenses_5_amount
+    description: Expense 5 amount
+  - name: expenses_5_percent
+    description: Expense 5 percentage
+  - name: expenses_6
+    description: Expense category 6
+  - name: expenses_6_amount
+    description: Expense 6 amount
+  - name: expenses_6_percent
+    description: Expense 6 percentage
+  - name: expenses_7
+    description: Expense category 7
+  - name: expenses_7_amount
+    description: Expense 7 amount
+  - name: expenses_7_percent
+    description: Expense 7 percentage
+  - name: overheads_total_less_shareholder_salariesl
+    description: Overheads total excluding shareholder salaries
+  - name: taxable_income
+    description: Taxable income amount
+  - name: tax_amount
+    description: Tax amount
+  - name: tax_refund
+    description: Tax refund amount
+  - name: tax_payable
+    description: Tax payable amount
+conditions:
+  - name: has_comparatives
+    description: Whether prior year comparison data is available for overheads
+template: |-
   Company Annual Accounts
 
   For the 12 months ending March 2025, revenue was ${{revenue}} – this is an overall {{revenue_change_direction}} of {{revenue_change_percent}}% from the year ending March 2024. This was largely due to {{revenue_reason}}.
 
-  Direct costs have naturally {{direct_costs_direction}} alongside sales, and the gross profit margin has {{gross_profit_direction}} from the 2024 year at {{gross_profit_2024}}% to last year at {{gross_profit_2025}}%. This was largely due to {{gross_profit_reason}}.
+  {{#if has_cost_of_sales}}
+  Direct costs have naturally {{direct_costs_direction}} alongside sales, and the gross profit margin has {{gross_profit_direction}} from the 2024 year at {{gross_profit_2024_percent}}% to last year at {{gross_profit_2025_percent}}%. This was largely due to {{gross_profit_reason}}.
+  {{/if}}
 
+  {{#if has_comparatives}}
   Overheads have seen a reasonable {{overheads_direction}} of ${{overheads_movement}} or {{overheads_movement_percent}}%. Key movements for the year were:
 
-  - {{expenses_1}} increased / decreased by ${{expenses_1_amount}} or {{expenses_1_percent}}%
-  - {{expenses_2}} increased / decreased by ${{expenses_2_amount}} or {{expenses_2_percent}}%
-  - {{expenses_3}} increased / decreased by ${{expenses_3_amount}} or {{expenses_3_percent}}%
-  - {{expenses_4}} increased / decreased by ${{expenses_4_amount}} or {{expenses_4_percent}}%
-  - {{expenses_5}} increased / decreased by ${{expenses_5_amount}} or {{expenses_5_percent}}%
-  - {{expenses_6}} increased / decreased by ${{expenses_6_amount}} or {{expenses_6_percent}}%
-  - {{expenses_7}} increased / decreased by ${{expenses_7_amount}} increased / decreased or {{expenses_7_percent}}%
+  - {{expenses_1}} {{#if expenses_1_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_1_movement_amount}} or {{expenses_1_movement_percent}}%
+  - {{expenses_2}} {{#if expenses_2_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_2_movement_amount}} or {{expenses_2_movement_percent}}%
+  - {{expenses_3}} {{#if expenses_3_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_3_movement_amount}} or {{expenses_3_movement_percent}}%
+  - {{expenses_4}} {{#if expenses_4_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_4_movement_amount}} or {{expenses_4_movement_percent}}%
+  - {{expenses_5}} {{#if expenses_5_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_5_movement_amount}} or {{expenses_5_movement_percent}}%
+  - {{expenses_6}} {{#if expenses_6_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_6_movement_amount}} or {{expenses_6_movement_percent}}%
+  - {{expenses_7}} {{#if expenses_7_increased}}increased{{#else}}decreased{{/if}} by ${{expenses_7_movement_amount}} or {{expenses_7_movement_percent}}%
     {{fill any other expense here if needed}}
-
-  {{OR if no comparatives
+  {{#else}}
   Overheads (excluding shareholder salaries) for the year totalled ${{overheads_total_less_shareholder_salariesl}}. A majority of the overhead expenses were made up of: 
-  - {{expenses_1}} by ${{expenses_1_amount}} or {{expenses_1_percent}}%
-  - {{expenses_2}} by ${{expenses_2_amount}} or {{expenses_2_percent}}%
-  - {{expenses_3}} by ${{expenses_3_amount}} or {{expenses_3_percent}}%
-  - {{expenses_4}} by ${{expenses_4_amount}} or {{expenses_4_percent}}%
-  - {{expenses_5}} by ${{expenses_5_amount}} or {{expenses_5_percent}}%
-  - {{expenses_6}} by ${{expenses_6_amount}} or {{expenses_6_percent}}%
-  - {{expenses_7}} by ${{expenses_7_amount}} or {{expenses_7_percent}}% }}
-
-  [Check internal queries for any points to add to the final email]
+  - {{expenses_1}} by ${{expenses_1_movement_amount}} or {{expenses_1_movement_percent}}%
+  - {{expenses_2}} by ${{expenses_2_movement_amount}} or {{expenses_2_movement_percent}}%
+  - {{expenses_3}} by ${{expenses_3_movement_amount}} or {{expenses_3_movement_percent}}%
+  - {{expenses_4}} by ${{expenses_4_movement_amount}} or {{expenses_4_movement_percent}}%
+  - {{expenses_5}} by ${{expenses_5_movement_amount}} or {{expenses_5_movement_percent}}%
+  - {{expenses_6}} by ${{expenses_6_movement_amount}} or {{expenses_6_movement_percent}}%
+  - {{expenses_7}} by ${{expenses_7_movement_amount}} or {{expenses_7_movement_percent}}%
+  {{/if}}
 
   Company tax return
 
-  From a tax perspective, there is taxable income in the Company of ${{taxable_income}}. Tax on this amount is ${{tax_amount}}. After accounting for tax credits on investment income and provisional tax paid during the year, the Company is due to receive a refund of ${{tax_refund}}/has tax to pay of ${{tax_payable}}. This is due for payment on 7 April 2026 and we will be in touch closer to the due date with our standard reminder letter. 
+  {{#if taxable_income}}
+  From a tax perspective, there is taxable income in the Company of ${{taxable_income}}. Tax on this amount is ${{tax_amount}}. After accounting for tax credits on investment income and provisional tax paid during the year, the Company {{#if tax_refund_due}}is due to receive a refund of ${{tax_refund}}. Once the Company's tax return is submitted, refunds are typically processed and paid to the nominated bank account within 2-3 weeks.{{#else}}has tax to pay of ${{tax_payable}}. This is due for payment on 7 April 2026 and we will be in touch closer to the due date with our standard reminder letter.{{/if}}
+  {{#else}}
+  From a tax perspective, the Company has generated a tax loss of ${{taxable_loss}} this year. Combined with losses brought forward from prior periods of ${{losses_brought_forward}}, the total losses available to carry forward to next year amount to ${{total_losses_carried_forward}}. As there is no taxable income, all provisional tax payments made during the year are fully refundable. The Company is due to receive a refund of ${{tax_refund}}. Once the Company's tax return is submitted, refunds are typically processed and paid to the nominated bank account within 2-3 weeks.
+  {{/if}}

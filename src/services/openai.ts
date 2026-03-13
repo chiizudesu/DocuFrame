@@ -1,5 +1,7 @@
 import { settingsService } from './settings';
 import yaml from 'js-yaml';
+import { buildExtractionPrompt } from './templateService';
+import type { TemplateData, ExtractionResult } from './templateService';
 
 const AI_EDITOR_PROMPT = `You are an expert writing assistant. When I input a raw email blurb, your task is to rewrite it using clearer, more professional, and polished language — but without making it sound robotic or overly formal. Favor a direct, confident, and forward tone over excessive politeness.\n\nMaintain the following:\n- My original tone, length, and style\n- A human and personable vibe\n- The intent and overall message of the email\n\nAvoid:\n- Adding or removing content unless needed for clarity\n- Over-sanitizing the language\n- Changing the personal feel or casual-professional balance\n\nRewrite the email blurb below accordingly.`;
 
@@ -232,25 +234,30 @@ export async function analyzeTemplateForPlaceholders(templateText: string, templ
   const apiKey = settings.apiKey;
   if (!apiKey) throw new Error('OpenAI API key not set.');
 
-  const PLACEHOLDER_ANALYSIS_PROMPT = `You are an expert template analyzer. Analyze the following document text and identify potential placeholders that should be made dynamic/variable.
+  const PLACEHOLDER_ANALYSIS_PROMPT = `You are an expert template analyzer. Analyze the following document text and identify:
+A) VALUE PLACEHOLDERS - values that should be made dynamic (use type "placeholder")
+B) CONDITIONAL BLOCKS - mutually exclusive paragraphs or alternatives (use type "condition")
 
-Look for:
-1. **Personal Information**: Names, addresses, emails, phone numbers
-2. **Financial Data**: Amounts, percentages, account numbers, tax years
-3. **Dates**: Any date formats (MM/DD/YYYY, DD-MM-YYYY, Month DD, YYYY, etc.)
-4. **Business Data**: Company names, reference numbers, invoice numbers
-5. **Legal/Tax Information**: IRD numbers, GST numbers, case numbers
-6. **Context-Specific Values**: Any values that would likely change between uses
+For VALUE PLACEHOLDERS, look for:
+1. Personal Information: names, addresses, emails, phone numbers
+2. Financial Data: amounts, percentages, account numbers, tax years
+3. Dates: any date formats
+4. Business Data: company names, reference numbers, invoice numbers
+5. Legal/Tax: IRD numbers, GST numbers, case numbers
+6. Context-Specific Values: anything that would change between uses
 
-For each potential placeholder found, suggest a meaningful variable name (use snake_case format).
+For CONDITIONAL BLOCKS, look for:
+- "OR" blocks (mutually exclusive paragraph alternatives)
+- Slash alternatives (e.g. "refund of X / has tax to pay of X")
+- Bracket comments like "[if no comparatives]", "[if X]"
+- Text that indicates one of several paths based on document content
 
-Return your analysis as a JSON array with this exact format:
+For conditions, suggest boolean-style names: has_comparatives, has_refund, is_provisional_taxpayer, no_comparatives, etc.
+
+Return your analysis as a JSON array. Each item must have "type" ("placeholder" or "condition"), "original", "suggested", "accepted":
 [
-  {
-    "original": "exact text found in document",
-    "suggested": "meaningful_variable_name",
-    "accepted": true
-  }
+  { "type": "placeholder", "original": "exact text", "suggested": "variable_name", "accepted": true },
+  { "type": "condition", "original": "OR block or alternative text", "suggested": "condition_name", "accepted": true }
 ]
 
 Only return the JSON array, no other text or explanation.
@@ -264,7 +271,7 @@ Document Text to Analyze:`;
       { role: 'system', content: PLACEHOLDER_ANALYSIS_PROMPT },
       { role: 'user', content: templateText }
     ],
-    max_tokens: 1500,
+    max_tokens: 8192,
     temperature: 0.3
   };
 
@@ -286,42 +293,137 @@ Document Text to Analyze:`;
   const content = data.choices?.[0]?.message?.content?.trim() || '';
   
   try {
-    // Parse the JSON response
-    const placeholders = JSON.parse(content);
-    
-    // Validate the response format
-    if (!Array.isArray(placeholders)) {
-      throw new Error('AI response is not an array');
+    let jsonStr = content.trim();
+    const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) jsonStr = codeBlockMatch[1].trim();
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      parsed = parsePartialPlaceholderJson(jsonStr);
     }
-    
-    return placeholders.filter((p: any) => 
-      p.original && p.suggested && typeof p.accepted === 'boolean'
-    );
+    if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+    if (!Array.isArray(parsed)) throw new Error('AI response is not an array');
+
+    return parsed
+      .filter((p: any) => p.original && p.suggested && typeof p.accepted === 'boolean')
+      .map((p: any) => ({
+        type: p.type === 'condition' ? 'condition' : 'placeholder',
+        original: p.original,
+        suggested: p.suggested,
+        accepted: p.accepted
+      }));
   } catch (parseError) {
     console.error('Failed to parse AI placeholder analysis:', content);
     throw new Error('AI returned invalid format for placeholder analysis');
   }
 }
 
-export async function loadEmailTemplates(): Promise<Array<{ name: string; description: string; categories: string[]; template: string; filename: string }>> {
-  const folder = await settingsService.getTemplateFolderPath();
-  if (!folder) throw new Error('Template folder path not set.');
-  const files = await (window.electronAPI as any).getDirectoryContents(folder);
-  const yamlFiles = files.filter((f: any) => f.name.endsWith('.yaml') || f.name.endsWith('.yml'));
-  const templates = [];
-  for (const file of yamlFiles) {
-    const data = await (window.electronAPI as any).loadYamlTemplate(`${folder}/${file.name}`);
-    if (data && data.name && data.template) {
-      templates.push({
-        name: data.name,
-        description: data.description || '',
-        categories: data.categories || [],
-        template: data.template,
-        filename: file.name
-      });
-    }
+function parsePartialPlaceholderJson(jsonStr: string): any[] {
+  const arr: any[] = [];
+  const objRegex = /\{\s*"type"\s*:\s*"(placeholder|condition)"\s*,\s*"original"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"suggested"\s*:\s*"([^"]*)"\s*,\s*"accepted"\s*:\s*(true|false)\s*\}/g;
+  let m;
+  while ((m = objRegex.exec(jsonStr)) !== null) {
+    const original = m[2].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+    arr.push({ type: m[1], original, suggested: m[3], accepted: m[4] === 'true' });
   }
-  return templates;
+  if (arr.length > 0) return arr;
+  throw new Error('Could not extract valid objects from truncated JSON');
+}
+
+export async function loadEmailTemplates(): Promise<Array<{ name: string; description: string; categories: string[]; template: string; filename: string }>> {
+  const { loadEmailTemplates: load } = await import('./templateService');
+  return await load();
+}
+
+export async function extractTemplateData(
+  template: TemplateData,
+  extractedPdfData: Record<string, string>
+): Promise<ExtractionResult> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.apiKey;
+  if (!apiKey) throw new Error('OpenAI API key not set.');
+
+  const prompt = buildExtractionPrompt(template, extractedPdfData);
+
+  const body = {
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'user',
+        content: `${prompt}\n\nExtract the data and return only the JSON object.`
+      }
+    ],
+    max_tokens: 2000,
+    temperature: 0.2
+  };
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error?.message || 'Failed to get response from OpenAI');
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content?.trim() || '';
+
+  return parseExtractionResult(content);
+}
+
+function parseExtractionResult(content: string): ExtractionResult {
+  // Strip markdown code blocks if present
+  let jsonStr = content.trim();
+  const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const placeholders: Record<string, string> =
+      typeof parsed.placeholders === 'object' && parsed.placeholders !== null
+        ? Object.fromEntries(
+            Object.entries(parsed.placeholders).map(([k, v]) => [
+              k,
+              String(v ?? '')
+            ])
+          )
+        : {};
+    const conditions: Record<string, boolean> =
+      typeof parsed.conditions === 'object' && parsed.conditions !== null
+        ? Object.fromEntries(
+            Object.entries(parsed.conditions).map(([k, v]) => [
+              k,
+              Boolean(v)
+            ])
+          )
+        : {};
+    const expense_items = Array.isArray(parsed.expense_items)
+      ? parsed.expense_items
+          .filter(
+            (x: any) =>
+              x && typeof x.name === 'string' && (x.prior != null || x.current != null)
+          )
+          .map((x: any) => ({
+            name: String(x.name ?? ''),
+            prior: String(x.prior ?? ''),
+            current: String(x.current ?? '')
+          }))
+      : undefined;
+    return { placeholders, conditions, expense_items };
+  } catch (e) {
+    console.error('Failed to parse extraction result:', content);
+    throw new Error('AI returned invalid JSON for template data extraction');
+  }
 }
 
 // Streaming version for email template generation
@@ -406,4 +508,80 @@ export async function generateEmailFromTemplateStream(
   }
 
   return fullText.trim();
-} 
+}
+
+const TEMPLATE_EDIT_PROMPT = `You are a template editor. You will receive an email template that uses {{placeholder}} syntax for variable values and {{#if condition}}...{{#else}}...{{/if}} syntax for conditional blocks.
+
+The user will give you an editing instruction. Apply the instruction to the template and return ONLY the updated template text. Preserve all existing {{placeholder}} and {{#if}} syntax exactly unless the instruction specifically asks to change them. Do not add any explanation or markdown formatting — output the raw template only.
+
+EXTRACTION & DERIVED VALUES (use these when adding/editing financial comparative sections):
+Placeholders are filled from PDF extraction. Movement/direction/percent are derived from current vs prior year amounts. Use these standard patterns:
+- Revenue: revenue_2024, revenue_2025 (or revenue_prior, revenue_current) → derived: revenue_change_direction ("increase"/"decrease"), revenue_change_percent
+- Overheads: overheads_2024, overheads_2025 (or overheads_prior, overheads_current) → derived: overheads_direction, overheads_movement (absolute $), overheads_movement_percent
+- Gross profit: gross_profit_2024, gross_profit_2025 → derived: gross_profit_direction
+- Expenses (1–7): expenses_N_2024, expenses_N_2025 (or expenses_N_prior, expenses_N_current) for each line → derived: expenses_N_amount (movement $), expenses_N_percent, and condition expenses_N_increased (for {{#if expenses_N_increased}}increased{{#else}}decreased{{/if}})
+- Category names: expenses_1 through expenses_7 hold the expense label (e.g. "Salaries").`;
+
+export async function editTemplateStream(
+  currentTemplate: string,
+  instruction: string,
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.apiKey;
+  if (!apiKey) throw new Error('OpenAI API key not set.');
+
+  const body = {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: TEMPLATE_EDIT_PROMPT },
+      { role: 'user', content: `TEMPLATE:\n${currentTemplate}\n\nINSTRUCTION:\n${instruction}` }
+    ],
+    max_tokens: 8192,
+    temperature: 0.3,
+    stream: true
+  };
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+  }
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter(l => l.trim() !== '');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') break;
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) onChunk(content);
+          } catch {
+            // skip
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}

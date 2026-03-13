@@ -95,9 +95,39 @@ export async function generateEmailFromTemplateStream(
   }
 }
 
-// Load email templates (currently only available in OpenAI service)
+// Load email templates via unified template service
 export async function loadEmailTemplates(): Promise<Array<{ name: string; description: string; categories: string[]; template: string; filename: string }>> {
-  return await openaiService.loadEmailTemplates();
+  const { loadEmailTemplates: load } = await import('./templateService');
+  return await load();
+}
+
+// Extract structured template data (placeholders + conditions) from PDFs
+export async function extractTemplateData(
+  template: any,
+  extractedPdfData: Record<string, string>,
+  selectedAgent: AIAgent = 'claude'
+): Promise<{ placeholders: Record<string, string>; conditions: Record<string, boolean> }> {
+  const { extractPlaceholderNames, deriveMovementValues, formatAmountPlaceholders } = await import('./templateService');
+  let result: { placeholders: Record<string, string>; conditions: Record<string, boolean> };
+  switch (selectedAgent) {
+    case 'openai':
+      result = await openaiService.extractTemplateData(template, extractedPdfData);
+      break;
+    case 'claude':
+      result = await claudeService.extractTemplateData(template, extractedPdfData, 'sonnet');
+      break;
+    case 'claude-haiku':
+      result = await claudeService.extractTemplateData(template, extractedPdfData, 'haiku');
+      break;
+    default:
+      throw new Error(`Unknown AI agent: ${selectedAgent}`);
+  }
+  const requiredPlaceholders = template.placeholders?.map((p: { name: string }) => p.name) ?? extractPlaceholderNames(template.template || '');
+  const derived = deriveMovementValues(result.placeholders, requiredPlaceholders, result.conditions, result.expense_items);
+  result.placeholders = derived.placeholders;
+  result.conditions = { ...result.conditions, ...derived.conditions };
+  formatAmountPlaceholders(result.placeholders);
+  return result;
 }
 
 // Rewrite email blurb function
@@ -132,6 +162,25 @@ export async function rewriteEmailBlurbStream(
       return await claudeService.rewriteEmailBlurbStream(rawBlurb, 'sonnet', customInstructions, onChunk);
     case 'claude-haiku':
       return await claudeService.rewriteEmailBlurbStream(rawBlurb, 'haiku', customInstructions, onChunk);
+    default:
+      throw new Error(`Unknown AI agent: ${selectedAgent}`);
+  }
+}
+
+// Edit a template via AI instruction (streaming)
+export async function editTemplateStream(
+  currentTemplate: string,
+  instruction: string,
+  selectedAgent: AIAgent = 'claude',
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  switch (selectedAgent) {
+    case 'openai':
+      return await openaiService.editTemplateStream(currentTemplate, instruction, onChunk);
+    case 'claude':
+      return await claudeService.editTemplateStream(currentTemplate, instruction, 'sonnet', onChunk);
+    case 'claude-haiku':
+      return await claudeService.editTemplateStream(currentTemplate, instruction, 'haiku', onChunk);
     default:
       throw new Error(`Unknown AI agent: ${selectedAgent}`);
   }

@@ -5,7 +5,6 @@ import {
   ModalContent,
   ModalHeader,
   ModalBody,
-  ModalCloseButton,
   Button,
   Textarea,
   VStack,
@@ -23,10 +22,10 @@ import {
   Collapse,
   useDisclosure,
   Input,
-  Grid,
-  GridItem
+  FormControl,
+  FormLabel
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Edit3, ChevronDown, ChevronUp, Send, Minus } from 'lucide-react';
+import { Copy, Sparkles, Edit3, ChevronDown, ChevronUp, Send, Minus, X, Clipboard, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { rewriteEmailBlurbStream, AI_AGENTS, AIAgent } from '../services/aiService';
@@ -51,10 +50,33 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
   const { isOpen: isInstructionsExpanded, onToggle: toggleInstructions } = useDisclosure();
   const [followUpInput, setFollowUpInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [clipboardPasteStatus, setClipboardPasteStatus] = useState<'idle' | 'success' | 'empty' | 'error'>('idle');
   const resultBoxRef = React.useRef<HTMLDivElement>(null);
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || !text.trim()) {
+        setClipboardPasteStatus('empty');
+        setInput('');
+      } else {
+        setInput(text);
+        setClipboardPasteStatus('success');
+      }
+    } catch {
+      setClipboardPasteStatus('error');
+      setInput('');
+    }
+  };
+
+  const handleClearInput = () => {
+    setInput('');
+    setClipboardPasteStatus('idle');
+  };
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const itemBgColor = useColorModeValue('gray.50', 'gray.700');
   // Pre-compute all color values to avoid conditional hook calls
   const textColor = useColorModeValue('gray.900', 'white');
   const secondaryTextColor = useColorModeValue('gray.600', 'gray.400');
@@ -181,6 +203,7 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
     setLocalInstructions(aiEditorInstructions);
     setFollowUpInput('');
     setIsStreaming(false);
+    setClipboardPasteStatus('idle');
     onClose();
   };
 
@@ -200,182 +223,209 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
 
   return (
     <Modal isOpen={isOpen} onClose={handleOverlayClick} size="4xl" isCentered>
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor} color={useColorModeValue('gray.900', 'white')} boxShadow="lg" maxW="1200px" maxH="85vh">
-        <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
-          <Flex align="center" justify="center" gap={2}>
-            <Sparkles size={22} />
-            AI Email Editor
+      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
+      <ModalContent 
+        bg={bgColor} 
+        color={useColorModeValue('gray.900', 'white')} 
+        borderRadius={0}
+        boxShadow="xl" 
+        w="720px"
+        maxW="95vw"
+        h="750px"
+        maxH="90vh"
+      >
+        <ModalHeader 
+          bg={itemBgColor} 
+          borderBottom="1px solid" 
+          borderColor={borderColor}
+          borderRadius={0}
+          py={3}
+        >
+          <Flex align="center" justify="space-between" w="full">
+            <Flex align="center" gap={2}>
+              <Sparkles size={20} />
+              <Text fontSize="lg" fontWeight="semibold">AI Email Editor</Text>
+            </Flex>
+            <HStack spacing={2}>
+              <Select
+                value={aiEditorAgent}
+                onChange={(e) => handleAgentChange(e.target.value as 'openai' | 'claude')}
+                size="sm"
+                w="140px"
+                bg={bgColor}
+                isDisabled={loading}
+              >
+                {AI_AGENTS.map(agent => (
+                  <option key={agent.value} value={agent.value}>
+                    {agent.label}
+                  </option>
+                ))}
+              </Select>
+              {onMinimize && (
+                <IconButton
+                  aria-label="Minimize"
+                  icon={<Minus size={16} />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={onMinimize}
+                />
+              )}
+              <IconButton
+                aria-label="Close"
+                icon={<X size={16} />}
+                size="sm"
+                variant="ghost"
+                onClick={handleClose}
+              />
+            </HStack>
           </Flex>
         </ModalHeader>
-        {onMinimize && (
-          <IconButton
-            aria-label="Minimize"
-            icon={<Minus size={16} />}
-            size="sm"
-            variant="ghost"
-            position="absolute"
-            top={4}
-            right={12}
-            onClick={onMinimize}
-          />
-        )}
-        <ModalCloseButton />
-        <ModalBody p={4} h="calc(85vh - 80px)">
-          <Grid templateColumns="1fr 1fr" gap={4} h="100%">
-            {/* Left Column - Input */}
-            <GridItem>
-              <VStack align="stretch" spacing={3} h="100%">
-                {/* AI Agent Selector at Top */}
-                <Select
-                  value={aiEditorAgent}
-                  onChange={(e) => handleAgentChange(e.target.value as 'openai' | 'claude')}
-                  size="sm"
-                  borderColor={borderColor}
-                  isDisabled={loading}
-                  fontWeight="medium"
-                >
-                  {AI_AGENTS.map(agent => (
-                    <option key={agent.value} value={agent.value}>
-                      {agent.label}
-                    </option>
-                  ))}
-                </Select>
-
-                {/* Custom Instructions - Compact */}
-                <HStack spacing={2} px={1}>
-                  <Text fontSize="xs" color={secondaryTextColor} flex={1}>
-                    Custom Instructions
-                  </Text>
-                  <Tooltip label={isEditingInstructions ? "Cancel" : "Edit instructions"}>
+        <ModalBody p={0} overflow="hidden" display="flex" flexDirection="column">
+          {/* Row 1: Paste from Clipboard + Rewrite */}
+          <Box
+            p={4}
+            borderBottom="1px solid"
+            borderColor={borderColor}
+            bg={itemBgColor}
+          >
+            <Flex gap={4} align="flex-end" flexWrap="wrap">
+              <FormControl flex="1" minW="200px">
+                <FormLabel fontSize="sm">Input Content</FormLabel>
+                <HStack>
+                  <Button
+                    leftIcon={<Clipboard size={14} />}
+                    size="sm"
+                    variant="outline"
+                    onClick={handlePasteFromClipboard}
+                  >
+                    Paste from Clipboard
+                  </Button>
+                  {clipboardPasteStatus === 'success' && (
+                    <HStack spacing={1} color="green.500">
+                      <Check size={16} />
+                      <Text fontSize="xs" noOfLines={1} maxW="120px">
+                        {input.length} chars
+                      </Text>
+                    </HStack>
+                  )}
+                  {clipboardPasteStatus === 'empty' && (
+                    <HStack spacing={1} color="red.500">
+                      <X size={16} />
+                      <Text fontSize="xs">Clipboard empty</Text>
+                    </HStack>
+                  )}
+                  {clipboardPasteStatus === 'error' && (
+                    <HStack spacing={1} color="red.500">
+                      <X size={16} />
+                      <Text fontSize="xs">Paste failed</Text>
+                    </HStack>
+                  )}
+                  {input && (
+                    <Button size="xs" variant="ghost" onClick={handleClearInput}>
+                      Clear
+                    </Button>
+                  )}
+                </HStack>
+              </FormControl>
+              <HStack spacing={2} flexShrink={0}>
+                <HStack spacing={1} px={2}>
+                  <Text fontSize="xs" color={secondaryTextColor}>Custom Instructions</Text>
+                  <Tooltip label={isEditingInstructions ? "Cancel" : "Edit"}>
                     <IconButton
                       aria-label="Edit instructions"
                       icon={<Edit3 size={12} />}
                       size="xs"
                       variant="ghost"
                       onClick={() => {
-                        if (isEditingInstructions) {
-                          setLocalInstructions(aiEditorInstructions);
-                        }
+                        if (isEditingInstructions) setLocalInstructions(aiEditorInstructions);
                         setIsEditingInstructions(!isEditingInstructions);
-                        if (!isEditingInstructions && !isInstructionsExpanded) {
-                          toggleInstructions();
-                        }
+                        if (!isEditingInstructions && !isInstructionsExpanded) toggleInstructions();
                       }}
                     />
                   </Tooltip>
-                  <Tooltip label={isInstructionsExpanded ? "Hide" : "Show"}>
-                    <IconButton
-                      aria-label="Toggle instructions"
-                      icon={isInstructionsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                      size="xs"
-                      variant="ghost"
-                      onClick={toggleInstructions}
-                    />
-                  </Tooltip>
+                  <IconButton
+                    aria-label="Toggle instructions"
+                    icon={isInstructionsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    size="xs"
+                    variant="ghost"
+                    onClick={toggleInstructions}
+                  />
                 </HStack>
-
-                <Collapse in={isInstructionsExpanded} animateOpacity>
-                  {isEditingInstructions ? (
-                    <VStack spacing={2} align="stretch">
-                      <Textarea
-                        value={localInstructions}
-                        onChange={(e) => setLocalInstructions(e.target.value)}
-                        minH="70px"
-                        maxH="120px"
-                        resize="vertical"
-                        borderColor={borderColor}
-                        bg={instructionsBg}
-                        fontSize="xs"
-                      />
-                      <HStack spacing={2}>
-                        <Button
-                          size="xs"
-                          colorScheme="green"
-                          onClick={handleSaveInstructions}
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          onClick={() => {
-                            setLocalInstructions(aiEditorInstructions);
-                            setIsEditingInstructions(false);
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      </HStack>
-                    </VStack>
-                  ) : (
-                    <Text fontSize="xs" color={secondaryTextColor} px={1}>
-                      {aiEditorInstructions}
-                    </Text>
-                  )}
-                </Collapse>
-
-                <Textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  placeholder="Paste your email blurb here..."
-                  minH="290px"
-                  flex={1}
-                  resize="vertical"
-                  borderColor={borderColor}
-                  bg={instructionsBg}
-                  fontSize="sm"
-                  isDisabled={loading}
-                />
                 <Button
-                  leftIcon={<Sparkles size={18} />}
+                  leftIcon={<Sparkles size={16} />}
                   colorScheme="yellow"
                   onClick={handleRewrite}
                   isLoading={loading}
                   loadingText="Rewriting..."
                   isDisabled={!input.trim() || loading}
-                  alignSelf="flex-end"
-                  mt={2}
+                  size="sm"
                 >
                   Rewrite Email
                 </Button>
-              </VStack>
-            </GridItem>
+              </HStack>
+            </Flex>
+            <Collapse in={isInstructionsExpanded} animateOpacity>
+              {isEditingInstructions ? (
+                <VStack spacing={2} align="stretch" mt={3}>
+                  <Textarea
+                    value={localInstructions}
+                    onChange={(e) => setLocalInstructions(e.target.value)}
+                    minH="60px"
+                    maxH="100px"
+                    resize="vertical"
+                    borderColor={borderColor}
+                    bg={bgColor}
+                    fontSize="xs"
+                  />
+                  <HStack spacing={2}>
+                    <Button size="xs" colorScheme="green" onClick={handleSaveInstructions}>Save</Button>
+                    <Button size="xs" variant="ghost" onClick={() => { setLocalInstructions(aiEditorInstructions); setIsEditingInstructions(false); }}>Cancel</Button>
+                  </HStack>
+                </VStack>
+              ) : (
+                <Text fontSize="xs" color={secondaryTextColor} mt={2} px={1}>{aiEditorInstructions}</Text>
+              )}
+            </Collapse>
+            {error && (
+              <Alert status="error" borderRadius="md" fontSize="sm" p={3} mt={3}>
+                <AlertIcon boxSize={4} />
+                {error}
+              </Alert>
+            )}
+          </Box>
 
-            {/* Right Column - Results */}
-            <GridItem>
-              <VStack align="stretch" spacing={3} h="100%">
-                {!result && !loading && !error && (
-                  <Flex 
-                    justify="center" 
-                    align="center" 
-                    h="100%" 
-                    bg={emptyStateBg}
-                    borderRadius="lg"
-                    border="2px dashed"
-                    borderColor={emptyStateBorder}
-                  >
-                    <VStack spacing={3} color={emptyStateText}>
-                      <Sparkles size={48} opacity={0.3} />
-                      <Text fontSize="sm" fontWeight="medium">
-                        AI Rewritten Email Will Appear Here
-                      </Text>
-                      <Text fontSize="xs" maxW="250px" textAlign="center">
-                        Paste your email text on the left and click "Rewrite Email" to get started
-                      </Text>
-                    </VStack>
-                  </Flex>
-                )}
-                {loading && (
-                  <Flex justify="center" align="center" minH="200px"><Spinner size="xl" /></Flex>
-                )}
-                {error && (
-                  <Alert status="error" borderRadius="md">
-                    <AlertIcon />
-                    {error}
-                  </Alert>
-                )}
-                {result && !loading && (
+          {/* Row 2: Generated text */}
+          <Box flex="1" p={4} overflow="hidden" display="flex" flexDirection="column" minH="200px">
+            {!result && !loading && (
+              <Flex 
+                justify="center" 
+                align="center" 
+                flex="1"
+                bg={emptyStateBg}
+                borderRadius="md"
+                border="2px dashed"
+                borderColor={emptyStateBorder}
+              >
+                <VStack spacing={3} color={emptyStateText}>
+                  <Sparkles size={48} opacity={0.3} />
+                  <Text fontSize="sm" fontWeight="medium">
+                    AI Rewritten Email Will Appear Here
+                  </Text>
+                  <Text fontSize="xs" maxW="280px" textAlign="center">
+                    Paste from clipboard above and click &quot;Rewrite Email&quot; to get started
+                  </Text>
+                </VStack>
+              </Flex>
+            )}
+            {loading && !result && (
+              <Flex justify="center" align="center" flex="1">
+                <VStack spacing={3}>
+                  <Spinner size="lg" color="yellow.500" />
+                  <Text fontSize="sm" color={secondaryTextColor}>Rewriting...</Text>
+                </VStack>
+              </Flex>
+            )}
+            {result && !loading && (
               <Box h="100%" display="flex" flexDirection="column">
                 <Flex justify="space-between" align="center" mb={2}>
                   <Text fontWeight="semibold" fontSize="sm" color={resultHeaderText}>
@@ -394,7 +444,8 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                 
                 <Box
                   ref={resultBoxRef}
-                  maxH="290px"
+                  flex="1"
+                  minH="0"
                   overflowY="auto"
                   bg={resultBg}
                   borderRadius="lg"
@@ -519,10 +570,8 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
                   </Flex>
                 </Box>
               </Box>
-                )}
-              </VStack>
-            </GridItem>
-          </Grid>
+            )}
+          </Box>
         </ModalBody>
       </ModalContent>
     </Modal>
