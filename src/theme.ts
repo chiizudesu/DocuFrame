@@ -13,6 +13,8 @@ export const theme = extendTheme({
         color: props.colorMode === 'light' ? 'gray.800' : 'white',
         '--popper-arrow-bg': props.colorMode === 'light' ? 'var(--chakra-colors-gray-100)' : 'var(--chakra-colors-gray-800)',
         ...(props.colorMode === 'light' && { borderWidth: '1px', borderColor: 'gray.200' }),
+        maxW: 'none',
+        overflow: 'visible',
       }),
     },
     Menu: {

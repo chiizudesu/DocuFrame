@@ -27,11 +27,13 @@ import {
 } from '@chakra-ui/react'
 import {
   Home,
-  ChevronLeft,
+  ArrowLeft,
+  ArrowRight,
   ChevronRight,
   RefreshCw,
   Star,
-  Download,
+  SquareTerminal,
+  ExternalLink,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { useClientInfo } from '../hooks/useClientInfo'
@@ -53,7 +55,7 @@ declare global {
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   
   // Helper function to get directory name from path
@@ -93,8 +95,8 @@ export const FolderInfoBar: React.FC = () => {
     if (!Array.isArray(files)) return files;
     
     return files.filter((f: any) => {
-      // Filter temporary files (files starting with ~$)
-      if (hideTemporaryFiles && f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')) {
+      // Filter temporary files (Office ~$ lock files, Word ~*.tmp like ~WRL2535.tmp)
+      if (hideTemporaryFiles && f?.type !== 'folder' && typeof f?.name === 'string' && (f.name.startsWith('~$') || (f.name.startsWith('~') && f.name.endsWith('.tmp')))) {
         return false;
       }
       
@@ -195,24 +197,13 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
-  // Handle click outside search input to blur and clear
+  // Sync search input when filter is cleared externally (e.g. when FileGrid loads new directory)
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchInputContainerRef.current && !searchInputContainerRef.current.contains(e.target as Node)) {
-        // Clicked outside the search input container
-        if (searchInputRef.current && document.activeElement === searchInputRef.current) {
-          searchInputRef.current.blur();
-          setSearchValue('');
-          setFileSearchFilter('');
-          setStatus('', 'info');
-        }
-      }
-    };
-
-    // Use mousedown instead of click to catch the event before focus changes
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [setFileSearchFilter, setStatus]);
+    if (fileSearchFilter === '') {
+      setSearchValue('');
+      setStatus('', 'info');
+    }
+  }, [fileSearchFilter, setStatus]);
 
   // Exit edit mode when clicking outside the address bar
   useEffect(() => {
@@ -337,23 +328,19 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
-  const handleDownloadsClick = async (e: React.MouseEvent) => {
+  const handleOpenCmdClick = async () => {
     try {
-      const downloadsPath = await window.electronAPI.getDownloadsPath();
-      
-      if (e.ctrlKey) {
-        // Ctrl+click opens new tab
-        addTabToCurrentWindow(downloadsPath);
-        addLog(`Opened new tab for downloads: ${downloadsPath}`);
-        setStatus('Opened new tab for downloads', 'info');
+      const result = await (window.electronAPI as any).openCmdAtDirectory(currentDirectory);
+      if (result?.success) {
+        addLog(`Opened CMD at: ${currentDirectory}`);
+        setStatus('Opened CMD at current directory', 'success');
       } else {
-        setCurrentDirectory(downloadsPath);
-        addLog(`Navigated to downloads: ${downloadsPath}`);
-        setStatus('Navigated to downloads', 'info');
+        addLog(`Failed to open CMD: ${result?.error || 'Unknown error'}`, 'error');
+        setStatus('Failed to open CMD', 'error');
       }
     } catch (error) {
-      addLog(`Failed to access downloads folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      setStatus('Failed to access downloads folder', 'error');
+      addLog(`Failed to open CMD: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to open CMD', 'error');
     }
   }
 
@@ -366,6 +353,7 @@ export const FolderInfoBar: React.FC = () => {
       setSelectedFiles([])
       setSelectedFile(null)
       setClipboard({ files: [], operation: null })
+      setSearchValue('')
       setFileSearchFilter('') // Clear search filter
       
       // Dispatch a force reload event that FileGrid will listen to for immediate reload
@@ -693,7 +681,7 @@ export const FolderInfoBar: React.FC = () => {
         {/* Back/Forward to the left of Home */}
         <Box style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
-            icon={<ChevronLeft size={16} />}
+            icon={<ArrowLeft size={16} />}
             aria-label="Back"
             variant="ghost"
             size="sm"
@@ -704,7 +692,7 @@ export const FolderInfoBar: React.FC = () => {
             onMouseDown={(e) => e.preventDefault()}
           />
           <IconButton
-            icon={<ChevronRight size={16} />}
+            icon={<ArrowRight size={16} />}
             aria-label="Forward"
             variant="ghost"
             size="sm"
@@ -725,20 +713,26 @@ export const FolderInfoBar: React.FC = () => {
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
           />
-          <IconButton
-            icon={<Download size={16} />}
-            aria-label="Downloads folder"
-            variant="ghost"
-            size="sm"
-            mr={1}
-            color={useColorModeValue('#10b981', 'green.200')}
-            onClick={handleDownloadsClick}
-            tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-          />
+          <Tooltip label="Open CMD at current directory" placement="bottom" hasArrow>
+            <IconButton
+              icon={<SquareTerminal size={16} />}
+              aria-label="Open CMD at current directory"
+              variant="ghost"
+              size="sm"
+              mr={1}
+              color={useColorModeValue('#10b981', 'green.200')}
+              onClick={handleOpenCmdClick}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+            />
+          </Tooltip>
           <Tooltip label={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
             <IconButton
-              icon={<Star size={16} />}
+              icon={
+                quickAccessPaths.includes(currentDirectory)
+                  ? <Star size={16} fill="currentColor" strokeWidth={0} />
+                  : <Star size={16} />
+              }
               aria-label="Pin to quick access"
               variant={quickAccessPaths.includes(currentDirectory) ? 'solid' : 'ghost'}
               size="sm"
@@ -749,21 +743,9 @@ export const FolderInfoBar: React.FC = () => {
               onMouseDown={(e) => e.preventDefault()}
             />
           </Tooltip>
-          <IconButton
-            icon={<RefreshCw size={16} />}
-            aria-label="Refresh folder"
-            variant="ghost"
-            size="sm"
-            mr={1}
-            onClick={handleRefresh}
-            color={iconColor}
-            _hover={{ bg: hoverBgColor }}
-            tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-          />
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Flex ref={addressBarRef} flex={1} mx={2} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="1px solid" borderColor={inputBorderColor}>
+        <Flex ref={addressBarRef} flex={1} ml={2} mr={1} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="1px solid" borderColor={inputBorderColor}>
           {isRefreshing && (
             <Box
               position="absolute"
@@ -899,6 +881,36 @@ export const FolderInfoBar: React.FC = () => {
             )}
           </Box>
         </Flex>
+        {/* Refresh - between address bar and search */}
+        <Box ml={1} mr={2} style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <IconButton
+            icon={<RefreshCw size={16} />}
+            aria-label="Refresh folder"
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            color={iconColor}
+            _hover={{ bg: hoverBgColor }}
+            tabIndex={-1}
+            onMouseDown={(e) => e.preventDefault()}
+          />
+        </Box>
+        {/* Open in file explorer - right of refresh */}
+        <Tooltip label="Open in file explorer" placement="bottom" hasArrow>
+          <Box mr={2} style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <IconButton
+              icon={<ExternalLink size={16} />}
+              aria-label="Open in explorer"
+              variant="ghost"
+              size="sm"
+              onClick={handleOpenExplorer}
+              color={iconColor}
+              _hover={{ bg: hoverBgColor }}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+            />
+          </Box>
+        </Tooltip>
         {/* Search Input Field - Same style as address bar, no border */}
         <InputGroup ref={searchInputContainerRef} maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
           <Input
@@ -924,12 +936,6 @@ export const FolderInfoBar: React.FC = () => {
             onClick={(e) => {
               // Only focus when clicking directly on the input
               e.currentTarget.focus();
-            }}
-            onBlur={(e) => {
-              // Clear text when input loses focus
-              setSearchValue('');
-              setFileSearchFilter('');
-              setStatus('', 'info');
             }}
             onChange={(e) => {
               const query = e.target.value;

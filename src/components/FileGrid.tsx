@@ -59,6 +59,7 @@ export const FileGrid: React.FC = () => {
     quickAccessPaths,
     logFileOperation, // Task Timer integration
     fileSearchFilter, // File search filter for current directory
+    setFileSearchFilter,
     contentSearchResults, // Content search results (files matching content search)
     isGroupedByIndex, // Group files by index prefix
     setIsCreateFolderOpen,
@@ -71,13 +72,19 @@ export const FileGrid: React.FC = () => {
 
   // Icon functions removed - using native Windows icons instead
 
+  // Helper: check if a file is a temporary file (Office ~$ lock files, Word ~*.tmp files)
+  const isTemporaryFile = useCallback((name: string): boolean => {
+    if (typeof name !== 'string') return false;
+    return name.startsWith('~$') || (name.startsWith('~') && name.endsWith('.tmp'));
+  }, []);
+
   // File filtering function
   const filterFiles = useCallback((files: any[]) => {
     if (!Array.isArray(files)) return files;
     
     return files.filter((f: any) => {
-      // Filter temporary files (files starting with ~$)
-      if (hideTemporaryFiles && f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$')) {
+      // Filter temporary files (Office ~$ lock files, Word ~*.tmp like ~WRL2535.tmp)
+      if (hideTemporaryFiles && f?.type !== 'folder' && typeof f?.name === 'string' && isTemporaryFile(f.name)) {
         return false;
       }
       
@@ -88,7 +95,7 @@ export const FileGrid: React.FC = () => {
       
       return true;
     });
-  }, [hideTemporaryFiles, hideDotFiles]);
+  }, [hideTemporaryFiles, hideDotFiles, isTemporaryFile]);
 
   // Memoized file size formatting for better performance
   const formatFileSize = useCallback((size: string | undefined) => {
@@ -521,6 +528,7 @@ export const FileGrid: React.FC = () => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : [])
         const filtered = filterFiles(files)
         setFolderItems(filtered)
+        setFileSearchFilter('') // Clear filter when new directory loads - avoids momentary unfiltered flash
         const navEnd = performance.now();
         addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
         addLog(`Loaded directory: ${formatPathForLog(normalizedPath)}`)
@@ -534,7 +542,7 @@ export const FileGrid: React.FC = () => {
         isLoadingRef.current = false
       }
     },
-    [addLog, setFolderItems, filterFiles, setStatus]
+    [addLog, setFolderItems, setFileSearchFilter, filterFiles, setStatus]
   );
 
   // Load directory contents when current directory changes with debouncing
@@ -847,7 +855,7 @@ export const FileGrid: React.FC = () => {
                 {
                   const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
                   const filtered = hideTemporaryFiles
-                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && (f.name.startsWith('~$') || (f.name.startsWith('~') && f.name.endsWith('.tmp'))))) : files)
                     : files;
                   setFolderItems(filtered as any);
                 }
@@ -872,7 +880,7 @@ export const FileGrid: React.FC = () => {
                 {
                   const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
                   const filtered = hideTemporaryFiles
-                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && (f.name.startsWith('~$') || (f.name.startsWith('~') && f.name.endsWith('.tmp'))))) : files)
                     : files;
                   setFolderItems(filtered as any);
                 }
@@ -907,7 +915,7 @@ export const FileGrid: React.FC = () => {
                 {
                   const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
                   const filtered = hideTemporaryFiles
-                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && (f.name.startsWith('~$') || (f.name.startsWith('~') && f.name.endsWith('.tmp'))))) : files)
                     : files;
                   setFolderItems(filtered as any);
                 }
@@ -932,7 +940,7 @@ export const FileGrid: React.FC = () => {
                 {
                   const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : contents);
                   const filtered = hideTemporaryFiles
-                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && f.name.startsWith('~$'))) : files)
+                    ? (Array.isArray(files) ? files.filter((f: any) => !(f?.type !== 'folder' && typeof f?.name === 'string' && (f.name.startsWith('~$') || (f.name.startsWith('~') && f.name.endsWith('.tmp'))))) : files)
                     : files;
                   setFolderItems(filtered as any);
                 }

@@ -553,6 +553,27 @@ export const QuickNavigateOverlay: React.FC = () => {
   useEffect(() => {
     // This useEffect is no longer needed as search functionality is removed
   }, []);
+
+  // Global Escape to close overlay when in search mode (works even when input is blurred after clicking a file)
+  useEffect(() => {
+    if (!isQuickNavigating || !isSearchMode) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsQuickNavigating(false);
+        setInputValue('');
+        setSearchQuery('');
+        setCommandInfo(null);
+        setPreviewFiles([]);
+        setLocalSearchResults([]);
+        setFileSearchFilter('');
+        setContentSearchResults([]);
+      }
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isQuickNavigating, isSearchMode]);
+
   const navigateHistory = (direction: number) => {
     const newIndex = historyIndex + direction;
     if (newIndex >= -1 && newIndex < commandHistory.length) {
@@ -562,14 +583,7 @@ export const QuickNavigateOverlay: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    console.log('[QuickNavigateOverlay] Input keyDown:', e.key, {
-      isQuickNavigating,
-      isSearchMode,
-      target: (e.target as HTMLElement)?.tagName,
-    });
-    
     if (e.key === 'Escape') {
-      console.log('[QuickNavigateOverlay] Escape pressed - closing');
       setIsQuickNavigating(false);
       setInputValue('');
       setSearchQuery('');
@@ -830,7 +844,7 @@ export const QuickNavigateOverlay: React.FC = () => {
 
   if (!isQuickNavigating) return null;
   
-  // In search mode, show input centered without overlay/blur
+  // In search mode, show input centered - pointer-events: none on backdrop so clicks pass through to FileGrid
   if (isSearchMode) {
     return (
       <Box 
@@ -843,10 +857,7 @@ export const QuickNavigateOverlay: React.FC = () => {
         display="flex"
         alignItems="center"
         justifyContent="center"
-        onClick={() => {
-          setIsQuickNavigating(false);
-          setFileSearchFilter('');
-        }}
+        pointerEvents="none"
       >
         <Box 
           width="600px" 
@@ -855,10 +866,10 @@ export const QuickNavigateOverlay: React.FC = () => {
           border="5px solid"
           borderColor={highlightColor}
           bg={bgColor}
-          onClick={e => e.stopPropagation()}
           position="relative"
           overflow="hidden"
           animation={isContentSearching ? pulseBorderAnimation : undefined}
+          pointerEvents="auto"
         >
           <Box 
             borderRadius="lg" 

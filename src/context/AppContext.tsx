@@ -123,6 +123,7 @@ interface AppContextType {
   setQuickAccessPaths: (paths: string[]) => void;
   addQuickAccessPath: (path: string) => Promise<void>;
   removeQuickAccessPath: (path: string) => Promise<void>;
+  moveQuickAccessPath: (path: string, direction: 'up' | 'down') => Promise<void>;
   // File grouping by index prefix
   isGroupedByIndex: boolean;
   setIsGroupedByIndex: (value: boolean) => void | Promise<void>;
@@ -406,6 +407,34 @@ export const AppProvider: React.FC<{
     }
   }, [setStatus]);
 
+  const moveQuickAccessPath = useCallback(async (path: string, direction: 'up' | 'down') => {
+    const normalized = path?.trim();
+    if (!normalized) return;
+    setQuickAccessPaths(prev => {
+      const idx = prev.indexOf(normalized);
+      if (idx < 0) return prev;
+      if (direction === 'up' && idx === 0) return prev;
+      if (direction === 'down' && idx === prev.length - 1) return prev;
+      const next = [...prev];
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      return next;
+    });
+    try {
+      const current = await settingsService.getSettings();
+      const existing = Array.isArray(current.quickAccessPaths) ? current.quickAccessPaths : [];
+      const idx = existing.indexOf(normalized);
+      if (idx < 0) return;
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= existing.length) return;
+      const updated = [...existing];
+      [updated[idx], updated[swapIdx]] = [updated[swapIdx], updated[idx]];
+      await settingsService.setSettings({ ...current, quickAccessPaths: updated });
+    } catch (e) {
+      console.error('Failed to persist quick access reorder:', e);
+    }
+  }, []);
+
   const setIsGroupedByIndex = useCallback(async (value: boolean) => {
     setIsGroupedByIndexState(value);
     try {
@@ -503,6 +532,7 @@ export const AppProvider: React.FC<{
       setQuickAccessPaths,
       addQuickAccessPath,
       removeQuickAccessPath,
+      moveQuickAccessPath,
       logFileOperation,
       setLogFileOperation,
       isGroupedByIndex,

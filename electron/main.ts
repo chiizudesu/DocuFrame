@@ -1366,6 +1366,42 @@ ipcMain.handle('open-directory', async (_, dirPath: string) => {
   }
 });
 
+ipcMain.handle('open-cmd-at-directory', async (_, dirPath: string) => {
+  try {
+    if (process.platform === 'win32') {
+      // Windows Terminal: new-tab with cmd.exe - starts in correct folder, avoids profile cwd flash & AutoRun duplication
+      const child = spawn('wt.exe', ['new-tab', 'cmd.exe', '/k', `cd /d "${dirPath}"`], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+      });
+      child.on('error', () => {
+        spawn('cmd.exe', ['/K'], { cwd: dirPath, detached: true, stdio: 'ignore', windowsHide: false }).unref();
+      });
+      child.unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', ['-a', 'Terminal', dirPath], {
+        detached: true,
+        stdio: 'ignore'
+      }).unref();
+    } else {
+      spawn('xterm', ['-e', `cd "${dirPath}" && exec $SHELL`], {
+        detached: true,
+        stdio: 'ignore'
+      }).unref().on('error', () => {
+        spawn('gnome-terminal', ['--working-directory', dirPath], {
+          detached: true,
+          stdio: 'ignore'
+        }).unref();
+      });
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error opening CMD at directory:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
 ipcMain.handle('confirm-delete', async (_, fileNames: string[]) => {
   const { response } = await dialog.showMessageBox({
     type: 'warning',

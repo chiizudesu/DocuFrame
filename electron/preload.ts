@@ -18,6 +18,7 @@ interface ElectronAPI {
   executeCommand: (command: string, currentDirectory?: string, options?: any) => Promise<any>;
   transfer: (options: TransferOptions) => Promise<any>;
   openDirectory: (dirPath: string) => Promise<void>;
+  openCmdAtDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
   minimize: () => Promise<void>;
   maximize: () => Promise<void>;
   unmaximize: () => Promise<void>;
@@ -170,6 +171,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   confirmDelete: (fileNames: string[]) => ipcRenderer.invoke('confirm-delete', fileNames),
   openDirectory: (dirPath: string) => ipcRenderer.invoke('open-directory', dirPath),
+  openCmdAtDirectory: (dirPath: string) => ipcRenderer.invoke('open-cmd-at-directory', dirPath),
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   unmaximize: () => ipcRenderer.invoke('window-unmaximize'),

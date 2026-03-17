@@ -206,7 +206,7 @@ export const Layout: React.FC = () => {
         />
       )}
     </GridItem>
-    {/* Main Content Area */}
+    {/* Main Content Area - z-index 0 so dropdowns from header (z-index 10000) render above */}
     <GridItem 
       area="main" 
       bg={mainBgColor} 
@@ -217,6 +217,8 @@ export const Layout: React.FC = () => {
       display="flex" 
       flexDirection="column" 
       minHeight="0"
+      position="relative"
+      zIndex={0}
     >
       <FileGrid />
     </GridItem>

@@ -412,7 +412,7 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
           >
             {fileCount}
           </Box>
-          <Menu closeOnSelect={false} isOpen={isTransferMenuOpen} onClose={() => { setManualFilename(''); setIsTransferMenuOpen(false); }} onOpen={() => setIsTransferMenuOpen(true)}>
+          <Menu closeOnSelect={false} isOpen={isTransferMenuOpen} onClose={() => { setManualFilename(''); setIsTransferMenuOpen(false); }} onOpen={() => setIsTransferMenuOpen(true)} placement="bottom-end" strategy="fixed">
             <MenuButton
               as={IconButton}
               aria-label="Transfer to this group"
@@ -433,7 +433,7 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
               minW="200px"
               maxW="50ch"
               p={3}
-              zIndex={1500}
+              zIndex={10000}
             >
               {transferTemplates.length === 0 ? (
                 <Box py={2.5} px={4} my={0.5} borderRadius="md" bg={menuItemBg}>

@@ -2184,7 +2184,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       <VStack align="start" spacing={1}>
                         <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Hide Temporary Files</FormLabel>
                         <Text fontSize="xs" color={secondaryTextColor}>
-                          Hide files that start with ~$, typically created by Office when a document is open
+                          Hide Office lock files (~$*) and Word temp files (~*.tmp) created when documents are open
                         </Text>
                       </VStack>
                       <Switch

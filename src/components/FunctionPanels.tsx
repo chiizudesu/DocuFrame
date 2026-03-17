@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, Flex, Button, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, ModalCloseButton, Input, Popover, PopoverTrigger, PopoverContent, PopoverBody } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, FolderPlus, PanelRightClose, ExternalLink, Plus, FileSpreadsheet, X, FileType, Wand2, ChevronDown } from 'lucide-react';
+import { Box, Flex, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Input, Popover, PopoverTrigger, PopoverContent, PopoverBody } from '@chakra-ui/react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { OrgCodesDialog } from './OrgCodesDialog';
@@ -160,7 +160,7 @@ const TransferDropdownMenu: React.FC<{
     : 'Template';
 
   return (
-    <Menu closeOnSelect={false} isOpen={isOpen} onClose={handleMenuClose} onOpen={() => onOpenChange(true)} placement="bottom">
+    <Menu closeOnSelect={false} isOpen={isOpen} onClose={handleMenuClose} onOpen={() => onOpenChange(true)} placement="bottom-end" strategy="fixed">
       <Tooltip label="Transfer file from Downloads" placement="bottom" hasArrow>
         <MenuButton
           as={IconButton}
@@ -181,7 +181,7 @@ const TransferDropdownMenu: React.FC<{
         maxW="50ch"
         px={3}
         py={3}
-        zIndex={1500}
+        zIndex={10000}
       >
         <Flex gap={2} align="stretch" w="100%">
           {/* Left column: 25% - Index selector */}
@@ -217,7 +217,7 @@ const TransferDropdownMenu: React.FC<{
                     <ChevronDown size={14} style={{ flexShrink: 0 }} />
                   </Flex>
                 </PopoverTrigger>
-                <PopoverContent w="auto" minW="120px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }}>
+                <PopoverContent w="auto" minW="120px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }} zIndex={10001}>
                   <PopoverBody p={0}>
                     <Box display="flex" flexDirection="column" py={1}>
                       {indexKeys.map((index) => (
@@ -317,7 +317,7 @@ const TransferDropdownMenu: React.FC<{
                     <ChevronDown size={14} style={{ flexShrink: 0 }} />
                   </Flex>
                 </PopoverTrigger>
-                <PopoverContent w="auto" minW="200px" maxW="400px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }}>
+                <PopoverContent w="auto" minW="200px" maxW="400px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }} zIndex={10001}>
                   <PopoverBody p={0}>
                     <Box display="flex" flexDirection="column" py={1}>
                       {templates.length === 0 ? (
@@ -482,7 +482,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     folderItems,
     selectedFiles,
     setSelectedFiles,
-    setSelectedFile,
     setLogFileOperation,
     setIsSettingsOpen,
     isGroupedByIndex,
@@ -512,23 +511,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   const [isCalculatorOpen, setCalculatorOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
-  // Input dialog state
-  const [inputDialog, setInputDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    placeholder: string;
-    onSubmit: (value: string) => Promise<void>;
-  }>({
-    isOpen: false,
-    title: '',
-    placeholder: '',
-    onSubmit: async () => {}
-  });
-  const [inputValue, setInputValue] = useState('');
-  
-  // Templates state
-  const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
-  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
   // Transfer dropdown state
   const [transferCommandMappings, setTransferCommandMappings] = useState<{ [key: string]: string }>({});
@@ -1073,25 +1055,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setOnCloseMinimizedDialog(() => handleCloseMinimizedDialog);
   }, [setOnRestoreDialog, setOnCloseMinimizedDialog]);
 
-  // Load templates function
-  const loadTemplates = async () => {
-    try {
-      setIsLoadingTemplates(true);
-      const result = await (window.electronAPI as any).getWorkpaperTemplates();
-      if (result.success) {
-        setTemplates(result.templates || []);
-      } else {
-        console.warn('Failed to load workpaper templates:', result.message);
-        setTemplates([]);
-      }
-    } catch (error) {
-      console.error('Error loading workpaper templates:', error);
-      setTemplates([]);
-    } finally {
-      setIsLoadingTemplates(false);
-    }
-  };
-
   // Load transfer mappings on mount and when updated
   const loadTransferMappings = useCallback(async () => {
     try {
@@ -1141,26 +1104,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   }, [folderItems]);
 
   const toast = useToast();
-
-  // Handle creating file from template
-  const handleCreateFromTemplate = async (templatePath: string, templateName: string) => {
-    try {
-      const fileName = templateName.replace('.xlsx', '');
-      const destPath = `${currentDirectory}\\${fileName}.xlsx`;
-      
-      await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
-      
-      addLog(`Created ${fileName}.xlsx from template`);
-      setStatus(`Created ${fileName}.xlsx from template`, 'success');
-      
-      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-      setFolderItems(contents);
-    } catch (error) {
-      console.error('Error creating from template:', error);
-      addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      setStatus('Failed to create from template', 'error');
-    }
-  };
 
   // Handle transfer from panel (two-phase dropdown)
   const handleTransferFromPanel = useCallback(async (opts: { command?: string; newName?: string }) => {
@@ -1228,9 +1171,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     isDisabled = false
   }) => {
     const { currentDirectory } = useAppContext();
+    const [showPreview, setShowPreview] = useState(false);
     
     if (action === 'gst_rename') {
-      const [showPreview, setShowPreview] = useState(false);
       return (
         <Box onMouseEnter={() => setShowPreview(true)} onMouseLeave={() => setShowPreview(false)}>
           <Tooltip
@@ -1506,7 +1449,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         <Tooltip label={isPreviewPaneOpen ? 'Hide preview pane' : 'Show preview pane'} placement="bottom" hasArrow>
           <IconButton
             aria-label="Preview pane"
-            icon={<Icon as={PanelRightClose} boxSize={5} />}
+            icon={<Icon as={Columns2} boxSize={5} />}
             size="sm"
             variant={isPreviewPaneOpen ? "solid" : "ghost"}
             bg={isPreviewPaneOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
@@ -1521,6 +1464,8 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             w="40px"
           />
         </Tooltip>
+
+        <Divider orientation="vertical" borderColor={dividerColor} h="30px" />
 
         <TransferDropdownMenu
           isOpen={isTransferMenuOpen}
@@ -1542,176 +1487,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             setTransferManualFilename('');
           }}
         />
-        
-        <Menu onOpen={loadTemplates}>
-          <MenuButton
-            as={IconButton}
-            icon={<Icon as={Plus} boxSize={5} />}
-            aria-label="Create new document"
-            variant="ghost"
-            size="sm"
-            color={buttonColor}
-            _hover={{ bg: buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-          <MenuList minW="200px" borderRadius="md" py={0}>
-            {/* Templates from workpaperTemplateFolderPath */}
-            {templates.length > 0 && (
-              <>
-                {templates.map((template) => (
-                  <MenuItem
-                    key={template.path}
-                    icon={<FileSpreadsheet size={14} />}
-                    onClick={() => handleCreateFromTemplate(template.path, template.name)}
-                    py={1.5}
-                    px={3}
-                    bg={useColorModeValue('#3b82f6', 'blue.700')}
-                    _hover={{ bg: useColorModeValue('#2563eb', 'blue.600') }}
-                    color="white"
-                    borderBottom="1px solid"
-                    borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-                  >
-                    {template.name.replace('.xlsx', '')}
-                  </MenuItem>
-                ))}
-                <Divider borderColor={useColorModeValue('#e5e7eb', 'gray.600')} />
-              </>
-            )}
-            {isLoadingTemplates && (
-              <MenuItem isDisabled py={1.5} px={3}>
-                Loading templates...
-              </MenuItem>
-            )}
-            <MenuItem 
-              icon={<FileSpreadsheet size={14} />} 
-              onClick={() => {
-                setInputValue('');
-                setInputDialog({
-                  isOpen: true,
-                  title: 'New Spreadsheet',
-                  placeholder: 'Enter spreadsheet name',
-                  onSubmit: async (newSpreadsheetName: string) => {
-                    if (!newSpreadsheetName?.trim()) return;
-                    
-                    try {
-                      const fileName = `${newSpreadsheetName}.xlsx`;
-                      const filePath = `${currentDirectory}\\${fileName}`;
-                      
-                      await (window.electronAPI as any).createBlankSpreadsheet(filePath);
-                      
-                      addLog(`Created blank spreadsheet: ${fileName}`);
-                      setStatus(`Created ${fileName}`, 'success');
-                      
-                      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                      setFolderItems(contents);
-                    } catch (error) {
-                      console.error('Error creating spreadsheet:', error);
-                      addLog(`Failed to create spreadsheet: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-                      setStatus('Failed to create spreadsheet', 'error');
-                    }
-                  }
-                });
-              }}
-              py={1.5}
-              px={3}
-              bg={useColorModeValue('#dcfce7', 'green.900')}
-              _hover={{ bg: useColorModeValue('#bbf7d0', 'green.800') }}
-              borderBottom="1px solid"
-              borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-            >
-              New Spreadsheet
-            </MenuItem>
-            <MenuItem 
-              icon={<FileText size={14} />} 
-              onClick={async () => {
-                try {
-                  const fileName = `New Document.docx`;
-                  const filePath = `${currentDirectory}\\${fileName}`;
-                  
-                  await (window.electronAPI as any).createWordDocument(filePath);
-                  
-                  addLog(`Created Word document: ${fileName}`);
-                  setStatus(`Created ${fileName}`, 'success');
-                  
-                  const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                  setFolderItems(contents);
-                } catch (error) {
-                  console.error('Error creating Word document:', error);
-                  addLog(`Failed to create Word document: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-                  setStatus('Failed to create Word document', 'error');
-                }
-              }}
-              py={1.5}
-              px={3}
-              bg={useColorModeValue('#dbeafe', 'blue.900')}
-              _hover={{ bg: useColorModeValue('#bfdbfe', 'blue.800') }}
-              borderBottom="1px solid"
-              borderColor={useColorModeValue('#e5e7eb', 'gray.600')}
-            >
-              New Word Document
-            </MenuItem>
-          </MenuList>
-        </Menu>
-        
-        <Tooltip label="Create folder" placement="bottom" hasArrow>
-          <IconButton
-            aria-label="Create folder"
-            icon={<Icon as={FolderPlus} boxSize={5} />}
-            size="sm"
-            variant="ghost"
-            color={buttonColor}
-            onClick={async () => {
-              const newFolderName = prompt('Enter folder name:');
-              if (!newFolderName?.trim()) return;
-              
-              try {
-                const fullPath = `${currentDirectory}\\${newFolderName}`;
-                await (window.electronAPI as any).createDirectory(fullPath);
-                addLog(`Created folder: ${newFolderName}`);
-                setStatus(`Created folder: ${newFolderName}`, 'success');
-                
-                const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                setFolderItems(contents);
-                // Select the newly created folder so F2 rename works immediately
-                requestAnimationFrame(() => {
-                  setSelectedFiles([newFolderName]);
-                  setSelectedFile(newFolderName);
-                });
-              } catch (error) {
-                console.error('Error creating folder:', error);
-                addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-                setStatus(`Failed to create folder: ${newFolderName}`, 'error');
-              }
-            }}
-            _hover={{ bg: buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
-        
-        <Tooltip label="Open in file explorer" placement="bottom" hasArrow>
-          <IconButton
-            aria-label="Open in explorer"
-            icon={<Icon as={ExternalLink} boxSize={5} />}
-            size="sm"
-            variant="ghost"
-            color={buttonColor}
-            onClick={async () => {
-              try {
-                await (window.electronAPI as any).openDirectory(currentDirectory);
-                addLog(`Opened in file explorer: ${currentDirectory}`);
-                setStatus('Opened in file explorer', 'success');
-              } catch (error) {
-                addLog(`Failed to open in file explorer: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-                setStatus('Failed to open in file explorer', 'error');
-              }
-            }}
-            _hover={{ bg: buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
       </Flex>
       
       {/* Right side: Settings */}
@@ -1797,59 +1572,5 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       isOpen={isClientSearchOpen} 
       onClose={() => setClientSearchOpen(false)} 
     />
-    {/* Input Dialog */}
-    <Modal 
-      isOpen={inputDialog.isOpen} 
-      onClose={() => setInputDialog({ ...inputDialog, isOpen: false })}
-      size="md"
-      isCentered
-    >
-      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={useColorModeValue('white', 'gray.800')}>
-        <ModalHeader>{inputDialog.title}</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <Input
-            placeholder={inputDialog.placeholder}
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && inputValue.trim()) {
-                inputDialog.onSubmit(inputValue.trim()).then(() => {
-                  setInputDialog({ ...inputDialog, isOpen: false });
-                  setInputValue('');
-                });
-              }
-            }}
-            autoFocus
-          />
-        </ModalBody>
-        <ModalFooter>
-          <Button 
-            variant="ghost" 
-            mr={3} 
-            onClick={() => {
-              setInputDialog({ ...inputDialog, isOpen: false });
-              setInputValue('');
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            colorScheme="blue"
-            onClick={async () => {
-              if (inputValue.trim()) {
-                await inputDialog.onSubmit(inputValue.trim());
-                setInputDialog({ ...inputDialog, isOpen: false });
-                setInputValue('');
-              }
-            }}
-            isDisabled={!inputValue.trim()}
-          >
-            Create
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
   </>;
 };

@@ -809,7 +809,8 @@ const AppContent: React.FC = () => {
 
       // Navigate up one directory level (configurable shortcut, default Backspace)
       // Uses eventMatchesShortcut so modifiers like Ctrl are not matched (e.g. Ctrl+Backspace = jump mode on parent)
-      if (enableBackspaceNavigationShortcut && !isInputFocused && !isQuickNavigating && !isJumpModeActive && eventMatchesShortcut(e, backspaceNavigationShortcut)) {
+      // Allow when overlay is active - when search input is focused, isInputFocused blocks this so backspace deletes text
+      if (enableBackspaceNavigationShortcut && !isInputFocused && !isJumpModeActive && eventMatchesShortcut(e, backspaceNavigationShortcut)) {
         e.preventDefault();
         const parentPath = getParentDirectory(currentDirectory);
         if (parentPath && parentPath !== currentDirectory) {

@@ -1,5 +1,17 @@
 /* Modern Minimal Scrollbars - Electron/Chakra UI Compatible */
 
+/* Prevent body scrollbars when tooltips extend beyond viewport - tooltips use fixed positioning */
+html, body {
+  overflow: hidden;
+}
+
+/* Chakra portal (tooltips, menus) - allow content to extend without scrollbars */
+.chakra-portal,
+.chakra-ui-portal,
+[data-popper-placement] {
+  overflow: visible !important;
+}
+
 html, body, .chakra-ui-portal, .chakra-ui-light, .chakra-ui-dark, * {
   scrollbar-width: thin;
   scrollbar-color: rgba(80, 80, 80, 0.7) transparent !important;

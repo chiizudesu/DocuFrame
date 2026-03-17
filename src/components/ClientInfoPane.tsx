@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, Flex, Divider, useColorModeValue, Icon } from '@chakra-ui/react';
-import { Folder, Star } from 'lucide-react';
+import { Box, Text, Flex, Divider, useColorModeValue, Icon, IconButton, HStack } from '@chakra-ui/react';
+import { Folder, Star, ChevronUp, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 export const ClientInfoPane: React.FC = () => {
@@ -9,6 +9,7 @@ export const ClientInfoPane: React.FC = () => {
     rootDirectory,
     quickAccessPaths,
     removeQuickAccessPath,
+    moveQuickAccessPath,
   } = useAppContext();
 
   const bgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright sidebar; dark: unchanged
@@ -85,7 +86,6 @@ export const ClientInfoPane: React.FC = () => {
               display="flex"
               flexDirection="column"
               bg={transferBg}
-              borderRadius="md"
               overflow="hidden"
             >
               {/* Folders list */}
@@ -98,102 +98,15 @@ export const ClientInfoPane: React.FC = () => {
                 minH="100px"
               >
                 <>
-                  {/* Hard-coded shortcuts at the top */}
-                  <Flex
-                    align="center"
-                    px={4}
-                    py={1.5}
-                    fontSize="sm"
-                    _hover={{
-                      bg: transferSectionBg
-                    }}
-                    color={textColor}
-                    cursor="pointer"
-                    style={{ userSelect: 'none' }}
-                    onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents')}
-                    borderRadius={0}
-                    position="relative"
-                  >
-                    <Icon
-                      as={Star}
-                      boxSize={2.5}
-                      color="yellow.400"
-                      fill="yellow.400"
-                      position="absolute"
-                      left="8px"
-                      top="50%"
-                      transform="translateY(-50%)"
-                      flexShrink={0}
-                    />
-                    <Icon
-                      as={Folder}
-                      boxSize={4}
-                      mr={2}
-                      ml={2}
-                      color="blue.400"
-                      flexShrink={0}
-                    />
-                    <Text
-                      noOfLines={1}
-                      color="inherit"
-                      fontWeight="normal"
-                    >
-                      Documents
-                    </Text>
-                  </Flex>
-                  
-                  <Flex
-                    align="center"
-                    px={4}
-                    py={1.5}
-                    fontSize="sm"
-                    _hover={{
-                      bg: transferSectionBg
-                    }}
-                    color={textColor}
-                    cursor="pointer"
-                    style={{ userSelect: 'none' }}
-                    onClick={() => setCurrentDirectory('C:\\Users\\EdwardMatias\\Documents\\Scripts')}
-                    borderRadius={0}
-                    position="relative"
-                  >
-                    <Icon
-                      as={Star}
-                      boxSize={2.5}
-                      color="yellow.400"
-                      fill="yellow.400"
-                      position="absolute"
-                      left="8px"
-                      top="50%"
-                      transform="translateY(-50%)"
-                      flexShrink={0}
-                    />
-                    <Icon
-                      as={Folder}
-                      boxSize={4}
-                      mr={2}
-                      ml={2}
-                      color="blue.400"
-                      flexShrink={0}
-                    />
-                    <Text
-                      noOfLines={1}
-                      color="inherit"
-                      fontWeight="normal"
-                    >
-                      Scripts
-                    </Text>
-                  </Flex>
-                  
                   {/* Pinned quick access folders */}
                   {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 ? (
-                    quickAccessPaths.map((pinnedPath) => (
+                    quickAccessPaths.map((pinnedPath, index) => (
                       <Flex
                         key={pinnedPath}
                         align="center"
                         px={4}
                         py={1.5}
-                        fontSize="sm" // Reduced font size by 1px
+                        fontSize="sm"
                         _hover={{
                           bg: transferSectionBg
                         }}
@@ -207,6 +120,7 @@ export const ClientInfoPane: React.FC = () => {
                         }}
                         borderRadius={0}
                         position="relative"
+                        role="group"
                       >
                         {/* Star icon for pinned items */}
                         <Icon
@@ -231,10 +145,34 @@ export const ClientInfoPane: React.FC = () => {
                         <Text
                           noOfLines={1}
                           color="inherit"
-                          fontWeight="normal" // Not bold
+                          fontWeight="normal"
+                          flex={1}
                         >
                           {pinnedPath.split(/[/\\]/).filter(Boolean).pop()}
                         </Text>
+                        {/* Move up/down buttons */}
+                        <HStack spacing={0} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.15s" onClick={(e) => e.stopPropagation()}>
+                          <IconButton
+                            aria-label="Move up"
+                            icon={<ChevronUp size={14} />}
+                            size="xs"
+                            variant="ghost"
+                            minW={6}
+                            h={6}
+                            isDisabled={index === 0}
+                            onClick={() => moveQuickAccessPath(pinnedPath, 'up')}
+                          />
+                          <IconButton
+                            aria-label="Move down"
+                            icon={<ChevronDown size={14} />}
+                            size="xs"
+                            variant="ghost"
+                            minW={6}
+                            h={6}
+                            isDisabled={index === quickAccessPaths.length - 1}
+                            onClick={() => moveQuickAccessPath(pinnedPath, 'down')}
+                          />
+                        </HStack>
                       </Flex>
                     ))
                   ) : null}
