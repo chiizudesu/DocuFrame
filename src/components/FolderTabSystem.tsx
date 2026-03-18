@@ -69,14 +69,28 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null); // For file drag/drop
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  // Light theme: light tab bar; dark theme: dark (unchanged)
-  const bgColor = useColorModeValue('#f1f5f9', 'gray.900');
+  // Light theme: Windows 11-style - tab bar slightly darker than content for contrast
+  const bgColor = useColorModeValue('#e2e8f0', 'gray.900');
   const activeBg = useColorModeValue('white', 'gray.700');
   const inactiveBg = useColorModeValue('gray.100', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
   // Subtle separator: 3px gap with 1px line on the 2nd pixel (like File Explorer)
   const separatorColor = useColorModeValue('gray.400', 'gray.600');
   const hoverBg = useColorModeValue('gray.200', 'gray.750');
+  // Tab-specific colors (must be at top level - hooks can't be called inside map)
+  const fileDropBg = useColorModeValue('blue.500', 'blue.900');
+  const fileDropHoverBg = useColorModeValue('blue.600', 'blue.800');
+  const fileDropTextColor = useColorModeValue('white', 'blue.200');
+  const activeTabTextColor = useColorModeValue('#1a202c', 'white');
+  const inactiveTabTextColor = useColorModeValue('#64748b', 'gray.300');
+  const closeButtonHoverBg = useColorModeValue('gray.200', 'gray.600');
+  const dragIndicatorColor = useColorModeValue('blue.500', 'blue.400');
+  const fileDropBorderColor = useColorModeValue('blue.400', 'blue.500');
+  const addButtonHoverBg = useColorModeValue('gray.200', 'gray.700');
+  const addButtonColor = useColorModeValue('#64748b', 'gray.400');
+  const windowControlColor = useColorModeValue('#64748b', 'gray.400');
+  const windowControlHoverBg = useColorModeValue('#e5e7eb', 'gray.600');
+  const windowControlActiveBg = useColorModeValue('#d1d5db', 'gray.500');
 
   // Helper function to get directory name from path
   function getDirectoryName(path: string): string {
@@ -421,7 +435,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
       ref={tabsRef}
       bg={bgColor}
       px={0}
-      pt={0}
+      pt="3px"
       pb={0}
       position="relative"
       _after={{
@@ -435,12 +449,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
         zIndex: 1,
       }}
     >
-      <Flex align="center" gap="0" height="37px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
+      <Flex align="center" gap="0" height="34px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
         {/* App Icon - Left side */}
         <Box 
           display="flex" 
           alignItems="center" 
-          h="37px" 
+          h="34px" 
           px={2}
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
@@ -451,7 +465,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
         
         {/* Tabs Container with top padding */}
         <Box pt={1} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <Flex align="end" gap="0" height="37px">
+          <Flex align="end" gap="0" height="34px">
             {/* Tabs with | separators and space between */}
             {tabs.map((tab, index) => (
           <React.Fragment key={tab.id}>
@@ -599,7 +613,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 align="center"
                 bg={
                   fileDropTarget === tab.id 
-                    ? useColorModeValue('blue.500', 'blue.900')
+                    ? fileDropBg
                     : activeTabId === tab.id 
                       ? activeBg
                       : inactiveBg
@@ -610,7 +624,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 cursor="pointer"
                 _hover={{ 
                   bg: fileDropTarget === tab.id 
-                    ? useColorModeValue('blue.600', 'blue.800')
+                    ? fileDropHoverBg
                     : activeTabId === tab.id 
                       ? activeBg
                       : hoverBg
@@ -628,7 +642,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 onClick={() => handleTabClick(tab.id)}
                 minW="180px"
                 maxW={activeTabId === tab.id ? '600px' : '260px'}
-                h={activeTabId === tab.id ? '36px' : '30px'}
+                h={activeTabId === tab.id ? '33px' : '27px'}
                 position="relative"
                 opacity={draggedTab === tab.id ? 0.5 : 1}
                 zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
@@ -644,10 +658,10 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 fontSize="sm"
                 color={
                   fileDropTarget === tab.id
-                    ? useColorModeValue('white', 'blue.200')
+                    ? fileDropTextColor
                     : activeTabId === tab.id 
-                      ? useColorModeValue('#1a202c', 'white')
-                      : useColorModeValue('#64748b', 'gray.300')
+                      ? activeTabTextColor
+                      : inactiveTabTextColor
                 }
                 fontWeight={activeTabId === tab.id ? '500' : '400'}
               >
@@ -670,9 +684,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                     opacity={activeTabId === tab.id ? 0.5 : 0.6}
                     _hover={{ 
                       opacity: 1,
-                      bg: activeTabId === tab.id 
-                        ? useColorModeValue('gray.200', 'gray.600')
-                        : useColorModeValue('gray.200', 'gray.600')
+                      bg: closeButtonHoverBg
                     }}
                     onClick={(e: React.MouseEvent) => {
                       e.stopPropagation();
@@ -683,8 +695,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                     justifyContent="center"
                     transition="all 0.15s ease"
                     color={activeTabId === tab.id 
-                      ? useColorModeValue('#1a202c', 'white')
-                      : useColorModeValue('#64748b', 'gray.300')
+                      ? activeTabTextColor
+                      : inactiveTabTextColor
                     }
                   >
                     <X size={14} strokeWidth={2} />
@@ -700,7 +712,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                   top="4px"
                   bottom="4px"
                   w="3px"
-                  bg={useColorModeValue('blue.500', 'blue.400')}
+                  bg={dragIndicatorColor}
                   borderRadius="full"
                   zIndex={4}
                 />
@@ -716,7 +728,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                   bottom="0"
                   borderRadius="6px"
                   border="2px solid"
-                  borderColor={useColorModeValue('blue.400', 'blue.500')}
+                  borderColor={fileDropBorderColor}
                   bg="transparent"
                   zIndex={4}
                   pointerEvents="none"
@@ -729,7 +741,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
           {/* Add new tab button */}
           <Flex
             alignItems="center"
-            h="37px"
+            h="34px"
             px={2}
           >
             <Box
@@ -740,16 +752,16 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
               opacity={0.7}
               _hover={{ 
                 opacity: 1,
-                bg: useColorModeValue('gray.200', 'gray.700')
+                bg: addButtonHoverBg
               }}
               onClick={() => addNewTab()}
               display="flex"
               alignItems="center"
               justifyContent="center"
               transition="all 0.15s ease"
-              color={useColorModeValue('#64748b', 'gray.400')}
-              h="30px"
-              w="30px"
+              color={addButtonColor}
+              h="27px"
+              w="27px"
             >
               <Plus size={16} strokeWidth={2} />
             </Box>
@@ -762,7 +774,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
         
         {/* Window Controls - Right side */}
         <Flex 
-          height="37px" 
+          height="34px" 
           align="center" 
           justify="flex-end"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
@@ -773,37 +785,37 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             variant="ghost"
             size="sm"
             onClick={handleMinimize}
-            color={useColorModeValue('#64748b', 'gray.400')}
-            _hover={{ bg: useColorModeValue('#e5e7eb', 'gray.600') }}
+            color={windowControlColor}
+            _hover={{ bg: windowControlHoverBg }}
             _focus={{ boxShadow: 'none', bg: 'transparent' }}
-            _active={{ bg: useColorModeValue('#d1d5db', 'gray.500') }}
+            _active={{ bg: windowControlActiveBg }}
             borderRadius={0}
             minW="46px"
-            h="37px"
+            h="34px"
             p={0}
             display="flex"
             alignItems="center"
             justifyContent="center"
             cursor="default"
-            icon={<Box w="10px" h="1px" bg={useColorModeValue('#64748b', 'gray.400')} borderRadius="1px" />}
+            icon={<Box w="10px" h="1px" bg={windowControlColor} borderRadius="1px" />}
           />
           {/* Maximize/Restore */}
           <Box
             as="button"
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
             onClick={isMaximized ? handleUnmaximize : handleMaximize}
-            color={useColorModeValue('#64748b', 'gray.400')}
+            color={windowControlColor}
             bg="transparent"
             border="none"
             cursor="default"
             outline="none"
             transition="background-color 0.2s"
-            _hover={{ bg: useColorModeValue('#e5e7eb', 'gray.600') }}
+            _hover={{ bg: windowControlHoverBg }}
             _focus={{ boxShadow: 'none', bg: 'transparent' }}
-            _active={{ bg: useColorModeValue('#d1d5db', 'gray.500') }}
+            _active={{ bg: windowControlActiveBg }}
             borderRadius={0}
             minW="46px"
-            h="37px"
+            h="34px"
             p={0}
             display="flex"
             alignItems="center"
@@ -856,13 +868,13 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             variant="ghost"
             size="sm"
             onClick={handleClose}
-            color={useColorModeValue('#64748b', 'gray.400')}
+            color={windowControlColor}
             _hover={{ bg: '#ef4444', color: 'white' }}
             _focus={{ boxShadow: 'none', bg: 'transparent' }}
             _active={{ bg: '#dc2626', color: 'white' }}
             borderRadius={0}
             minW="46px"
-            h="37px"
+            h="34px"
             p={0}
             display="flex"
             alignItems="center"

@@ -5,7 +5,6 @@ export interface Config {
   clientbasePath?: string;
   templateFolderPath?: string;
   workpaperTemplateFolderPath?: string;
-  showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
   calculatorShortcut?: string;

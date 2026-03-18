@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, createContext, useContext, useCallback, ReactNode } from 'react';
 import { settingsService } from '../services/settings';
+import { normalizePath } from '../utils/path';
 
 interface FileItem {
   name: string;
@@ -19,9 +20,7 @@ interface LogEntry {
 interface AppContextType {
   currentDirectory: string;
   setCurrentDirectory: (path: string) => void;
-  outputLogs: LogEntry[];
   addLog: (message: string, type?: LogEntry['type']) => void;
-  clearLogs: () => void;
   // Footer status system - independent of logs
   statusMessage: string;
   statusType: 'info' | 'success' | 'error' | 'default';
@@ -51,8 +50,6 @@ interface AppContextType {
   setApiKey: (key: string) => void;
   isSettingsOpen: boolean;
   setIsSettingsOpen: (isOpen: boolean) => void;
-  showOutputLog: boolean;
-  setShowOutputLog: (show: boolean) => void;
   hideTemporaryFiles: boolean;
   setHideTemporaryFiles: (hide: boolean) => void;
   hideDotFiles: boolean;
@@ -141,7 +138,6 @@ export const AppProvider: React.FC<{
   children
 }) => {
   const [currentDirectory, setCurrentDirectory] = useState<string>('');
-  const [outputLogs, setOutputLogs] = useState<LogEntry[]>([]);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [isQuickNavigating, setIsQuickNavigating] = useState(false);
   const [initialCommandMode, setInitialCommandMode] = useState(false);
@@ -157,7 +153,6 @@ export const AppProvider: React.FC<{
   const [rootDirectory, setRootDirectoryState] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [showOutputLog, setShowOutputLog] = useState(true);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
   const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
@@ -194,8 +189,10 @@ export const AppProvider: React.FC<{
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
-  // File grouping by index prefix (default true, persisted)
+  // File grouping by index prefix - per-directory preference (default true for new dirs)
   const [isGroupedByIndex, setIsGroupedByIndexState] = useState<boolean>(true);
+  const [fileGridGroupByIndexPreferences, setFileGridGroupByIndexPreferences] = useState<Record<string, boolean>>({});
+  const [isGroupedByIndexDefault, setIsGroupedByIndexDefault] = useState<boolean>(true);
   
   // Task Timer file operation logging
   const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
@@ -214,9 +211,7 @@ export const AppProvider: React.FC<{
         setRootDirectoryState(settings.rootPath);
         setCurrentDirectory(settings.rootPath);
       }
-      // Load showOutputLog setting, default to true if not set
-      setShowOutputLog(settings.showOutputLog !== false);
-      // NEW: Load hideTemporaryFiles (default true when unset)
+      // Load hideTemporaryFiles (default true when unset)
       setHideTemporaryFiles(settings.hideTemporaryFiles !== false);
       // NEW: Load hideDotFiles (default true when unset)
       setHideDotFiles(settings.hideDotFiles !== false);
@@ -256,7 +251,8 @@ export const AppProvider: React.FC<{
       }
       setEnableBackspaceNavigationShortcut(settings.enableBackspaceNavigationShortcut !== false);
       setShowClientInfoBar(settings.showClientInfoBar !== false);
-      setIsGroupedByIndexState(settings.isGroupedByIndex !== false);
+      setIsGroupedByIndexDefault(settings.isGroupedByIndex !== false);
+      setFileGridGroupByIndexPreferences(settings.fileGridGroupByIndexPreferences || {});
 
       // Load quick access pinned paths
       if (Array.isArray(settings.quickAccessPaths)) {
@@ -296,6 +292,14 @@ export const AppProvider: React.FC<{
     }
   }, [currentDirectory]);
 
+  // Sync layer/group header preference when directory changes (per-directory)
+  useEffect(() => {
+    const key = normalizePath(currentDirectory || '');
+    const pref = fileGridGroupByIndexPreferences[key];
+    const effective = pref !== undefined ? pref : isGroupedByIndexDefault;
+    setIsGroupedByIndexState(effective);
+  }, [currentDirectory, fileGridGroupByIndexPreferences, isGroupedByIndexDefault]);
+
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
     setRootDirectoryState(path);
@@ -325,14 +329,8 @@ export const AppProvider: React.FC<{
     }
   };
 
-  const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
-    const timestamp = new Date().toLocaleTimeString();
-    setOutputLogs(prev => [...prev, { message, timestamp, type }]);
-  }, []);
-
-  const clearLogs = useCallback(() => {
-    setOutputLogs([]);
-    setStatus('Cleared logs', 'success');
+  const addLog = useCallback((_message: string, _type?: LogEntry['type']) => {
+    // Output log removed - no-op for backward compatibility
   }, []);
 
   const setStatus = useCallback((message: string, type: 'info' | 'success' | 'error' | 'default' = 'default') => {
@@ -442,22 +440,23 @@ export const AppProvider: React.FC<{
   }, []);
 
   const setIsGroupedByIndex = useCallback(async (value: boolean) => {
+    const key = normalizePath(currentDirectory || '');
+    const newPrefs = { ...fileGridGroupByIndexPreferences, [key]: value };
+    setFileGridGroupByIndexPreferences(newPrefs);
     setIsGroupedByIndexState(value);
     try {
       const current = await settingsService.getSettings();
-      await settingsService.setSettings({ ...current, isGroupedByIndex: value });
+      await settingsService.setSettings({ ...current, fileGridGroupByIndexPreferences: newPrefs });
     } catch (e) {
-      console.error('Failed to persist group by index setting:', e);
+      console.error('Failed to persist group by index preference:', e);
     }
-  }, []);
+  }, [currentDirectory, fileGridGroupByIndexPreferences]);
 
   return (
     <AppContext.Provider value={{
       currentDirectory,
       setCurrentDirectory: setCurrentDirectoryWithValidation,
-      outputLogs,
       addLog,
-      clearLogs,
       statusMessage,
       statusType,
       setStatus,
@@ -481,8 +480,6 @@ export const AppProvider: React.FC<{
       setApiKey,
       isSettingsOpen,
       setIsSettingsOpen: setIsSettingsOpenWithStatus,
-      showOutputLog,
-      setShowOutputLog,
       hideTemporaryFiles,
       setHideTemporaryFiles,
       hideDotFiles,

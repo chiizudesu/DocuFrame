@@ -8,10 +8,10 @@ export const Footer: React.FC = () => {
     selectedFiles
   } = useAppContext();
   
-  // Light mode footer colors
+  // Match file grid row styling
   const bgColor = useColorModeValue('#f8fafc', '#181b20');
   const borderColor = useColorModeValue('#e2e8f0', '#181b20');
-  const textColor = useColorModeValue('#64748b', 'gray.500');
+  const textColor = useColorModeValue('#64748b', 'gray.400');
   
   // Format file size function
   const formatFileSize = (size: string | undefined) => {
@@ -65,7 +65,6 @@ export const Footer: React.FC = () => {
     >
       <Text 
         fontSize="xs" 
-        fontFamily="monospace" 
         color={textColor} 
         isTruncated 
         maxW="70%" 

@@ -7,7 +7,6 @@ export interface AppSettings {
   clientbasePath?: string;
   templateFolderPath?: string;
   workpaperTemplateFolderPath?: string;
-  showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
   calculatorShortcut?: string;
@@ -49,6 +48,9 @@ export interface AppSettings {
   pomodoroCustomSoundPath?: string; // Currently selected sound file (absolute path)
   pomodoroSoundFolder?: string; // Folder containing ringtone files to cycle through
   pomodoroSoundVolume?: number; // Sound volume 50-200% (default 100)
+  fileGridSortPreferences?: Record<string, { sortColumn: string; sortDirection: string }>; // Per-directory sort (path -> { sortColumn, sortDirection })
+  fileGridColumnWidths?: { name: number; size: number; modified: number; type: number }; // Global column widths (consistent across directories)
+  fileGridGroupByIndexPreferences?: Record<string, boolean>; // Per-directory: show layer/group header when grouping by index (path -> boolean)
 
 }
 

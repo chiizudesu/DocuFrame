@@ -168,6 +168,7 @@ const TransferDropdownMenu: React.FC<{
           aria-label="Transfer file from Downloads"
           variant="ghost"
           size="sm"
+          borderRadius={0}
           color={buttonColor}
           _hover={{ bg: buttonHoverBg }}
           h="40px"
@@ -177,6 +178,7 @@ const TransferDropdownMenu: React.FC<{
       <MenuList
         bg={menuListBg}
         borderColor={menuListBorder}
+        borderRadius={0}
         minW="320px"
         maxW="50ch"
         px={3}
@@ -201,7 +203,7 @@ const TransferDropdownMenu: React.FC<{
                     py={2}
                     px={3}
                     fontSize="sm"
-                    borderRadius="md"
+                    borderRadius={0}
                     bg={menuItemBg}
                     border="1px solid"
                     borderColor={menuListBorder}
@@ -254,7 +256,7 @@ const TransferDropdownMenu: React.FC<{
                   py={2}
                   px={3}
                   fontSize="sm"
-                  borderRadius="md"
+                  borderRadius={0}
                   bg={inputBg}
                   border="1px solid"
                   borderColor={menuListBorder}
@@ -299,7 +301,7 @@ const TransferDropdownMenu: React.FC<{
                     py={2}
                     px={3}
                     fontSize="sm"
-                    borderRadius="md"
+                    borderRadius={0}
                     bg={menuItemBg}
                     border="1px solid"
                     borderColor={menuListBorder}
@@ -364,7 +366,7 @@ const TransferDropdownMenu: React.FC<{
                   py={2}
                   px={3}
                   fontSize="sm"
-                  borderRadius="md"
+                  borderRadius={0}
                   bg={inputBg}
                   border="1px solid"
                   borderColor={menuListBorder}
@@ -1187,7 +1189,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             color={useColorModeValue('gray.800', 'white')}
             p={0}
             minW="340px"
-            borderRadius="md"
+            borderRadius={0}
             boxShadow="lg"
           >
             <IconButton
@@ -1195,6 +1197,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
               icon={<Icon as={icon} boxSize={5} />}
               size="sm"
               variant="ghost"
+              borderRadius={0}
               color={isDisabled ? 'gray.400' : color}
               onClick={() => !isDisabled && handleAction(action)}
               isDisabled={isDisabled}
@@ -1216,6 +1219,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           icon={<Icon as={icon} boxSize={5} />}
           size="sm"
           variant="ghost"
+          borderRadius={0}
           color={isDisabled ? 'gray.400' : color}
           onClick={() => !isDisabled && handleAction(action)}
           isDisabled={isDisabled}
@@ -1252,6 +1256,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       h="50px" 
       px={2} 
       gap={1}
+      borderRadius={0}
       bg={useColorModeValue('#f8fafc', 'gray.900')}
     >
       {/* GST Functions */}
@@ -1393,6 +1398,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
                       icon={<Icon as={DialogIcon} boxSize={5} />}
                       size="sm"
                       variant="solid"
+                      borderRadius={0}
                       bg={minimizedIconActiveBg}
                       color={minimizedIconColor}
                       onClick={() => handleRestoreDialog(dialog.type)}
@@ -1410,7 +1416,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
                     right={-1}
                     variant="solid"
                     colorScheme="red"
-                    borderRadius="full"
+                    borderRadius={0}
                     minW="16px"
                     h="16px"
                     opacity={0}
@@ -1439,6 +1445,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             icon={<Icon as={Layers} boxSize={5} />}
             size="sm"
             variant={isGroupedByIndex ? "solid" : "ghost"}
+            borderRadius={0}
             bg={isGroupedByIndex ? useColorModeValue('blue.600', 'blue.700') : undefined}
             color={isGroupedByIndex ? "white" : buttonColor}
             onClick={() => setIsGroupedByIndex(!isGroupedByIndex)}
@@ -1454,6 +1461,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             icon={<Icon as={Columns2} boxSize={5} />}
             size="sm"
             variant={isPreviewPaneOpen ? "solid" : "ghost"}
+            borderRadius={0}
             bg={isPreviewPaneOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
             color={isPreviewPaneOpen ? "white" : buttonColor}
             onClick={() => {
@@ -1473,6 +1481,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             icon={<Icon as={Brain} boxSize={5} />}
             size="sm"
             variant={isAIFileManagerOpen ? "solid" : "ghost"}
+            borderRadius={0}
             bg={isAIFileManagerOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
             color={isAIFileManagerOpen ? "white" : buttonColor}
             onClick={() => {
@@ -1517,6 +1526,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           aria-label="Settings" 
           variant="ghost" 
           size="sm" 
+          borderRadius={0}
           onClick={handleSettingsClick} 
           color={buttonColor}
           h="40px"

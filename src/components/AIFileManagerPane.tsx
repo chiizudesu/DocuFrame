@@ -81,14 +81,14 @@ export const AIFileManagerPane: React.FC = () => {
   const commandInputRef = useRef<HTMLInputElement>(null);
   const commandAreaRef = useRef<HTMLDivElement>(null);
 
-  const bgColor = useColorModeValue('white', 'gray.800');
+  const bgColor = useColorModeValue('#f8fafc', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const panelBg = useColorModeValue('gray.50', 'gray.700');
   const itemBgColor = useColorModeValue('gray.50', 'gray.700');
   const textColor = useColorModeValue('gray.800', 'gray.100');
   const textColorMuted = useColorModeValue('gray.600', 'gray.300');
   const textColorSubtle = useColorModeValue('gray.500', 'gray.400');
-  const resultBg = useColorModeValue('yellow.50', 'gray.900');
+  const resultBg = useColorModeValue('#f8fafc', 'gray.900');
   const successColor = useColorModeValue('green.600', 'green.400');
   const errorColor = useColorModeValue('red.600', 'red.400');
   const hoverBg = useColorModeValue('gray.100', 'gray.600');

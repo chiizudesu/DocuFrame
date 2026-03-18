@@ -100,7 +100,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
       position="relative"
       border="2px solid"
       borderColor={isSelected ? 'blue.500' : borderColor}
-      borderRadius="sm"
+      borderRadius={0}
       overflow="hidden"
       cursor="pointer"
       bg={bgColor}
@@ -136,7 +136,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
           right={1}
           bg="blue.500"
           color="white"
-          borderRadius="full"
+          borderRadius={0}
           w={5}
           h={5}
           display="flex"
@@ -189,7 +189,6 @@ interface Settings {
   claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
-  showOutputLog?: boolean;
   showClientInfoBar?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
@@ -273,13 +272,19 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
   
   const toast = useToast();
-  const { setRootDirectory, showOutputLog, setShowOutputLog, showClientInfoBar, setShowClientInfoBar, reloadSettings, setAiEditorInstructions: setContextAiEditorInstructions } = useAppContext();
+  const { setRootDirectory, showClientInfoBar, setShowClientInfoBar, reloadSettings, setAiEditorInstructions: setContextAiEditorInstructions } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
   const textColor = useColorModeValue('gray.800', 'white');
   const secondaryTextColor = useColorModeValue('gray.600', 'gray.300');
+  // Tab navigation bar - more contrast (inverse: light sidebar in dark mode, darker sidebar in light mode)
+  const tabBarBg = useColorModeValue('gray.200', 'gray.700');
+  const tabInactiveColor = useColorModeValue('gray.600', 'gray.400');
+  const tabHoverBg = useColorModeValue('gray.300', 'gray.600');
+  const tabSelectedBg = useColorModeValue('white', 'gray.800');
+  const tabSelectedColor = useColorModeValue('gray.800', 'white');
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -396,7 +401,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         claudeApiKey: claudeApiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
-        showOutputLog,
         showClientInfoBar,
         activationShortcut,
         enableActivationShortcut,
@@ -960,29 +964,30 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       {/* Main Content */}
       <Box flex="1" display="flex" overflow="hidden">
         <Tabs variant="line" colorScheme="blue" orientation="vertical" h="full" display="flex" w="full">
+          <Box w="176px" minH="100%" bg={tabBarBg} borderRight="1px solid" borderColor={borderColor} flexShrink={0}>
           <TabList 
-            w="176px"
+            w="full"
             p={4}
             gap={1}
-            borderRight="1px solid"
-            borderColor={borderColor}
-            bg={useColorModeValue('gray.50', 'gray.750')}
+            bg="transparent"
+            flexDirection="column"
+            alignItems="stretch"
           >
             <Tab 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>Paths</Text>
@@ -991,17 +996,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>API & Data</Text>
@@ -1010,17 +1015,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>Shortcuts</Text>
@@ -1029,17 +1034,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>Interface</Text>
@@ -1048,17 +1053,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>Display</Text>
@@ -1067,17 +1072,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>File Grid</Text>
@@ -1086,22 +1091,23 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               justifyContent="flex-start" 
               px={2.5} 
               py={2}
-              borderRadius="sm"
+              borderRadius={0}
               fontSize="sm"
               fontWeight="500"
+              color={tabInactiveColor}
               _selected={{ 
-                bg: 'blue.50', 
-                color: 'blue.600', 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
                 borderLeft: '3px solid',
                 borderLeftColor: 'blue.500',
-                _dark: { bg: 'blue.900', color: 'blue.200' } 
               }}
-              _hover={{ bg: useColorModeValue('white', 'gray.700') }}
+              _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
               <Text>AI</Text>
             </Tab>
           </TabList>
+          </Box>
 
           <TabPanels flex="1" p={0} overflow="hidden">
             {/* Paths Tab */}
@@ -1139,12 +1145,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       placeholder="Enter root path"
                       bg="white"
                       _dark={{ bg: 'gray.600' }}
-                      borderRadius="sm"
+                      borderRadius={0}
                       fontSize="xs"
                       h="31px"
                     />
                     <InputRightElement width="3.5rem" h="31px">
-                      <Button h="22px" size="xs" onClick={handleBrowseFolder} borderRadius="sm">
+                      <Button h="22px" size="xs" onClick={handleBrowseFolder} borderRadius={0}>
                         <Icon as={FolderOpen} boxSize={3.5} />
                       </Button>
                     </InputRightElement>
@@ -1170,12 +1176,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           placeholder="Enter GST template file path"
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
                         <InputRightElement width="3.5rem" h="31px">
-                          <Button h="22px" size="xs" onClick={handleBrowseGstTemplate} borderRadius="sm">
+                          <Button h="22px" size="xs" onClick={handleBrowseGstTemplate} borderRadius={0}>
                             <Icon as={FolderOpen} boxSize={3.5} />
                           </Button>
                         </InputRightElement>
@@ -1194,12 +1200,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           placeholder="Select AI email template folder..." 
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
                         <InputRightElement width="3.5rem" h="31px">
-                          <Button h="22px" size="xs" onClick={handleTemplateFolderChange} borderRadius="sm">
+                          <Button h="22px" size="xs" onClick={handleTemplateFolderChange} borderRadius={0}>
                             <Icon as={FolderOpen} boxSize={3.5} />
                           </Button>
                         </InputRightElement>
@@ -1218,12 +1224,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           placeholder="Select workpaper template folder..." 
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
                         <InputRightElement width="3.5rem" h="31px">
-                          <Button h="22px" size="xs" onClick={handleWorkpaperTemplateFolderChange} borderRadius="sm">
+                          <Button h="22px" size="xs" onClick={handleWorkpaperTemplateFolderChange} borderRadius={0}>
                             <Icon as={FolderOpen} boxSize={3.5} />
                           </Button>
                         </InputRightElement>
@@ -1273,7 +1279,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           placeholder="Enter your OpenAI API key"
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
@@ -1300,7 +1306,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           placeholder="Enter your Claude (Anthropic) API key"
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
@@ -1337,12 +1343,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         placeholder="Enter clientbase CSV file path"
                         bg="white"
                         _dark={{ bg: 'gray.600' }}
-                        borderRadius="sm"
+                        borderRadius={0}
                         fontSize="xs"
                         h="31px"
                       />
                       <InputRightElement width="3.5rem" h="31px">
-                        <Button h="22px" size="xs" onClick={handleBrowseClientbase} borderRadius="sm">
+                        <Button h="22px" size="xs" onClick={handleBrowseClientbase} borderRadius={0}>
                           <Icon as={FolderOpen} boxSize={3.5} />
                         </Button>
                       </InputRightElement>
@@ -1386,7 +1392,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                 <Box
                   border="1px solid"
                   borderColor={borderColor}
-                  borderRadius="sm"
+                  borderRadius={0}
                   overflow="hidden"
                   bg={useColorModeValue('white', 'gray.700')}
                   sx={{
@@ -1651,7 +1657,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </table>
                 </Box>
 
-                <Alert status="info" size="sm" mt={3} borderRadius="sm">
+                <Alert status="info" size="sm" mt={3} borderRadius={0}>
                   <AlertIcon />
           <Box>
                     <AlertTitle fontSize="xs">Shortcut Information</AlertTitle>
@@ -1672,7 +1678,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   bg={useColorModeValue('white', 'gray.800')}
                   border="1px solid"
                   borderColor={borderColor}
-                  borderRadius="md"
+                  borderRadius={0}
                   p={6}
                   boxShadow="xl"
                   zIndex={9999}
@@ -1687,7 +1693,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     <Box
                       border="1px solid"
                       borderColor={borderColor}
-                      borderRadius="sm"
+                      borderRadius={0}
                       p={4}
                       bg={useColorModeValue('gray.50', 'gray.700')}
                       minH="60px"
@@ -1709,7 +1715,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                               px={3}
                               py={1.5}
                               bg={useColorModeValue('gray.200', 'gray.600')}
-                              borderRadius="md"
+                              borderRadius={0}
                               border="1px solid"
                               borderColor={borderColor}
                             >
@@ -1787,7 +1793,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                 </Box>
                 
                 <VStack spacing={2.5} align="stretch">
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
                     <FormControl>
                       <HStack justify="space-between">
                         <VStack align="start" spacing={1}>
@@ -1806,7 +1812,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     </FormControl>
                   </Box>
 
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
                     <FormControl>
                       <HStack justify="space-between">
                         <VStack align="start" spacing={1}>
@@ -1843,7 +1849,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           onChange={(e) => setWorkShiftStart(e.target.value)}
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
@@ -1856,7 +1862,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           onChange={(e) => setWorkShiftEnd(e.target.value)}
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
@@ -1875,7 +1881,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           onChange={(e) => setProductivityTargetHours(parseFloat(e.target.value) || 0)}
                           bg="white"
                           _dark={{ bg: 'gray.600' }}
-                          borderRadius="sm"
+                          borderRadius={0}
                           fontSize="xs"
                           h="31px"
                         />
@@ -1917,26 +1923,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                 </Box>
                 
                 <VStack spacing={2.5} align="stretch">
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Show Output Log</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Toggle the visibility of the output log at the bottom
-                          </Text>
-                        </VStack>
-                        <Switch
-                          isChecked={showOutputLog}
-                          onChange={(e) => setShowOutputLog(e.target.checked)}
-                          colorScheme="blue"
-                          size="sm"
-                        />
-                      </HStack>
-                    </FormControl>
-                  </Box>
-
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
                     <FormControl>
                       <HStack justify="space-between">
                         <VStack align="start" spacing={1}>
@@ -1955,7 +1942,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     </FormControl>
                   </Box>
 
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
                     <FormControl>
                       <HStack justify="space-between">
                         <VStack align="start" spacing={1}>
@@ -1974,7 +1961,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     </FormControl>
                   </Box>
 
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="sm" border="1px solid" borderColor={borderColor}>
+                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
                     <FormControl>
                       <HStack justify="space-between">
                         <VStack align="start" spacing={1}>
@@ -2072,7 +2059,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         bg="white"
                         color="black"
                         _dark={{ bg: 'gray.600', color: 'white' }}
-                        borderRadius="0"
+                        borderRadius={0}
                         fontSize="xs"
                         h="46px"
                         size="sm"
@@ -2111,7 +2098,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           p={8}
                           border="2px dashed"
                           borderColor={borderColor}
-                          borderRadius="sm"
+                          borderRadius={0}
                           textAlign="center"
                           bg={useColorModeValue('gray.50', 'gray.700')}
                         >
@@ -2178,7 +2165,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </Text>
                 </Box>
 
-                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius="sm">
+                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius={0}>
                   <FormControl>
                     <HStack justify="space-between">
                       <VStack align="start" spacing={1}>
@@ -2197,7 +2184,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </FormControl>
                 </Box>
 
-                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius="sm">
+                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius={0}>
                   <FormControl>
                     <HStack justify="space-between">
                       <VStack align="start" spacing={1}>
@@ -2266,7 +2253,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         resize="vertical"
                         bg={useColorModeValue('white', 'gray.700')}
                         borderColor={useColorModeValue('gray.300', 'gray.600')}
-                        borderRadius="0"
+                        borderRadius={0}
                         _hover={{
                           borderColor: useColorModeValue('gray.400', 'gray.500')
                         }}
@@ -2301,7 +2288,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             leftIcon={<Icon as={X} boxSize={3.5} />}
             color={secondaryTextColor}
             _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
-            borderRadius="sm"
+            borderRadius={0}
             size="sm"
           >
             Cancel
@@ -2310,7 +2297,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             colorScheme="blue"
             onClick={handleSave}
             leftIcon={<Icon as={Save} boxSize={3.5} />}
-            borderRadius="sm"
+            borderRadius={0}
             fontWeight="500"
             size="sm"
           >

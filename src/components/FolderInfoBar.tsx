@@ -109,8 +109,8 @@ export const FolderInfoBar: React.FC = () => {
     });
   }
 
-  // Light theme: light header; dark theme: dark header (unchanged)
-  const bgColor = useColorModeValue('white', 'gray.700')
+  // Light theme: subtle off-white for toolbar contrast vs pure white file list (Windows 11 style)
+  const bgColor = useColorModeValue('#f8fafc', 'gray.700')
   const hoverBgColor = useColorModeValue('gray.200', 'blue.700')
   const activeButtonBg = bgColor // Use title bar background color for current path pill
   const activeButtonColor = useColorModeValue('#334155', 'blue.200')
@@ -677,66 +677,61 @@ export const FolderInfoBar: React.FC = () => {
 
   return (
     <>
-      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="33px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
+      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="33px" pl="8px" pr="15px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
         {/* Back/Forward to the left of Home */}
-        <Box style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <Box display="flex" style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
-            icon={<ArrowLeft size={16} />}
+            icon={<ArrowLeft size={18} />}
             aria-label="Back"
             variant="ghost"
             size="sm"
-            mr={1}
+            minW="44px"
+            h="33px"
+            borderRadius={0}
             color={iconColor}
             onClick={handleBackClick}
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
           />
           <IconButton
-            icon={<ArrowRight size={16} />}
+            icon={<ArrowRight size={18} />}
             aria-label="Forward"
             variant="ghost"
             size="sm"
-            mr={1}
+            minW="44px"
+            h="33px"
+            borderRadius={0}
             color={iconColor}
             onClick={handleForwardClick}
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
           />
           <IconButton
-            icon={<Home size={16} />}
+            icon={<Home size={18} />}
             aria-label="Home folder"
             variant="ghost"
             size="sm"
-            mr={1}
+            minW="44px"
+            h="33px"
+            borderRadius={0}
             color={useColorModeValue('#3b82f6', 'blue.200')}
             onClick={handleHomeClick}
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}
           />
-          <Tooltip label="Open CMD at current directory" placement="bottom" hasArrow>
-            <IconButton
-              icon={<SquareTerminal size={16} />}
-              aria-label="Open CMD at current directory"
-              variant="ghost"
-              size="sm"
-              mr={1}
-              color={useColorModeValue('#10b981', 'green.200')}
-              onClick={handleOpenCmdClick}
-              tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-            />
-          </Tooltip>
           <Tooltip label={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
             <IconButton
               icon={
                 quickAccessPaths.includes(currentDirectory)
-                  ? <Star size={16} fill="currentColor" strokeWidth={0} />
-                  : <Star size={16} />
+                  ? <Star size={18} fill="currentColor" strokeWidth={0} />
+                  : <Star size={18} />
               }
               aria-label="Pin to quick access"
               variant={quickAccessPaths.includes(currentDirectory) ? 'solid' : 'ghost'}
               size="sm"
-              mr={1}
+              minW="44px"
+              h="33px"
+              borderRadius={0}
               color={useColorModeValue('#f59e0b', 'yellow.300')}
               onClick={() => addQuickAccessPath(currentDirectory)}
               tabIndex={-1}
@@ -873,7 +868,7 @@ export const FolderInfoBar: React.FC = () => {
                   )}
                   {idx < breadcrumbs.length - 1 && (
                     <Box as="span" display="inline-flex" alignItems="center" mx={1} opacity={0.8} color={textColor}>
-                      <ChevronRight size={14} />
+                      <ChevronRight size={16} />
                     </Box>
                   )}
                 </Flex>
@@ -882,12 +877,13 @@ export const FolderInfoBar: React.FC = () => {
           </Box>
         </Flex>
         {/* Refresh - between address bar and search */}
-        <Box ml={1} mr={2} style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <Box ml={1} mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
-            icon={<RefreshCw size={16} />}
+            icon={<RefreshCw size={18} />}
             aria-label="Refresh folder"
             variant="ghost"
             size="sm"
+            borderRadius={0}
             onClick={handleRefresh}
             color={iconColor}
             _hover={{ bg: hoverBgColor }}
@@ -895,14 +891,32 @@ export const FolderInfoBar: React.FC = () => {
             onMouseDown={(e) => e.preventDefault()}
           />
         </Box>
-        {/* Open in file explorer - right of refresh */}
+        {/* Open CMD at current directory - between refresh and open in explorer */}
+        <Tooltip label="Open CMD at current directory" placement="bottom" hasArrow>
+          <Box mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <IconButton
+              icon={<SquareTerminal size={18} />}
+              aria-label="Open CMD at current directory"
+              variant="ghost"
+              size="sm"
+              borderRadius={0}
+              onClick={handleOpenCmdClick}
+              color={iconColor}
+              _hover={{ bg: hoverBgColor }}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+            />
+          </Box>
+        </Tooltip>
+        {/* Open in file explorer - right of CMD */}
         <Tooltip label="Open in file explorer" placement="bottom" hasArrow>
           <Box mr={2} style={{ WebkitAppRegion: 'no-drag' } as any}>
             <IconButton
-              icon={<ExternalLink size={16} />}
+              icon={<ExternalLink size={18} />}
               aria-label="Open in explorer"
               variant="ghost"
               size="sm"
+              borderRadius={0}
               onClick={handleOpenExplorer}
               color={iconColor}
               _hover={{ bg: hoverBgColor }}

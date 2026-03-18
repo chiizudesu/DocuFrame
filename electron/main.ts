@@ -373,20 +373,32 @@ async function loadConfig(): Promise<Config> {
   }
 }
 
-// Save config
+// Save config - merges with existing config so undefined keys don't overwrite stored values
 async function saveConfig(config: Config) {
   if (!config) {
     throw new Error('Config object is undefined or null');
   }
   
   try {
-    const configData = JSON.stringify(config, null, 2);
+    let existing: Record<string, unknown> = {};
+    try {
+      const data = await fsPromises.readFile(configPath, 'utf-8');
+      existing = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+      // File missing or invalid - start fresh
+    }
+    const merged = { ...existing };
+    for (const [key, value] of Object.entries(config)) {
+      if (value !== undefined) {
+        merged[key] = value;
+      }
+    }
+    const configData = JSON.stringify(merged, null, 2);
     if (!configData) {
       throw new Error('Failed to serialize config to JSON');
     }
-    
     await fsPromises.writeFile(configPath, configData);
-    console.log('[Main] Config saved successfully:', config);
+    console.log('[Main] Config saved successfully');
   } catch (error) {
     console.error('[Main] Error in saveConfig:', error);
     throw error;
@@ -3145,6 +3157,7 @@ const createSettingsWindow = () => {
       show: false,
       frame: false, // Use custom titlebar like main window
       titleBarStyle: 'hidden',
+      roundedCorners: false,
       modal: true, // Make it a true modal window
       parent: mainWindow!, // Make it a child of the main window
       webPreferences: {

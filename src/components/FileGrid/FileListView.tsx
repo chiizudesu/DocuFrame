@@ -44,6 +44,24 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   rowHandlers,
   folderDropHandlers,
 }) => {
+  // Windows 11-style: thin blue outline - box-shadow per cell, only outer edges (no vertical lines between columns)
+  const visibleColumns = columnOrder.filter(c => columnVisibility[c as keyof typeof columnVisibility]);
+  const getSelectionBoxShadow = (col: string) => {
+    if (!fileState.isFileSelected) return undefined;
+    const idx = visibleColumns.indexOf(col);
+    if (idx === -1) return undefined;
+    const isFirst = idx === 0;
+    const isLast = idx === visibleColumns.length - 1;
+    const c = 'var(--chakra-colors-blue-600)';
+    const parts: string[] = [
+      `inset 0 1px 0 0 ${c}`,
+      `inset 0 -1px 0 0 ${c}`,
+    ];
+    if (isFirst) parts.push(`inset 1px 0 0 0 ${c}`);
+    if (isLast) parts.push(`inset -1px 0 0 0 ${c}`);
+    return parts.join(', ');
+  };
+
   return (
     <Box
       as="tr"
@@ -62,12 +80,15 @@ const FileTableRow = React.memo<FileTableRowProps>(({
           return null;
         }
         
+        const selectionShadow = getSelectionBoxShadow(column);
+        
         if (isName) {
           return (
             <Box
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
+              boxShadow={selectionShadow}
               ref={(el: HTMLElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -143,6 +164,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
+              boxShadow={selectionShadow}
             >
               <Text 
                 fontSize="xs" 
@@ -159,6 +181,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
+              boxShadow={selectionShadow}
             >
               <Text 
                 fontSize="xs" 
@@ -182,6 +205,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
               {...cellStyles}
+              boxShadow={selectionShadow}
             >
               <Text 
                 fontSize="xs" 
@@ -469,7 +493,7 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
                 })
               )}
               <MenuDivider borderColor={menuListBorder} my={2} />
-              <Box w="100%" my={0.5} onClick={(e) => e.stopPropagation()}>
+              <Box w="100%" my={0.5} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                 <Input
                   ref={manualInputRef}
                   w="100%"
@@ -885,7 +909,8 @@ export const FileListView: React.FC<FileListViewProps> = ({
             position="relative"
             style={{
               borderCollapse: 'separate',
-              borderSpacing: 0
+              borderSpacing: '0 3px',
+              tableLayout: 'fixed'
             }}
           >
             <colgroup>
@@ -937,7 +962,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
                         if (hasDraggedColumn) return;
                         const rect = e.currentTarget.getBoundingClientRect();
                         const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 8;
+                        const isInResizeArea = clickX > rect.width - 4;
                         if (!isInResizeArea) {
                           handleSort(column as SortColumn);
                         }
@@ -945,7 +970,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
                       onDoubleClick={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 8;
+                        const isInResizeArea = clickX > rect.width - 4;
                         if (!isInResizeArea) {
                           autoFitColumn(column);
                         }
@@ -958,7 +983,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
                       data-column={column}
                       onMouseDown={(e) => handleColumnDragStart(column, e)}
                       opacity={draggingColumn === column ? 0.5 : 1}
-                      borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
+                      borderLeft={draggingColumn && dragTargetColumn === column ? '2px solid #4F46E5' : undefined}
                       transition="all 0.2s ease"
                     >
                       <Flex alignItems="center">
@@ -988,10 +1013,11 @@ export const FileListView: React.FC<FileListViewProps> = ({
                         right={0}
                         top={0}
                         bottom={0}
-                        width="8px"
+                        width="4px"
                         cursor="col-resize"
                         _hover={{ bg: dragGhostAccent }}
                         onMouseDown={(e) => handleResizeStart(column, e)}
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
                         onDoubleClick={() => autoFitColumn(column)}
                         zIndex={10}
                         _after={{
@@ -1191,7 +1217,8 @@ export const FileListView: React.FC<FileListViewProps> = ({
             position="relative"
             style={{
               borderCollapse: 'separate',
-              borderSpacing: 0
+              borderSpacing: '0 3px',
+              tableLayout: 'fixed'
             }}
           >
             <colgroup>
@@ -1246,7 +1273,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
                         
                         const rect = e.currentTarget.getBoundingClientRect();
                         const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 8;
+                        const isInResizeArea = clickX > rect.width - 4;
                         
                         if (!isInResizeArea) {
                           handleSort(column as SortColumn);
@@ -1255,7 +1282,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
                       onDoubleClick={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 8;
+                        const isInResizeArea = clickX > rect.width - 4;
                         
                         if (!isInResizeArea) {
                           autoFitColumn(column);
@@ -1269,7 +1296,7 @@ export const FileListView: React.FC<FileListViewProps> = ({
                       data-column={column}
                       onMouseDown={(e) => handleColumnDragStart(column, e)}
                       opacity={draggingColumn === column ? 0.5 : 1}
-                      borderLeft={draggingColumn && dragTargetColumn === column ? '4px solid #4F46E5' : undefined}
+                      borderLeft={draggingColumn && dragTargetColumn === column ? '2px solid #4F46E5' : undefined}
                       transition="all 0.2s ease"
                     >
                       <Flex alignItems="center">
@@ -1299,10 +1326,11 @@ export const FileListView: React.FC<FileListViewProps> = ({
                         right={0}
                         top={0}
                         bottom={0}
-                        width="8px"
+                        width="4px"
                         cursor="col-resize"
                         _hover={{ bg: dragGhostAccent }}
                         onMouseDown={(e) => handleResizeStart(column, e)}
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
                         onDoubleClick={() => autoFitColumn(column)}
                         zIndex={10}
                         _after={{

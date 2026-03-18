@@ -67,7 +67,6 @@ interface Settings {
   claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
-  showOutputLog?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
   calculatorShortcut?: string;
@@ -98,7 +97,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [enableFileWatching, setEnableFileWatching] = useState(true);
   const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
   const toast = useToast();
-  const { setRootDirectory, showOutputLog, setShowOutputLog } = useAppContext();
+  const { setRootDirectory } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -153,7 +152,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         claudeApiKey: claudeApiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
-        showOutputLog,
         activationShortcut,
         enableActivationShortcut,
         calculatorShortcut,
@@ -837,25 +835,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                   
                   <Box py={6}>
                     <VStack spacing={4} align="stretch">
-                                              <FormControl>
-                          <FormLabel fontSize="sm" color={textColor}>Show Output Log</FormLabel>
-                          <HStack justify="space-between">
-                            <VStack align="start" spacing={0}>
-                              <Text fontSize="sm" color={textColor}>
-                                Display output log area
-                              </Text>
-                              <Text fontSize="xs" color={secondaryTextColor}>
-                                Toggle the visibility of the output log at the bottom
-                              </Text>
-                            </VStack>
-              <Switch
-                isChecked={showOutputLog}
-                onChange={(e) => setShowOutputLog(e.target.checked)}
-                colorScheme="blue"
-              />
-                        </HStack>
-                      </FormControl>
-
                       <FormControl>
                         <FormLabel fontSize="sm" color={textColor}>File System Watching</FormLabel>
                         <HStack justify="space-between">

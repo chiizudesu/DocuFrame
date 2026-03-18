@@ -126,10 +126,50 @@ export const FileGrid: React.FC = () => {
   
   const toast = useToast()
   
-  // All useState hooks next
-  const [isLoading, setIsLoading] = useState(false)
+  // Per-directory sort preferences (remembered when navigating, persisted across restarts)
+  const sortPrefsRef = useRef<Map<string, { sortColumn: SortColumn; sortDirection: SortDirection }>>(new Map())
   const [sortColumn, setSortColumn] = useState<SortColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  
+  // Load persisted sort prefs on mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const config = await (window.electronAPI as any).getConfig()
+        const prefs = config?.fileGridSortPreferences || {}
+        Object.entries(prefs).forEach(([path, val]: [string, any]) => {
+          if (val?.sortColumn && val?.sortDirection) {
+            sortPrefsRef.current.set(path, { sortColumn: val.sortColumn as SortColumn, sortDirection: val.sortDirection as SortDirection })
+          }
+        })
+        const key = normalizePath(currentDirectory || '')
+        const saved = sortPrefsRef.current.get(key)
+        if (saved) {
+          setSortColumn(saved.sortColumn)
+          setSortDirection(saved.sortDirection)
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    load()
+  }, [])
+  
+  // Restore sort when directory changes
+  useEffect(() => {
+    const key = normalizePath(currentDirectory || '')
+    const prefs = sortPrefsRef.current.get(key)
+    if (prefs) {
+      setSortColumn(prefs.sortColumn)
+      setSortDirection(prefs.sortDirection)
+    } else {
+      setSortColumn('name')
+      setSortDirection('asc')
+    }
+  }, [currentDirectory])
+  
+  // All useState hooks next
+  const [isLoading, setIsLoading] = useState(false)
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean
     position: {
@@ -380,7 +420,7 @@ export const FileGrid: React.FC = () => {
   const fileSubTextColor = useColorModeValue('#64748b', 'gray.400')
   const tableBgColor = useColorModeValue('#f8fafc', 'transparent')
   const tableHeadBgColor = useColorModeValue('#f1f5f9', 'gray.800')
-  const tableHeadTextColor = useColorModeValue('#475569', 'gray.300')
+  const tableHeadTextColor = useColorModeValue('#334155', 'gray.300')
   const tableBorderColor = useColorModeValue('#d1d5db', 'gray.700')
 
   // Additional color tokens (hoisted) to avoid calling hooks inside loops/conditionals
@@ -389,9 +429,9 @@ export const FileGrid: React.FC = () => {
   const gridItemDefaultBg = useColorModeValue('#f8f9fc', 'gray.800')
   const hoverBorderColor = useColorModeValue('blue.200', 'blue.700')
   const headerHoverBg = useColorModeValue('gray.200', 'gray.600')
-  const headerStickyBg = useColorModeValue('gray.50', 'gray.900')
+  const headerStickyBg = useColorModeValue('#f1f5f9', 'gray.900')
   const headerDividerBg = useColorModeValue('gray.300', 'gray.700')
-  const rowSelectedBg = useColorModeValue('blue.200', 'blue.900')
+  const rowSelectedBg = useColorModeValue('#cce4f7', 'blue.900')
   const rowHoverBg = useColorModeValue('gray.100', 'gray.700')
   const rowDefaultBg = useColorModeValue('white', 'transparent') // Light: opaque for readability; dark: transparent
   const folderDropBgColor = useColorModeValue('blue.100', 'blue.700')
@@ -587,18 +627,34 @@ export const FileGrid: React.FC = () => {
 
   // Handle column header click for sorting - OPTIMIZED with useCallback
   const handleSort = useCallback((column: SortColumn) => {
-    if (sortColumn === column) {
-      // Toggle direction if same column is clicked
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
-    } else {
-      // Set new column and default to ascending
-      setSortColumn(column)
-      setSortDirection('asc')
-    }
+    if (justFinishedResizingRef.current) return;
+    const newDirection = sortColumn === column
+      ? (sortDirection === 'asc' ? 'desc' : 'asc')
+      : 'asc'
+    const newColumn = sortColumn === column ? sortColumn : column
+    
+    setSortColumn(newColumn)
+    setSortDirection(newDirection)
+    
+    const key = normalizePath(currentDirectory || '')
+    sortPrefsRef.current.set(key, { sortColumn: newColumn, sortDirection: newDirection })
+    
+    // Persist to config (survives app restart)
+    ;(async () => {
+      try {
+        const config = await (window.electronAPI as any).getConfig()
+        const prefs = { ...(config?.fileGridSortPreferences || {}) }
+        prefs[key] = { sortColumn: newColumn, sortDirection: newDirection }
+        await (window.electronAPI as any).setConfig({ ...config, fileGridSortPreferences: prefs })
+      } catch (e) {
+        console.warn('[FileGrid] Failed to persist sort preferences:', e)
+      }
+    })()
+    
     addLog(
-      `Sorting by ${column} (${sortDirection === 'asc' ? 'descending' : 'ascending'})`,
+      `Sorting by ${newColumn} (${newDirection === 'asc' ? 'ascending' : 'descending'})`,
     )
-  }, [sortColumn, sortDirection, addLog])
+  }, [sortColumn, sortDirection, currentDirectory, addLog])
 
   // Open file or navigate folder - OPTIMIZED with useCallback
   const handleOpenOrNavigate = useCallback((file: FileItem) => {
@@ -3030,30 +3086,49 @@ export const FileGrid: React.FC = () => {
     });
   }, [refreshDirectory, currentDirectory, addLog, setStatus, toast]);
 
-  // Column management state - load from localStorage if available
-  const [columnWidths, setColumnWidths] = useState(() => {
-    try {
-      const saved = localStorage.getItem('fileGrid_columnWidths');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Ensure all columns have widths, use defaults for missing ones
-        return {
-          name: parsed.name || 400,
-          size: parsed.size || 100,
-          modified: parsed.modified || 180,
-          type: parsed.type || 100
-        };
-      }
-    } catch (e) {
-      console.error('Error loading column widths:', e);
-    }
-    return {
-      name: 400,
-      size: 100,
-      modified: 180,
-      type: 100
-    };
+  // Column management state - load from config (persisted) or localStorage fallback
+  const [columnWidths, setColumnWidths] = useState<{ name: number; size: number; modified: number; type: number }>({
+    name: 400,
+    size: 100,
+    modified: 180,
+    type: 100
   });
+  const columnWidthsLoadedRef = useRef(false);
+  
+  useEffect(() => {
+    if (columnWidthsLoadedRef.current) return;
+    (async () => {
+      try {
+        const config = await (window.electronAPI as any).getConfig();
+        const saved = config?.fileGridColumnWidths;
+        if (saved && typeof saved.name === 'number' && typeof saved.size === 'number') {
+          setColumnWidths({
+            name: saved.name || 400,
+            size: saved.size || 100,
+            modified: saved.modified || 180,
+            type: saved.type || 100
+          });
+        } else {
+          const local = localStorage.getItem('fileGrid_columnWidths');
+          if (local) {
+            const parsed = JSON.parse(local);
+            const widths = {
+              name: parsed.name || 400,
+              size: parsed.size || 100,
+              modified: parsed.modified || 180,
+              type: parsed.type || 100
+            };
+            setColumnWidths(widths);
+            await (window.electronAPI as any).setConfig({ ...config, fileGridColumnWidths: widths });
+          }
+        }
+        columnWidthsLoadedRef.current = true;
+      } catch (e) {
+        console.error('Error loading column widths:', e);
+        columnWidthsLoadedRef.current = true;
+      }
+    })();
+  }, []);
   
   const [columnOrder, setColumnOrder] = useState(() => {
     try {
@@ -3127,52 +3202,46 @@ export const FileGrid: React.FC = () => {
   const resizeThrottleRef = useRef<NodeJS.Timeout | null>(null);
   const lastResizeTimeRef = useRef<number>(0);
   const RESIZE_THROTTLE_MS = 16; // ~60fps
+  const resizingColumnRef = useRef<string | null>(null);
+  const dragStartXRef = useRef<number>(0);
+  const justFinishedResizingRef = useRef(false);
   
   const handleResizeMove = useCallback((e: MouseEvent) => {
-    if (!resizingColumn) return;
+    const col = resizingColumnRef.current;
+    if (!col) return;
     
     const now = Date.now();
     if (now - lastResizeTimeRef.current >= RESIZE_THROTTLE_MS) {
-      const deltaX = e.clientX - dragStartX;
+      const deltaX = e.clientX - dragStartXRef.current;
       setColumnWidths(prev => {
-        const newWidth = Math.max(50, prev[resizingColumn as keyof typeof prev] + deltaX);
-        return {
-          ...prev,
-          [resizingColumn]: newWidth
-        };
+        const newWidth = Math.max(50, prev[col as keyof typeof prev] + deltaX);
+        return { ...prev, [col]: newWidth };
       });
-      setDragStartX(e.clientX);
+      dragStartXRef.current = e.clientX;
       lastResizeTimeRef.current = now;
     } else {
-      // Throttle resize updates
-      if (resizeThrottleRef.current) {
-        clearTimeout(resizeThrottleRef.current);
-      }
+      if (resizeThrottleRef.current) clearTimeout(resizeThrottleRef.current);
       resizeThrottleRef.current = setTimeout(() => {
-        const deltaX = e.clientX - dragStartX;
+        const deltaX = e.clientX - dragStartXRef.current;
         setColumnWidths(prev => {
-          const newWidth = Math.max(50, prev[resizingColumn as keyof typeof prev] + deltaX);
-          return {
-            ...prev,
-            [resizingColumn]: newWidth
-          };
+          const newWidth = Math.max(50, prev[col as keyof typeof prev] + deltaX);
+          return { ...prev, [col]: newWidth };
         });
-        setDragStartX(e.clientX);
+        dragStartXRef.current = e.clientX;
         lastResizeTimeRef.current = Date.now();
       }, RESIZE_THROTTLE_MS - (now - lastResizeTimeRef.current));
     }
-  }, [resizingColumn, dragStartX]);
+  }, []);
 
   const handleResizeEnd = useCallback(() => {
+    resizingColumnRef.current = null;
     setResizingColumn(null);
-    
-    // Clear any pending throttled resize
+    justFinishedResizingRef.current = true;
+    setTimeout(() => { justFinishedResizingRef.current = false; }, 150);
     if (resizeThrottleRef.current) {
       clearTimeout(resizeThrottleRef.current);
       resizeThrottleRef.current = null;
     }
-    
-    // Remove global event listeners
     document.removeEventListener('mousemove', handleResizeMove);
     document.removeEventListener('mouseup', handleResizeEnd);
   }, [handleResizeMove]);
@@ -3180,12 +3249,10 @@ export const FileGrid: React.FC = () => {
   const handleResizeStart = useCallback((column: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Mark that we're resizing to prevent sorting
+    resizingColumnRef.current = column;
+    dragStartXRef.current = e.clientX;
     setResizingColumn(column);
     setDragStartX(e.clientX);
-    
-    // Add global mouse event listeners for resize
     document.addEventListener('mousemove', handleResizeMove);
     document.addEventListener('mouseup', handleResizeEnd);
   }, [handleResizeMove, handleResizeEnd]);
@@ -3246,13 +3313,19 @@ export const FileGrid: React.FC = () => {
     });
   }, []);
   
-  // Save column widths to localStorage when they change
+  // Save column widths to config (persisted, consistent across directories) - debounced to avoid overwriting other settings during resize
   useEffect(() => {
-    try {
-      localStorage.setItem('fileGrid_columnWidths', JSON.stringify(columnWidths));
-    } catch (e) {
-      console.error('Error saving column widths:', e);
-    }
+    if (!columnWidthsLoadedRef.current) return;
+    const timeoutId = setTimeout(async () => {
+      try {
+        const config = await (window.electronAPI as any).getConfig();
+        await (window.electronAPI as any).setConfig({ ...config, fileGridColumnWidths: columnWidths });
+        localStorage.setItem('fileGrid_columnWidths', JSON.stringify(columnWidths));
+      } catch (e) {
+        console.error('Error saving column widths:', e);
+      }
+    }, 500);
+    return () => clearTimeout(timeoutId);
   }, [columnWidths]);
   
   // Save column order to localStorage when it changes
@@ -3409,22 +3482,6 @@ export const FileGrid: React.FC = () => {
       };
     }
   }, [draggingColumn, handleColumnDragMove, handleColumnDragEnd]);
-
-  // Column resize event listeners
-  useEffect(() => {
-    if (resizingColumn) {
-      const handleMouseMove = (e: MouseEvent) => handleResizeMove(e);
-      const handleMouseUp = () => handleResizeEnd();
-      
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      
-      return () => {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-      };
-    }
-  }, [resizingColumn, handleResizeMove, handleResizeEnd]);
 
   // Lazy icon loading with Intersection Observer
   const iconLoadingRef = useRef(false);
@@ -3881,10 +3938,11 @@ export const FileGrid: React.FC = () => {
     transition: "background 0.1s",
     cursor: "default",
     px: 2,
-    py: 2,
+    py: "5px",
     position: "relative" as const,
     verticalAlign: "middle" as const,
     pointerEvents: 'auto' as const,
+    boxSizing: "border-box" as const,
   }), []);
 
   // Drag selection handlers

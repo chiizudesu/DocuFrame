@@ -6,7 +6,6 @@ import { PreviewPane } from './PreviewPane';
 import { AIFileManagerPane } from './AIFileManagerPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
-import { OutputLog } from './OutputLog';
 import { ThemeToggle } from './ThemeToggle';
 import { FileGrid } from './FileGrid';
 import { FolderTabSystem } from './FolderTabSystem';
@@ -17,12 +16,10 @@ import { settingsService } from '../services/settings';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 
 export const Layout: React.FC = () => {
-  const { showOutputLog, isPreviewPaneOpen, isAIFileManagerOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
+  const { isPreviewPaneOpen, isAIFileManagerOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
   const { clientInfo } = useClientInfo(currentDirectory, rootDirectory);
   const [sidebarWidth, setSidebarWidth] = useState(263);
-  const [logHeight, setLogHeight] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [logMinimized, setLogMinimized] = useState(false);
   const [minimizedDialogs, setMinimizedDialogs] = useState<MinimizedDialog[]>([]);
   const [onRestoreDialog, setOnRestoreDialog] = useState<((type: DialogType) => void) | undefined>();
   const [onCloseMinimizedDialog, setOnCloseMinimizedDialog] = useState<((type: DialogType) => void) | undefined>();
@@ -32,9 +29,6 @@ export const Layout: React.FC = () => {
   const bgColor = useColorModeValue('#ffffff', 'gray.800');
   const headerBgColor = useColorModeValue('white', 'gray.700'); // Light theme: match active tab; dark: unchanged
   const mainBgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright content area; dark: unchanged
-  const isDragging = useRef(false);
-  const startY = useRef(0);
-  const startHeight = useRef(0);
 
   // Sidebar resize functionality
   const isSidebarDragging = useRef(false);
@@ -45,13 +39,6 @@ export const Layout: React.FC = () => {
   const MAX_SIDEBAR_WIDTH = 600;
   const COLLAPSE_THRESHOLD = 180;
   const THROTTLE_MS = 16; // ~60fps
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    isDragging.current = true;
-    startY.current = e.clientY;
-    startHeight.current = logHeight;
-    document.body.style.cursor = 'row-resize';
-  }, [logHeight]);
 
   // Sidebar resize handlers
   const handleSidebarMouseDown = useCallback((e: React.MouseEvent) => {
@@ -83,14 +70,6 @@ export const Layout: React.FC = () => {
         
         lastUpdateTime.current = now;
         
-        // Handle log resize
-        if (isDragging.current) {
-          const delta = e.clientY - startY.current;
-          let newHeight = startHeight.current - delta;
-          newHeight = Math.max(100, Math.min(newHeight, 500)); // Clamp height
-          setLogHeight(newHeight);
-        }
-        
         // Handle sidebar resize
         if (isSidebarDragging.current) {
           const delta = e.clientX - startX.current;
@@ -110,7 +89,6 @@ export const Layout: React.FC = () => {
       if (animationFrame) {
         cancelAnimationFrame(animationFrame);
       }
-      isDragging.current = false;
       isSidebarDragging.current = false;
       document.body.style.cursor = '';
     };
@@ -124,7 +102,7 @@ export const Layout: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [logHeight, sidebarWidth, sidebarCollapsed]);
+  }, [sidebarWidth, sidebarCollapsed]);
 
   const handleActiveTabChange = useCallback((path: string) => {
     // This ensures all path-related functions work with the active tab
@@ -149,9 +127,8 @@ export const Layout: React.FC = () => {
         "tabs tabs tabs tabs"
         "header header header header"
         "sidebar main preview aiFileManager"
-        ${showOutputLog ? '"sidebar footer preview aiFileManager"' : ''}
         "status status status status"
-      `} gridTemplateRows={`auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isAIFileManagerOpen ? '420px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
+      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isAIFileManagerOpen ? '420px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
     <GridItem area="header" bg={headerBgColor} p={0} overflow="hidden" position="relative" zIndex={2}>
       <Box>
@@ -253,30 +230,6 @@ export const Layout: React.FC = () => {
     >
       <AIFileManagerPane />
     </GridItem>
-    {/* Resize Handle for Output Log (only over main content, not sidebar) */}
-    {showOutputLog && !logMinimized && (
-      <Box
-        onMouseDown={handleMouseDown}
-        cursor="row-resize"
-        bg={useColorModeValue('#e5e7eb', 'gray.700')}
-        h="6px"
-        zIndex={10}
-        style={{ gridColumn: '2 / 3', gridRow: 5 }}
-        _hover={{ bg: useColorModeValue('#d1d5db', 'gray.600') }}
-      />
-    )}
-    {/* Output Log */}
-    {showOutputLog && (
-      <GridItem 
-        area="footer" 
-        bg={bgColor} 
-        borderTop="1px" 
-        borderColor={borderColor} 
-        position="relative"
-      >
-        <OutputLog minimized={logMinimized} setMinimized={setLogMinimized} />
-      </GridItem>
-    )}
     {/* Status Footer */}
     <GridItem area="status" bg={bgColor} borderTop="1px" borderColor={borderColor}>
       <Footer />
