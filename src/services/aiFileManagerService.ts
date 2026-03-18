@@ -13,6 +13,7 @@ export type FileOperation =
   | { action: 'removePrefix'; condition: 'all' | { indexEquals: string } | { selection: true } }
   | { action: 'transformCase'; case: 'upper' | 'lower' | 'title'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'smartRename'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
+  | { action: 'contentBasedRename'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'moveToFolder'; targetFolder: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'delete'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'mergePdfs'; outputFilename: string; retainOriginals?: boolean; targetFolder?: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
@@ -509,6 +510,179 @@ Rules:
   }
 }
 
+/** Max chars of PDF text to send per file (avoid token limits) */
+const CONTENT_BASED_RENAME_MAX_CHARS = 2500;
+
+/**
+ * Get AI-suggested names and folder groupings based on PDF content.
+ * Uses readPdfText to extract content, then AI analyzes and suggests rename + optional targetFolder.
+ * @param onContentReading Called with (fileName, index, total) when starting to read each PDF; with (null, 0, 0) when done
+ * @param onContentAnalyzing Called with true when starting AI analysis (after reading), false when done
+ */
+export async function getContentBasedRenameSuggestions(
+  files: FileItem[],
+  userPrompt: string,
+  currentDirectory: string,
+  model: 'sonnet' | 'haiku' = 'sonnet',
+  onContentReading?: (fileName: string | null, index: number, total: number) => void,
+  onContentAnalyzing?: (analyzing: boolean) => void
+): Promise<{ fileName: string; newName: string; targetFolder?: string }[]> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set. Add it in Settings.');
+
+  const pdfFiles = files.filter(f => f.type === 'file' && f.name.toLowerCase().endsWith('.pdf'));
+  if (pdfFiles.length === 0) return [];
+
+  const api = window.electronAPI as { readPdfText?: (path: string) => Promise<string> };
+  if (!api?.readPdfText) throw new Error('PDF text extraction not available.');
+
+  const fileContents: Array<{ fileName: string; content: string }> = [];
+  const total = pdfFiles.length;
+  for (let i = 0; i < pdfFiles.length; i++) {
+    const f = pdfFiles[i];
+    onContentReading?.(f.name, i + 1, total);
+    try {
+      const text = await api.readPdfText(f.path);
+      const truncated = (text || '').trim().slice(0, CONTENT_BASED_RENAME_MAX_CHARS);
+      fileContents.push({ fileName: f.name, content: truncated || '(no text extracted)' });
+    } catch {
+      fileContents.push({ fileName: f.name, content: '(failed to extract text)' });
+    }
+  }
+  onContentReading?.(null, 0, 0);
+  onContentAnalyzing?.(true);
+
+  const contentBlock = fileContents
+    .map(({ fileName, content }) => `--- ${fileName} ---\n${content}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are a file organization assistant. The user wants to rename and optionally group PDF files based on their CONTENT. You will receive extracted text from each PDF.
+
+Rules:
+- Suggest a clear, descriptive new name based on document content (e.g. "Bank Reconciliation - March 2025.pdf")
+- Keep the .pdf extension
+- Optionally suggest targetFolder to group related files (e.g. "Invoices", "Reports"). Use a single folder name only (no nested paths like "A/B"). Omit targetFolder if file should stay in current directory. Do not suggest a folder that matches the current directory name.
+- Return ONLY a JSON array: [{"fileName":"exact current name","newName":"suggested name","targetFolder":"optional folder" or omit}]
+- Include every file in the list
+- No markdown, no explanation`;
+
+  const client = new Anthropic({
+    apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  const response = await client.messages.create({
+    model: modelName,
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'text',
+        text: `User request: ${userPrompt}\n\nCurrent directory name: ${currentDirectory.split(/[/\\]/).filter(Boolean).pop() || '(root)'}\n\nExtracted PDF content:\n\n${contentBlock}\n\nReturn JSON array of {fileName, newName, targetFolder?} for each file. Do not use targetFolder that equals the current directory name.`,
+      }],
+    }],
+    temperature: 0.3,
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected response format from Claude');
+
+  let text = content.text.trim();
+  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) text = jsonMatch[1].trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) return [];
+    const fileNamesSet = new Set(pdfFiles.map(f => f.name));
+    return parsed.filter(
+      (p): p is { fileName: string; newName: string; targetFolder?: string } =>
+        p && typeof p.fileName === 'string' && typeof p.newName === 'string' && fileNamesSet.has(p.fileName)
+    );
+  } catch {
+    return [];
+  } finally {
+    onContentAnalyzing?.(false);
+  }
+}
+
+/**
+ * Expand contentBasedRename operations into PlannedItems (rename + optional move)
+ */
+export async function expandContentBasedRenameOperations(
+  operations: Array<{ action: 'contentBasedRename'; condition: Condition }>,
+  folderItems: FileItem[],
+  currentDirectory: string,
+  userPrompt: string,
+  selectedFileNames: string[] | undefined,
+  model: 'sonnet' | 'haiku',
+  onContentReading?: (fileName: string | null, index: number, total: number) => void,
+  onContentAnalyzing?: (analyzing: boolean) => void
+): Promise<PlannedItem[]> {
+  const items: PlannedItem[] = [];
+  const selectedSet = selectedFileNames?.length ? new Set(selectedFileNames) : undefined;
+
+  for (const op of operations) {
+    const matching = getMatchingItemsForCondition(op.condition, folderItems, selectedFileNames);
+    let pdfFiles = matching.filter(f => f.type === 'file' && f.name.toLowerCase().endsWith('.pdf'));
+    // Sort to match File Manager display order: indexed first, then non-indexed, both by name
+    pdfFiles = [...pdfFiles].sort((a, b) => {
+      const aIdx = extractIndexPrefix(a.name);
+      const bIdx = extractIndexPrefix(b.name);
+      if (aIdx && !bIdx) return -1;
+      if (!aIdx && bIdx) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    if (pdfFiles.length === 0) continue;
+
+    const suggestions = await getContentBasedRenameSuggestions(pdfFiles, userPrompt, currentDirectory, model, onContentReading, onContentAnalyzing);
+    const currentDirName = currentDirectory.split(/[/\\]/).filter(Boolean).pop() || '';
+
+    for (const s of suggestions) {
+      const file = pdfFiles.find(f => f.name === s.fileName);
+      if (!file || s.newName === s.fileName) continue;
+
+      let targetFolder = s.targetFolder?.replace(/^[\\/]+|[\\/]+$/g, '') || '';
+      // Prevent 2-level nesting: take only first segment if AI returned a path (e.g. "Folder/SubFolder")
+      if (targetFolder.includes('/') || targetFolder.includes('\\')) {
+        targetFolder = targetFolder.split(/[/\\]/)[0] || '';
+      }
+      // If targetFolder equals current directory name, we're already in that folder - just rename in place
+      if (targetFolder && targetFolder === currentDirName) {
+        targetFolder = '';
+      }
+
+      if (targetFolder) {
+        const targetDir = normalizePath(joinPath(currentDirectory, targetFolder));
+        const targetPath = normalizePath(joinPath(targetDir, s.newName));
+        items.push({
+          fileName: file.name,
+          filePath: file.path,
+          operation: 'move',
+          newName: targetFolder + '/' + s.newName,
+          targetPath,
+          status: 'pending',
+          isFolder: false,
+        });
+      } else {
+        items.push({
+          fileName: file.name,
+          filePath: file.path,
+          operation: 'rename',
+          newName: s.newName,
+          status: 'pending',
+          isFolder: false,
+        });
+      }
+    }
+  }
+  return items;
+}
+
 /**
  * Parse natural language command into structured operations using Claude
  */
@@ -563,6 +737,10 @@ Valid operations (return ONLY a JSON array, no markdown, no explanation):
 7. smartRename: AI suggests improved/cleaned names for files (e.g. "improve naming", "clean up names", "better names")
    {"action":"smartRename","condition":{"selection":true}}
    {"action":"smartRename","condition":"all"}
+7b. contentBasedRename: ONLY when user explicitly mentions reading/analyzing FILE CONTENT or document content. Extracts PDF text (expensive) and renames/groups by content. Use smartRename for name-only requests.
+   - Use when: "rename by content", "group according to file content", "organize by what's inside"
+   - Do NOT use for: "rename", "improve names", "organize" (use smartRename or moveToFolder instead)
+   {"action":"contentBasedRename","condition":{"selection":true}}
 8. moveToFolder: Move files into a child folder (creates folder if it doesn't exist). Target folder is relative to current directory.
    {"action":"moveToFolder","targetFolder":"finals","condition":{"indexEquals":"G"}}
    {"action":"moveToFolder","targetFolder":"drafts","condition":{"selection":true}}
@@ -624,7 +802,7 @@ If the user's request is ambiguous or cannot be fulfilled, return [].`;
     return parsed.filter(
       (op): op is FileOperation =>
         op && typeof op === 'object' && typeof op.action === 'string' &&
-        ['copyToIndex', 'addPrefix', 'addSuffix', 'removeSuffix', 'removePrefix', 'transformCase', 'smartRename', 'moveToFolder', 'delete', 'mergePdfs', 'extract', 'createCopies'].includes(op.action)
+        ['copyToIndex', 'addPrefix', 'addSuffix', 'removeSuffix', 'removePrefix', 'transformCase', 'smartRename', 'contentBasedRename', 'moveToFolder', 'delete', 'mergePdfs', 'extract', 'createCopies'].includes(op.action)
     );
   } catch {
     return [];

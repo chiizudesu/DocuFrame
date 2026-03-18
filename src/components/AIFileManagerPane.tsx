@@ -10,16 +10,16 @@ import {
   Icon,
   IconButton,
   Checkbox,
-  Select,
   Image,
 } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
-import { X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2 } from 'lucide-react';
+import { X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2, Merge, Trash2, FolderInput, Eraser } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
   parseFileManagerCommand,
   expandOperationsToPlannedItems,
   expandExtractOperations,
+  expandContentBasedRenameOperations,
   executePlannedItems,
   revertUndoEntry,
   getSmartRenameSuggestions,
@@ -28,6 +28,7 @@ import {
   type UndoEntry,
 } from '../services/aiFileManagerService';
 import { extractIndexPrefix } from '../utils/indexPrefix';
+import { getParentPath } from '../utils/path';
 
 const pulse = keyframes`
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
@@ -37,6 +38,11 @@ const pulse = keyframes`
 const spin = keyframes`
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+`;
+
+const readingProgress = keyframes`
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
 `;
 
 export const AIFileManagerPane: React.FC = () => {
@@ -58,11 +64,12 @@ export const AIFileManagerPane: React.FC = () => {
   const [selectedFileNames, setSelectedFileNames] = useState<Set<string>>(new Set());
   const [plannedItems, setPlannedItems] = useState<PlannedItem[]>([]);
   const [isExecuting, setIsExecuting] = useState(false);
-  const [model, setModel] = useState<'sonnet' | 'haiku'>('sonnet');
   const [nativeIcons, setNativeIcons] = useState<Map<string, string>>(new Map());
   const [recentlyChangedNames, setRecentlyChangedNames] = useState<Set<string>>(new Set());
   const [recentlyRevertedNames, setRecentlyRevertedNames] = useState<Set<string>>(new Set());
   const [recentlyTransferredFolder, setRecentlyTransferredFolder] = useState<string | null>(null);
+  const [contentReadingState, setContentReadingState] = useState<{ fileName: string; index: number; total: number } | null>(null);
+  const [contentAnalyzingState, setContentAnalyzingState] = useState(false);
   const [undoEntriesByDirectory, setUndoEntriesByDirectory] = useState<Record<string, UndoEntry>>({});
   const listContainerRef = useRef<HTMLDivElement>(null);
   const loadingQueue = useRef<Set<string>>(new Set());
@@ -71,6 +78,8 @@ export const AIFileManagerPane: React.FC = () => {
   const nativeIconsRef = useRef(nativeIcons);
   nativeIconsRef.current = nativeIcons;
   const lastClickedIndexRef = useRef<number | undefined>(undefined);
+  const commandInputRef = useRef<HTMLInputElement>(null);
+  const commandAreaRef = useRef<HTMLDivElement>(null);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -91,6 +100,8 @@ export const AIFileManagerPane: React.FC = () => {
   const deletePendingBg = useColorModeValue('red.50', 'red.900');
   const mergeSourceBg = useColorModeValue('gray.200', 'gray.600');
   const mergeGhostBg = useColorModeValue('green.50', 'green.900');
+  const contentReadingBg = useColorModeValue('blue.50', 'blue.900');
+  const commandAreaBg = useColorModeValue('gray.100', 'gray.600');
 
   const items = [...folderItems].sort((a, b) => {
     if (a.type === 'folder' && b.type !== 'folder') return -1;
@@ -173,6 +184,20 @@ export const AIFileManagerPane: React.FC = () => {
   ].filter(g => g.items.length > 0);
 
   const isPreviewMode = plannedItems.length > 0;
+
+  // Find undo entry for current directory or any ancestor (e.g. after "group into folders" you may be viewing a child folder)
+  const effectiveUndoEntry = React.useMemo(() => {
+    if (!currentDirectory) return null;
+    let dir: string | undefined = currentDirectory;
+    while (dir) {
+      const entry = undoEntriesByDirectory[dir];
+      if (entry) return { entry, directory: dir };
+      const parent = getParentPath(dir);
+      dir = parent && parent !== dir ? parent : undefined;
+    }
+    return null;
+  }, [currentDirectory, undoEntriesByDirectory]);
+
   const plannedByFileName = React.useMemo(() => {
     const m = new Map<string, PlannedItem>();
     for (const p of plannedItems) {
@@ -345,8 +370,8 @@ export const AIFileManagerPane: React.FC = () => {
     [flatListForSelection, toggleFileSelection]
   );
 
-  const handleSubmit = useCallback(async () => {
-    const trimmed = command.trim();
+  const handleSubmit = useCallback(async (overrideCommand?: string) => {
+    const trimmed = (overrideCommand ?? command).trim();
     if (!trimmed) return;
     if (!currentDirectory) {
       setParseError('No directory selected');
@@ -363,7 +388,7 @@ export const AIFileManagerPane: React.FC = () => {
         trimmed,
         currentDirectory,
         folderItems,
-        model,
+        'sonnet',
         selected
       );
 
@@ -374,8 +399,9 @@ export const AIFileManagerPane: React.FC = () => {
       }
 
       const smartRenameOps = operations.filter((op): op is typeof op & { action: 'smartRename' } => op.action === 'smartRename');
+      const contentBasedRenameOps = operations.filter((op): op is typeof op & { action: 'contentBasedRename' } => op.action === 'contentBasedRename');
       const extractOps = operations.filter((op): op is typeof op & { action: 'extract' } => op.action === 'extract');
-      const otherOps = operations.filter(op => op.action !== 'smartRename' && op.action !== 'extract');
+      const otherOps = operations.filter(op => op.action !== 'smartRename' && op.action !== 'contentBasedRename' && op.action !== 'extract');
 
       let items: PlannedItem[] = [];
 
@@ -388,10 +414,26 @@ export const AIFileManagerPane: React.FC = () => {
         items = [...items, ...extractItems];
       }
 
+      if (contentBasedRenameOps.length > 0) {
+        const contentItems = await expandContentBasedRenameOperations(
+          contentBasedRenameOps,
+          folderItems,
+          currentDirectory,
+          trimmed,
+          selected,
+          'sonnet',
+          (fileName, index, total) => {
+            setContentReadingState(fileName ? { fileName, index, total } : null);
+          },
+          (analyzing) => setContentAnalyzingState(analyzing)
+        );
+        items = [...items, ...contentItems];
+      }
+
       for (const op of smartRenameOps) {
         const matching = getMatchingItemsForCondition(op.condition, folderItems, selected);
         if (matching.length === 0) continue;
-        const suggestions = await getSmartRenameSuggestions(matching, trimmed, model);
+        const suggestions = await getSmartRenameSuggestions(matching, trimmed, 'sonnet');
         for (const s of suggestions) {
           const file = matching.find(f => f.name === s.fileName);
           if (!file || s.newName === s.fileName) continue;
@@ -420,8 +462,10 @@ export const AIFileManagerPane: React.FC = () => {
       addLog(`AI parse failed: ${msg}`, 'error');
     } finally {
       setIsParsing(false);
+      setContentReadingState(null);
+      setContentAnalyzingState(false);
     }
-  }, [command, currentDirectory, folderItems, model, selectedFileNames, addLog]);
+  }, [command, currentDirectory, folderItems, selectedFileNames, addLog]);
 
   const handleApply = useCallback(async () => {
     if (plannedItems.length === 0) return;
@@ -511,8 +555,9 @@ export const AIFileManagerPane: React.FC = () => {
   }, [plannedItems, currentDirectory, setStatus, addLog, logFileOperation]);
 
   const handleRevert = useCallback(async () => {
-    const undoEntry = undoEntriesByDirectory[currentDirectory];
-    if (!undoEntry || undoEntry.directory !== currentDirectory) return;
+    const effective = effectiveUndoEntry;
+    if (!effective) return;
+    const { entry: undoEntry, directory: undoDir } = effective;
     setIsExecuting(true);
     setStatus('Reverting last changes...', 'info');
     try {
@@ -525,7 +570,7 @@ export const AIFileManagerPane: React.FC = () => {
       if (result.successful > 0) {
         setUndoEntriesByDirectory(prev => {
           const next = { ...prev };
-          delete next[currentDirectory];
+          delete next[undoDir];
           return next;
         });
         const revertedNames = new Set<string>();
@@ -549,8 +594,13 @@ export const AIFileManagerPane: React.FC = () => {
         setRecentlyRevertedNames(revertedNames);
         setTimeout(() => setRecentlyRevertedNames(new Set()), 5000);
         window.dispatchEvent(
-          new CustomEvent('forceDirectoryReload', { detail: { directory: currentDirectory } })
+          new CustomEvent('forceDirectoryReload', { detail: { directory: undoDir } })
         );
+        if (currentDirectory !== undoDir) {
+          window.dispatchEvent(
+            new CustomEvent('forceDirectoryReload', { detail: { directory: currentDirectory } })
+          );
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -559,7 +609,7 @@ export const AIFileManagerPane: React.FC = () => {
     } finally {
       setIsExecuting(false);
     }
-  }, [undoEntriesByDirectory, currentDirectory, setStatus, addLog]);
+  }, [effectiveUndoEntry, currentDirectory, setStatus, addLog]);
 
   const handleClear = useCallback(() => {
     setCommand('');
@@ -567,8 +617,14 @@ export const AIFileManagerPane: React.FC = () => {
     setPlannedItems([]);
   }, []);
 
+  const handlePaneClick = useCallback((e: React.MouseEvent) => {
+    if (commandAreaRef.current && !commandAreaRef.current.contains(e.target as Node)) {
+      commandInputRef.current?.blur();
+    }
+  }, []);
+
   return (
-    <Box flex={1} bg={bgColor} display="flex" flexDirection="column" overflow="hidden">
+    <Box flex={1} bg={bgColor} display="flex" flexDirection="column" overflow="hidden" onClick={handlePaneClick}>
       {/* Header */}
       <Flex
         py={3}
@@ -583,17 +639,18 @@ export const AIFileManagerPane: React.FC = () => {
           File Manager
         </Text>
         <Flex align="center" gap={2}>
-          <Select
-            value={model}
-            onChange={e => setModel(e.target.value as 'sonnet' | 'haiku')}
-            isDisabled={isParsing || isExecuting}
-            size="sm"
-            w="140px"
-            bg={bgColor}
-          >
-            <option value="sonnet">Claude Sonnet</option>
-            <option value="haiku">Claude Haiku</option>
-          </Select>
+          {effectiveUndoEntry && (
+            <IconButton
+              aria-label="Revert last changes"
+              title="Revert last applied changes"
+              icon={<Undo2 size={16} />}
+              size="sm"
+              colorScheme="orange"
+              variant="outline"
+              onClick={handleRevert}
+              isDisabled={isExecuting}
+            />
+          )}
           <IconButton
             aria-label="Close"
             icon={<X size={16} />}
@@ -627,6 +684,7 @@ export const AIFileManagerPane: React.FC = () => {
           pt={0}
           px={2}
           pb={2}
+          onClick={() => commandInputRef.current?.blur()}
         >
           {!currentDirectory && (
             <Flex justify="center" align="center" flex="1" minH="80px">
@@ -648,7 +706,7 @@ export const AIFileManagerPane: React.FC = () => {
                 position="sticky"
                 top={0}
                 zIndex={100}
-                bg={headerStickyBg}
+                bg={contentReadingState || contentAnalyzingState ? contentReadingBg : headerStickyBg}
                 borderBottomWidth="1px"
                 borderBottomStyle="solid"
                 borderBottomColor={separatorColor}
@@ -658,6 +716,8 @@ export const AIFileManagerPane: React.FC = () => {
                 align="center"
                 justify="space-between"
                 minH="28px"
+                minW={0}
+                overflow="hidden"
                 mx={-2}
                 mb={1}
                 pl={4}
@@ -681,8 +741,21 @@ export const AIFileManagerPane: React.FC = () => {
                     isDisabled={isPreviewMode}
                     opacity={isPreviewMode ? 0.5 : 1}
                   />
-                  <Text fontSize="xs" color={textColorMuted}>
-                    {isPreviewMode
+                  <Box flex={1} minW={0} overflow="hidden" title={contentReadingState ? `Reading ${contentReadingState.index} of ${contentReadingState.total}: ${contentReadingState.fileName}` : undefined}>
+                    <Text
+                      fontSize="xs"
+                      color={textColorMuted}
+                      as="span"
+                      display="block"
+                      overflow="hidden"
+                      textOverflow="ellipsis"
+                      whiteSpace="nowrap"
+                    >
+                      {contentReadingState
+                      ? `Reading ${contentReadingState.index} of ${contentReadingState.total}: ${contentReadingState.fileName}`
+                      : contentAnalyzingState
+                      ? 'Analyzing content...'
+                      : isPreviewMode
                       ? (isExecuting
                         ? `Processing ${plannedItems.filter(i => i.status === 'done' || i.status === 'failed').length} of ${plannedItems.length}`
                         : (() => {
@@ -702,7 +775,8 @@ export const AIFileManagerPane: React.FC = () => {
                             return `${plannedItems.length} file(s) will be ${actions.join(', ') || 'processed'}`;
                           })())
                       : `${selectedFileNames.size} of ${items.length} selected`}
-                  </Text>
+                    </Text>
+                  </Box>
                 </Flex>
                 <Flex align="center" gap={1} flexShrink={0} onClick={e => e.stopPropagation()}>
                 {isPreviewMode ? (
@@ -724,21 +798,28 @@ export const AIFileManagerPane: React.FC = () => {
                       isDisabled={isExecuting}
                     />
                   </Flex>
-                ) : undoEntriesByDirectory[currentDirectory] ? (
-                  <IconButton
-                    aria-label="Revert last changes"
-                    title="Revert last applied changes"
-                    icon={<Undo2 size={14} />}
-                    size="xs"
-                    variant="ghost"
-                    onClick={handleRevert}
-                    isDisabled={isExecuting}
-                    flexShrink={0}
-                  />
                 ) : (
                   <Box w="52px" flexShrink={0} />
                 )}
                 </Flex>
+                {(contentReadingState || contentAnalyzingState) && (
+                  <Box
+                    position="absolute"
+                    bottom={0}
+                    left={0}
+                    right={0}
+                    h="2px"
+                    bg="blue.200"
+                    overflow="hidden"
+                  >
+                    <Box
+                      h="100%"
+                      w="40%"
+                      bg="blue.500"
+                      animation={`${readingProgress} 1.2s ease-in-out infinite`}
+                    />
+                  </Box>
+                )}
               </Flex>
               {(() => {
                 let globalIndex = 0;
@@ -765,11 +846,13 @@ export const AIFileManagerPane: React.FC = () => {
                     const isCreateGhost = (f as { isCreateGhost?: boolean }).isCreateGhost === true;
                     const isTargetFolder = f.type === 'folder' && f.name === targetFolderFromMove;
                     const isRecentlyTransferred = f.type === 'folder' && f.name === recentlyTransferredFolder;
+                    const isContentReading = contentReadingState?.fileName === f.name;
                     const isDeletePending = planned?.operation === 'delete';
                     const isMergeSource = planned?.operation === 'merge';
                     const isLastMergeSource = planned?.operation === 'merge' && nextPlanned?.operation !== 'merge';
                     const fileRowBg =
-                      isDeletePending ? deletePendingBg
+                      isContentReading ? contentReadingBg
+                      : isDeletePending ? deletePendingBg
                       : isMergeSource ? mergeSourceBg
                       : isTargetFolder ? transferTargetBg
                       : undefined;
@@ -791,6 +874,7 @@ export const AIFileManagerPane: React.FC = () => {
                         ? `→ copy to ${planned.newName}`
                         : `→ ${planned?.newName || ''}`;
                     const fileRow = (
+                      <Box position="relative" overflow="hidden">
                       <Flex
                         ref={(el) => f.type !== 'folder' && observeFileElement(el, f.path)}
                         px={2}
@@ -838,6 +922,25 @@ export const AIFileManagerPane: React.FC = () => {
                           {f.name}
                         </Text>
                       </Flex>
+                      {isContentReading && contentReadingState && (
+                        <Box
+                          position="absolute"
+                          bottom={0}
+                          left={0}
+                          right={0}
+                          h="2px"
+                          bg="blue.200"
+                          overflow="hidden"
+                        >
+                          <Box
+                            h="100%"
+                            w="40%"
+                            bg="blue.500"
+                            animation={`${readingProgress} 1.2s ease-in-out infinite`}
+                          />
+                        </Box>
+                      )}
+                      </Box>
                     );
                     const proposalRow = planned && (
                       <Flex
@@ -921,33 +1024,125 @@ export const AIFileManagerPane: React.FC = () => {
       </Box>
 
       {/* Command input - below */}
-      <Box p={4} bg={panelBg} borderTop="1px solid" borderColor={borderColor}>
-        <Flex gap={2} align="center">
-          <Input
-            placeholder="e.g. extract folder A, extract B indexes from Tax Return, move G files to finals"
-            value={command}
-            onChange={e => setCommand(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSubmit();
-              }
-            }}
-            size="sm"
-            isDisabled={isParsing || isExecuting}
+      <Box ref={commandAreaRef} borderTop="1px solid" borderColor={borderColor} bg={itemBgColor}>
+        <Flex px={4} py={4}>
+          <Box
             flex={1}
-          />
-          <IconButton
-            aria-label="Send"
-            icon={isParsing ? <Spinner size="sm" /> : <Send size={16} />}
-            size="sm"
-            colorScheme="blue"
-            onClick={handleSubmit}
-            isDisabled={!command.trim() || !currentDirectory || isParsing || isExecuting}
-          />
+            minW={0}
+            bg={bgColor}
+            borderWidth="1px"
+            borderColor={borderColor}
+            borderRadius="md"
+            overflow="hidden"
+            transition="border-color 0.2s, box-shadow 0.2s"
+            _focusWithin={{
+              borderColor: 'blue.400',
+              boxShadow: '0 0 0 1px var(--chakra-colors-blue-400)',
+            }}
+          >
+            <Flex
+              gap={1}
+              px={2}
+              py={2}
+              align="center"
+              justify="space-between"
+              minH="28px"
+              borderBottomWidth="1px"
+              borderBottomStyle="solid"
+              borderBottomColor={separatorColor}
+            >
+              <Flex gap={1} align="center">
+                <IconButton
+                  aria-label="Merge by file content"
+                  icon={<Merge size={14} />}
+                  size="xs"
+                  variant="solid"
+                  colorScheme="blue"
+                  h="24px"
+                  minW="24px"
+                  onClick={() => handleSubmit('rename and group according to file content')}
+                  isDisabled={!currentDirectory || isParsing || isExecuting}
+                  title="Rename and group PDFs by their content"
+                />
+                <IconButton
+                  aria-label="Delete selected"
+                  icon={<Trash2 size={14} />}
+                  size="xs"
+                  variant="solid"
+                  colorScheme="red"
+                  h="24px"
+                  minW="24px"
+                  onClick={() => handleSubmit('delete selected')}
+                  isDisabled={!currentDirectory || isParsing || isExecuting}
+                  title="Delete selected files"
+                />
+                <IconButton
+                  aria-label="Extract folder content"
+                  icon={<FolderInput size={14} />}
+                  size="xs"
+                  variant="solid"
+                  colorScheme="teal"
+                  h="24px"
+                  minW="24px"
+                  onClick={() => {
+                    setCommand('extract from ');
+                    setParseError(null);
+                    commandInputRef.current?.focus();
+                  }}
+                  isDisabled={!currentDirectory || isParsing || isExecuting}
+                  title="Extract contents from a folder (type folder name after clicking)"
+                />
+              </Flex>
+              <IconButton
+                aria-label="Clear text"
+                icon={<Eraser size={14} />}
+                size="xs"
+                variant="ghost"
+                colorScheme="gray"
+                h="24px"
+                minW="24px"
+                onClick={handleClear}
+                isDisabled={!command.trim() || isParsing || isExecuting}
+                title="Clear command text"
+              />
+            </Flex>
+            <Flex align="center" minH="36px">
+              <Input
+                ref={commandInputRef}
+                value={command}
+                onChange={e => setCommand(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit();
+                  }
+                }}
+                size="sm"
+                isDisabled={isParsing || isExecuting}
+                border="none"
+                borderRadius={0}
+                bg={bgColor}
+                _focus={{ boxShadow: 'none' }}
+                focusBorderColor="transparent"
+                flex={1}
+                minW={0}
+              />
+              <IconButton
+                aria-label="Send"
+                icon={isParsing ? <Spinner size="sm" /> : <Send size={16} />}
+                size="sm"
+                colorScheme="blue"
+                variant="ghost"
+                flexShrink={0}
+                mx={1}
+                onClick={() => handleSubmit()}
+                isDisabled={!command.trim() || !currentDirectory || isParsing || isExecuting}
+              />
+            </Flex>
+          </Box>
         </Flex>
         {parseError && (
-          <Flex mt={2} p={2} borderRadius="md" bg={useColorModeValue('red.50', 'red.900')} align="center" gap={2}>
+          <Flex mt={2} mx={4} mb={4} p={2} borderRadius="md" bg={useColorModeValue('red.50', 'red.900')} align="center" gap={2}>
             <Icon as={AlertCircle} boxSize={4} color={errorColor} />
             <Text fontSize="xs" color={errorColor}>
               {parseError}

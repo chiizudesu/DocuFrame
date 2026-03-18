@@ -4050,12 +4050,21 @@ export const FileGrid: React.FC = () => {
   }, [isSelecting, selectionRect, sortedFiles]);
 
   
+  const handleGridClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return;
+    }
+    (document.activeElement as HTMLElement)?.blur?.();
+  }, []);
+
   return (
     <Box 
       p={0} 
       m={0} 
       height="100%" 
       position="relative"
+      onClick={handleGridClick}
       style={{ 
         filter: isJumpModeActive ? 'blur(2px)' : 'none',
         transition: 'filter 0.2s ease-in-out'
