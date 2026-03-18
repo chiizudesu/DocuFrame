@@ -1,7 +1,7 @@
 import { settingsService } from './settings';
 import Anthropic from '@anthropic-ai/sdk';
 import { WORKPAPER_DESCRIPTIONS, extractIndexPrefix, setIndexPrefix, removeIndexPrefix, addSuffix, removeSuffix, toProperCase } from '../utils/indexPrefix';
-import { joinPath, normalizePath } from '../utils/path';
+import { joinPath, normalizePath, getParentPath } from '../utils/path';
 import type { FileItem } from '../types';
 
 // Structured operations returned by Claude
@@ -12,17 +12,32 @@ export type FileOperation =
   | { action: 'removeSuffix'; suffix: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'removePrefix'; condition: 'all' | { indexEquals: string } | { selection: true } }
   | { action: 'transformCase'; case: 'upper' | 'lower' | 'title'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
-  | { action: 'smartRename'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } };
+  | { action: 'smartRename'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
+  | { action: 'moveToFolder'; targetFolder: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
+  | { action: 'delete'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
+  | { action: 'mergePdfs'; outputFilename: string; retainOriginals?: boolean; targetFolder?: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
+  | { action: 'extract'; sourceFolder: string; condition: 'all' | { indexEquals: string } | { nameContains: string }; deleteSource?: boolean; asCopies?: boolean }
+  | { action: 'createCopies'; count: number; names?: string[]; nameFrom?: string; nameTo?: string; targetFolder?: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } };
 
 // Planned item for preview and execution (file-level)
 export interface PlannedItem {
   fileName: string;
   filePath: string;
-  operation: 'copy' | 'rename';
+  operation: 'copy' | 'rename' | 'move' | 'delete' | 'merge';
   newName: string;
   status: 'pending' | 'processing' | 'done' | 'failed';
   error?: string;
   isFolder?: boolean;
+  /** For move: full path of destination */
+  targetPath?: string;
+  /** For delete: path in .docuframe-trash */
+  trashPath?: string;
+  /** For merge: source file paths, output path, whether to keep originals */
+  sourcePaths?: string[];
+  outputPath?: string;
+  retainOriginals?: boolean;
+  /** For extract: source folder name for display */
+  extractFrom?: string;
 }
 
 export interface ExecutionResult {
@@ -31,14 +46,20 @@ export interface ExecutionResult {
   skipped: number;
 }
 
+export interface ExecutionWithUndo {
+  result: ExecutionResult;
+  undoEntry: UndoEntry | null;
+}
+
 /** Entry for reverting the last applied operation */
 export interface UndoEntry {
   directory: string;
-  items: Array<{
-    operation: 'rename' | 'copy';
-    sourcePath: string;
-    destPath: string;
-  }>;
+  items: Array<
+    | { operation: 'rename' | 'copy'; sourcePath: string; destPath: string }
+    | { operation: 'move'; fromPath: string; toPath: string }
+    | { operation: 'delete'; originalPath: string; trashPath: string }
+    | { operation: 'merge'; mergedPath: string; originalPaths: string[]; trashPaths?: string[]; originalsWereDeleted: boolean }
+  >;
 }
 
 /**
@@ -46,23 +67,48 @@ export interface UndoEntry {
  */
 export async function revertUndoEntry(entry: UndoEntry): Promise<ExecutionResult> {
   const api = window.electronAPI as any;
-  if (!api?.renameItem || !api?.deleteFile || !api?.getFileStats) {
+  if (!api?.renameItem || !api?.deleteFile || !api?.getFileStats || !api?.moveFilesSilent) {
     throw new Error('File operations not available');
   }
 
   let successful = 0;
   let failed = 0;
 
-  for (const item of entry.items) {
+  for (const item of [...entry.items].reverse()) {
     try {
       if (item.operation === 'rename') {
         await api.renameItem(item.destPath, item.sourcePath);
         successful++;
-      } else {
+      } else if (item.operation === 'copy') {
         const stats = await api.getFileStats(item.destPath);
         if (stats?.isFile) {
           await api.deleteFile(item.destPath);
           successful++;
+        }
+      } else if (item.operation === 'move') {
+        const parentDir = getParentPath(item.fromPath) || '.';
+        const results = await api.moveFilesSilent([item.toPath], parentDir);
+        if (results?.some((r: { status: string }) => r.status === 'success')) successful++;
+        else failed++;
+      } else if (item.operation === 'delete') {
+        const parentDir = getParentPath(item.originalPath) || '.';
+        const results = await api.moveFilesSilent([item.trashPath], parentDir);
+        if (results?.some((r: { status: string }) => r.status === 'success')) successful++;
+        else failed++;
+      } else if (item.operation === 'merge') {
+        try {
+          await api.deleteFile(item.mergedPath);
+          successful++;
+        } catch {
+          failed++;
+        }
+        if (item.originalsWereDeleted && item.trashPaths && item.trashPaths.length > 0 && item.originalPaths.length > 0) {
+          const parentDir = getParentPath(item.originalPaths[0]) || '.';
+          const results = await api.moveFilesSilent(item.trashPaths, parentDir);
+          for (const r of results || []) {
+            if (r.status === 'success') successful++;
+            else failed++;
+          }
         }
       }
     } catch {
@@ -73,7 +119,13 @@ export async function revertUndoEntry(entry: UndoEntry): Promise<ExecutionResult
   return { successful, failed, skipped: 0 };
 }
 
-export type Condition = 'all' | { indexEquals: string } | { nameContains: string } | { selection: true };
+export type Condition =
+  | 'all'
+  | { indexEquals: string }
+  | { nameContains: string }
+  | { nameEquals: string }
+  | { folderNameEquals: string }
+  | { selection: true };
 
 function matchesCondition(file: FileItem, condition: Condition, selectedNames?: Set<string>): boolean {
   if (condition === 'all') return true;
@@ -87,6 +139,12 @@ function matchesCondition(file: FileItem, condition: Condition, selectedNames?: 
     }
     if ('nameContains' in condition) {
       return file.name.toLowerCase().includes(condition.nameContains.toLowerCase());
+    }
+    if ('nameEquals' in condition) {
+      return file.name.toLowerCase() === condition.nameEquals.toLowerCase();
+    }
+    if ('folderNameEquals' in condition) {
+      return file.type === 'folder' && file.name.toLowerCase() === condition.folderNameEquals.toLowerCase();
     }
   }
   return false;
@@ -107,7 +165,7 @@ export function getMatchingItemsForCondition(
 export function expandOperationsToPlannedItems(
   operations: FileOperation[],
   folderItems: FileItem[],
-  _currentDirectory: string,
+  currentDirectory: string,
   selectedFileNames?: string[]
 ): PlannedItem[] {
   const files = folderItems.filter(f => f.type === 'file');
@@ -210,8 +268,176 @@ export function expandOperationsToPlannedItems(
           });
         }
       }
+    } else if (op.action === 'moveToFolder') {
+      const matching = files.filter(f => matchesCondition(f, op.condition, selectedSet));
+      const targetFolder = op.targetFolder.replace(/^[\\/]+|[\\/]+$/g, '');
+      const targetDir = normalizePath(joinPath(currentDirectory, targetFolder));
+      for (const file of matching) {
+        const targetPath = normalizePath(joinPath(targetDir, file.name));
+        items.push({
+          fileName: file.name,
+          filePath: file.path,
+          operation: 'move',
+          newName: targetFolder + (targetFolder ? '/' : '') + file.name,
+          targetPath,
+          status: 'pending',
+          isFolder: false,
+        });
+      }
+    } else if (op.action === 'delete') {
+      const matching = allItems.filter(f => matchesCondition(f, op.condition, selectedSet));
+      const timestamp = Date.now().toString();
+      const trashBase = normalizePath(joinPath(currentDirectory, '.docuframe-trash', timestamp));
+      for (const file of matching) {
+        const trashPath = normalizePath(joinPath(trashBase, file.name));
+        items.push({
+          fileName: file.name,
+          filePath: file.path,
+          operation: 'delete',
+          newName: '',
+          trashPath,
+          status: 'pending',
+          isFolder: file.type === 'folder',
+        });
+      }
+    } else if (op.action === 'mergePdfs') {
+      const matching = files
+        .filter(f => matchesCondition(f, op.condition, selectedSet) && f.name.toLowerCase().endsWith('.pdf'))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (matching.length >= 2) {
+        const outputFilename = op.outputFilename.endsWith('.pdf') ? op.outputFilename : op.outputFilename + '.pdf';
+        const targetDir = op.targetFolder
+          ? normalizePath(joinPath(currentDirectory, op.targetFolder.replace(/^[\\/]+|[\\/]+$/g, '')))
+          : currentDirectory;
+        const outputPath = normalizePath(joinPath(targetDir, outputFilename));
+        const newNameDisplay = op.targetFolder ? op.targetFolder + '/' + outputFilename : outputFilename;
+        items.push({
+          fileName: outputFilename,
+          filePath: '',
+          operation: 'merge',
+          newName: newNameDisplay,
+          sourcePaths: matching.map(f => f.path),
+          outputPath,
+          retainOriginals: op.retainOriginals ?? false,
+          status: 'pending',
+          isFolder: false,
+        });
+      }
+    } else if (op.action === 'createCopies') {
+      const matching = files.filter(f => matchesCondition(f, op.condition, selectedSet));
+      let copyNames: string[];
+      if (op.names && Array.isArray(op.names) && op.names.length > 0) {
+        copyNames = op.names.slice(0, op.count ?? op.names.length);
+      } else if (op.nameFrom != null && op.nameTo != null) {
+        const fromMatch = op.nameFrom.match(/^(\d+)(.*)$/);
+        const toMatch = op.nameTo.match(/^(\d+)(.*)$/);
+        if (!fromMatch || !toMatch) continue;
+        const startNum = parseInt(fromMatch[1], 10);
+        const suffix = toMatch[2] ?? '';
+        const count = op.count ?? Math.max(0, parseInt(toMatch[1], 10) - startNum + 1);
+        copyNames = Array.from({ length: count }, (_, i) => `${startNum + i}${suffix}`);
+      } else {
+        continue;
+      }
+      if (copyNames.length === 0) continue;
+      const copyTargetDir = op.targetFolder
+        ? normalizePath(joinPath(currentDirectory, op.targetFolder.replace(/^[\\/]+|[\\/]+$/g, '')))
+        : currentDirectory;
+      for (const file of matching) {
+        const lastDot = file.name.lastIndexOf('.');
+        const ext = lastDot > 0 ? file.name.slice(lastDot) : '';
+        for (const baseName of copyNames) {
+          const newName = baseName + ext;
+          const targetPath = normalizePath(joinPath(copyTargetDir, newName));
+          const newNameDisplay = op.targetFolder ? op.targetFolder + '/' + newName : newName;
+          items.push({
+            fileName: file.name,
+            filePath: file.path,
+            operation: 'copy',
+            newName: newNameDisplay,
+            targetPath,
+            status: 'pending',
+            isFolder: false,
+          });
+        }
+      }
     }
     // smartRename is handled separately - requires AI call for per-file suggestions
+  }
+
+  return items;
+}
+
+/**
+ * Expand extract operations (async - fetches folder contents)
+ */
+export async function expandExtractOperations(
+  operations: Array<{ action: 'extract'; sourceFolder: string; condition: 'all' | { indexEquals: string } | { nameContains: string }; deleteSource?: boolean; asCopies?: boolean }>,
+  currentDirectory: string,
+  folderItems: FileItem[],
+  selectedFileNames?: string[]
+): Promise<PlannedItem[]> {
+  const api = window.electronAPI as any;
+  if (!api?.getDirectoryContents) {
+    throw new Error('getDirectoryContents not available');
+  }
+
+  const items: PlannedItem[] = [];
+
+  for (const op of operations) {
+    const folderName = op.sourceFolder.replace(/^[\\/]+|[\\/]+$/g, '');
+    const folder = folderItems.find(f => f.type === 'folder' && f.name === folderName);
+    const sourceFolderPath = folder ? folder.path : normalizePath(joinPath(currentDirectory, folderName));
+    const sourceFolderName = folderName;
+
+    const contents = await api.getDirectoryContents(sourceFolderPath);
+    if (!Array.isArray(contents)) continue;
+
+    const allFiles = contents.filter((f: FileItem) => f.type !== 'folder');
+    const condition = op.condition;
+    const matchesCondition = (f: FileItem) => {
+      if (condition === 'all') return true;
+      if (typeof condition === 'object') {
+        if ('indexEquals' in condition) {
+          return extractIndexPrefix(f.name) === condition.indexEquals;
+        }
+        if ('nameContains' in condition) {
+          return f.name.toLowerCase().includes(condition.nameContains.toLowerCase());
+        }
+      }
+      return false;
+    };
+
+    const matching = allFiles.filter((f: FileItem) => matchesCondition(f));
+
+    for (const file of matching) {
+      const targetPath = normalizePath(joinPath(currentDirectory, file.name));
+      items.push({
+        fileName: file.name,
+        filePath: file.path,
+        operation: op.asCopies ? 'copy' : 'move',
+        newName: file.name,
+        targetPath,
+        status: 'pending',
+        isFolder: false,
+        extractFrom: sourceFolderName,
+      });
+    }
+
+    if (op.deleteSource) {
+      const timestamp = Date.now().toString();
+      const trashBase = normalizePath(joinPath(currentDirectory, '.docuframe-trash', timestamp));
+      const trashPath = normalizePath(joinPath(trashBase, sourceFolderName));
+      items.push({
+        fileName: sourceFolderName,
+        filePath: sourceFolderPath,
+        operation: 'delete',
+        newName: '',
+        trashPath,
+        status: 'pending',
+        isFolder: true,
+      });
+    }
   }
 
   return items;
@@ -298,6 +524,7 @@ export async function parseFileManagerCommand(
   if (!apiKey) throw new Error('Claude API key not set. Add it in Settings.');
 
   const fileNames = folderItems.filter(f => f.type === 'file').map(f => f.name);
+  const folderNames = folderItems.filter(f => f.type === 'folder').map(f => f.name);
   const indexDescriptions = Object.entries(WORKPAPER_DESCRIPTIONS)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
@@ -336,9 +563,33 @@ Valid operations (return ONLY a JSON array, no markdown, no explanation):
 7. smartRename: AI suggests improved/cleaned names for files (e.g. "improve naming", "clean up names", "better names")
    {"action":"smartRename","condition":{"selection":true}}
    {"action":"smartRename","condition":"all"}
+8. moveToFolder: Move files into a child folder (creates folder if it doesn't exist). Target folder is relative to current directory.
+   {"action":"moveToFolder","targetFolder":"finals","condition":{"indexEquals":"G"}}
+   {"action":"moveToFolder","targetFolder":"drafts","condition":{"selection":true}}
+9. delete: Soft-delete files or folders (move to hidden trash, revertible). For "delete X folder" use folderNameEquals for EXACT folder name match - NEVER use nameContains for single-letter or short names (e.g. "x" matches "Xero", "Fixed" incorrectly).
+   {"action":"delete","condition":{"indexEquals":"G"}}
+   {"action":"delete","condition":{"selection":true}}
+   {"action":"delete","condition":{"folderNameEquals":"X"}}
+   {"action":"delete","condition":{"nameEquals":"exact filename.pdf"}}
+10. mergePdfs: Merge PDF files in order into one PDF. retainOriginals: true to keep originals, false (default) to soft-delete them. targetFolder: optional - put merged file in this subfolder (e.g. "merge then move to finals").
+   {"action":"mergePdfs","outputFilename":"Merged.pdf","condition":{"selection":true}}
+   {"action":"mergePdfs","outputFilename":"Combined.pdf","targetFolder":"finals","condition":{"selection":true}}
+11. extract: Extract contents from a folder to current directory. sourceFolder: folder name (or from selection). condition: filter files inside (all, indexEquals, nameContains). deleteSource: true to soft-delete folder after (default: false). asCopies: true to copy instead of move (e.g. "extract as copies", "copy files from folder").
+   {"action":"extract","sourceFolder":"A","condition":"all","deleteSource":false}
+   {"action":"extract","sourceFolder":"finals","condition":"all","asCopies":true}
+   {"action":"extract","sourceFolder":"Tax Return","condition":{"nameContains":"tax"},"deleteSource":true}
+   For "extract B indexes of folder selected": use sourceFolder from selection (the selected folder name), condition {"indexEquals":"B"}
+12. createCopies: Create N copies of matching files. Use EITHER names array OR nameFrom/nameTo. Preserves file extension. targetFolder: optional - put copies in this subfolder (e.g. "add copies to drafts folder").
+   - names: Use when user describes semantic names (months, quarters, etc). E.g. "first 3 months of 2026" -> ["January 2026","February 2026","March 2026"]
+   {"action":"createCopies","count":3,"names":["January 2026","February 2026","March 2026"],"condition":{"selection":true}}
+   {"action":"createCopies","count":3,"names":["Jan","Feb","Mar"],"targetFolder":"drafts","condition":{"selection":true}}
+   - nameFrom/nameTo: Use for numbered ranges. "1 March" to "5 March" = 5 copies with suffix " March"
+   {"action":"createCopies","count":5,"nameFrom":"1 March","nameTo":"5 March","condition":{"selection":true}}
+   {"action":"createCopies","count":3,"nameFrom":"1","nameTo":"3","targetFolder":"finals","condition":{"selection":true}}
 ${selectionNote}
 
 Current directory: ${currentDirectory}
+Folders in directory: ${JSON.stringify(folderNames)}
 Files in directory (names only): ${JSON.stringify(fileNames)}
 
 Return a JSON array of operations. Example: [{"action":"copyToIndex","sourceIndex":"Q","targetIndex":"H"}]
@@ -373,7 +624,7 @@ If the user's request is ambiguous or cannot be fulfilled, return [].`;
     return parsed.filter(
       (op): op is FileOperation =>
         op && typeof op === 'object' && typeof op.action === 'string' &&
-        ['copyToIndex', 'addPrefix', 'addSuffix', 'removeSuffix', 'removePrefix', 'transformCase', 'smartRename'].includes(op.action)
+        ['copyToIndex', 'addPrefix', 'addSuffix', 'removeSuffix', 'removePrefix', 'transformCase', 'smartRename', 'moveToFolder', 'delete', 'mergePdfs', 'extract', 'createCopies'].includes(op.action)
     );
   } catch {
     return [];
@@ -387,9 +638,9 @@ export async function executePlannedItems(
   items: PlannedItem[],
   currentDirectory: string,
   onProgress?: (index: number, item: PlannedItem, status: PlannedItem['status'], error?: string) => void
-): Promise<ExecutionResult> {
+): Promise<ExecutionWithUndo> {
   const api = window.electronAPI as any;
-  if (!api?.copyFileSilent || !api?.renameItem || !api?.getFileStats || !api?.deleteFile) {
+  if (!api?.copyFileSilent || !api?.renameItem || !api?.getFileStats || !api?.deleteFile || !api?.moveFilesSilent || !api?.createDirectory || !api?.executeCommand) {
     throw new Error('File operations not available');
   }
 
@@ -397,18 +648,105 @@ export async function executePlannedItems(
   let successful = 0;
   let failed = 0;
   let skipped = 0;
+  const undoItems: UndoEntry['items'] = [];
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     onProgress?.(i, item, 'processing');
 
     try {
+      if (item.operation === 'move' && item.targetPath) {
+        const targetDir = getParentPath(item.targetPath) || baseDir;
+        try {
+          await api.createDirectory(targetDir);
+        } catch {
+          /* folder may already exist */
+        }
+        const results = await api.moveFilesSilent([item.filePath], targetDir);
+        const ok = results?.some((r: { status: string }) => r.status === 'success');
+        if (ok) {
+          successful++;
+          undoItems.push({ operation: 'move', fromPath: item.filePath, toPath: item.targetPath });
+          onProgress?.(i, { ...item, status: 'done' }, 'done');
+        } else {
+          throw new Error(results?.[0]?.error || 'Move failed');
+        }
+        continue;
+      }
+
+      if (item.operation === 'delete' && item.trashPath) {
+        const trashDir = getParentPath(item.trashPath) || baseDir;
+        try {
+          await api.createDirectory(trashDir);
+        } catch {
+          /* folder may already exist */
+        }
+        const results = await api.moveFilesSilent([item.filePath], trashDir);
+        const ok = results?.some((r: { status: string }) => r.status === 'success');
+        if (ok) {
+          successful++;
+          undoItems.push({ operation: 'delete', originalPath: item.filePath, trashPath: item.trashPath });
+          onProgress?.(i, { ...item, status: 'done' }, 'done');
+        } else {
+          throw new Error(results?.[0]?.error || 'Delete failed');
+        }
+        continue;
+      }
+
+      if (item.operation === 'merge' && item.sourcePaths && item.outputPath) {
+        const filenames = item.sourcePaths.map(p => {
+          const parts = p.split(/[/\\]/);
+          return parts[parts.length - 1] || '';
+        });
+        const outputFilename = item.outputPath.split(/[/\\]/).pop() || item.newName;
+        const outputDirectory = getParentPath(item.outputPath) || baseDir;
+        const result = await api.executeCommand('merge_pdfs', currentDirectory, {
+          files: filenames,
+          outputFilename,
+          outputDirectory: outputDirectory !== baseDir ? outputDirectory : undefined,
+        });
+        if (!result?.success) {
+          throw new Error(result?.message || 'Merge failed');
+        }
+        let trashPaths: string[] | undefined;
+        if (!item.retainOriginals && item.sourcePaths.length > 0) {
+          const timestamp = Date.now().toString();
+          const trashBase = normalizePath(joinPath(baseDir, '.docuframe-trash', 'merge_' + timestamp));
+          try {
+            await api.createDirectory(trashBase);
+          } catch {
+            /* folder may already exist */
+          }
+          const trashResults = await api.moveFilesSilent(item.sourcePaths, trashBase);
+          trashPaths = (trashResults || []).filter((r: { status: string; path?: string }) => r.status === 'success').map((r: { path: string }) => r.path).filter(Boolean);
+        }
+        successful++;
+        undoItems.push({
+          operation: 'merge',
+          mergedPath: item.outputPath,
+          originalPaths: item.sourcePaths,
+          trashPaths,
+          originalsWereDeleted: !item.retainOriginals,
+        });
+        onProgress?.(i, { ...item, status: 'done' }, 'done');
+        continue;
+      }
+
       const sourcePath = normalizePath(item.filePath);
-      const parentDir = normalizePath(item.filePath.slice(0, item.filePath.length - item.fileName.length).replace(/[\\/]+$/, ''));
-      const dir = normalizePath(parentDir || baseDir);
-      const destPath = normalizePath(joinPath(dir, item.newName));
+      const destPath = item.targetPath
+        ? normalizePath(item.targetPath)
+        : normalizePath(joinPath(
+            normalizePath(item.filePath.slice(0, item.filePath.length - item.fileName.length).replace(/[\\/]+$/, '') || baseDir),
+            item.newName
+          ));
+      const dir = getParentPath(destPath) || baseDir;
 
       if (item.operation === 'copy') {
+        try {
+          await api.createDirectory(dir);
+        } catch {
+          /* folder may already exist */
+        }
         if (sourcePath === destPath) {
           skipped++;
           onProgress?.(i, { ...item, status: 'done' }, 'done');
@@ -417,6 +755,7 @@ export async function executePlannedItems(
 
         let existingFileMoved = false;
         let existingFileTempPath: string | null = null;
+        const destFileName = item.newName.split(/[/\\]/).pop() || item.newName;
 
         try {
           let targetExists = false;
@@ -430,7 +769,7 @@ export async function executePlannedItems(
           }
 
           if (targetExists) {
-            existingFileTempPath = joinPath(dir, `~temp_existing_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${item.newName}`);
+            existingFileTempPath = joinPath(dir, `~temp_existing_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${destFileName}`);
             try {
               await api.renameItem(destPath, existingFileTempPath);
               existingFileMoved = true;
@@ -450,8 +789,8 @@ export async function executePlannedItems(
           if (existingFileMoved && existingFileTempPath) {
             for (let j = 1; j <= 100; j++) {
               const conflictName = j === 1
-                ? item.newName.replace(/(\.[^.]+)$/, ' (1)$1')
-                : item.newName.replace(/(\.[^.]+)$/, ` (${j})$1`);
+                ? destFileName.replace(/(\.[^.]+)$/, ' (1)$1')
+                : destFileName.replace(/(\.[^.]+)$/, ` (${j})$1`);
               const conflictPath = joinPath(dir, conflictName);
               try {
                 const stats = await api.getFileStats(conflictPath);
@@ -467,6 +806,7 @@ export async function executePlannedItems(
           }
 
           successful++;
+          undoItems.push({ operation: 'copy', sourcePath, destPath });
           onProgress?.(i, { ...item, status: 'done' }, 'done');
         } catch (err) {
           if (existingFileMoved && existingFileTempPath) {
@@ -475,8 +815,8 @@ export async function executePlannedItems(
             } catch {
               for (let j = 1; j <= 100; j++) {
                 const conflictName = j === 1
-                  ? item.newName.replace(/(\.[^.]+)$/, ' (1)$1')
-                  : item.newName.replace(/(\.[^.]+)$/, ` (${j})$1`);
+                  ? destFileName.replace(/(\.[^.]+)$/, ' (1)$1')
+                  : destFileName.replace(/(\.[^.]+)$/, ` (${j})$1`);
                 try {
                   await api.renameItem(existingFileTempPath, joinPath(dir, conflictName));
                   break;
@@ -498,6 +838,7 @@ export async function executePlannedItems(
 
         await api.renameItem(sourcePath, destPath);
         successful++;
+        undoItems.push({ operation: 'rename', sourcePath, destPath });
         onProgress?.(i, { ...item, status: 'done' }, 'done');
       }
     } catch (err) {
@@ -507,5 +848,7 @@ export async function executePlannedItems(
     }
   }
 
-  return { successful, failed, skipped };
+  const undoEntry: UndoEntry | null =
+    undoItems.length > 0 ? { directory: currentDirectory, items: undoItems } : null;
+  return { result: { successful, failed, skipped }, undoEntry };
 }

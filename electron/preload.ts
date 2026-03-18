@@ -34,6 +34,7 @@ interface ElectronAPI {
   moveFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFileSilent: (sourcePath: string, targetPath: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  moveFilesSilent: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   readPdfText: (filePath: string) => Promise<string>;
   readPdfPagesText: (filePath: string) => Promise<string[]>;
   readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
@@ -198,6 +199,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   copyFileSilent: async (sourcePath: string, targetPath: string) => {
     return await ipcRenderer.invoke('copy-file-silent', sourcePath, targetPath);
+  },
+  moveFilesSilent: async (files: string[], targetDirectory: string) => {
+    return await ipcRenderer.invoke('move-files-silent', files, targetDirectory);
   },
   readPdfText: async (filePath: string) => {
     return await ipcRenderer.invoke('read-pdf-text', filePath);

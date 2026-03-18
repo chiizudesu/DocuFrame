@@ -63,6 +63,8 @@ export const FileGrid: React.FC = () => {
     contentSearchResults, // Content search results (files matching content search)
     isGroupedByIndex, // Group files by index prefix
     setIsCreateFolderOpen,
+    setIsAIFileManagerOpen,
+    setFileManagerInitialSelection,
   } = useAppContext()
 
   // Memoize selectedFiles as Set for O(1) lookup performance (moved early to avoid initialization errors)
@@ -780,6 +782,18 @@ export const FileGrid: React.FC = () => {
           }
           handleCloseContextMenu();
           break
+        case 'add_to_file_manager':
+          {
+            const names = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+              ? selectedFiles
+              : [contextMenu.fileItem.name];
+            setFileManagerInitialSelection(names);
+            setIsAIFileManagerOpen(true);
+            addLog(`File Manager opened with ${names.length} item(s) selected`, 'info');
+            setStatus(`File Manager: ${names.length} item(s) selected`, 'info');
+            handleCloseContextMenu();
+          }
+          break
         case 'rename':
           console.log('[Rename] Context menu rename triggered:', { name: contextMenu.fileItem.name, path: contextMenu.fileItem.path });
           setIsRenaming(contextMenu.fileItem.name)
@@ -1114,7 +1128,7 @@ export const FileGrid: React.FC = () => {
     }
 
   handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath])
+  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, setIsAIFileManagerOpen, setFileManagerInitialSelection])
 
   // Separate refresh function that doesn't show loading state (for background refreshes)
   // Defined early so it can be used by other callbacks

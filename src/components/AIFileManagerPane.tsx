@@ -5,7 +5,6 @@ import {
   Flex,
   VStack,
   Input,
-  Button,
   Spinner,
   useColorModeValue,
   Icon,
@@ -15,11 +14,12 @@ import {
   Image,
 } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
-import { Sparkles, X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2 } from 'lucide-react';
+import { X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
   parseFileManagerCommand,
   expandOperationsToPlannedItems,
+  expandExtractOperations,
   executePlannedItems,
   revertUndoEntry,
   getSmartRenameSuggestions,
@@ -28,7 +28,6 @@ import {
   type UndoEntry,
 } from '../services/aiFileManagerService';
 import { extractIndexPrefix } from '../utils/indexPrefix';
-import { joinPath } from '../utils/path';
 
 const pulse = keyframes`
   0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
@@ -44,7 +43,10 @@ export const AIFileManagerPane: React.FC = () => {
   const {
     currentDirectory,
     folderItems,
+    isAIFileManagerOpen,
     setIsAIFileManagerOpen,
+    fileManagerInitialSelection,
+    setFileManagerInitialSelection,
     addLog,
     setStatus,
     logFileOperation,
@@ -60,13 +62,15 @@ export const AIFileManagerPane: React.FC = () => {
   const [nativeIcons, setNativeIcons] = useState<Map<string, string>>(new Map());
   const [recentlyChangedNames, setRecentlyChangedNames] = useState<Set<string>>(new Set());
   const [recentlyRevertedNames, setRecentlyRevertedNames] = useState<Set<string>>(new Set());
-  const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null);
+  const [recentlyTransferredFolder, setRecentlyTransferredFolder] = useState<string | null>(null);
+  const [undoEntriesByDirectory, setUndoEntriesByDirectory] = useState<Record<string, UndoEntry>>({});
   const listContainerRef = useRef<HTMLDivElement>(null);
   const loadingQueue = useRef<Set<string>>(new Set());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
   const elementsToObserveRef = useRef<Map<HTMLElement, string>>(new Map());
   const nativeIconsRef = useRef(nativeIcons);
   nativeIconsRef.current = nativeIcons;
+  const lastClickedIndexRef = useRef<number | undefined>(undefined);
 
   const bgColor = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -78,11 +82,15 @@ export const AIFileManagerPane: React.FC = () => {
   const resultBg = useColorModeValue('yellow.50', 'gray.900');
   const successColor = useColorModeValue('green.600', 'green.400');
   const errorColor = useColorModeValue('red.600', 'red.400');
-  const processingBg = useColorModeValue('blue.50', 'blue.900');
   const hoverBg = useColorModeValue('gray.100', 'gray.600');
   const iconColor = useColorModeValue('gray.500', 'gray.400');
   const separatorColor = useColorModeValue('gray.300', 'gray.500');
+  const headerStickyBg = useColorModeValue('gray.50', 'gray.900');
   const processingRowBg = useColorModeValue('gray.200', 'gray.600');
+  const transferTargetBg = useColorModeValue('gray.200', 'gray.600');
+  const deletePendingBg = useColorModeValue('red.50', 'red.900');
+  const mergeSourceBg = useColorModeValue('gray.200', 'gray.600');
+  const mergeGhostBg = useColorModeValue('green.50', 'green.900');
 
   const items = [...folderItems].sort((a, b) => {
     if (a.type === 'folder' && b.type !== 'folder') return -1;
@@ -96,18 +104,108 @@ export const AIFileManagerPane: React.FC = () => {
   });
 
   const folders = items.filter(f => f.type === 'folder');
+  const existingFolderNames = new Set(folders.map(f => f.name));
+  const ghostFolders = React.useMemo(() => {
+    const targets = new Set<string>();
+    for (const p of plannedItems) {
+      if (p.operation === 'move' && p.newName && !p.extractFrom) {
+        const idx = p.newName.indexOf('/');
+        if (idx >= 0) {
+          const folder = p.newName.slice(0, idx);
+          if (folder && !existingFolderNames.has(folder)) targets.add(folder);
+        }
+      }
+    }
+    return Array.from(targets).sort((a, b) => a.localeCompare(b));
+  }, [plannedItems, existingFolderNames]);
+  const allFoldersForDisplay = React.useMemo(() => {
+    const combined = [
+      ...folders.map(f => ({ name: f.name, path: f.path, type: 'folder' as const, isGhost: false })),
+      ...ghostFolders.map(name => ({ name, path: '', type: 'folder' as const, isGhost: true })),
+    ];
+    return combined.sort((a, b) => a.name.localeCompare(b.name));
+  }, [folders, ghostFolders]);
   const indexedFiles = items.filter(f => f.type !== 'folder' && extractIndexPrefix(f.name));
   const nonIndexedFiles = items.filter(f => f.type !== 'folder' && !extractIndexPrefix(f.name));
+  const extractGhostFiles = React.useMemo(() => {
+    const extractItems = plannedItems.filter(p => (p.operation === 'move' || p.operation === 'copy') && p.extractFrom);
+    const existingNames = new Set(items.filter(f => f.type !== 'folder').map(f => f.name));
+    return extractItems
+      .filter(p => !existingNames.has(p.fileName))
+      .map(p => ({ name: p.fileName, path: p.filePath, type: 'file' as const, isExtractGhost: true as const, extractFrom: p.extractFrom! }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [plannedItems, items]);
+  const mergeGhostItem = React.useMemo(() => {
+    const m = plannedItems.find(p => p.operation === 'merge');
+    return m ? { fileName: m.newName, outputPath: m.outputPath } : null;
+  }, [plannedItems]);
+  const targetFolderFromMove = React.useMemo(() => {
+    const moveItems = plannedItems.filter(p => p.operation === 'move');
+    if (moveItems.length === 0) return null;
+    const idx = moveItems[0].newName.indexOf('/');
+    return idx >= 0 ? moveItems[0].newName.slice(0, idx) : null;
+  }, [plannedItems]);
+  const createCopiesGhostFiles = React.useMemo(() => {
+    const bySource = new Map<string, PlannedItem[]>();
+    for (const p of plannedItems) {
+      if (p.operation === 'copy') {
+        const list = bySource.get(p.fileName) || [];
+        list.push(p);
+        bySource.set(p.fileName, list);
+      }
+    }
+    const result: Array<{ name: string; path: string; type: 'file'; isCreateGhost: true }> = [];
+    for (const [, list] of bySource) {
+      if (list.length > 1) {
+        for (const p of list) {
+          result.push({ name: p.newName, path: '', type: 'file', isCreateGhost: true });
+        }
+      }
+    }
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }, [plannedItems]);
   const groups = [
-    { items: folders, key: 'folders' },
-    { items: indexedFiles, key: 'indexed' },
-    { items: nonIndexedFiles, key: 'nonIndexed' },
+    { items: allFoldersForDisplay, key: 'folders', isFolderGroup: true },
+    ...(extractGhostFiles.length > 0 ? [{ items: extractGhostFiles, key: 'extract', isFolderGroup: false }] : []),
+    ...(createCopiesGhostFiles.length > 0 ? [{ items: createCopiesGhostFiles, key: 'createCopies', isFolderGroup: false }] : []),
+    { items: indexedFiles, key: 'indexed', isFolderGroup: false },
+    { items: nonIndexedFiles, key: 'nonIndexed', isFolderGroup: false },
   ].filter(g => g.items.length > 0);
 
   const isPreviewMode = plannedItems.length > 0;
   const plannedByFileName = React.useMemo(() => {
     const m = new Map<string, PlannedItem>();
-    for (const p of plannedItems) m.set(p.fileName, p);
+    for (const p of plannedItems) {
+      if (p.operation === 'merge' && p.sourcePaths) {
+        for (const fp of p.sourcePaths) {
+          const name = fp.split(/[/\\]/).pop();
+          if (name) m.set(name, p);
+        }
+      } else {
+        m.set(p.fileName, p);
+      }
+    }
+    return m;
+  }, [plannedItems]);
+
+  const plannedItemsBySource = React.useMemo(() => {
+    const m = new Map<string, PlannedItem[]>();
+    for (const p of plannedItems) {
+      if (p.operation === 'merge' && p.sourcePaths) {
+        for (const fp of p.sourcePaths) {
+          const name = fp.split(/[/\\]/).pop();
+          if (name) {
+            const list = m.get(name) || [];
+            list.push(p);
+            m.set(name, list);
+          }
+        }
+      } else {
+        const list = m.get(p.fileName) || [];
+        list.push(p);
+        m.set(p.fileName, list);
+      }
+    }
     return m;
   }, [plannedItems]);
 
@@ -115,14 +213,24 @@ export const AIFileManagerPane: React.FC = () => {
     <Box h="1px" bg={separatorColor} mx={2} my={1.5} flexShrink={0} opacity={0.9} />
   );
 
-  // Clear cached icons and planned items when directory changes
+  // Clear cached icons, planned items, and selection when directory changes (keep undo history per directory)
   useEffect(() => {
     setNativeIcons(new Map());
     setPlannedItems([]);
+    setSelectedFileNames(new Set());
+    lastClickedIndexRef.current = undefined;
     elementsToObserveRef.current.clear();
-    setUndoEntry(null);
     setRecentlyRevertedNames(new Set());
+    setRecentlyTransferredFolder(null);
   }, [currentDirectory]);
+
+  // Apply initial selection when opened from context menu "Add selection to file manager"
+  useEffect(() => {
+    if (isAIFileManagerOpen && fileManagerInitialSelection && fileManagerInitialSelection.length > 0) {
+      setSelectedFileNames(new Set(fileManagerInitialSelection));
+      setFileManagerInitialSelection(null);
+    }
+  }, [isAIFileManagerOpen, fileManagerInitialSelection, setFileManagerInitialSelection]);
 
   // Load icon for a file (called when visible via IntersectionObserver)
   const loadIconForFile = useCallback(async (filePath: string) => {
@@ -174,7 +282,7 @@ export const AIFileManagerPane: React.FC = () => {
       { root: listContainerRef.current, rootMargin: '100px', threshold: 0.1 }
     );
     intersectionObserverRef.current = observer;
-    elementsToObserveRef.current.forEach((path, el) => {
+    elementsToObserveRef.current.forEach((_path, el) => {
       observer.observe(el);
     });
     elementsToObserveRef.current.clear();
@@ -203,12 +311,39 @@ export const AIFileManagerPane: React.FC = () => {
   }, []);
 
   const toggleSelectAll = useCallback(() => {
-    if (selectedFileNames.size === items.length) {
+    if (selectedFileNames.size > 0) {
       setSelectedFileNames(new Set());
     } else {
       setSelectedFileNames(new Set(items.map(f => f.name)));
     }
   }, [items, selectedFileNames.size]);
+
+  const flatListForSelection = React.useMemo(
+    () => groups.flatMap(g => g.items),
+    [groups]
+  );
+
+  const handleRowClick = useCallback(
+    (name: string, index: number, e: React.MouseEvent) => {
+      if (e.shiftKey) {
+        const last = lastClickedIndexRef.current;
+        if (last !== undefined) {
+          const start = Math.min(last, index);
+          const end = Math.max(last, index);
+          const rangeNames = flatListForSelection.slice(start, end + 1).map(item => item.name);
+          setSelectedFileNames(prev => {
+            const next = new Set(prev);
+            for (const n of rangeNames) next.add(n);
+            return next;
+          });
+          return;
+        }
+      }
+      toggleFileSelection(name);
+      lastClickedIndexRef.current = index;
+    },
+    [flatListForSelection, toggleFileSelection]
+  );
 
   const handleSubmit = useCallback(async () => {
     const trimmed = command.trim();
@@ -239,12 +374,18 @@ export const AIFileManagerPane: React.FC = () => {
       }
 
       const smartRenameOps = operations.filter((op): op is typeof op & { action: 'smartRename' } => op.action === 'smartRename');
-      const otherOps = operations.filter(op => op.action !== 'smartRename');
+      const extractOps = operations.filter((op): op is typeof op & { action: 'extract' } => op.action === 'extract');
+      const otherOps = operations.filter(op => op.action !== 'smartRename' && op.action !== 'extract');
 
       let items: PlannedItem[] = [];
 
       if (otherOps.length > 0) {
         items = expandOperationsToPlannedItems(otherOps, folderItems, currentDirectory, selected);
+      }
+
+      if (extractOps.length > 0) {
+        const extractItems = await expandExtractOperations(extractOps, currentDirectory, folderItems, selected);
+        items = [...items, ...extractItems];
       }
 
       for (const op of smartRenameOps) {
@@ -289,10 +430,22 @@ export const AIFileManagerPane: React.FC = () => {
     setStatus(`Processing ${plannedItems.length} file(s)...`, 'info');
 
     const successfulNewNames = new Set<string>();
+    const namesToRemoveFromSelection = new Set<string>();
     const updateItem = (index: number, updates: Partial<PlannedItem>) => {
       if (updates.status === 'done') {
         const item = plannedItems[index];
-        if (item) successfulNewNames.add(item.newName);
+        if (item) {
+          successfulNewNames.add(item.newName || item.fileName);
+          if (item.operation === 'delete') namesToRemoveFromSelection.add(item.fileName);
+          else if (item.operation === 'move') namesToRemoveFromSelection.add(item.fileName);
+          else if (item.operation === 'rename') namesToRemoveFromSelection.add(item.fileName);
+          else if (item.operation === 'merge' && item.sourcePaths) {
+            for (const p of item.sourcePaths) {
+              const name = p.split(/[/\\]/).pop();
+              if (name) namesToRemoveFromSelection.add(name);
+            }
+          }
+        }
       }
       setPlannedItems(prev => {
         const next = [...prev];
@@ -302,7 +455,7 @@ export const AIFileManagerPane: React.FC = () => {
     };
 
     try {
-      const result = await executePlannedItems(
+      const { result, undoEntry: newUndoEntry } = await executePlannedItems(
         plannedItems,
         currentDirectory,
         (index, _item, status, error) => {
@@ -323,20 +476,25 @@ export const AIFileManagerPane: React.FC = () => {
         logFileOperation('AI file manager', `${result.successful} files processed`);
         setRecentlyChangedNames(new Set(successfulNewNames));
         setTimeout(() => setRecentlyChangedNames(new Set()), 5000);
+        if (namesToRemoveFromSelection.size > 0) {
+          setSelectedFileNames(prev => {
+            const next = new Set(prev);
+            for (const n of namesToRemoveFromSelection) next.delete(n);
+            return next;
+          });
+        }
+        const hadMoves = plannedItems.some(p => p.operation === 'move');
+        const moveFolder = hadMoves && plannedItems.find(p => p.operation === 'move');
+        if (moveFolder && moveFolder.newName) {
+          const idx = moveFolder.newName.indexOf('/');
+          const folderName = idx >= 0 ? moveFolder.newName.slice(0, idx) : moveFolder.newName;
+          setRecentlyTransferredFolder(folderName);
+          setTimeout(() => setRecentlyTransferredFolder(null), 3000);
+        }
         setPlannedItems([]);
 
-        const successfulItems = plannedItems.filter(p => successfulNewNames.has(p.newName));
-        const undoItems = successfulItems.map(item => {
-          const parentDir = item.filePath.slice(0, item.filePath.length - item.fileName.length).replace(/[\\/]+$/, '') || currentDirectory;
-          const destPath = joinPath(parentDir, item.newName);
-          return {
-            operation: item.operation as 'rename' | 'copy',
-            sourcePath: item.filePath,
-            destPath,
-          };
-        });
-        if (undoItems.length > 0) {
-          setUndoEntry({ directory: currentDirectory, items: undoItems });
+        if (newUndoEntry) {
+          setUndoEntriesByDirectory(prev => ({ ...prev, [currentDirectory]: newUndoEntry }));
         }
 
         window.dispatchEvent(
@@ -353,6 +511,7 @@ export const AIFileManagerPane: React.FC = () => {
   }, [plannedItems, currentDirectory, setStatus, addLog, logFileOperation]);
 
   const handleRevert = useCallback(async () => {
+    const undoEntry = undoEntriesByDirectory[currentDirectory];
     if (!undoEntry || undoEntry.directory !== currentDirectory) return;
     setIsExecuting(true);
     setStatus('Reverting last changes...', 'info');
@@ -364,16 +523,31 @@ export const AIFileManagerPane: React.FC = () => {
       );
       addLog(`AI file manager: reverted ${result.successful} file(s)`, result.failed > 0 ? 'error' : 'info');
       if (result.successful > 0) {
+        setUndoEntriesByDirectory(prev => {
+          const next = { ...prev };
+          delete next[currentDirectory];
+          return next;
+        });
         const revertedNames = new Set<string>();
         for (const item of undoEntry.items) {
           if (item.operation === 'rename') {
             const name = item.sourcePath.split(/[/\\]/).pop();
             if (name) revertedNames.add(name);
+          } else if (item.operation === 'merge' && item.originalsWereDeleted && item.originalPaths) {
+            for (const p of item.originalPaths) {
+              const name = p.split(/[/\\]/).pop();
+              if (name) revertedNames.add(name);
+            }
+          } else if (item.operation === 'move') {
+            const name = item.fromPath.split(/[/\\]/).pop();
+            if (name) revertedNames.add(name);
+          } else if (item.operation === 'delete') {
+            const name = item.originalPath.split(/[/\\]/).pop();
+            if (name) revertedNames.add(name);
           }
         }
         setRecentlyRevertedNames(revertedNames);
         setTimeout(() => setRecentlyRevertedNames(new Set()), 5000);
-        setUndoEntry(null);
         window.dispatchEvent(
           new CustomEvent('forceDirectoryReload', { detail: { directory: currentDirectory } })
         );
@@ -385,7 +559,7 @@ export const AIFileManagerPane: React.FC = () => {
     } finally {
       setIsExecuting(false);
     }
-  }, [undoEntry, currentDirectory, setStatus, addLog]);
+  }, [undoEntriesByDirectory, currentDirectory, setStatus, addLog]);
 
   const handleClear = useCallback(() => {
     setCommand('');
@@ -405,12 +579,9 @@ export const AIFileManagerPane: React.FC = () => {
         justify="space-between"
         bg={itemBgColor}
       >
-        <Flex align="center" gap={2}>
-          <Sparkles size={20} />
-          <Text fontSize="lg" fontWeight="semibold" color={textColor}>
-            AI File Manager
-          </Text>
-        </Flex>
+        <Text fontSize="lg" fontWeight="semibold" color={textColor}>
+          File Manager
+        </Text>
         <Flex align="center" gap={2}>
           <Select
             value={model}
@@ -448,12 +619,14 @@ export const AIFileManagerPane: React.FC = () => {
           ref={listContainerRef}
           bg={resultBg}
           borderRadius="md"
-          p={2}
           borderWidth="1px"
           borderColor={borderColor}
           flex="1"
-          minH="0"
+          minH={0}
           overflow="auto"
+          pt={0}
+          px={2}
+          pb={2}
         >
           {!currentDirectory && (
             <Flex justify="center" align="center" flex="1" minH="80px">
@@ -462,7 +635,6 @@ export const AIFileManagerPane: React.FC = () => {
               </Text>
             </Flex>
           )}
-
           {currentDirectory && !isPreviewMode && items.length === 0 && (
             <Flex justify="center" align="center" flex="1" minH="80px">
               <Text fontSize="sm" color={textColorSubtle} textAlign="center">
@@ -470,16 +642,26 @@ export const AIFileManagerPane: React.FC = () => {
               </Text>
             </Flex>
           )}
-
           {currentDirectory && items.length > 0 && (
-            <VStack align="stretch" spacing={0}>
+            <VStack align="stretch" spacing={0} userSelect={!isPreviewMode ? 'none' : undefined}>
               <Flex
+                position="sticky"
+                top={0}
+                zIndex={100}
+                bg={headerStickyBg}
+                borderBottomWidth="1px"
+                borderBottomStyle="solid"
+                borderBottomColor={separatorColor}
+                boxShadow="0 1px 3px 0 rgba(0,0,0,0.1)"
                 px={2}
                 py={1.5}
                 align="center"
                 justify="space-between"
                 minH="28px"
-                borderRadius={0}
+                mx={-2}
+                mb={1}
+                pl={4}
+                pr={4}
               >
                 <Flex
                   align="center"
@@ -494,8 +676,7 @@ export const AIFileManagerPane: React.FC = () => {
                   <Checkbox
                     isChecked={isPreviewMode ? false : selectedFileNames.size === items.length && items.length > 0}
                     isIndeterminate={!isPreviewMode && selectedFileNames.size > 0 && selectedFileNames.size < items.length}
-                    onChange={() => toggleSelectAll()}
-                    onClick={e => e.stopPropagation()}
+                    onChange={() => {}}
                     size="sm"
                     isDisabled={isPreviewMode}
                     opacity={isPreviewMode ? 0.5 : 1}
@@ -504,7 +685,22 @@ export const AIFileManagerPane: React.FC = () => {
                     {isPreviewMode
                       ? (isExecuting
                         ? `Processing ${plannedItems.filter(i => i.status === 'done' || i.status === 'failed').length} of ${plannedItems.length}`
-                        : `${plannedItems.length} file(s) will be ${plannedItems.some(i => i.operation === 'copy') ? 'copied' : 'renamed'}`)
+                        : (() => {
+                            const hasMove = plannedItems.some(i => i.operation === 'move');
+                            const hasDelete = plannedItems.some(i => i.operation === 'delete');
+                            const hasMerge = plannedItems.some(i => i.operation === 'merge');
+                            const hasCopy = plannedItems.some(i => i.operation === 'copy');
+                            const hasRename = plannedItems.some(i => i.operation === 'rename');
+                            const hasExtract = plannedItems.some(i => i.extractFrom);
+                            const actions: string[] = [];
+                            if (hasMove) actions.push('moved');
+                            if (hasExtract) actions.push('extracted');
+                            if (hasDelete) actions.push('deleted');
+                            if (hasMerge) actions.push('merged');
+                            if (hasCopy) actions.push('copied');
+                            if (hasRename) actions.push('renamed');
+                            return `${plannedItems.length} file(s) will be ${actions.join(', ') || 'processed'}`;
+                          })())
                       : `${selectedFileNames.size} of ${items.length} selected`}
                   </Text>
                 </Flex>
@@ -528,7 +724,7 @@ export const AIFileManagerPane: React.FC = () => {
                       isDisabled={isExecuting}
                     />
                   </Flex>
-                ) : undoEntry && undoEntry.directory === currentDirectory ? (
+                ) : undoEntriesByDirectory[currentDirectory] ? (
                   <IconButton
                     aria-label="Revert last changes"
                     title="Revert last applied changes"
@@ -544,22 +740,56 @@ export const AIFileManagerPane: React.FC = () => {
                 )}
                 </Flex>
               </Flex>
-              {groups.map((group, gi) => (
+              {(() => {
+                let globalIndex = 0;
+                return groups.map((group, gi) => (
                 <React.Fragment key={group.key}>
                   {gi > 0 && <Separator />}
                   {group.items.map((f, fi) => {
+                    const currentIndex = globalIndex++;
                     const planned = plannedByFileName.get(f.name);
                     const isRecentlyChanged = recentlyChangedNames.has(f.name);
                     const isRecentlyReverted = recentlyRevertedNames.has(f.name);
                     const prevItem = fi > 0 ? group.items[fi - 1] : null;
                     const nextItem = fi < group.items.length - 1 ? group.items[fi + 1] : null;
                     const prevPlanned = prevItem ? plannedByFileName.get(prevItem.name) : null;
+                    const nextPlanned = nextItem ? plannedByFileName.get(nextItem.name) : null;
                     const prevIsChanged = prevItem && recentlyChangedNames.has(prevItem.name);
                     const nextIsChanged = nextItem && recentlyChangedNames.has(nextItem.name);
                     const prevIsReverted = prevItem && recentlyRevertedNames.has(prevItem.name);
                     const nextIsReverted = nextItem && recentlyRevertedNames.has(nextItem.name);
                     const showSectionSeparator = planned && prevPlanned;
                     const rowPy = 1.5;
+                    const isGhostFolder = (f as { isGhost?: boolean }).isGhost === true;
+                    const isExtractGhost = (f as { isExtractGhost?: boolean }).isExtractGhost === true;
+                    const isCreateGhost = (f as { isCreateGhost?: boolean }).isCreateGhost === true;
+                    const isTargetFolder = f.type === 'folder' && f.name === targetFolderFromMove;
+                    const isRecentlyTransferred = f.type === 'folder' && f.name === recentlyTransferredFolder;
+                    const isDeletePending = planned?.operation === 'delete';
+                    const isMergeSource = planned?.operation === 'merge';
+                    const isLastMergeSource = planned?.operation === 'merge' && nextPlanned?.operation !== 'merge';
+                    const fileRowBg =
+                      isDeletePending ? deletePendingBg
+                      : isMergeSource ? mergeSourceBg
+                      : isTargetFolder ? transferTargetBg
+                      : undefined;
+                    const copyItemsForFile = (plannedItemsBySource.get(f.name) || []).filter(p => p.operation === 'copy');
+                    const proposalText =
+                      planned?.extractFrom
+                        ? (planned?.operation === 'copy'
+                          ? `To copy from ${planned.extractFrom}`
+                          : `To extract from ${planned.extractFrom}`)
+                        : planned?.operation === 'move'
+                        ? `To move to ${planned.newName}`
+                        : planned?.operation === 'delete'
+                        ? 'To delete'
+                        : planned?.operation === 'merge'
+                        ? `→ merge into ${planned.newName}`
+                        : copyItemsForFile.length > 1
+                        ? `→ ${copyItemsForFile.length} copies to ${copyItemsForFile.map(p => p.newName).join(', ')}`
+                        : planned?.operation === 'copy'
+                        ? `→ copy to ${planned.newName}`
+                        : `→ ${planned?.newName || ''}`;
                     const fileRow = (
                       <Flex
                         ref={(el) => f.type !== 'folder' && observeFileElement(el, f.path)}
@@ -567,25 +797,27 @@ export const AIFileManagerPane: React.FC = () => {
                         py={rowPy}
                         align="center"
                         gap={2}
+                        bg={fileRowBg}
+                        opacity={isGhostFolder || isExtractGhost || isCreateGhost ? 0.65 : 1}
+                        fontStyle={isGhostFolder || isExtractGhost || isCreateGhost ? 'italic' : undefined}
                         _hover={!isPreviewMode ? { bg: hoverBg } : undefined}
                         borderRadius={0}
                         cursor={!isPreviewMode ? 'pointer' : undefined}
-                        onClick={!isPreviewMode ? () => toggleFileSelection(f.name) : undefined}
-                        borderWidth={(isRecentlyChanged || isRecentlyReverted) ? '2px' : 0}
+                        onClick={!isPreviewMode ? (e) => handleRowClick(f.name, currentIndex, e) : undefined}
+                        borderWidth={(isRecentlyChanged || isRecentlyReverted || isRecentlyTransferred) ? '2px' : 0}
                         borderTopWidth={
                           (isRecentlyChanged && prevIsChanged) || (isRecentlyReverted && prevIsReverted) ? 0 : undefined
                         }
                         borderBottomWidth={
                           (isRecentlyChanged && nextIsChanged) || (isRecentlyReverted && nextIsReverted) ? 0 : undefined
                         }
-                        borderColor={isRecentlyReverted ? 'blue.400' : 'green.400'}
-                        transition="border-color 0.2s, border-width 0.2s"
+                        borderColor={isRecentlyReverted ? 'blue.400' : isRecentlyTransferred ? 'green.400' : 'green.400'}
+                        transition="border-color 0.2s, border-width 0.2s, background 0.2s"
                       >
                         <Checkbox
                           isChecked={selectedFileNames.has(f.name)}
-                          onChange={() => toggleFileSelection(f.name)}
+                          onChange={() => {}}
                           size="sm"
-                          onClick={e => e.stopPropagation()}
                           isDisabled={isPreviewMode}
                           opacity={isPreviewMode ? 0.5 : 1}
                         />
@@ -628,14 +860,36 @@ export const AIFileManagerPane: React.FC = () => {
                             <Icon as={Check} boxSize={3} color={successColor} />
                           )}
                           {planned.status === 'failed' && (
-                            <Icon as={AlertCircle} boxSize={3} color={errorColor} title={planned.error} />
+                            <Box title={planned.error}>
+                              <Icon as={AlertCircle} boxSize={3} color={errorColor} />
+                            </Box>
                           )}
                         </Box>
                         <Text fontSize="xs" color={textColorMuted} noOfLines={1} flex={1}>
-                          {planned.operation === 'copy' ? '→ copy to ' : '→ '}
-                          {planned.newName}
+                          {proposalText}
                         </Text>
                       </Flex>
+                    );
+                    const mergeGhostRow = isLastMergeSource && mergeGhostItem && (
+                      <>
+                        <Separator />
+                        <Flex
+                          px={2}
+                          pl={6}
+                          py={1.5}
+                          align="center"
+                          gap={2}
+                          borderRadius={0}
+                          bg={mergeGhostBg}
+                          opacity={0.8}
+                          fontStyle="italic"
+                        >
+                          <Icon as={FileText} boxSize={4} color={iconColor} flexShrink={0} />
+                          <Text fontSize="xs" color={textColorMuted} noOfLines={1} flex={1}>
+                            {mergeGhostItem.fileName} (new merged file)
+                          </Text>
+                        </Flex>
+                      </>
                     );
                     if (planned && planned.status === 'pending') {
                       return (
@@ -644,6 +898,7 @@ export const AIFileManagerPane: React.FC = () => {
                           <Box bg={processingRowBg} borderRadius={0}>
                             {fileRow}
                             {proposalRow}
+                            {mergeGhostRow}
                           </Box>
                         </React.Fragment>
                       );
@@ -653,11 +908,13 @@ export const AIFileManagerPane: React.FC = () => {
                         {showSectionSeparator && <Separator />}
                         {fileRow}
                         {proposalRow}
+                        {mergeGhostRow}
                       </React.Fragment>
                     );
                   })}
                 </React.Fragment>
-              ))}
+              ));
+            })()}
             </VStack>
           )}
         </Box>
@@ -667,7 +924,7 @@ export const AIFileManagerPane: React.FC = () => {
       <Box p={4} bg={panelBg} borderTop="1px solid" borderColor={borderColor}>
         <Flex gap={2} align="center">
           <Input
-            placeholder="e.g. improve naming of selection, make all caps my selection"
+            placeholder="e.g. extract folder A, extract B indexes from Tax Return, move G files to finals"
             value={command}
             onChange={e => setCommand(e.target.value)}
             onKeyDown={e => {

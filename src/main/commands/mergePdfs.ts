@@ -5,6 +5,8 @@ import { PDFDocument } from 'pdf-lib';
 interface MergePDFOptions {
   files: string[];
   outputFilename: string;
+  /** When set, write merged PDF to this directory instead of currentDirectory */
+  outputDirectory?: string;
 }
 
 export async function mergePdfs(currentDirectory: string, options: MergePDFOptions): Promise<{ success: boolean; message: string }> {
@@ -64,8 +66,14 @@ export async function mergePdfs(currentDirectory: string, options: MergePDFOptio
     }
 
     // Generate the output file path
-    const outputPath = path.join(currentDirectory, options.outputFilename);
+    const outputDir = options.outputDirectory || currentDirectory;
+    const outputPath = path.join(outputDir, options.outputFilename);
     
+    // Ensure output directory exists
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
     // Check if output file already exists
     if (fs.existsSync(outputPath)) {
       return { success: false, message: `Output file already exists: ${options.outputFilename}` };

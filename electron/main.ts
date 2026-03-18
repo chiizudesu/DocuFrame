@@ -1878,6 +1878,51 @@ ipcMain.handle('copy-file-silent', async (_, sourcePath: string, targetPath: str
   }
 });
 
+// Silent move files (no conflict dialogs - auto-rename on conflict)
+ipcMain.handle('move-files-silent', async (_, files: string[], targetDirectory: string) => {
+  try {
+    const results: Array<{ file: string; status: string; path?: string; error?: string; reason?: string }> = [];
+    for (const filePath of files) {
+      try {
+        const fileName = path.basename(filePath);
+        let targetPath = path.join(targetDirectory, fileName);
+        if (path.dirname(filePath) === targetDirectory) {
+          results.push({ file: fileName, status: 'skipped', reason: 'Same directory' });
+          continue;
+        }
+        if (await fileExists(targetPath)) {
+          targetPath = await generateUniqueFileName(targetPath);
+        }
+        const stats = await fsPromises.stat(filePath);
+        if (stats.isDirectory()) {
+          await fsPromises.cp(filePath, targetPath, { recursive: true });
+          await fsPromises.rm(filePath, { recursive: true, force: true });
+        } else {
+          await fsPromises.copyFile(filePath, targetPath);
+          await fsPromises.unlink(filePath);
+        }
+        results.push({ file: path.basename(targetPath), status: 'success', path: targetPath });
+      } catch (error) {
+        results.push({ file: path.basename(filePath), status: 'error', error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    const successfulFiles = results.filter(r => r.status === 'success');
+    if (successfulFiles.length > 0) {
+      const mainWindow = BrowserWindow.getAllWindows()[0];
+      if (mainWindow) {
+        mainWindow.webContents.send('folderContentsChanged', {
+          directory: targetDirectory,
+          newFiles: successfulFiles.map(r => r.path).filter(Boolean)
+        });
+      }
+    }
+    return results;
+  } catch (error) {
+    console.error('Error in move-files-silent handler:', error);
+    throw error;
+  }
+});
+
 // Helper function to generate unique filename with (#) suffix
 async function generateUniqueFileName(originalPath: string): Promise<string> {
   const dir = path.dirname(originalPath);

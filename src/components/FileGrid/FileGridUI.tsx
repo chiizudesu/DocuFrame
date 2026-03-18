@@ -163,6 +163,10 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
 
         {/* Rename Group */}
         <Divider />
+        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('add_to_file_manager')}>
+          <FolderPlus size={16} style={{ marginRight: '8px' }} />
+          <Text fontSize="sm">Add selection to File Manager</Text>
+        </Flex>
         {selectedFiles.length === 1 && (
         <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('rename')}>
           <Edit2 size={16} style={{ marginRight: '8px' }} />
