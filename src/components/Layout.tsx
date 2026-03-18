@@ -3,6 +3,7 @@ import { Grid, GridItem, Box, Flex, useColorModeValue, Text, HStack, IconButton 
 import { ClientInfoPane } from './ClientInfoPane';
 import { ClientInfoBar } from './ClientInfoBar';
 import { PreviewPane } from './PreviewPane';
+import { AIFileManagerPane } from './AIFileManagerPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
 import { OutputLog } from './OutputLog';
@@ -16,7 +17,7 @@ import { settingsService } from '../services/settings';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 
 export const Layout: React.FC = () => {
-  const { showOutputLog, isPreviewPaneOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
+  const { showOutputLog, isPreviewPaneOpen, isAIFileManagerOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
   const { clientInfo } = useClientInfo(currentDirectory, rootDirectory);
   const [sidebarWidth, setSidebarWidth] = useState(263);
   const [logHeight, setLogHeight] = useState(200);
@@ -145,12 +146,12 @@ export const Layout: React.FC = () => {
 }, []);
 
   return <Grid templateAreas={`
-        "tabs tabs tabs"
-        "header header header"
-        "sidebar main preview"
-        ${showOutputLog ? '"sidebar footer preview"' : ''}
-        "status status status"
-      `} gridTemplateRows={`auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
+        "tabs tabs tabs tabs"
+        "header header header header"
+        "sidebar main preview aiFileManager"
+        ${showOutputLog ? '"sidebar footer preview aiFileManager"' : ''}
+        "status status status status"
+      `} gridTemplateRows={`auto auto 1fr ${showOutputLog ? (logMinimized ? 40 : logHeight) + 'px' : ''} auto`} gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isAIFileManagerOpen ? '420px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
     <GridItem area="header" bg={headerBgColor} p={0} overflow="hidden" position="relative" zIndex={2}>
       <Box>
@@ -236,6 +237,21 @@ export const Layout: React.FC = () => {
       width={isPreviewPaneOpen ? 'auto' : '0px'}
     >
       <PreviewPane />
+    </GridItem>
+    {/* AI File Manager Pane */}
+    <GridItem 
+      area="aiFileManager" 
+      bg={bgColor} 
+      borderLeft="1px" 
+      borderColor={borderColor} 
+      overflow="hidden" 
+      display="flex" 
+      flexDirection="column" 
+      boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
+      visibility={isAIFileManagerOpen ? 'visible' : 'hidden'}
+      width={isAIFileManagerOpen ? 'auto' : '0px'}
+    >
+      <AIFileManagerPane />
     </GridItem>
     {/* Resize Handle for Output Log (only over main content, not sidebar) */}
     {showOutputLog && !logMinimized && (

@@ -66,6 +66,8 @@ interface AppContextType {
   setPreviewFiles: (files: FileItem[]) => void;
   isPreviewPaneOpen: boolean;
   setIsPreviewPaneOpen: (isOpen: boolean) => void;
+  isAIFileManagerOpen: boolean;
+  setIsAIFileManagerOpen: (isOpen: boolean) => void;
   selectAllFiles: () => void;
   setSelectAllFiles: (callback: () => void) => void;
   folderItems: FileItem[];
@@ -161,6 +163,7 @@ export const AppProvider: React.FC<{
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
+  const [isAIFileManagerOpen, setIsAIFileManagerOpen] = useState<boolean>(false);
   const [selectAllFilesCallback, setSelectAllFilesCallback] = useState<() => void>(() => () => {});
   const [folderItems, setFolderItems] = useState<FileItem[]>([]);
   // Selected files for function buttons
@@ -489,6 +492,8 @@ export const AppProvider: React.FC<{
       setPreviewFiles,
       isPreviewPaneOpen,
       setIsPreviewPaneOpen,
+      isAIFileManagerOpen,
+      setIsAIFileManagerOpen,
       selectAllFiles,
       setSelectAllFiles,
       folderItems,

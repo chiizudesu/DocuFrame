@@ -85,6 +85,29 @@ export function getAllIndexKeys(): string[] {
 }
 
 /**
+ * Add suffix to filename (before extension). E.g. "File.pdf" + " - in process" -> "File - in process.pdf"
+ */
+export function addSuffix(filename: string, suffix: string): string {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1) return filename + suffix;
+  const base = filename.slice(0, lastDot);
+  const ext = filename.slice(lastDot);
+  return base + suffix + ext;
+}
+
+/**
+ * Remove suffix from filename (before extension). E.g. "File - in progress.pdf" - " - in progress" -> "File.pdf"
+ */
+export function removeSuffix(filename: string, suffix: string): string {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1) return filename.endsWith(suffix) ? filename.slice(0, -suffix.length) : filename;
+  const base = filename.slice(0, lastDot);
+  const ext = filename.slice(lastDot);
+  if (!base.endsWith(suffix)) return filename;
+  return base.slice(0, -suffix.length) + ext;
+}
+
+/**
  * Remove index prefix from filename
  */
 export function removeIndexPrefix(filename: string): string {

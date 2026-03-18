@@ -487,7 +487,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     isGroupedByIndex,
     setIsGroupedByIndex,
     isPreviewPaneOpen,
-    setIsPreviewPaneOpen
+    setIsPreviewPaneOpen,
+    isAIFileManagerOpen,
+    setIsAIFileManagerOpen
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const [isOrgCodesOpen, setOrgCodesOpen] = useState(false);
@@ -1460,6 +1462,25 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
               setStatus(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`, 'info');
             }}
             _hover={{ bg: isPreviewPaneOpen ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
+            h="40px"
+            w="40px"
+          />
+        </Tooltip>
+
+        <Tooltip label={isAIFileManagerOpen ? 'Hide AI file manager' : 'Show AI file manager'} placement="bottom" hasArrow>
+          <IconButton
+            aria-label="AI file manager"
+            icon={<Icon as={Brain} boxSize={5} />}
+            size="sm"
+            variant={isAIFileManagerOpen ? "solid" : "ghost"}
+            bg={isAIFileManagerOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
+            color={isAIFileManagerOpen ? "white" : buttonColor}
+            onClick={() => {
+              setIsAIFileManagerOpen(!isAIFileManagerOpen);
+              addLog(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`);
+              setStatus(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`, 'info');
+            }}
+            _hover={{ bg: isAIFileManagerOpen ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
             h="40px"
             w="40px"
           />
