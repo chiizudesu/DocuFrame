@@ -3950,6 +3950,10 @@ export const FileGrid: React.FC = () => {
     const paths = new Set(sortedFiles.map(f => f.path));
     const cache = folderDropHandlersCacheRef.current;
     for (const key of cache.keys()) {
+      if (typeof key !== 'string') {
+        cache.delete(key as any);
+        continue;
+      }
       const path = key.split('\x01')[0];
       if (!paths.has(path)) cache.delete(key);
     }

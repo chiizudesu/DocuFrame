@@ -807,6 +807,10 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
     const paths = new Set(sortedFiles.map(f => f.path));
     fileStateCacheRef.current.forEach((_, path) => { if (!paths.has(path)) fileStateCacheRef.current.delete(path); });
     cellStylesCacheRef.current.forEach((_, key) => {
+      if (typeof key !== 'string') {
+        cellStylesCacheRef.current.delete(key as any);
+        return;
+      }
       const path = key.split('\x01')[0];
       if (!paths.has(path)) cellStylesCacheRef.current.delete(key);
     });
