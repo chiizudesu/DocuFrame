@@ -39,7 +39,7 @@ export interface AppSettings {
   backgroundType?: 'watermark' | 'backgroundFill'; // Type of background to display (watermark = corner mascot)
   backgroundFillPath?: string; // Path to background fill image (fills entire filegrid, 10% opacity)
   enableBackgrounds?: boolean; // Enable/disable background images
-  showClientInfoBar?: boolean; // Enable/disable client info bar in header
+  showClientInfoBar?: boolean; // Enable/disable client info bar below file grid
   isGroupedByIndex?: boolean; // Deprecated - use groupViewAlwaysEnabled and groupViewBlacklist
   groupViewAlwaysEnabled?: boolean; // When true, group view on for all except blacklist (default true)
   groupViewBlacklist?: string[]; // Directories where group view is disabled (paths normalized)

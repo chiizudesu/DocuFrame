@@ -1930,7 +1930,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         <VStack align="start" spacing={1}>
                           <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Show Client Info Bar</FormLabel>
                           <Text fontSize="xs" color={secondaryTextColor}>
-                            Show the client info row (name, IRD, job links) between the address bar and function row
+                            Show the client info row (name, IRD, job links) below the file grid, above the footer
                           </Text>
                         </VStack>
                         <Switch

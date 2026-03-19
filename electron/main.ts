@@ -565,6 +565,8 @@ const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    minWidth: 1200,
+    minHeight: 800,
     frame: false,
     titleBarStyle: 'hidden',
     icon: process.env.NODE_ENV === 'development' 
@@ -2570,6 +2572,8 @@ ipcMain.handle('open-new-window', async (_, initialPath?: string) => {
     const newWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      minWidth: 1200,
+      minHeight: 800,
       frame: false,
       titleBarStyle: 'hidden',
       icon: process.env.NODE_ENV === 'development' 

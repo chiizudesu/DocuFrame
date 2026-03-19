@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, Flex, Divider, useColorModeValue, Icon, IconButton, HStack } from '@chakra-ui/react';
+import * as ScrollArea from '@radix-ui/react-scroll-area';
 import { Folder, Star, ChevronUp, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
@@ -64,41 +65,36 @@ export const ClientInfoPane: React.FC = () => {
 
   return (
     <Box 
-      p={4} 
       h="100%" 
       bg={bgColor}
       display="flex"
       flexDirection="column"
       overflow="hidden"
+      minH={0}
     >
-      {/* Quick Access Section */}
-      <Box mb={1} flexShrink={0}>
-        <Box {...sectionHeaderStyle} py={1} mb={0}>
-          <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
-            QUICK ACCESS
-          </Text>
-          {/* Removed refresh button */}
-        </Box>
-        {quickAccessOpen && (
-          <Box w="100%" flex="1" display="flex" flexDirection="column" minHeight="0" pt={0} pb={0}>
-            <Box
-              position="relative"
-              flex="1"
-              minH="0"
-              display="flex"
-              flexDirection="column"
-              bg={transferBg}
-              overflow="hidden"
-            >
-              {/* Folders list */}
+      <ScrollArea.Root
+        type="always"
+        style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: 4 }}
+        className="sidebar-scroll-area"
+      >
+        <ScrollArea.Viewport style={{ height: '100%', width: '100%' }}>
+          <Box p={4}>
+        {/* Quick Access Section */}
+        <Box mb={1} flexShrink={0}>
+          <Box {...sectionHeaderStyle} py={1} mb={0}>
+            <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
+              QUICK ACCESS
+            </Text>
+          </Box>
+          {quickAccessOpen && (
+            <Box w="100%" display="flex" flexDirection="column" pt={0} pb={0}>
               <Box
-                flex="1"
-                overflowY="auto"
-                overflowX="hidden"
-                className="enhanced-scrollbar"
-                maxH="600px" // Increased height to show more Quick Access folders
-                minH="100px"
+                position="relative"
+                display="flex"
+                flexDirection="column"
+                bg={transferBg}
               >
+                {/* Folders list */}
                 <>
                   {/* Pinned quick access folders */}
                   {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 ? (
@@ -237,11 +233,10 @@ export const ClientInfoPane: React.FC = () => {
                 </>
               </Box>
             </Box>
-          </Box>
-        )}
-      </Box>
+          )}
+        </Box>
 
-      {/* Recent Clients Section */}
+        {/* Recent Clients Section */}
       {Array.isArray(recentClientPaths) && recentClientPaths.length > 0 && (
         <Box
           mb={0}
@@ -259,20 +254,9 @@ export const ClientInfoPane: React.FC = () => {
           </Box>
           <Box
             position="relative"
-            flex="1"
-            minH="0"
             display="flex"
             flexDirection="column"
-            overflow="hidden"
           >
-            <Box
-              flex="1"
-              overflowY="auto"
-              overflowX="hidden"
-              className="enhanced-scrollbar"
-              maxH="200px"
-              minH="0"
-            >
               {recentClientPaths.map((clientPath) => (
                 <Flex
                   key={clientPath}
@@ -300,10 +284,16 @@ export const ClientInfoPane: React.FC = () => {
                   </Text>
                 </Flex>
               ))}
-            </Box>
           </Box>
         </Box>
       )}
+
+          </Box>
+        </ScrollArea.Viewport>
+        <ScrollArea.Scrollbar orientation="vertical">
+          <ScrollArea.Thumb />
+        </ScrollArea.Scrollbar>
+      </ScrollArea.Root>
       {/* Transfer Files Section removed */}
 
       {/* Document Insights functionality moved to dedicated dialog */}

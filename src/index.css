@@ -11,8 +11,8 @@
 
 /* Webkit Scrollbar Styling with higher specificity */
 .enhanced-scrollbar::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
+  width: 6px !important;
+  height: 6px !important;
 }
 
 .enhanced-scrollbar::-webkit-scrollbar-track {
@@ -22,7 +22,7 @@
 
 .enhanced-scrollbar::-webkit-scrollbar-thumb {
   background: transparent !important;
-  border-radius: 10px !important;
+  border-radius: 8px !important;
   border: 2px solid transparent !important;
   background-clip: content-box !important;
   transition: background-color 0.3s ease !important;
@@ -42,6 +42,12 @@
   background: transparent !important;
 }
 
+.enhanced-scrollbar::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* Dark mode scrollbar */
 [data-theme="dark"] .enhanced-scrollbar:hover {
   scrollbar-color: rgba(107, 114, 128, 0.5) transparent !important;
@@ -59,8 +65,8 @@
 
 /* Global override for any conflicting scrollbar styles */
 * .enhanced-scrollbar::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
+  width: 6px !important;
+  height: 6px !important;
 }
 
 * .enhanced-scrollbar::-webkit-scrollbar-track {
@@ -69,7 +75,7 @@
 
 * .enhanced-scrollbar::-webkit-scrollbar-thumb {
   background: transparent !important;
-  border-radius: 10px !important;
+  border-radius: 8px !important;
   transition: background-color 0.3s ease !important;
 }
 
