@@ -39,7 +39,9 @@ export interface AppSettings {
   backgroundFillPath?: string; // Path to background fill image (fills entire filegrid, 10% opacity)
   enableBackgrounds?: boolean; // Enable/disable background images
   showClientInfoBar?: boolean; // Enable/disable client info bar in header
-  isGroupedByIndex?: boolean; // Group files by index prefix in file grid (default true)
+  isGroupedByIndex?: boolean; // Deprecated - use groupViewAlwaysEnabled and groupViewBlacklist
+  groupViewAlwaysEnabled?: boolean; // When true, group view on for all except blacklist (default true)
+  groupViewBlacklist?: string[]; // Directories where group view is disabled (paths normalized)
   // Pomodoro timer settings
   pomodoroSessionMinutes?: number; // Session duration in minutes (default 25)
   pomodoroBreakMinutes?: number; // Break duration in minutes (default 5)
@@ -50,7 +52,7 @@ export interface AppSettings {
   pomodoroSoundVolume?: number; // Sound volume 50-200% (default 100)
   fileGridSortPreferences?: Record<string, { sortColumn: string; sortDirection: string }>; // Per-directory sort (path -> { sortColumn, sortDirection })
   fileGridColumnWidths?: { name: number; size: number; modified: number; type: number }; // Global column widths (consistent across directories)
-  fileGridGroupByIndexPreferences?: Record<string, boolean>; // Per-directory: show layer/group header when grouping by index (path -> boolean)
+  fileGridGroupByIndexPreferences?: Record<string, boolean>; // Deprecated - no longer used
 
 }
 

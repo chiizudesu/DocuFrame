@@ -8,10 +8,21 @@ import { readFileSync } from 'fs'
 // Read package.json to get version
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
+// Inject React DevTools connection script when running with standalone profiler (npm run profiler)
+const reactDevToolsPlugin = () => ({
+  name: 'react-devtools-inject',
+  transformIndexHtml(html: string) {
+    if (process.env.VITE_REACT_DEVTOOLS !== 'true') return html
+    const script = '<script src="http://localhost:8097"></script>'
+    return html.replace('</head>', `  ${script}\n</head>`)
+  },
+})
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    reactDevToolsPlugin(),
     electron([
       {
         // Main process entry file of the Electron App.

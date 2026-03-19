@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import { useAppContext } from '../context/AppContext';
+import { normalizePath } from '../utils/path';
 
 interface SettingsWindowProps {
   isOpen: boolean;
@@ -218,6 +219,8 @@ interface Settings {
   fileGridBackgroundPath?: string;
   backgroundType?: 'watermark' | 'backgroundFill';
   backgroundFillPath?: string;
+  groupViewAlwaysEnabled?: boolean;
+  groupViewBlacklist?: string[];
 
 }
 
@@ -253,7 +256,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
   const [hideDotFiles, setHideDotFiles] = useState(true);
-  const [aiEditorInstructions, setAiEditorInstructions] = useState(''); // NEW
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
@@ -264,15 +266,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [backgroundImages, setBackgroundImages] = useState<Array<{ filename: string; path: string; relativePath: string }>>([]);
   const [selectedBackground, setSelectedBackground] = useState<string>('');
   const [enableBackgrounds, setEnableBackgrounds] = useState(true);
+  const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState(true);
+  const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
+  const [groupViewBlacklistInput, setGroupViewBlacklistInput] = useState('');
 
-  
   // Keyboard recorder state
   const [isKeyRecorderOpen, setIsKeyRecorderOpen] = useState(false);
   const [recordingKeys, setRecordingKeys] = useState<string[]>([]);
   const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
   
   const toast = useToast();
-  const { setRootDirectory, showClientInfoBar, setShowClientInfoBar, reloadSettings, setAiEditorInstructions: setContextAiEditorInstructions } = useAppContext();
+  const { setRootDirectory, showClientInfoBar, setShowClientInfoBar, reloadSettings } = useAppContext();
 
   // Theme colors
   const bgColor = useColorModeValue('white', 'gray.800');
@@ -319,8 +323,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         // NEW: file grid setting (default true when unset)
         setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
         setHideDotFiles(loadedSettings.hideDotFiles !== false);
-        // NEW: AI editor instructions
-        setAiEditorInstructions(loadedSettings.aiEditorInstructions || 'Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
         // Work shift settings
         setWorkShiftStart(loadedSettings.workShiftStart || '06:00');
         setWorkShiftEnd(loadedSettings.workShiftEnd || '15:00');
@@ -335,6 +337,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         }
         setBackgroundFillPath(loadedSettings.backgroundFillPath || '');
         setEnableBackgrounds(loadedSettings.enableBackgrounds !== false);
+        setGroupViewAlwaysEnabled(loadedSettings.groupViewAlwaysEnabled !== false);
+        setGroupViewBlacklist(Array.isArray(loadedSettings.groupViewBlacklist) ? loadedSettings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -422,7 +426,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
         hideDotFiles,
-        aiEditorInstructions, // NEW
         workShiftStart,
         workShiftEnd,
         productivityTargetHours,
@@ -431,6 +434,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         backgroundType,
         backgroundFillPath,
         enableBackgrounds,
+        groupViewAlwaysEnabled,
+        groupViewBlacklist,
 
       };
       
@@ -462,10 +467,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       
       // Immediately reload settings to update the UI
       await reloadSettings();
-      
-      // Immediately update the app context with the new AI editor instructions
-      setContextAiEditorInstructions(aiEditorInstructions);
-      console.log('Settings saved - AI Editor Instructions updated to:', aiEditorInstructions);
       
       // Force a re-render to show updated shortcuts immediately
       setActivationShortcut(activationShortcut);
@@ -1104,7 +1105,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               _hover={{ bg: tabHoverBg }}
               transition="all 0.2s"
             >
-              <Text>AI</Text>
+              <Text>Group View</Text>
             </Tab>
           </TabList>
           </Box>
@@ -2206,7 +2207,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               </VStack>
             </TabPanel>
 
-            {/* AI Tab */}
+            {/* Group View Tab */}
             <TabPanel 
               h="full" 
               overflowY="auto" 
@@ -2226,45 +2227,106 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                 },
               }}
             >
-              <VStack spacing={6} align="stretch">
-                {/* AI Editor Section */}
-                <Box>
-                  <Heading size="md" mb={2} color={textColor}>
-                    AI Editor
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={4}>
-                    Customize the instructions that guide the AI when rewriting emails
+              <VStack spacing={4} align="stretch">
+                <Box pb={3.5}>
+                  <Heading size="sm" mb={1.5} color={textColor}>Group View</Heading>
+                  <Text fontSize="sm" color={secondaryTextColor}>
+                    Control when files are grouped by index prefix in the file grid
                   </Text>
-                  
-                  <VStack spacing={4} align="stretch">
-                    <Box>
-                      <Text fontSize="sm" fontWeight="semibold" color={textColor} mb={2}>
-                        Custom Instructions
-                      </Text>
-                      <Text fontSize="sm" color={secondaryTextColor} mb={3}>
-                        Instructions shown to users when they open the AI Email Editor dialog
-                      </Text>
-                      <Textarea
-                        value={aiEditorInstructions}
-                        onChange={(e) => setAiEditorInstructions(e.target.value)}
-                        placeholder="Enter custom instructions for the AI editor..."
-                        minH="120px"
-                        maxH="240px"
-                        resize="vertical"
-                        bg={useColorModeValue('white', 'gray.700')}
-                        borderColor={useColorModeValue('gray.300', 'gray.600')}
+                </Box>
+
+                <FormControl>
+                  <HStack justify="space-between">
+                    <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Always enable group view</FormLabel>
+                    <Switch
+                      isChecked={groupViewAlwaysEnabled}
+                      onChange={(e) => setGroupViewAlwaysEnabled(e.target.checked)}
+                      colorScheme="blue"
+                      size="sm"
+                    />
+                  </HStack>
+                </FormControl>
+
+                <Box>
+                  <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={2}>Blacklisted Directories</FormLabel>
+                  <HStack mb={2} spacing={2}>
+                    <InputGroup size="sm">
+                      <Input
+                        value={groupViewBlacklistInput}
+                        onChange={(e) => setGroupViewBlacklistInput(e.target.value)}
+                        placeholder="Enter directory path..."
+                        bg={useColorModeValue('white', 'gray.600')}
                         borderRadius={0}
-                        _hover={{
-                          borderColor: useColorModeValue('gray.400', 'gray.500')
+                        fontSize="xs"
+                        h="31px"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const path = normalizePath(groupViewBlacklistInput.trim());
+                            if (path && !groupViewBlacklist.includes(path)) {
+                              setGroupViewBlacklist([...groupViewBlacklist, path]);
+                              setGroupViewBlacklistInput('');
+                            }
+                          }
                         }}
-                        _focus={{
-                          borderColor: 'blue.500',
-                          boxShadow: '0 0 0 1px #3182ce'
-                        }}
-                        fontSize="sm"
                       />
-                    </Box>
-                  </VStack>
+                      <InputRightElement width="3.5rem" h="31px">
+                        <Button
+                          h="22px"
+                          size="xs"
+                          onClick={async () => {
+                            try {
+                              const result = await (window.electronAPI as any).selectDirectory();
+                              if (result) {
+                                const path = normalizePath(result);
+                                if (path && !groupViewBlacklist.includes(path)) {
+                                  setGroupViewBlacklist([...groupViewBlacklist, path]);
+                                }
+                              }
+                            } catch (error) {
+                              console.error('Error selecting directory:', error);
+                            }
+                          }}
+                          borderRadius={0}
+                        >
+                          <Icon as={FolderOpen} boxSize={3.5} />
+                        </Button>
+                      </InputRightElement>
+                    </InputGroup>
+                    <IconButton
+                      aria-label="Add to blacklist"
+                      icon={<Icon as={Plus} boxSize={4} />}
+                      size="sm"
+                      colorScheme="blue"
+                      onClick={() => {
+                        const path = normalizePath(groupViewBlacklistInput.trim());
+                        if (path && !groupViewBlacklist.includes(path)) {
+                          setGroupViewBlacklist([...groupViewBlacklist, path]);
+                          setGroupViewBlacklistInput('');
+                        }
+                      }}
+                      isDisabled={!groupViewBlacklistInput.trim()}
+                      borderRadius={0}
+                      h="31px"
+                      w="31px"
+                    />
+                  </HStack>
+                  {groupViewBlacklist.length > 0 && (
+                    <VStack align="stretch" spacing={1}>
+                      {groupViewBlacklist.map((path) => (
+                        <Flex key={path} align="center" justify="space-between" p={2} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
+                          <Text fontSize="xs" color={textColor} isTruncated flex={1} title={path}>{path}</Text>
+                          <IconButton
+                            aria-label="Remove from blacklist"
+                            icon={<Icon as={Trash2} boxSize={3} />}
+                            size="xs"
+                            variant="ghost"
+                            colorScheme="red"
+                            onClick={() => setGroupViewBlacklist(groupViewBlacklist.filter((p) => p !== path))}
+                          />
+                        </Flex>
+                      ))}
+                    </VStack>
+                  )}
                 </Box>
               </VStack>
             </TabPanel>

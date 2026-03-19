@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef, createContext, useContext, useCallback, ReactNode } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo, ReactNode } from 'react';
+import { createContext, useContext, useContextSelector } from 'use-context-selector';
 import { settingsService } from '../services/settings';
 import { normalizePath } from '../utils/path';
 
@@ -71,6 +72,7 @@ interface AppContextType {
   setSelectAllFiles: (callback: () => void) => void;
   folderItems: FileItem[];
   setFolderItems: (items: FileItem[]) => void;
+  setDisplayedDirectory: (path: string) => void;
   selectedFiles: string[];
   setSelectedFiles: (files: string[]) => void;
   // Document insights functionality removed - now available as dedicated dialog
@@ -125,9 +127,8 @@ interface AppContextType {
   addQuickAccessPath: (path: string) => Promise<void>;
   removeQuickAccessPath: (path: string) => Promise<void>;
   moveQuickAccessPath: (path: string, direction: 'up' | 'down') => Promise<void>;
-  // File grouping by index prefix
+  // File grouping by index prefix (computed from settings: always on except blacklist)
   isGroupedByIndex: boolean;
-  setIsGroupedByIndex: (value: boolean) => void | Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -189,10 +190,11 @@ export const AppProvider: React.FC<{
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
-  // File grouping by index prefix - per-directory preference (default true for new dirs)
-  const [isGroupedByIndex, setIsGroupedByIndexState] = useState<boolean>(true);
-  const [fileGridGroupByIndexPreferences, setFileGridGroupByIndexPreferences] = useState<Record<string, boolean>>({});
-  const [isGroupedByIndexDefault, setIsGroupedByIndexDefault] = useState<boolean>(true);
+  // File grouping by index prefix - always on except blacklisted directories (from settings)
+  const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
+  const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
+  // Directory whose contents are actually displayed (lags behind currentDirectory until load completes)
+  const [displayedDirectory, setDisplayedDirectory] = useState<string>('');
   
   // Task Timer file operation logging
   const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
@@ -251,8 +253,8 @@ export const AppProvider: React.FC<{
       }
       setEnableBackspaceNavigationShortcut(settings.enableBackspaceNavigationShortcut !== false);
       setShowClientInfoBar(settings.showClientInfoBar !== false);
-      setIsGroupedByIndexDefault(settings.isGroupedByIndex !== false);
-      setFileGridGroupByIndexPreferences(settings.fileGridGroupByIndexPreferences || {});
+      setGroupViewAlwaysEnabled(settings.groupViewAlwaysEnabled !== false);
+      setGroupViewBlacklist(Array.isArray(settings.groupViewBlacklist) ? settings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
 
       // Load quick access pinned paths
       if (Array.isArray(settings.quickAccessPaths)) {
@@ -292,13 +294,18 @@ export const AppProvider: React.FC<{
     }
   }, [currentDirectory]);
 
-  // Sync layer/group header preference when directory changes (per-directory)
-  useEffect(() => {
-    const key = normalizePath(currentDirectory || '');
-    const pref = fileGridGroupByIndexPreferences[key];
-    const effective = pref !== undefined ? pref : isGroupedByIndexDefault;
-    setIsGroupedByIndexState(effective);
-  }, [currentDirectory, fileGridGroupByIndexPreferences, isGroupedByIndexDefault]);
+  // Compute isGroupedByIndex from displayedDirectory (not currentDirectory) so group view only
+  // changes when the new folder's contents are actually shown, not when navigation starts
+  const isGroupedByIndex = useMemo(() => {
+    if (!groupViewAlwaysEnabled) return false;
+    const dir = normalizePath(displayedDirectory || currentDirectory || '');
+    if (!dir) return true;
+    const isBlacklisted = groupViewBlacklist.some((b) => {
+      const nb = normalizePath(b);
+      return dir === nb || dir.startsWith(nb + '/') || dir.startsWith(nb + '\\');
+    });
+    return !isBlacklisted;
+  }, [displayedDirectory, currentDirectory, groupViewAlwaysEnabled, groupViewBlacklist]);
 
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
@@ -350,19 +357,24 @@ export const AppProvider: React.FC<{
     setSelectAllFilesCallback(() => callback);
   }, []);
 
-  const addRecentlyTransferredFiles = useCallback((filePaths: string[]) => {
-    setRecentlyTransferredFiles(prev => [...prev, ...filePaths]);
+  const removeRecentlyTransferredFile = useCallback((filePath: string) => {
+    const normalizedToRemove = filePath.replace(/\\/g, '/');
+    setRecentlyTransferredFiles(prev =>
+      prev.filter(p => p !== filePath && p.replace(/\\/g, '/') !== normalizedToRemove)
+    );
   }, []);
+
+  const addRecentlyTransferredFiles = useCallback((filePaths: string[]) => {
+    if (filePaths.length === 0) return;
+    setRecentlyTransferredFiles(prev => [...prev, ...filePaths]);
+    filePaths.forEach((fp) => {
+      setTimeout(() => removeRecentlyTransferredFile(fp), 5000);
+    });
+  }, [removeRecentlyTransferredFile]);
 
   const clearRecentlyTransferredFiles = useCallback(() => {
     setRecentlyTransferredFiles([]);
   }, []);
-
-  const removeRecentlyTransferredFile = useCallback((filePath: string) => {
-    setRecentlyTransferredFiles(prev => prev.filter(path => path !== filePath));
-  }, []);
-
-
 
   const addTabToCurrentWindow = useCallback((path?: string) => {
     if ((window as any).__tabFunctions?.addNewTab) {
@@ -439,19 +451,6 @@ export const AppProvider: React.FC<{
     }
   }, []);
 
-  const setIsGroupedByIndex = useCallback(async (value: boolean) => {
-    const key = normalizePath(currentDirectory || '');
-    const newPrefs = { ...fileGridGroupByIndexPreferences, [key]: value };
-    setFileGridGroupByIndexPreferences(newPrefs);
-    setIsGroupedByIndexState(value);
-    try {
-      const current = await settingsService.getSettings();
-      await settingsService.setSettings({ ...current, fileGridGroupByIndexPreferences: newPrefs });
-    } catch (e) {
-      console.error('Failed to persist group by index preference:', e);
-    }
-  }, [currentDirectory, fileGridGroupByIndexPreferences]);
-
   return (
     <AppContext.Provider value={{
       currentDirectory,
@@ -500,6 +499,7 @@ export const AppProvider: React.FC<{
       setSelectAllFiles,
       folderItems,
       setFolderItems,
+      setDisplayedDirectory,
       selectedFiles,
       setSelectedFiles,
       clipboard,
@@ -543,7 +543,6 @@ export const AppProvider: React.FC<{
       logFileOperation,
       setLogFileOperation,
       isGroupedByIndex,
-      setIsGroupedByIndex,
       // Document insights properties removed
     }}>
       {children}
@@ -557,4 +556,31 @@ export const useAppContext = (): AppContextType => {
     throw new Error('useAppContext must be used within an AppProvider');
   }
   return context;
+};
+
+/** Selective context hook for AIFileManagerPane - only re-renders when these values change, not on selectedFiles etc. */
+export const useAIFileManagerContextSelection = () => {
+  const currentDirectory = useContextSelector(AppContext, (v) => v?.currentDirectory ?? '');
+  const folderItems = useContextSelector(AppContext, (v) => v?.folderItems ?? []);
+  const isAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.isAIFileManagerOpen ?? false);
+  const setIsAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.setIsAIFileManagerOpen);
+  const fileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.fileManagerInitialSelection ?? null);
+  const setFileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.setFileManagerInitialSelection);
+  const addLog = useContextSelector(AppContext, (v) => v?.addLog);
+  const setStatus = useContextSelector(AppContext, (v) => v?.setStatus);
+  const logFileOperation = useContextSelector(AppContext, (v) => v?.logFileOperation);
+  if (!setIsAIFileManagerOpen || !setFileManagerInitialSelection || !addLog || !setStatus || !logFileOperation) {
+    throw new Error('useAIFileManagerContextSelection must be used within an AppProvider');
+  }
+  return {
+    currentDirectory,
+    folderItems,
+    isAIFileManagerOpen,
+    setIsAIFileManagerOpen,
+    fileManagerInitialSelection,
+    setFileManagerInitialSelection,
+    addLog,
+    setStatus,
+    logFileOperation,
+  };
 };

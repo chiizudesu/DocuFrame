@@ -41,7 +41,8 @@ export const FileGrid: React.FC = () => {
     rootDirectory,
     setSelectAllFiles,
     folderItems,
-    setFolderItems, 
+    setFolderItems,
+    setDisplayedDirectory, 
     selectedFiles, 
     setSelectedFiles, 
     clipboard, 
@@ -444,6 +445,7 @@ export const FileGrid: React.FC = () => {
   const rowSelectedBg = useColorModeValue('#cce4f7', 'blue.900')
   const rowHoverBg = useColorModeValue('gray.100', 'gray.700')
   const rowDefaultBg = useColorModeValue('white', 'transparent') // Light: opaque for readability; dark: transparent
+  const newFileHighlightBg = useColorModeValue('green.100', 'green.900')
   const folderDropBgColor = useColorModeValue('blue.100', 'blue.700')
   const searchHighlightBg = useColorModeValue('blue.50', 'blue.900')
   const dragGhostBg = useColorModeValue('gray.50', 'gray.900')
@@ -590,6 +592,7 @@ export const FileGrid: React.FC = () => {
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : [])
         const filtered = filterFiles(files)
         setFolderItems(filtered)
+        setDisplayedDirectory(normalizedPath)
         setFileSearchFilter('') // Clear filter when new directory loads - avoids momentary unfiltered flash
         const navEnd = performance.now();
         addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
@@ -604,7 +607,7 @@ export const FileGrid: React.FC = () => {
         isLoadingRef.current = false
       }
     },
-    [addLog, setFolderItems, setFileSearchFilter, filterFiles, setStatus]
+    [addLog, setFolderItems, setDisplayedDirectory, setFileSearchFilter, filterFiles, setStatus]
   );
 
   // Load directory contents when current directory changes with debouncing
@@ -1240,6 +1243,7 @@ export const FileGrid: React.FC = () => {
       if (files) {
         const filtered = filterFiles(files)
         setFolderItems(filtered as any);
+        setDisplayedDirectory(normalizedPath);
         addLog(`Refreshed directory: ${formatPathForLog(normalizedPath)}`);
       } else {
         addLog(`Warning: Directory refresh returned invalid data`, 'info');
@@ -1248,7 +1252,7 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to refresh directory: ${errorMessage}`, 'error');
     }
-  }, [setFolderItems, addLog, filterFiles]);
+  }, [setFolderItems, setDisplayedDirectory, addLog, filterFiles]);
 
   // Handler for transfer from group header (plus button dropdown)
   const handleTransferFromGroupHeader = useCallback(async (opts: { command?: string; newName?: string }) => {
@@ -2783,7 +2787,6 @@ export const FileGrid: React.FC = () => {
     if (recentlyTransferredFiles.length === 0) {
       return { set: new Set(), normalizedSet: new Set() };
     }
-    
     const set = new Set(recentlyTransferredFiles);
     const normalizedSet = new Set(recentlyTransferredFiles.map(path => path.replace(/\\/g, '/')));
     return { set, normalizedSet };
@@ -3516,79 +3519,173 @@ export const FileGrid: React.FC = () => {
   const iconLoadingRef = useRef(false);
   const loadingQueue = useRef<Set<string>>(new Set());
   const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
+  const observedElementsRef = useRef<Map<HTMLElement, string>>(new Map());
+  const nativeIconsRef = useRef(nativeIcons);
+  nativeIconsRef.current = nativeIcons;
+  const pendingIconsRef = useRef<Map<string, string>>(new Map());
+  const flushScheduledRef = useRef(false);
   
-  // Create intersection observer for lazy loading icons
+  // Batched flush: merge pending icons into state (reduces re-renders from N to 1 per batch)
+  const flushPendingIcons = useCallback(() => {
+    flushScheduledRef.current = false;
+    if (pendingIconsRef.current.size === 0) return;
+    const toMerge = new Map(pendingIconsRef.current);
+    pendingIconsRef.current.clear();
+    setNativeIcons(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      toMerge.forEach((data, path) => {
+        if (!next.has(path)) {
+          next.set(path, data);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+  
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleFlushIcons = useCallback(() => {
+    if (flushScheduledRef.current) return;
+    flushScheduledRef.current = true;
+    flushTimeoutRef.current = setTimeout(flushPendingIcons, 100);
+  }, [flushPendingIcons]);
+  
+  useEffect(() => {
+    return () => {
+      if (flushTimeoutRef.current) clearTimeout(flushTimeoutRef.current);
+    };
+  }, []);
+  
+  // Create intersection observer for lazy loading icons - recreate when content/root is ready
   useEffect(() => {
     if (!window.electronAPI?.getFileIcon) return;
-    
-    // Create intersection observer with appropriate options
+
+    const root = dropAreaRef.current;
+    if (!root) return; // Root not ready yet - will retry when sortedFiles changes
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             const filePath = entry.target.getAttribute('data-file-path');
-            if (filePath && !nativeIcons.has(filePath) && !loadingQueue.current.has(filePath)) {
-              loadIconForFile(filePath);
+            if (filePath && !nativeIconsRef.current.has(filePath) && !loadingQueue.current.has(filePath)) {
+              loadIconForFileRef.current(filePath);
             }
           }
         });
       },
       {
-        root: dropAreaRef.current,
-        rootMargin: '100px', // Start loading icons 100px before they come into view
-        threshold: 0.1
+        root,
+        rootMargin: '200px', // Load icons before they come into view
+        threshold: 0 // Fire on any intersection (handles layout timing)
       }
     );
-    
+
+    const prevObserver = intersectionObserverRef.current;
+    if (prevObserver) {
+      prevObserver.disconnect();
+    }
     intersectionObserverRef.current = observer;
-    
+
+    // Re-observe all tracked elements (e.g. after scroll or when recreating observer)
+    observedElementsRef.current.forEach((filePath, element) => {
+      if (element.isConnected) {
+        element.setAttribute('data-file-path', filePath);
+        observer.observe(element);
+      } else {
+        observedElementsRef.current.delete(element);
+      }
+    });
+
     return () => {
-      if (intersectionObserverRef.current) {
-        intersectionObserverRef.current.disconnect();
+      if (intersectionObserverRef.current === observer) {
+        observer.disconnect();
         intersectionObserverRef.current = null;
       }
-      // Clear loading queue on unmount
-      loadingQueue.current.clear();
     };
-  }, []);
-  
-  // Function to load icon for a specific file
+  }, [sortedFiles]);
+
+  // Scroll fallback: load icons for visible elements when user scrolls (catches any observer misses)
+  const scrollLoadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const container = dropAreaRef.current;
+    if (!container || !window.electronAPI?.getFileIcon) return;
+
+    const checkVisibleAndLoad = () => {
+      if (scrollLoadTimeoutRef.current) clearTimeout(scrollLoadTimeoutRef.current);
+      scrollLoadTimeoutRef.current = setTimeout(() => {
+        scrollLoadTimeoutRef.current = null;
+        const rootRect = container.getBoundingClientRect();
+        container.querySelectorAll('[data-file-path]').forEach((el) => {
+          const filePath = el.getAttribute('data-file-path');
+          if (!filePath || nativeIconsRef.current.has(filePath) || loadingQueue.current.has(filePath)) return;
+          const rect = el.getBoundingClientRect();
+          const visible = rect.top < rootRect.bottom + 200 && rect.bottom > rootRect.top - 200;
+          if (visible) loadIconForFileRef.current(filePath);
+        });
+      }, 80);
+    };
+
+    container.addEventListener('scroll', checkVisibleAndLoad, { passive: true });
+    checkVisibleAndLoad(); // Run once on mount for initially visible
+    return () => {
+      container.removeEventListener('scroll', checkVisibleAndLoad);
+      if (scrollLoadTimeoutRef.current) clearTimeout(scrollLoadTimeoutRef.current);
+    };
+  }, [sortedFiles]);
+
+  // Function to load icon for a specific file (batched updates to reduce re-renders)
   const loadIconForFile = useCallback(async (filePath: string) => {
-    if (loadingQueue.current.has(filePath) || nativeIcons.has(filePath)) return;
+    if (loadingQueue.current.has(filePath) || nativeIconsRef.current.has(filePath)) return;
     
     loadingQueue.current.add(filePath);
     
     try {
       const iconData = await window.electronAPI.getFileIcon(filePath);
       if (iconData) {
-        setNativeIcons(prev => {
-          // Double-check we don't already have this icon (avoid race conditions)
-          if (prev.has(filePath)) return prev;
-          const newMap = new Map(prev);
-          newMap.set(filePath, iconData);
-          return newMap;
-        });
+        if (nativeIconsRef.current.has(filePath)) return;
+        pendingIconsRef.current.set(filePath, iconData);
+        scheduleFlushIcons();
       }
     } catch (error) {
       // Don't retry failed icons immediately - they'll be retried on next view
     } finally {
       loadingQueue.current.delete(filePath);
     }
-  }, [nativeIcons]);
+  }, [scheduleFlushIcons]);
   
-  // Observe file elements when they mount/unmount
+  const loadIconForFileRef = useRef(loadIconForFile);
+  loadIconForFileRef.current = loadIconForFile;
+
+  // Observe file elements when they mount - track for re-observe, load immediately if visible
   const observeFileElement = useCallback((element: HTMLElement | null, filePath: string) => {
-    if (!intersectionObserverRef.current) return;
-    
-    if (element) {
-      element.setAttribute('data-file-path', filePath);
-      intersectionObserverRef.current.observe(element);
+    if (!element) return;
+
+    element.setAttribute('data-file-path', filePath);
+    observedElementsRef.current.set(element, filePath);
+
+    const observer = intersectionObserverRef.current;
+    if (observer) {
+      observer.observe(element);
+      // Immediate load if already visible (handles timing when observer hasn't fired yet)
+      if (!nativeIconsRef.current.has(filePath) && !loadingQueue.current.has(filePath)) {
+        const root = dropAreaRef.current;
+        if (root) {
+          const elRect = element.getBoundingClientRect();
+          const rootRect = root.getBoundingClientRect();
+          const visible = elRect.top < rootRect.bottom && elRect.bottom > rootRect.top;
+          if (visible) loadIconForFileRef.current(filePath);
+        }
+      }
     }
   }, []);
-  
+
   const unobserveFileElement = useCallback((element: HTMLElement | null) => {
-    if (!intersectionObserverRef.current || !element) return;
-    intersectionObserverRef.current.unobserve(element);
+    if (!element) return;
+    observedElementsRef.current.delete(element);
+    const observer = intersectionObserverRef.current;
+    if (observer) observer.unobserve(element);
   }, []);
   
   // Load icons for initially visible files (first batch)
@@ -3601,8 +3698,8 @@ export const FileGrid: React.FC = () => {
       try {
         // Load icons for the first visible files (approximately first screen)
         const initialFiles = sortedFiles
-          .filter(file => file.type === 'file' && !nativeIcons.has(file.path))
-          .slice(0, 20); // Load first 20 files immediately
+          .filter(file => file.type === 'file' && !nativeIconsRef.current.has(file.path))
+          .slice(0, 25); // Load first 25 files to cover typical initial viewport
         
         if (initialFiles.length === 0) return;
         
@@ -3611,14 +3708,14 @@ export const FileGrid: React.FC = () => {
         for (let i = 0; i < initialFiles.length; i += batchSize) {
           const batch = initialFiles.slice(i, i + batchSize);
           
-          // Process batch in parallel
+          // Process batch in parallel (icons batched via pendingIconsRef + flush)
           await Promise.allSettled(
             batch.map(file => loadIconForFile(file.path))
           );
           
-          // Small delay between batches
+          // Delay between batches increased to 100ms to reduce main-thread pressure
           if (i + batchSize < initialFiles.length) {
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
         }
       } finally {
@@ -4196,6 +4293,7 @@ export const FileGrid: React.FC = () => {
         memoizedArraySignature={memoizedArraySignature}
         rowSelectedBg={rowSelectedBg}
         rowDefaultBg={rowDefaultBg}
+        newFileHighlightBg={newFileHighlightBg}
         searchHighlightBg={searchHighlightBg}
         folderDropBgColor={folderDropBgColor}
         fileSearchFilter={fileSearchFilter}

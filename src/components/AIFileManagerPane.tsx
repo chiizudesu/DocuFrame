@@ -14,7 +14,7 @@ import {
 } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
 import { X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2, Merge, Trash2, FolderInput, Eraser } from 'lucide-react';
-import { useAppContext } from '../context/AppContext';
+import { useAIFileManagerContextSelection } from '../context/AppContext';
 import {
   parseFileManagerCommand,
   expandOperationsToPlannedItems,
@@ -56,7 +56,7 @@ export const AIFileManagerPane: React.FC = () => {
     addLog,
     setStatus,
     logFileOperation,
-  } = useAppContext();
+  } = useAIFileManagerContextSelection();
 
   const [command, setCommand] = useState('');
   const [isParsing, setIsParsing] = useState(false);
@@ -77,6 +77,9 @@ export const AIFileManagerPane: React.FC = () => {
   const elementsToObserveRef = useRef<Map<HTMLElement, string>>(new Map());
   const nativeIconsRef = useRef(nativeIcons);
   nativeIconsRef.current = nativeIcons;
+  const pendingIconsRef = useRef<Map<string, string>>(new Map());
+  const flushScheduledRef = useRef(false);
+  const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickedIndexRef = useRef<number | undefined>(undefined);
   const commandInputRef = useRef<HTMLInputElement>(null);
   const commandAreaRef = useRef<HTMLDivElement>(null);
@@ -257,26 +260,48 @@ export const AIFileManagerPane: React.FC = () => {
     }
   }, [isAIFileManagerOpen, fileManagerInitialSelection, setFileManagerInitialSelection]);
 
-  // Load icon for a file (called when visible via IntersectionObserver)
+  // Batched flush for native icons (reduces re-renders from N to 1 per batch)
+  const flushPendingIcons = useCallback(() => {
+    flushScheduledRef.current = false;
+    if (pendingIconsRef.current.size === 0) return;
+    const toMerge = new Map(pendingIconsRef.current);
+    pendingIconsRef.current.clear();
+    setNativeIcons(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      toMerge.forEach((data, path) => {
+        if (!next.has(path)) {
+          next.set(path, data);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
+  const scheduleFlushIcons = useCallback(() => {
+    if (flushScheduledRef.current) return;
+    flushScheduledRef.current = true;
+    flushTimeoutRef.current = setTimeout(flushPendingIcons, 100);
+  }, [flushPendingIcons]);
+
+  // Load icon for a file (called when visible via IntersectionObserver, batched)
   const loadIconForFile = useCallback(async (filePath: string) => {
     if (loadingQueue.current.has(filePath) || nativeIconsRef.current.has(filePath)) return;
     loadingQueue.current.add(filePath);
     try {
       const iconData = await window.electronAPI?.getFileIcon(filePath);
       if (iconData) {
-        setNativeIcons(prev => {
-          if (prev.has(filePath)) return prev;
-          const next = new Map(prev);
-          next.set(filePath, iconData);
-          return next;
-        });
+        if (nativeIconsRef.current.has(filePath)) return;
+        pendingIconsRef.current.set(filePath, iconData);
+        scheduleFlushIcons();
       }
     } catch {
       /* ignore */
     } finally {
       loadingQueue.current.delete(filePath);
     }
-  }, []);
+  }, [scheduleFlushIcons]);
 
   const observeFileElement = useCallback((el: HTMLElement | null, filePath: string) => {
     if (!filePath) return;
@@ -315,6 +340,7 @@ export const AIFileManagerPane: React.FC = () => {
       observer.disconnect();
       intersectionObserverRef.current = null;
       loadingQueue.current.clear();
+      if (flushTimeoutRef.current) clearTimeout(flushTimeoutRef.current);
     };
   }, [loadIconForFile]);
 
@@ -322,7 +348,7 @@ export const AIFileManagerPane: React.FC = () => {
   useEffect(() => {
     if (!window.electronAPI?.getFileIcon) return;
     const files = folderItems.filter(f => f.type !== 'folder');
-    const toLoad = files.filter(f => !loadingQueue.current.has(f.path)).slice(0, 15);
+    const toLoad = files.filter(f => !loadingQueue.current.has(f.path) && !nativeIconsRef.current.has(f.path)).slice(0, 10);
     toLoad.forEach(f => loadIconForFile(f.path));
   }, [folderItems, currentDirectory, loadIconForFile]);
 

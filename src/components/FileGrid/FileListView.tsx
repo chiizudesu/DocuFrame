@@ -80,6 +80,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
       {...folderDropHandlers}
       data-row-index={index}
       data-file-index={index}
+      data-new-file-row={fileState.isFileNew ? 'true' : undefined}
     >
       {columnOrder.map((column, colIndex) => {
         const isName = column === 'name';
@@ -151,24 +152,6 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                 </Text>
               </Flex>
               
-              {fileState.isFileNew && (
-                <Box
-                  position="absolute"
-                  top={1}
-                  right={1}
-                  bg="green.500"
-                  color="white"
-                  fontSize="2xs"
-                  fontWeight="bold"
-                  px={1}
-                  py={0.25}
-                  borderRadius="full"
-                  zIndex={2}
-                  boxShadow="0 1px 3px rgba(0,0,0,0.3)"
-                >
-                  NEW
-                </Box>
-              )}
             </Box>
           );
         } else if (isSize) {
@@ -281,7 +264,7 @@ interface GroupHeaderDropZoneProps {
   clearFolderHoverStates: () => void;
 }
 
-const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
+const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   groupKey,
   indexInfo,
   fileCount,
@@ -572,6 +555,8 @@ const GroupHeaderDropZone: React.FC<GroupHeaderDropZoneProps> = ({
   );
 };
 
+const GroupHeaderDropZone = React.memo(GroupHeaderDropZoneInner);
+
 // FileListView Component (replaces renderListView function)
 export interface FileListViewProps {
   // Refs
@@ -616,6 +601,7 @@ export interface FileListViewProps {
   memoizedArraySignature: string;
   rowSelectedBg: string;
   rowDefaultBg: string;
+  newFileHighlightBg: string;
   searchHighlightBg: string;
   folderDropBgColor: string;
   fileSearchFilter: string | undefined;
@@ -724,6 +710,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
   memoizedArraySignature,
   rowSelectedBg,
   rowDefaultBg,
+  newFileHighlightBg,
   searchHighlightBg,
   folderDropBgColor,
   fileSearchFilter,
@@ -826,7 +813,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
       : (fileStateCacheRef.current.set(file.path, fileState), fileState);
 
     const isSearchHighlight = hasActiveSearch && index === 0;
-    const rowBg = stableFileState.isFileSelected ? rowSelectedBg : (isSearchHighlight ? searchHighlightBg : rowDefaultBg);
+    const rowBg = stableFileState.isFileNew ? newFileHighlightBg : (stableFileState.isFileSelected ? rowSelectedBg : (isSearchHighlight ? searchHighlightBg : rowDefaultBg));
     const baseBg = (file.type === 'folder' && folderHoverState.has(file.path)) ? folderDropBgColor : rowBg;
     const finalBg = (hoveredRowIndex === index && !folderHoverState.has(file.path)) ? rowHoverBg : baseBg;
 
@@ -837,7 +824,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
       cellStylesCacheRef.current.set(cacheKey, finalCellStyles);
     }
     return { fileState: stableFileState, finalBg, finalCellStyles };
-  }, [getFileStateForIndex, hoveredRowIndex, folderHoverState, hasActiveSearch, rowSelectedBg, rowDefaultBg, searchHighlightBg, rowHoverBg, folderDropBgColor, cellStyles]);
+  }, [getFileStateForIndex, hoveredRowIndex, folderHoverState, hasActiveSearch, rowSelectedBg, rowDefaultBg, newFileHighlightBg, searchHighlightBg, rowHoverBg, folderDropBgColor, cellStyles]);
 
   // Scroll rename row into view when isRenaming is set (ungrouped only)
   useEffect(() => {
@@ -848,6 +835,57 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
       }
     }
   }, [isRenaming, sortedFiles, isGroupedByIndex]);
+
+  // Detect when new files are outside visible rows for glowing line indicator
+  const [newFileAboveVisible, setNewFileAboveVisible] = useState(false);
+  const [newFileBelowVisible, setNewFileBelowVisible] = useState(false);
+
+  useEffect(() => {
+    const container = dropAreaRef.current;
+    if (!container) return;
+
+    const checkVisibility = () => {
+      if (isGroupedByIndex) {
+        // Grouped: all rows in DOM, check via getBoundingClientRect
+        const containerRect = container.getBoundingClientRect();
+        const rows = container.querySelectorAll('[data-new-file-row="true"]');
+        let above = false;
+        let below = false;
+        rows.forEach((row) => {
+          const r = row.getBoundingClientRect();
+          if (r.bottom < containerRect.top) above = true;
+          if (r.top > containerRect.bottom) below = true;
+        });
+        setNewFileAboveVisible(above);
+        setNewFileBelowVisible(below);
+      } else {
+        // Virtualized: use virtualItems to know visible range
+        const newFileIndices = sortedFiles
+          .map((f, i) => (getFileStateForIndex(f, i).isFileNew ? i : -1))
+          .filter((i) => i >= 0);
+        if (newFileIndices.length === 0) {
+          setNewFileAboveVisible(false);
+          setNewFileBelowVisible(false);
+          return;
+        }
+        const firstVisible = virtualItems[0]?.index ?? -1;
+        const lastVisible = virtualItems[virtualItems.length - 1]?.index ?? -1;
+        const above = newFileIndices.some((i) => i < firstVisible);
+        const below = newFileIndices.some((i) => i > lastVisible);
+        setNewFileAboveVisible(above);
+        setNewFileBelowVisible(below);
+      }
+    };
+
+    checkVisibility();
+    container.addEventListener('scroll', checkVisibility);
+    const ro = new ResizeObserver(checkVisibility);
+    ro.observe(container);
+    return () => {
+      container.removeEventListener('scroll', checkVisibility);
+      ro.disconnect();
+    };
+  }, [isGroupedByIndex, sortedFiles, virtualItems, getFileStateForIndex]);
   
   return (
     <Box 
@@ -876,6 +914,36 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
         />
       )}
       
+      {/* Glowing green line when new file is above visible rows */}
+      {newFileAboveVisible && (
+        <Box
+          position="absolute"
+          top={0}
+          left={0}
+          right={0}
+          height="4px"
+          bg="green.400"
+          opacity={0.9}
+          zIndex={998}
+          pointerEvents="none"
+          boxShadow="0 0 12px 4px rgba(72, 187, 120, 0.6)"
+        />
+      )}
+      {/* Glowing green line when new file is below visible rows */}
+      {newFileBelowVisible && (
+        <Box
+          position="absolute"
+          bottom={0}
+          left={0}
+          right={0}
+          height="4px"
+          bg="green.400"
+          opacity={0.9}
+          zIndex={998}
+          pointerEvents="none"
+          boxShadow="0 0 12px 4px rgba(72, 187, 120, 0.6)"
+        />
+      )}
       {/* Watermark - Bottom-right corner, 100% opacity - Fixed to container, doesn't scroll */}
       {enableBackgrounds && backgroundType === 'watermark' && fileGridBackgroundUrl && (
         <Box
@@ -1585,6 +1653,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.sortedFiles !== next.sortedFiles) return false;
   if (prev.isGroupedByIndex !== next.isGroupedByIndex) return false;
   if (prev.groupedFiles !== next.groupedFiles) return false;
+  if (prev.newFileHighlightBg !== next.newFileHighlightBg) return false;
   // O(1) skip: when signature equal, arrays are semantically equal
   if (prev.memoizedArraySignature !== next.memoizedArraySignature) return false;
   if (prev.isDragOver !== next.isDragOver || prev.isSelecting !== next.isSelecting) return false;
@@ -1596,6 +1665,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.draggingColumn !== next.draggingColumn || prev.dragTargetColumn !== next.dragTargetColumn) return false;
   if (prev.dragMousePos !== next.dragMousePos || prev.dragOffset !== next.dragOffset) return false;
   if (prev.rowHandlers !== next.rowHandlers) return false;
+  if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
   return true;
 }
 

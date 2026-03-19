@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Box, Flex, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Input, Popover, PopoverTrigger, PopoverContent, PopoverBody } from '@chakra-ui/react';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Layers, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { OrgCodesDialog } from './OrgCodesDialog';
@@ -486,8 +486,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setSelectedFiles,
     setLogFileOperation,
     setIsSettingsOpen,
-    isGroupedByIndex,
-    setIsGroupedByIndex,
     isPreviewPaneOpen,
     setIsPreviewPaneOpen,
     isAIFileManagerOpen,
@@ -1439,22 +1437,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       
       {/* Folder Management Buttons - Same style as Settings */}
       <Flex gap={0.5} align="center">
-        <Tooltip label={isGroupedByIndex ? 'Ungroup by index' : 'Group by index'} placement="bottom" hasArrow>
-          <IconButton
-            aria-label={isGroupedByIndex ? 'Ungroup by index' : 'Group by index'}
-            icon={<Icon as={Layers} boxSize={5} />}
-            size="sm"
-            variant={isGroupedByIndex ? "solid" : "ghost"}
-            borderRadius={0}
-            bg={isGroupedByIndex ? useColorModeValue('blue.600', 'blue.700') : undefined}
-            color={isGroupedByIndex ? "white" : buttonColor}
-            onClick={() => setIsGroupedByIndex(!isGroupedByIndex)}
-            _hover={{ bg: isGroupedByIndex ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
-        
         <Tooltip label={isPreviewPaneOpen ? 'Hide preview pane' : 'Show preview pane'} placement="bottom" hasArrow>
           <IconButton
             aria-label="Preview pane"

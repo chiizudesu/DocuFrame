@@ -215,7 +215,7 @@ export const Layout: React.FC = () => {
     >
       <PreviewPane />
     </GridItem>
-    {/* AI File Manager Pane */}
+    {/* AI File Manager Pane - lazy-mount: only render when open to avoid re-renders on context change */}
     <GridItem 
       area="aiFileManager" 
       bg={bgColor} 
@@ -228,7 +228,7 @@ export const Layout: React.FC = () => {
       visibility={isAIFileManagerOpen ? 'visible' : 'hidden'}
       width={isAIFileManagerOpen ? 'auto' : '0px'}
     >
-      <AIFileManagerPane />
+      {isAIFileManagerOpen && <AIFileManagerPane />}
     </GridItem>
     {/* Status Footer */}
     <GridItem area="status" bg={bgColor} borderTop="1px" borderColor={borderColor}>
