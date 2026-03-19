@@ -608,6 +608,7 @@ export function deriveMovementValues(
       out[`expenses_${idx}_amount`] = amt;
       out[`expenses_${idx}_percent`] = t.pct;
       out[`expenses_${idx}_movement`] = amt;
+      out[`expenses_${idx}_movement_amount`] = amt;
       out[`expenses_${idx}_movement_percent`] = t.pct;
       outConditions[`expenses_${idx}_increased`] = t.diff > 0;
     }
@@ -616,6 +617,7 @@ export function deriveMovementValues(
       out[`expenses_${i}_amount`] = '';
       out[`expenses_${i}_percent`] = '';
       out[`expenses_${i}_movement`] = '';
+      out[`expenses_${i}_movement_amount`] = '';
       out[`expenses_${i}_movement_percent`] = '';
     }
   }
