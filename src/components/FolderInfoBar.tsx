@@ -30,6 +30,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronRight,
+  ChevronLeft,
   RefreshCw,
   Star,
   SquareTerminal,
@@ -37,6 +38,7 @@ import {
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { useClientInfo } from '../hooks/useClientInfo'
+import { useYearNavigation } from '../hooks/useYearNavigation'
 import { joinPath, getParentPath, normalizePath, isChildPath } from '../utils/path'
 
 declare global {
@@ -57,6 +59,7 @@ declare global {
 export const FolderInfoBar: React.FC = () => {
   const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
+  const yearNav = useYearNavigation(currentDirectory)
   
   // Helper function to get directory name from path
   const getDirectoryName = (path: string): string => {
@@ -121,6 +124,7 @@ export const FolderInfoBar: React.FC = () => {
   const inputFocusBgColor = useColorModeValue('gray.200', 'gray.500')
   const inputBorderColor = useColorModeValue('gray.300', 'transparent') // Light: thin border to separate inputs from white header
   const separatorColor = useColorModeValue('gray.300', 'gray.400')
+  const yearNavDisabledColor = useColorModeValue('gray.300', 'gray.600')
 
   // Window controls
   const handleMinimize = () => {
@@ -876,6 +880,46 @@ export const FolderInfoBar: React.FC = () => {
             )}
           </Box>
         </Flex>
+        {/* Year navigation - when inside annual accounts\XX\202X folders */}
+        {yearNav && (
+          <HStack ml={1} mr={1} spacing={0} style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <IconButton
+              icon={<ChevronLeft size={18} />}
+              aria-label="Previous year"
+              variant="ghost"
+              size="sm"
+              minW="28px"
+              h="28px"
+              borderRadius="md"
+              color={yearNav.hasPrevYear ? iconColor : yearNavDisabledColor}
+              cursor={yearNav.hasPrevYear ? 'pointer' : 'default'}
+              opacity={yearNav.hasPrevYear ? 1 : 0.5}
+              _hover={yearNav.hasPrevYear ? { bg: hoverBgColor } : undefined}
+              onClick={() => yearNav.hasPrevYear && yearNav.prevYearPath && setCurrentDirectory(yearNav.prevYearPath)}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+            />
+            <Text fontSize="sm" fontWeight="medium" color={textColor} px={1} userSelect="none">
+              {yearNav.currentYear}
+            </Text>
+            <IconButton
+              icon={<ChevronRight size={18} />}
+              aria-label="Next year"
+              variant="ghost"
+              size="sm"
+              minW="28px"
+              h="28px"
+              borderRadius="md"
+              color={yearNav.hasNextYear ? iconColor : yearNavDisabledColor}
+              cursor={yearNav.hasNextYear ? 'pointer' : 'default'}
+              opacity={yearNav.hasNextYear ? 1 : 0.5}
+              _hover={yearNav.hasNextYear ? { bg: hoverBgColor } : undefined}
+              onClick={() => yearNav.hasNextYear && yearNav.nextYearPath && setCurrentDirectory(yearNav.nextYearPath)}
+              tabIndex={-1}
+              onMouseDown={(e) => e.preventDefault()}
+            />
+          </HStack>
+        )}
         {/* Refresh - between address bar and search */}
         <Box ml={1} mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton

@@ -127,6 +127,31 @@ export function getRelativePath(basePath: string, targetPath: string): string {
   return relative;
 }
 
+/** Client folders live at Root/annual accounts/clientname */
+const ANNUAL_ACCOUNTS_SEGMENT = 'annual accounts';
+
+/**
+ * Get the client folder path for a given path.
+ * Structure: Root/annual accounts/clientname (client folder is under "annual accounts").
+ * E.g. root="C:\\Work", path="C:\\Work\\annual accounts\\Acme Corp\\2025" -> "C:\\Work\\annual accounts\\Acme Corp"
+ * Returns null if path is not under root/annual accounts/, or empty.
+ */
+export function getClientFolderPath(path: string, rootPath: string): string | null {
+  const normalized = normalizePath(path);
+  const root = normalizePath(rootPath);
+  if (!normalized || !root || normalized === root) return null;
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
+  const sep = isWindows ? '\\' : '/';
+  const rootWithSep = root.endsWith(sep) ? root : root + sep;
+  if (!normalized.startsWith(rootWithSep)) return null;
+  const relative = normalized.slice(rootWithSep.length);
+  const parts = relative.split(sep).filter(Boolean);
+  // Need at least: "annual accounts" + clientname
+  if (parts.length < 2) return null;
+  if (parts[0].toLowerCase() !== ANNUAL_ACCOUNTS_SEGMENT.toLowerCase()) return null;
+  return rootWithSep + parts[0] + sep + parts[1];
+}
+
 // Check if a path is a child of another path
 export function isChildPath(parentPath: string, childPath: string): boolean {
   const normalizedParent = normalizePath(parentPath);

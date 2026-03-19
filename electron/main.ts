@@ -254,27 +254,48 @@ function startWatchingDirectory(dirPath: string) {
       interval: 1000 // Only poll every 1 second if polling is needed
     });
 
-    // Debounce function to prevent excessive events
+    // Debounce function - accumulate multiple 'add' events so all new files get the indicator
     let debounceTimer: NodeJS.Timeout;
-    const debouncedRefresh = (event: string, filePath: string) => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        // Update last refresh time
-        const watched = watchedDirectories.get(dirPath);
-        if (watched) {
-          watched.lastRefresh = Date.now();
-        }
+    const pendingAdds: string[] = [];
+    let pendingOther: { event: string; filePath: string } | null = null;
 
-        // Notify all windows about the change
-        BrowserWindow.getAllWindows().forEach(win => {
-          win.webContents.send('folderContentsChanged', { 
+    const flushDebounce = () => {
+      const watched = watchedDirectories.get(dirPath);
+      if (watched) {
+        watched.lastRefresh = Date.now();
+      }
+
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (pendingAdds.length > 0) {
+          win.webContents.send('folderContentsChanged', {
             directory: dirPath,
-            event: event,
-            filePath: filePath,
-            newFiles: event === 'add' ? [filePath] : undefined
+            event: 'add',
+            filePath: pendingAdds[0],
+            newFiles: [...pendingAdds]
           });
-        });
-      }, 1000); // 1 second debounce for better performance
+        }
+        if (pendingOther) {
+          win.webContents.send('folderContentsChanged', {
+            directory: dirPath,
+            event: pendingOther.event,
+            filePath: pendingOther.filePath,
+            newFiles: undefined
+          });
+        }
+      });
+
+      pendingAdds.length = 0;
+      pendingOther = null;
+    };
+
+    const debouncedRefresh = (event: string, filePath: string) => {
+      if (event === 'add') {
+        pendingAdds.push(filePath);
+      } else {
+        pendingOther = { event, filePath };
+      }
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(flushDebounce, 1000);
     };
 
     // Set up event listeners

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { createContext, useContext, useContextSelector } from 'use-context-selector';
 import { settingsService } from '../services/settings';
-import { normalizePath } from '../utils/path';
+import { normalizePath, getClientFolderPath } from '../utils/path';
 
 interface FileItem {
   name: string;
@@ -127,6 +127,8 @@ interface AppContextType {
   addQuickAccessPath: (path: string) => Promise<void>;
   removeQuickAccessPath: (path: string) => Promise<void>;
   moveQuickAccessPath: (path: string, direction: 'up' | 'down') => Promise<void>;
+  // Recent client folders (latest 5 visited)
+  recentClientPaths: string[];
   // File grouping by index prefix (computed from settings: always on except blacklist)
   isGroupedByIndex: boolean;
 }
@@ -190,6 +192,8 @@ export const AppProvider: React.FC<{
   const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
+  // Recent client folders (latest 5 visited)
+  const [recentClientPaths, setRecentClientPaths] = useState<string[]>([]);
   // File grouping by index prefix - always on except blacklisted directories (from settings)
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
@@ -260,6 +264,10 @@ export const AppProvider: React.FC<{
       if (Array.isArray(settings.quickAccessPaths)) {
         setQuickAccessPaths(settings.quickAccessPaths);
       }
+      // Load recent client paths
+      if (Array.isArray(settings.recentClientPaths)) {
+        setRecentClientPaths(settings.recentClientPaths.slice(0, 5));
+      }
 
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -293,6 +301,29 @@ export const AppProvider: React.FC<{
       prevDirectoryRef.current = currentDirectory;
     }
   }, [currentDirectory]);
+
+  // Update recent client folders when navigating to a client folder
+  useEffect(() => {
+    if (!currentDirectory || !rootDirectory) return;
+    const clientPath = getClientFolderPath(currentDirectory, rootDirectory);
+    if (!clientPath) return;
+    setRecentClientPaths(prev => {
+      const normalized = normalizePath(clientPath);
+      const filtered = prev.filter(p => normalizePath(p) !== normalized);
+      return [clientPath, ...filtered].slice(0, 5);
+    });
+  }, [currentDirectory, rootDirectory]);
+
+  // Persist recent client paths when they change
+  const prevRecentRef = useRef<string>('');
+  useEffect(() => {
+    if (prevRecentRef.current === JSON.stringify(recentClientPaths)) return;
+    prevRecentRef.current = JSON.stringify(recentClientPaths);
+    if (recentClientPaths.length === 0) return;
+    settingsService.getSettings().then(current => {
+      settingsService.setSettings({ ...current, recentClientPaths }).catch(() => {});
+    });
+  }, [recentClientPaths]);
 
   // Compute isGroupedByIndex from displayedDirectory (not currentDirectory) so group view only
   // changes when the new folder's contents are actually shown, not when navigation starts
@@ -540,6 +571,7 @@ export const AppProvider: React.FC<{
       addQuickAccessPath,
       removeQuickAccessPath,
       moveQuickAccessPath,
+      recentClientPaths,
       logFileOperation,
       setLogFileOperation,
       isGroupedByIndex,

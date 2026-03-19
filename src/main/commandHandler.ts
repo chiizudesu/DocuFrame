@@ -228,7 +228,8 @@ export async function handleCommand(command: string, args: string[], currentDire
     const result = await extractZips(directory);
     return {
       success: result.success,
-      message: result.message
+      message: result.message,
+      extractedFiles: result.extractedFiles ?? []
     };
   }
   
@@ -240,7 +241,8 @@ export async function handleCommand(command: string, args: string[], currentDire
     const result = await extractEml(directory);
     return {
       success: result.success,
-      message: result.message
+      message: result.message,
+      extractedFiles: result.extractedFiles ?? []
     };
   }
   
@@ -252,14 +254,16 @@ export async function handleCommand(command: string, args: string[], currentDire
     if (!options || !options.filename) {
       return {
         success: false,
-        message: 'Single ZIP extraction requires filename'
+        message: 'Single ZIP extraction requires filename',
+        extractedFiles: []
       };
     }
     
     const result = await extractZips(directory, options.filename);
     return {
       success: result.success,
-      message: result.message
+      message: result.message,
+      extractedFiles: result.extractedFiles ?? []
     };
   }
   
@@ -271,14 +275,16 @@ export async function handleCommand(command: string, args: string[], currentDire
     if (!options || !options.filename) {
       return {
         success: false,
-        message: 'Single EML extraction requires filename'
+        message: 'Single EML extraction requires filename',
+        extractedFiles: []
       };
     }
     
     const result = await extractEml(directory, options.filename);
     return {
       success: result.success,
-      message: result.message
+      message: result.message,
+      extractedFiles: result.extractedFiles ?? []
     };
   }
   

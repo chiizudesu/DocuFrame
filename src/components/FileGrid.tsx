@@ -948,6 +948,12 @@ export const FileGrid: React.FC = () => {
               if (result.success) {
                 addLog(result.message, 'response');
                 setStatus('ZIP extraction completed', 'success');
+                // Green highlight for extracted files
+                const extracted = result.extractedFiles ?? [];
+                if (extracted.length > 0) {
+                  const fullPaths = extracted.map((name: string) => joinPath(currentDirectory, name));
+                  addRecentlyTransferredFiles(fullPaths);
+                }
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
                 {
@@ -973,6 +979,12 @@ export const FileGrid: React.FC = () => {
               if (result.success) {
                 addLog(result.message, 'response');
                 setStatus(`${zipFilesToExtract.length} ZIP files extracted successfully`, 'success');
+                // Green highlight for extracted files
+                const extracted = result.extractedFiles ?? [];
+                if (extracted.length > 0) {
+                  const fullPaths = extracted.map((name: string) => joinPath(currentDirectory, name));
+                  addRecentlyTransferredFiles(fullPaths);
+                }
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
                 {
@@ -1008,6 +1020,12 @@ export const FileGrid: React.FC = () => {
               if (result.success) {
                 addLog(result.message, 'response');
                 setStatus('EML extraction completed', 'success');
+                // Green highlight for extracted files
+                const extracted = result.extractedFiles ?? [];
+                if (extracted.length > 0) {
+                  const fullPaths = extracted.map((name: string) => joinPath(currentDirectory, name));
+                  addRecentlyTransferredFiles(fullPaths);
+                }
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
                 {
@@ -1033,6 +1051,12 @@ export const FileGrid: React.FC = () => {
               if (result.success) {
                 addLog(result.message, 'response');
                 setStatus(`${emlFilesToExtract.length} EML files processed successfully`, 'success');
+                // Green highlight for extracted files
+                const extracted = result.extractedFiles ?? [];
+                if (extracted.length > 0) {
+                  const fullPaths = extracted.map((name: string) => joinPath(currentDirectory, name));
+                  addRecentlyTransferredFiles(fullPaths);
+                }
                 // Refresh folder view
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
                 {
@@ -1896,22 +1920,7 @@ export const FileGrid: React.FC = () => {
     const handleFolderContentsChanged = (_event: any, data: { directory: string; newFiles?: string[]; event?: string; filePath?: string }) => {
       if (data && data.directory === currentDirectory) {
         
-        // Handle file watcher events (new files detected)
-        if (data.event === 'add' && data.filePath) {
-          addRecentlyTransferredFiles([data.filePath]);
-          
-          // Log file operation for task timer
-          const fileName = data.filePath.split('\\').pop() || data.filePath;
-          const dirName = currentDirectory.split('\\').pop() || currentDirectory;
-          logFileOperation(`${fileName} transferred to ${dirName}`);
-          
-          // Set timeout to remove the "new" indicator (15 seconds)
-          setTimeout(() => {
-            removeRecentlyTransferredFile(data.filePath!);
-          }, 15000); // 15 seconds
-        }
-        
-        // Handle transfer events (existing functionality)
+        // Handle file watcher events and transfer events (new files detected)
         if (data.newFiles && data.newFiles.length > 0) {
           addRecentlyTransferredFiles(data.newFiles);
           
@@ -1921,13 +1930,11 @@ export const FileGrid: React.FC = () => {
             const fileName = filePath.split('\\').pop() || filePath;
             logFileOperation(`${fileName} transferred to ${dirName}`);
           });
-          
-          // Set individual timeouts for each file (15 seconds each)
-          data.newFiles.forEach(filePath => {
-            setTimeout(() => {
-              removeRecentlyTransferredFile(filePath);
-            }, 15000); // 15 seconds
-          });
+        } else if (data.event === 'add' && data.filePath) {
+          addRecentlyTransferredFiles([data.filePath]);
+          const fileName = data.filePath.split('\\').pop() || data.filePath;
+          const dirName = currentDirectory.split('\\').pop() || currentDirectory;
+          logFileOperation(`${fileName} transferred to ${dirName}`);
         }
         
         // Force a re-render to show the "NEW" indicator (reduced timeout)

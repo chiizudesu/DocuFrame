@@ -19,6 +19,7 @@ import { type DialogType, type MinimizedDialog } from './MinimizedDialogsBar';
 import { getAppVersion } from '../utils/version';
 import { taskTimerService, TimerState } from '../services/taskTimer';
 import { extractIndexPrefix, getAllIndexKeys } from '../utils/indexPrefix';
+import { joinPath } from '../utils/path';
 
 // Add client search shortcut functionality
 const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) => {
@@ -489,7 +490,8 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     isPreviewPaneOpen,
     setIsPreviewPaneOpen,
     isAIFileManagerOpen,
-    setIsAIFileManagerOpen
+    setIsAIFileManagerOpen,
+    addRecentlyTransferredFiles,
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const [isOrgCodesOpen, setOrgCodesOpen] = useState(false);
@@ -734,6 +736,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           addLog(result.message, 'response');
           setStatus('ZIP extraction completed', 'success');
           
+          // Green highlight for extracted files
+          const extracted = result.extractedFiles ?? [];
+          if (extracted.length > 0) {
+            addRecentlyTransferredFiles(extracted.map((name: string) => joinPath(currentDirectory, name)));
+          }
+          
           // Log file operation
           logFileOperation('Extract ZIPs', `Extracted ${result.extractedFiles?.length || 0} files from ZIP archives`);
           
@@ -780,6 +788,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         if (result.success) {
           addLog(result.message, 'response');
           setStatus('EML extraction completed', 'success');
+          
+          // Green highlight for extracted files
+          const extracted = result.extractedFiles ?? [];
+          if (extracted.length > 0) {
+            addRecentlyTransferredFiles(extracted.map((name: string) => joinPath(currentDirectory, name)));
+          }
           
           // Log file operation
           logFileOperation('Extract EML', `Extracted ${result.extractedFiles?.length || 0} attachments from EML files`);

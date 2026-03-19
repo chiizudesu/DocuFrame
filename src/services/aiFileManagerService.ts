@@ -18,7 +18,8 @@ export type FileOperation =
   | { action: 'delete'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'mergePdfs'; outputFilename: string; retainOriginals?: boolean; targetFolder?: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
   | { action: 'extract'; sourceFolder: string; condition: 'all' | { indexEquals: string } | { nameContains: string }; deleteSource?: boolean; asCopies?: boolean }
-  | { action: 'createCopies'; count: number; names?: string[]; nameFrom?: string; nameTo?: string; targetFolder?: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } };
+  | { action: 'createCopies'; count: number; names?: string[]; nameFrom?: string; nameTo?: string; targetFolder?: string; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } }
+  | { action: 'contentBasedMerge'; condition: 'all' | { indexEquals: string } | { nameContains: string } | { selection: true } };
 
 // Planned item for preview and execution (file-level)
 export interface PlannedItem {
@@ -683,6 +684,165 @@ export async function expandContentBasedRenameOperations(
   return items;
 }
 
+/** Max chars of PDF text for merge grouping (avoid token limits) */
+const CONTENT_BASED_MERGE_MAX_CHARS = 2000;
+
+/**
+ * Get AI-suggested groups of PDFs that relate to the same thing (e.g. property purchase docs for same property).
+ * Reads PDF content, then AI groups by semantic relatedness.
+ */
+async function getContentBasedMergeGroups(
+  pdfFiles: FileItem[],
+  model: 'sonnet' | 'haiku',
+  onContentReading?: (fileName: string | null, index: number, total: number) => void,
+  onContentAnalyzing?: (analyzing: boolean) => void
+): Promise<Array<{ groupLabel: string; outputFilename: string; fileNames: string[] }>> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set. Add it in Settings.');
+
+  const api = window.electronAPI as { readPdfText?: (path: string) => Promise<string> };
+  if (!api?.readPdfText) throw new Error('PDF text extraction not available.');
+
+  const fileContents: Array<{ fileName: string; content: string }> = [];
+  const total = pdfFiles.length;
+  for (let i = 0; i < pdfFiles.length; i++) {
+    const f = pdfFiles[i];
+    onContentReading?.(f.name, i + 1, total);
+    try {
+      const text = await api.readPdfText(f.path);
+      const truncated = (text || '').trim().slice(0, CONTENT_BASED_MERGE_MAX_CHARS);
+      fileContents.push({ fileName: f.name, content: truncated || '(no text extracted)' });
+    } catch {
+      fileContents.push({ fileName: f.name, content: '(failed to extract text)' });
+    }
+  }
+  onContentReading?.(null, 0, 0);
+  onContentAnalyzing?.(true);
+
+  const contentBlock = fileContents
+    .map(({ fileName, content }) => `--- ${fileName} ---\n${content}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are a document organization assistant. The user wants to MERGE PDF files that relate to the same thing into single PDFs.
+
+Examples of "same thing":
+- Property purchase docs for the same property (deed, title, inspection, etc.)
+- Documents for the same transaction, client, or project
+- Invoices and receipts for the same order
+- Related legal or financial documents for the same matter
+
+Rules:
+- Group ONLY documents that clearly relate to the same entity/transaction/project based on content
+- Each group must have 2 or more files (do not create single-file groups)
+- Each file should appear in at most one group (no overlapping groups)
+- For each group, provide: groupLabel (short description, e.g. "123 Main St Purchase"), outputFilename (merged PDF name, e.g. "123 Main St - Purchase Docs.pdf"), fileNames (array of exact current filenames in logical order)
+- Return ONLY a JSON array: [{"groupLabel":"...","outputFilename":"...","fileNames":["a.pdf","b.pdf"]}]
+- Omit files that do not clearly belong to any group
+- No markdown, no explanation`;
+
+  const client = new Anthropic({
+    apiKey,
+    dangerouslyAllowBrowser: true,
+  });
+
+  const modelName = model === 'haiku' ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+
+  const response = await client.messages.create({
+    model: modelName,
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'text',
+        text: `Extracted PDF content:\n\n${contentBlock}\n\nReturn JSON array of groups. Each group: {groupLabel, outputFilename, fileNames}. Only include groups with 2+ files.`,
+      }],
+    }],
+    temperature: 0.2,
+  });
+
+  onContentAnalyzing?.(false);
+
+  const content = response.content[0];
+  if (content.type !== 'text') return [];
+
+  let text = content.text.trim();
+  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) text = jsonMatch[1].trim();
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) return [];
+    const fileNamesSet = new Set(pdfFiles.map(f => f.name));
+    return parsed.filter(
+      (g): g is { groupLabel: string; outputFilename: string; fileNames: string[] } =>
+        g && typeof g === 'object' &&
+        typeof g.groupLabel === 'string' &&
+        typeof g.outputFilename === 'string' &&
+        Array.isArray(g.fileNames) &&
+        g.fileNames.length >= 2 &&
+        g.fileNames.every((fn: unknown) => typeof fn === 'string' && fileNamesSet.has(fn))
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Expand contentBasedMerge operations into PlannedItems (merge PDFs by content grouping)
+ */
+export async function expandContentBasedMergeOperations(
+  operations: Array<{ action: 'contentBasedMerge'; condition: Condition }>,
+  folderItems: FileItem[],
+  currentDirectory: string,
+  selectedFileNames: string[] | undefined,
+  model: 'sonnet' | 'haiku',
+  onContentReading?: (fileName: string | null, index: number, total: number) => void,
+  onContentAnalyzing?: (analyzing: boolean) => void
+): Promise<PlannedItem[]> {
+  const items: PlannedItem[] = [];
+
+  for (const op of operations) {
+    const matching = getMatchingItemsForCondition(op.condition, folderItems, selectedFileNames);
+    let pdfFiles = matching.filter(f => f.type === 'file' && f.name.toLowerCase().endsWith('.pdf'));
+    pdfFiles = [...pdfFiles].sort((a, b) => {
+      const aIdx = extractIndexPrefix(a.name);
+      const bIdx = extractIndexPrefix(b.name);
+      if (aIdx && !bIdx) return -1;
+      if (!aIdx && bIdx) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    if (pdfFiles.length < 2) continue;
+
+    const groups = await getContentBasedMergeGroups(pdfFiles, model, onContentReading, onContentAnalyzing);
+    const pathByName = new Map(pdfFiles.map(f => [f.name, f.path]));
+
+    for (const g of groups) {
+      const sourcePaths = g.fileNames
+        .map(name => pathByName.get(name))
+        .filter((p): p is string => !!p);
+      if (sourcePaths.length < 2) continue;
+
+      const outputFilename = g.outputFilename.endsWith('.pdf') ? g.outputFilename : g.outputFilename + '.pdf';
+      const outputPath = normalizePath(joinPath(currentDirectory, outputFilename));
+
+      items.push({
+        fileName: outputFilename,
+        filePath: '',
+        operation: 'merge',
+        newName: outputFilename,
+        sourcePaths,
+        outputPath,
+        retainOriginals: false,
+        status: 'pending',
+        isFolder: false,
+      });
+    }
+  }
+  return items;
+}
+
 /**
  * Parse natural language command into structured operations using Claude
  */
@@ -756,8 +916,11 @@ Valid operations (return ONLY a JSON array, no markdown, no explanation):
    {"action":"extract","sourceFolder":"A","condition":"all","deleteSource":false}
    {"action":"extract","sourceFolder":"finals","condition":"all","asCopies":true}
    {"action":"extract","sourceFolder":"Tax Return","condition":{"nameContains":"tax"},"deleteSource":true}
-   For "extract B indexes of folder selected": use sourceFolder from selection (the selected folder name), condition {"indexEquals":"B"}
-12. createCopies: Create N copies of matching files. Use EITHER names array OR nameFrom/nameTo. Preserves file extension. targetFolder: optional - put copies in this subfolder (e.g. "add copies to drafts folder").
+   For "extract from selected folders" with deleteSource: return one extract per selected FOLDER (use only folder names from selection; ignore selected files). For "extract B indexes of folder selected": use sourceFolder from selection (the selected folder name), condition {"indexEquals":"B"}
+12. contentBasedMerge: Smart merge - read PDF content, group documents that relate to the same thing (e.g. property purchase docs for same property, same transaction), merge each group into one PDF. Use when user says "smart merge", "merge by content", "group and merge related docs".
+   {"action":"contentBasedMerge","condition":{"selection":true}}
+   {"action":"contentBasedMerge","condition":"all"}
+13. createCopies: Create N copies of matching files. Use EITHER names array OR nameFrom/nameTo. Preserves file extension. targetFolder: optional - put copies in this subfolder (e.g. "add copies to drafts folder").
    - names: Use when user describes semantic names (months, quarters, etc). E.g. "first 3 months of 2026" -> ["January 2026","February 2026","March 2026"]
    {"action":"createCopies","count":3,"names":["January 2026","February 2026","March 2026"],"condition":{"selection":true}}
    {"action":"createCopies","count":3,"names":["Jan","Feb","Mar"],"targetFolder":"drafts","condition":{"selection":true}}
@@ -802,7 +965,7 @@ If the user's request is ambiguous or cannot be fulfilled, return [].`;
     return parsed.filter(
       (op): op is FileOperation =>
         op && typeof op === 'object' && typeof op.action === 'string' &&
-        ['copyToIndex', 'addPrefix', 'addSuffix', 'removeSuffix', 'removePrefix', 'transformCase', 'smartRename', 'contentBasedRename', 'moveToFolder', 'delete', 'mergePdfs', 'extract', 'createCopies'].includes(op.action)
+        ['copyToIndex', 'addPrefix', 'addSuffix', 'removeSuffix', 'removePrefix', 'transformCase', 'smartRename', 'contentBasedRename', 'moveToFolder', 'delete', 'mergePdfs', 'extract', 'contentBasedMerge', 'createCopies'].includes(op.action)
     );
   } catch {
     return [];

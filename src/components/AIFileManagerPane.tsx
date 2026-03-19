@@ -13,13 +13,14 @@ import {
   Image,
 } from '@chakra-ui/react';
 import { keyframes } from '@emotion/react';
-import { X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2, Merge, Trash2, FolderInput, Eraser } from 'lucide-react';
+import { X, Check, AlertCircle, Loader2, Send, FolderOpen, FileText, Undo2, Merge, FileStack, Trash2, FolderInput, FolderOutput, Eraser } from 'lucide-react';
 import { useAIFileManagerContextSelection } from '../context/AppContext';
 import {
   parseFileManagerCommand,
   expandOperationsToPlannedItems,
   expandExtractOperations,
   expandContentBasedRenameOperations,
+  expandContentBasedMergeOperations,
   executePlannedItems,
   revertUndoEntry,
   getSmartRenameSuggestions,
@@ -426,8 +427,9 @@ export const AIFileManagerPane: React.FC = () => {
 
       const smartRenameOps = operations.filter((op): op is typeof op & { action: 'smartRename' } => op.action === 'smartRename');
       const contentBasedRenameOps = operations.filter((op): op is typeof op & { action: 'contentBasedRename' } => op.action === 'contentBasedRename');
+      const contentBasedMergeOps = operations.filter((op): op is typeof op & { action: 'contentBasedMerge' } => op.action === 'contentBasedMerge');
       const extractOps = operations.filter((op): op is typeof op & { action: 'extract' } => op.action === 'extract');
-      const otherOps = operations.filter(op => op.action !== 'smartRename' && op.action !== 'contentBasedRename' && op.action !== 'extract');
+      const otherOps = operations.filter(op => op.action !== 'smartRename' && op.action !== 'contentBasedRename' && op.action !== 'contentBasedMerge' && op.action !== 'extract');
 
       let items: PlannedItem[] = [];
 
@@ -454,6 +456,21 @@ export const AIFileManagerPane: React.FC = () => {
           (analyzing) => setContentAnalyzingState(analyzing)
         );
         items = [...items, ...contentItems];
+      }
+
+      if (contentBasedMergeOps.length > 0) {
+        const mergeItems = await expandContentBasedMergeOperations(
+          contentBasedMergeOps,
+          folderItems,
+          currentDirectory,
+          selected,
+          'sonnet',
+          (fileName, index, total) => {
+            setContentReadingState(fileName ? { fileName, index, total } : null);
+          },
+          (analyzing) => setContentAnalyzingState(analyzing)
+        );
+        items = [...items, ...mergeItems];
       }
 
       for (const op of smartRenameOps) {
@@ -1091,6 +1108,18 @@ export const AIFileManagerPane: React.FC = () => {
                   title="Rename and group PDFs by their content"
                 />
                 <IconButton
+                  aria-label="Smart Merge by content"
+                  icon={<FileStack size={14} />}
+                  size="xs"
+                  variant="solid"
+                  colorScheme="purple"
+                  h="24px"
+                  minW="24px"
+                  onClick={() => handleSubmit('smart merge documents by content - group documents that relate to the same thing (e.g. property purchase docs for same property) and merge each group into one PDF')}
+                  isDisabled={!currentDirectory || isParsing || isExecuting}
+                  title="Smart Merge: group related docs (e.g. same property) and merge each group into one PDF"
+                />
+                <IconButton
                   aria-label="Delete selected"
                   icon={<Trash2 size={14} />}
                   size="xs"
@@ -1117,6 +1146,18 @@ export const AIFileManagerPane: React.FC = () => {
                   }}
                   isDisabled={!currentDirectory || isParsing || isExecuting}
                   title="Extract contents from a folder (type folder name after clicking)"
+                />
+                <IconButton
+                  aria-label="Extract to current directory and delete folder"
+                  icon={<FolderOutput size={14} />}
+                  size="xs"
+                  variant="solid"
+                  colorScheme="orange"
+                  h="24px"
+                  minW="24px"
+                  onClick={() => handleSubmit('extract from selected folders to current directory and delete folder')}
+                  isDisabled={!currentDirectory || isParsing || isExecuting}
+                  title="Extract files from selected folders to current directory and delete the folders"
                 />
               </Flex>
               <IconButton

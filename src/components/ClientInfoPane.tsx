@@ -10,6 +10,7 @@ export const ClientInfoPane: React.FC = () => {
     quickAccessPaths,
     removeQuickAccessPath,
     moveQuickAccessPath,
+    recentClientPaths,
   } = useAppContext();
 
   const bgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright sidebar; dark: unchanged
@@ -18,6 +19,7 @@ export const ClientInfoPane: React.FC = () => {
   const dividerBorderColor = useColorModeValue('gray.300', 'gray.600');
   const transferBg = 'transparent';
   const transferSectionBg = useColorModeValue('#f8fafc', 'gray.700');
+  const recentClientsSectionBg = useColorModeValue('#f1f5f9', 'gray.800');
 
   const [quickAccessOpen] = useState(true);
   const [rootFolders, setRootFolders] = useState<Array<{ name: string; path: string }>>([]);
@@ -238,8 +240,70 @@ export const ClientInfoPane: React.FC = () => {
           </Box>
         )}
       </Box>
-      {/* Add this separator */}
-      <Divider mb={2} borderColor={dividerBorderColor} />
+
+      {/* Recent Clients Section */}
+      {Array.isArray(recentClientPaths) && recentClientPaths.length > 0 && (
+        <Box
+          mb={0}
+          flexShrink={0}
+          mt={3}
+          bg={recentClientsSectionBg}
+          borderRadius={0}
+          px={2}
+          py={2}
+        >
+          <Box {...sectionHeaderStyle} py={1} mb={0}>
+            <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
+              RECENT CLIENTS
+            </Text>
+          </Box>
+          <Box
+            position="relative"
+            flex="1"
+            minH="0"
+            display="flex"
+            flexDirection="column"
+            overflow="hidden"
+          >
+            <Box
+              flex="1"
+              overflowY="auto"
+              overflowX="hidden"
+              className="enhanced-scrollbar"
+              maxH="200px"
+              minH="0"
+            >
+              {recentClientPaths.map((clientPath) => (
+                <Flex
+                  key={clientPath}
+                  align="center"
+                  px={2}
+                  py={1.5}
+                  fontSize="sm"
+                  _hover={{ bg: transferSectionBg }}
+                  color={textColor}
+                  cursor="pointer"
+                  style={{ userSelect: 'none' }}
+                  onClick={() => setCurrentDirectory(clientPath)}
+                  borderRadius={0}
+                  position="relative"
+                >
+                  <Icon
+                    as={Folder}
+                    boxSize={4}
+                    mr={2}
+                    color="blue.400"
+                    flexShrink={0}
+                  />
+                  <Text noOfLines={1} color="inherit" fontWeight="normal" flex={1}>
+                    {clientPath.split(/[/\\]/).filter(Boolean).pop()}
+                  </Text>
+                </Flex>
+              ))}
+            </Box>
+          </Box>
+        </Box>
+      )}
       {/* Transfer Files Section removed */}
 
       {/* Document Insights functionality moved to dedicated dialog */}
