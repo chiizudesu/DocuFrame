@@ -909,7 +909,6 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
-            backgroundAttachment: 'fixed',
             opacity: bgFillOpacity,
           }}
         />

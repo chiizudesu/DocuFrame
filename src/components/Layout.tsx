@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Grid, GridItem, Box, Flex, useColorModeValue, Text, HStack, IconButton } from '@chakra-ui/react';
-import * as ScrollArea from '@radix-ui/react-scroll-area';
 import { ClientInfoPane } from './ClientInfoPane';
 import { ClientInfoBar } from './ClientInfoBar';
 import { PreviewPane } from './PreviewPane';
@@ -193,22 +192,9 @@ export const Layout: React.FC = () => {
       position="relative"
       zIndex={0}
     >
-      <ScrollArea.Root
-        type="always"
-        style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: 4 }}
-        className="filegrid-scroll-area"
-      >
-        <ScrollArea.Viewport style={{ height: '100%', width: '100%' }}>
-          <FileGrid />
-        </ScrollArea.Viewport>
-        <ScrollArea.Scrollbar orientation="vertical">
-          <ScrollArea.Thumb />
-        </ScrollArea.Scrollbar>
-        <ScrollArea.Scrollbar orientation="horizontal">
-          <ScrollArea.Thumb />
-        </ScrollArea.Scrollbar>
-        <ScrollArea.Corner />
-      </ScrollArea.Root>
+      <Box flex="1" minH={0} overflow="auto">
+        <FileGrid />
+      </Box>
       {showClientInfoBar && clientInfo && (
         <Box flexShrink={0} borderTop="1px" borderColor={accentBorderColor} overflow="hidden">
           <ClientInfoBar />

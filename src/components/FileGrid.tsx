@@ -231,6 +231,8 @@ export const FileGrid: React.FC = () => {
   const selectionModifiersRef = useRef<{ shiftKey: boolean; ctrlKey: boolean }>({ shiftKey: false, ctrlKey: false })
   const justFinishedSelectingRef = useRef(false)
   const containerPaddingLeftRef = useRef<number>(0)
+  const selectionRectRef = useRef<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null)
+  const rafIdRef = useRef<number | null>(null)
 
 
 
@@ -4116,17 +4118,14 @@ export const FileGrid: React.FC = () => {
         containerPaddingLeftRef.current = parseFloat(computedStyle.paddingLeft) || 0;
       }
       
-      const rect = container.getBoundingClientRect();
-      const startX = e.clientX - rect.left - containerPaddingLeftRef.current;
-      const startY = e.clientY - rect.top + container.scrollTop;
-      
+      const containerRect = container.getBoundingClientRect();
+      const startX = e.clientX - containerRect.left - containerPaddingLeftRef.current;
+      const startY = e.clientY - containerRect.top + container.scrollTop;
+
+      const selectionRectData = { startX, startY, currentX: startX, currentY: startY };
       setIsSelecting(true);
-      setSelectionRect({
-        startX,
-        startY,
-        currentX: startX,
-        currentY: startY,
-      });
+      setSelectionRect(selectionRectData);
+      selectionRectRef.current = selectionRectData;
       
       // Track modifier keys for global handler
       selectionModifiersRef.current = {
@@ -4146,6 +4145,7 @@ export const FileGrid: React.FC = () => {
     if (isSelecting) {
       setIsSelecting(false);
       setSelectionRect(null);
+      selectionRectRef.current = null;
     }
   }, [isSelecting]);
 
@@ -4161,47 +4161,51 @@ export const FileGrid: React.FC = () => {
   }, [selectedFiles, isSelecting]);
 
   // Add global mouse move and up handlers for drag selection
+  // Throttled via requestAnimationFrame to avoid layout thrashing (getBoundingClientRect) and excessive re-renders
   useEffect(() => {
     if (isSelecting) {
-      const handleGlobalMouseMove = (e: MouseEvent) => {
+      let pendingEvent: MouseEvent | null = null;
+
+      const processMove = () => {
+        rafIdRef.current = null;
+        const e = pendingEvent;
+        pendingEvent = null;
+        if (!e) return;
+
         const container = gridContainerRef.current || dropAreaRef.current;
-        if (!container || !selectionRect) return;
-        
-        // Get container padding-left if not cached
+        const rectRef = selectionRectRef.current;
+        if (!container || !rectRef) return;
+
         if (containerPaddingLeftRef.current === 0) {
           const computedStyle = window.getComputedStyle(container);
           containerPaddingLeftRef.current = parseFloat(computedStyle.paddingLeft) || 0;
         }
-        
-        const rect = container.getBoundingClientRect();
-        const currentX = e.clientX - rect.left - containerPaddingLeftRef.current;
-        const currentY = e.clientY - rect.top + container.scrollTop;
-        
-        setSelectionRect({
-          ...selectionRect,
-          currentX,
-          currentY,
-        });
-        
-        // Detect intersecting files
+
+        const containerRect = container.getBoundingClientRect();
+        const currentX = e.clientX - containerRect.left - containerPaddingLeftRef.current;
+        const currentY = e.clientY - containerRect.top + container.scrollTop;
+
+        const newRect = { ...rectRef, currentX, currentY };
+        selectionRectRef.current = newRect;
+        setSelectionRect(newRect);
+
         const selectionBox = {
-          left: Math.min(selectionRect.startX, currentX),
-          top: Math.min(selectionRect.startY, currentY),
-          right: Math.max(selectionRect.startX, currentX),
-          bottom: Math.max(selectionRect.startY, currentY),
+          left: Math.min(rectRef.startX, currentX),
+          top: Math.min(rectRef.startY, currentY),
+          right: Math.max(rectRef.startX, currentX),
+          bottom: Math.max(rectRef.startY, currentY),
         };
-        
+
         const intersectingFiles: string[] = [];
         const rows = container.querySelectorAll('[data-row-index]');
-        
-        rows.forEach((row) => {
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i];
           const rowRect = row.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
           const rowTop = rowRect.top - containerRect.top + container.scrollTop;
           const rowBottom = rowTop + rowRect.height;
           const rowLeft = rowRect.left - containerRect.left;
           const rowRight = rowLeft + rowRect.width;
-          
+
           if (
             rowTop < selectionBox.bottom &&
             rowBottom > selectionBox.top &&
@@ -4213,26 +4217,40 @@ export const FileGrid: React.FC = () => {
               intersectingFiles.push(sortedFiles[rowIndex].name);
             }
           }
-        });
-        
-        // Update selection - preserve existing selection if Shift/Ctrl was held when starting
+        }
+
         if (selectionModifiersRef.current.shiftKey || selectionModifiersRef.current.ctrlKey) {
-          // Add to existing selection
           setSelectedFiles(prev => {
             const newSet = new Set(prev);
             intersectingFiles.forEach(name => newSet.add(name));
-            return Array.from(newSet);
+            const next = Array.from(newSet);
+            if (next.length === prev.length && next.every((f, i) => f === prev[i])) return prev;
+            return next;
           });
         } else {
-          // Replace selection
-          setSelectedFiles(intersectingFiles);
+          setSelectedFiles(prev => {
+            if (prev.length === intersectingFiles.length && intersectingFiles.every((f, i) => f === prev[i])) return prev;
+            return intersectingFiles;
+          });
         }
       };
-      
+
+      const handleGlobalMouseMove = (e: MouseEvent) => {
+        pendingEvent = e;
+        if (rafIdRef.current === null) {
+          rafIdRef.current = requestAnimationFrame(processMove);
+        }
+      };
+
       const handleGlobalMouseUp = () => {
-        if (selectionRect) {
-          const hasMoved = Math.abs(selectionRect.currentX - selectionRect.startX) > 5 ||
-                          Math.abs(selectionRect.currentY - selectionRect.startY) > 5;
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
+        const rectRef = selectionRectRef.current;
+        if (rectRef) {
+          const hasMoved = Math.abs(rectRef.currentX - rectRef.startX) > 5 ||
+                          Math.abs(rectRef.currentY - rectRef.startY) > 5;
           if (hasMoved) {
             justFinishedSelectingRef.current = true;
             setTimeout(() => {
@@ -4242,17 +4260,22 @@ export const FileGrid: React.FC = () => {
         }
         setIsSelecting(false);
         setSelectionRect(null);
+        selectionRectRef.current = null;
       };
-      
-      document.addEventListener('mousemove', handleGlobalMouseMove);
+
+      document.addEventListener('mousemove', handleGlobalMouseMove, { passive: true });
       document.addEventListener('mouseup', handleGlobalMouseUp);
-      
+
       return () => {
         document.removeEventListener('mousemove', handleGlobalMouseMove);
         document.removeEventListener('mouseup', handleGlobalMouseUp);
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
       };
     }
-  }, [isSelecting, selectionRect, sortedFiles]);
+  }, [isSelecting, sortedFiles]);
 
   
   const handleGridClick = useCallback((e: React.MouseEvent) => {
