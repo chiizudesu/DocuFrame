@@ -11,6 +11,7 @@ import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
 import { normalizePath, joinPath } from './utils/path';
+import { useDirectorySearch } from './hooks/useDirectorySearch';
 import type { FileItem } from './types';
 
 // Invalid path characters for folder names (Windows)
@@ -21,129 +22,72 @@ const JumpModeOverlay: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   currentDirectory: string;
-  sortedFiles: FileItem[];
   onNavigate: (path: string) => void;
   onOpenFile: (file: FileItem) => void;
   initialKey?: string;
   rootDirectory: string;
   initialDirectoryOverride?: string | null;
-}> = ({ isOpen, onClose, currentDirectory, sortedFiles, onNavigate, onOpenFile, initialKey, rootDirectory, initialDirectoryOverride }) => {
+}> = ({ isOpen, onClose, currentDirectory, onNavigate, onOpenFile, initialKey, rootDirectory, initialDirectoryOverride }) => {
   const { addLog, setStatus } = useAppContext();
-  const [searchText, setSearchText] = useState('');
-  const [overlayPath, setOverlayPath] = useState(currentDirectory);
-  const [overlayFiles, setOverlayFiles] = useState<FileItem[]>([]);
-  const [searchResults, setSearchResults] = useState<FileItem[]>([]);
-  const [selectedResultIndex, setSelectedResultIndex] = useState(0); // Which result is highlighted for arrow navigation
-  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null); // Track which segment is "selected" for backspace navigation
-  const [isNavigating, setIsNavigating] = useState(false); // Track if we're actively navigating (not just searching)
-  const [overlayWorkingDirectory, setOverlayWorkingDirectory] = useState(currentDirectory); // Track overlay's current working directory context
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  
-  // Reset overlay when opening
   const effectiveInitialDir = initialDirectoryOverride ?? currentDirectory;
+  const [overlayPath, setOverlayPath] = useState(currentDirectory);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [overlayWorkingDirectory, setOverlayWorkingDirectory] = useState(currentDirectory);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    searchText,
+    setSearchText,
+    searchResults,
+    selectedResultIndex,
+    setSelectedResultIndex,
+  } = useDirectorySearch({
+    directoryPath: overlayPath,
+    isActive: isOpen,
+    initialSearchText: isOpen ? (initialKey || '') : '',
+  });
+
+  // Reset overlay when opening/closing
   useEffect(() => {
     if (isOpen) {
       const dirToLoad = effectiveInitialDir;
       setOverlayPath(dirToLoad);
-      setOverlayWorkingDirectory(dirToLoad); // Reset overlay working directory
-      // Load files from the current directory instead of using sortedFiles from root
-      (window.electronAPI as any).getDirectoryContents(dirToLoad).then((contents: any) => {
-        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
-        setOverlayFiles(files);
-      }).catch((_error: any) => {
-        // Fallback to sortedFiles if loading fails
-      setOverlayFiles(sortedFiles);
-      });
-      setSearchText(initialKey || '');
-      setSearchResults([]);
-      setSelectedResultIndex(0);
-      setSelectedSegmentIndex(null); // Reset selected segment
-      setIsNavigating(false); // Reset navigation flag
-      // Focus input immediately to capture first keystroke
+      setOverlayWorkingDirectory(dirToLoad);
+      setSelectedSegmentIndex(null);
+      setIsNavigating(false);
       if (searchInputRef.current) {
         searchInputRef.current.focus();
       }
     } else {
-      // Reset all state when overlay closes
-      setSearchText('');
       setOverlayPath(currentDirectory);
-      setOverlayWorkingDirectory(currentDirectory); // Reset overlay working directory
-      setOverlayFiles([]); // Clear files when closing
-      setSearchResults([]);
-      setSelectedResultIndex(0);
-      setSelectedSegmentIndex(null); // Reset selected segment
-      setIsNavigating(false); // Reset navigation flag
+      setOverlayWorkingDirectory(currentDirectory);
+      setSelectedSegmentIndex(null);
+      setIsNavigating(false);
     }
-  }, [isOpen, currentDirectory, sortedFiles, initialKey, effectiveInitialDir]);
-  
-  // Update search results when search text or overlay files change
+  }, [isOpen, currentDirectory, effectiveInitialDir]);
+
+  // When search text is cleared, reset to overlay's base dir
   useEffect(() => {
-    if (!searchText.trim()) {
-      setSearchResults([]);
-      
-      // When search text is cleared, reset to overlay's base dir (effectiveInitialDir)
-      // Use effectiveInitialDir not currentDirectory - preserves parent when opened via Ctrl+Backspace
-      if (!isNavigating) {
-        setOverlayPath(effectiveInitialDir);
-        setOverlayWorkingDirectory(effectiveInitialDir);
-      }
-      return;
+    if (!searchText.trim() && !isNavigating) {
+      setOverlayPath(effectiveInitialDir);
+      setOverlayWorkingDirectory(effectiveInitialDir);
     }
-    
-    // Reset selected segment when user starts typing (clears pill indicator)
-    if (selectedSegmentIndex !== null) {
+  }, [searchText, isNavigating, effectiveInitialDir]);
+
+  // Reset selected segment when user starts typing
+  useEffect(() => {
+    if (searchText.trim() && selectedSegmentIndex !== null) {
       setSelectedSegmentIndex(null);
     }
-    
-    const query = searchText.toLowerCase();
-    
-    // Load files from the current directory if overlayFiles is empty or doesn't match current context
-    if (overlayFiles.length === 0) {
-      // Load files from the current overlayPath (which should be the directory we want to search in)
-      const pathToLoad = overlayPath || currentDirectory;
-      
-      // Load files from the valid path
-      (window.electronAPI as any).getDirectoryContents(pathToLoad).then((contents: any) => {
-        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
-        setOverlayFiles(files);
-      }).catch((_error: any) => {
-        // Failed to load directory contents
-      });
-      return; // Wait for files to load before searching
+  }, [searchText, selectedSegmentIndex]);
+
+  // When no matches, reset to overlay working directory
+  useEffect(() => {
+    if (searchText.trim() && searchResults.length === 0 && overlayPath !== overlayWorkingDirectory && !isNavigating) {
+      setOverlayPath(overlayWorkingDirectory);
     }
-    
-    // Since we're loading files from the correct directory, use all loaded files for searching
-    // No need for complex path filtering since overlayFiles already contains the right files
-    const currentLevelFiles = overlayFiles;
-    
-    const matches = currentLevelFiles
-      .filter(file => file.name.toLowerCase().includes(query))
-      .sort((a, b) => {
-        // Prioritize exact matches and folder matches
-        const aStartsWith = a.name.toLowerCase().startsWith(query);
-        const bStartsWith = b.name.toLowerCase().startsWith(query);
-        const aIsFolder = a.type === 'folder';
-        const bIsFolder = b.type === 'folder';
-        
-        if (aStartsWith && !bStartsWith) return -1;
-        if (!aStartsWith && bStartsWith) return 1;
-        if (aIsFolder && !bIsFolder) return -1;
-        if (!aIsFolder && bIsFolder) return 1;
-        
-        return a.name.localeCompare(b.name);
-      })
-      .slice(0, 20); // Allow multiple results for arrow-key navigation
-    
-    setSearchResults(matches);
-    setSelectedResultIndex(0); // Reset selection when search changes
-    
-    // If no matches, reset to the overlay working directory
-    if (matches.length === 0) {
-      if (overlayPath !== overlayWorkingDirectory && !isNavigating) {
-        setOverlayPath(overlayWorkingDirectory);
-      }
-    }
-  }, [searchText, overlayFiles, currentDirectory, overlayWorkingDirectory, isNavigating, selectedSegmentIndex, effectiveInitialDir]);
+  }, [searchText, searchResults.length, overlayPath, overlayWorkingDirectory, isNavigating]);
   
   // Update preview path when selected result changes (search or arrow keys)
   useEffect(() => {
@@ -172,123 +116,54 @@ const JumpModeOverlay: React.FC<{
     const idx = Math.min(selectedResultIndex, searchResults.length - 1);
     const currentResult = searchResults[idx];
     if (currentResult.type === 'folder') {
-      try {
-        // Load files from the new folder
-        const contents = await (window.electronAPI as any).getDirectoryContents(currentResult.path);
-        const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
-        
-        // Navigate overlay to this folder - update overlay context to this new directory
-        setOverlayPath(currentResult.path);
-        setOverlayFiles(files);
-        setOverlayWorkingDirectory(currentResult.path); // Update overlay's working directory
-        setIsNavigating(true); // Mark that we're actively navigating
-        // Reset search text for new directory
-        setSearchText('');
-        setSearchResults([]);
-        setSelectedResultIndex(0);
-        setSelectedSegmentIndex(null); // Reset segment selection
-      } catch (error) {
-        console.error('Failed to load directory contents:', error);
-        // Fallback: just update the path
-        setOverlayPath(currentResult.path);
-        setOverlayWorkingDirectory(currentResult.path); // Update overlay's working directory
-        setIsNavigating(true); // Mark that we're actively navigating
-        setSearchText('');
-        setSearchResults([]);
-        setSelectedResultIndex(0);
-        setSelectedSegmentIndex(null); // Reset segment selection
-      }
+      setOverlayPath(currentResult.path);
+      setOverlayWorkingDirectory(currentResult.path);
+      setIsNavigating(true);
+      setSearchText('');
+      setSelectedResultIndex(0);
+      setSelectedSegmentIndex(null);
     } else {
-      // Open the file
       onOpenFile(currentResult);
       onClose();
     }
   };
   
   const handleBackspace = () => {
-    console.log('Backspace handler called:', {
-      searchTextLength: searchText.length,
-      selectedSegmentIndex,
-      overlayPath
-    });
-    
     if (searchText.length > 0) {
-      // Normal backspace behavior - let the input handle it
-      console.log('Backspace: letting input handle text deletion');
-      return;
+      return; // Let the input handle text deletion
     }
-    
-    // Smart backspace navigation when no text
+
     if (selectedSegmentIndex === null) {
-      // First backspace: highlight the last segment (for visual pill indicator)
       const relativePath = getRelativePath(overlayPath);
       const pathSegments = relativePath.includes(' / ') ? relativePath.split(' / ') : [relativePath];
-      
-      console.log('First backspace logic:', {
-        relativePath,
-        pathSegments,
-        segmentsLength: pathSegments.length
-      });
-      
+
       if (pathSegments.length > 1) {
-        // Highlight the parent segment (second to last), not the current segment
-        const parentIndex = pathSegments.length - 2;
-        setSelectedSegmentIndex(parentIndex);
-        console.log('SETTING SEGMENT INDEX TO:', parentIndex, 'for parent segment:', pathSegments[parentIndex]);
+        setSelectedSegmentIndex(pathSegments.length - 2);
       } else if (pathSegments.length === 1 && pathSegments[0] !== 'Root') {
-        // If we're one level deep, highlight the current segment to go to Root
-        const currentIndex = 0;
-        setSelectedSegmentIndex(currentIndex);
-        console.log('SETTING SEGMENT INDEX TO:', currentIndex, 'to go to Root from:', pathSegments[currentIndex]);
-      } else {
-        console.log('Cannot highlight segment - already at root');
+        setSelectedSegmentIndex(0);
       }
     } else {
-      // Second backspace: navigate up to parent folder
       const relativePath = getRelativePath(overlayPath);
       const pathSegments = relativePath.includes(' / ') ? relativePath.split(' / ') : [relativePath];
       if (selectedSegmentIndex > 0 || (selectedSegmentIndex === 0 && pathSegments[0] !== 'Root')) {
-        
-        // Calculate parent path - go up one level from current overlayPath
         let parentPath: string;
         if (overlayPath === rootDirectory) {
-          // Already at root, can't go higher
-          console.log('Already at root directory');
           setSelectedSegmentIndex(null);
           return;
         }
-        
-        // Get parent directory by removing last path segment
+
         const pathParts = overlayPath.replace(/[/\\]+$/, '').split(/[/\\]/);
         if (pathParts.length > 1) {
-          pathParts.pop(); // Remove last segment
+          pathParts.pop();
           parentPath = pathParts.join('\\');
         } else {
           parentPath = rootDirectory;
         }
-        
-        console.log('Backspace navigation:', {
-          from: overlayPath,
-          to: parentPath,
-          segments: pathSegments,
-          selectedIndex: selectedSegmentIndex
-        });
-        
-        // Update overlay state
+
         setOverlayPath(parentPath);
         setSearchText('');
-        setSearchResults([]);
         setSelectedSegmentIndex(null);
-        setIsNavigating(true); // Mark as navigating to prevent reset to currentDirectory
-        
-        // Load files for the new parent directory
-        (window.electronAPI as any).getDirectoryContents(parentPath).then((contents: any) => {
-          const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : []);
-          setOverlayFiles(files);
-          console.log('Loaded files for parent directory:', parentPath, 'count:', files.length);
-        }).catch((error: any) => {
-          console.error('Failed to load directory contents for parent path:', parentPath, error);
-        });
+        setIsNavigating(true);
       }
     }
   };
@@ -395,7 +270,6 @@ const JumpModeOverlay: React.FC<{
     
     const handleWindowBlur = () => {
       setSearchText('');
-      setSearchResults([]);
     };
 
     const handleWindowFocus = () => {
@@ -589,9 +463,7 @@ const JumpModeOverlay: React.FC<{
         }}
         onFocus={() => {}} // Empty function to avoid console warnings
         onBlur={() => {
-          // Reset text when input loses focus
           setSearchText('');
-          setSearchResults([]);
         }}
         position="fixed"
         top="50%"
@@ -942,7 +814,6 @@ const AppContent: React.FC = () => {
           setJumpModeInitialDirectory(null);
         }}
         currentDirectory={currentDirectory}
-        sortedFiles={folderItems}
         onNavigate={setCurrentDirectory}
         onOpenFile={async (file) => {
           try {

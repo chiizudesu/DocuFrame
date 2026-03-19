@@ -24,6 +24,7 @@ import {
   MenuList,
   MenuItem,
   MenuDivider,
+  Portal,
 } from '@chakra-ui/react'
 import {
   Home,
@@ -35,11 +36,91 @@ import {
   Star,
   SquareTerminal,
   ExternalLink,
+  File,
+  Folder,
 } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { useClientInfo } from '../hooks/useClientInfo'
 import { useYearNavigation } from '../hooks/useYearNavigation'
+import { useDirectorySearch } from '../hooks/useDirectorySearch'
 import { joinPath, getParentPath, normalizePath, isChildPath } from '../utils/path'
+import type { FileItem } from '../types'
+
+const MiniSearchDropdown: React.FC<{
+  containerRef: React.RefObject<HTMLDivElement | null>
+  results: FileItem[]
+  selectedIndex: number
+  dropdownBg: string
+  dropdownHighlightBg: string
+  dropdownHoverBg: string
+  folderIconColor: string
+  fileIconColor: string
+  inputBorderColor: string
+  onSelect: (item: FileItem) => void
+}> = ({
+  containerRef,
+  results,
+  selectedIndex,
+  dropdownBg,
+  dropdownHighlightBg,
+  dropdownHoverBg,
+  folderIconColor,
+  fileIconColor,
+  inputBorderColor,
+  onSelect,
+}) => {
+  const [rect, setRect] = React.useState<DOMRect | null>(null)
+  React.useEffect(() => {
+    if (containerRef.current) {
+      setRect(containerRef.current.getBoundingClientRect())
+    } else {
+      setRect(null)
+    }
+  }, [containerRef])
+  if (!rect) return null
+  return (
+    <Portal>
+      <Box
+        data-mini-search-dropdown
+        position="fixed"
+        bg={dropdownBg}
+        border="1px solid"
+        borderColor={inputBorderColor}
+        borderRadius="md"
+        boxShadow="lg"
+        maxH="200px"
+        overflowY="auto"
+        zIndex={9999}
+        left={rect.left}
+        top={rect.bottom + 4}
+        minW={rect.width}
+      >
+        {results.map((item, i) => (
+          <Flex
+            key={item.path}
+            align="center"
+            gap={2}
+            px={3}
+            py={2}
+            cursor="pointer"
+            bg={i === selectedIndex ? dropdownHighlightBg : 'transparent'}
+            _hover={{ bg: dropdownHoverBg }}
+            onClick={() => onSelect(item)}
+          >
+            {item.type === 'folder' ? (
+              <Folder size={14} color={folderIconColor} />
+            ) : (
+              <File size={14} color={fileIconColor} />
+            )}
+            <Text fontSize="sm" noOfLines={1}>
+              {item.name}
+            </Text>
+          </Flex>
+        ))}
+      </Box>
+    </Portal>
+  )
+}
 
 declare global {
   interface Window {
@@ -84,6 +165,12 @@ export const FolderInfoBar: React.FC = () => {
   const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
+  const [activeChevronIndex, setActiveChevronIndex] = useState<number | null>(null)
+  const [miniSearchPath, setMiniSearchPath] = useState<string>('')
+  const [miniSelectedSegmentIndex, setMiniSelectedSegmentIndex] = useState<number | null>(null)
+  const [miniIsNavigating, setMiniIsNavigating] = useState(false)
+  const miniSearchInputRef = useRef<HTMLInputElement>(null)
+  const miniSearchContainerRef = useRef<HTMLDivElement>(null)
 
 
   // Helper function to format template name for display
@@ -125,6 +212,17 @@ export const FolderInfoBar: React.FC = () => {
   const inputBorderColor = useColorModeValue('gray.300', 'transparent') // Light: thin border to separate inputs from white header
   const separatorColor = useColorModeValue('gray.300', 'gray.400')
   const yearNavDisabledColor = useColorModeValue('gray.300', 'gray.600')
+  const dropdownBg = useColorModeValue('white', 'gray.800')
+  const dropdownHighlightBg = useColorModeValue('blue.50', 'blue.900')
+  const dropdownHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const folderIconColor = useColorModeValue('#3b82f6', '#63B3ED')
+  const fileIconColor = useColorModeValue('#64748b', '#718096')
+  const placeholderColor = useColorModeValue('gray.500', 'gray.400')
+  const miniCurrentFolderBg = useColorModeValue('gray.600', 'gray.400')
+  const miniCurrentFolderColor = useColorModeValue('white', 'gray.900')
+  const miniPathBg = useColorModeValue('gray.50', 'gray.700')
+  const miniPathTextColor = useColorModeValue('gray.600', 'gray.300')
+  const miniSeparatorColor = useColorModeValue('gray.500', 'gray.400')
 
   // Window controls
   const handleMinimize = () => {
@@ -177,8 +275,7 @@ export const FolderInfoBar: React.FC = () => {
   }, [currentDirectory])
 
   const handleClick = () => {
-    if (isEditing) {
-      // If already editing, don't select all text on additional clicks
+    if (isEditing || activeChevronIndex !== null) {
       return;
     }
 
@@ -355,7 +452,6 @@ export const FolderInfoBar: React.FC = () => {
     try {
       // Clear all state first for a true cold reload
       setSelectedFiles([])
-      setSelectedFile(null)
       setClipboard({ files: [], operation: null })
       setSearchValue('')
       setFileSearchFilter('') // Clear search filter
@@ -536,6 +632,226 @@ export const FolderInfoBar: React.FC = () => {
   }
 
   const breadcrumbs = getBreadcrumbs()
+
+  const directorySearch = useDirectorySearch({
+    directoryPath: miniSearchPath,
+    isActive: activeChevronIndex !== null && !!miniSearchPath,
+  })
+  const {
+    searchText: miniSearchText,
+    setSearchText: setMiniSearchText,
+    searchResults: miniSearchResults,
+    selectedResultIndex: miniSelectedIndex,
+    setSelectedResultIndex: setMiniSelectedIndex,
+  } = directorySearch
+
+  const handleOpenFile = async (file: FileItem) => {
+    try {
+      if (window.electronAPI && typeof (window.electronAPI as any).openFile === 'function') {
+        await (window.electronAPI as any).openFile(file.path)
+      }
+    } catch (error) {
+      addLog(`Failed to open file: ${file.path}`, 'error')
+      setStatus(`Failed to open file`, 'error')
+    }
+  }
+
+  const getRelativePathForMini = React.useCallback((fullPath: string) => {
+    if (!rootDirectory || !fullPath) return 'Root'
+    const normRoot = rootDirectory.replace(/\\/g, '/').replace(/\/+$/, '')
+    const normPath = fullPath.replace(/\\/g, '/').replace(/\/+$/, '')
+    if (normPath === normRoot) return 'Root'
+    if (normPath.startsWith(normRoot)) {
+      const relative = normPath.substring(normRoot.length).replace(/^\/+/, '')
+      if (!relative) return 'Root'
+      const segments = relative.split('/').filter(Boolean)
+      return segments.length === 0 ? 'Root' : segments.join(' / ')
+    }
+    const pathParts = fullPath.split(/[/\\]/).filter(Boolean)
+    return pathParts.length > 0 ? pathParts[pathParts.length - 1] : 'Root'
+  }, [rootDirectory])
+
+  const closeMiniSearch = () => {
+    setActiveChevronIndex(null)
+    setMiniSearchPath('')
+    setMiniSelectedSegmentIndex(null)
+    setMiniIsNavigating(false)
+  }
+
+  const openMiniSearch = (idx: number) => {
+    if (breadcrumbs[idx]) {
+      setActiveChevronIndex(idx)
+      setMiniSearchPath(breadcrumbs[idx].path)
+      setMiniSelectedSegmentIndex(null)
+      setMiniIsNavigating(false)
+    }
+  }
+
+  const handleMiniSearchBackspace = () => {
+    if (miniSearchText.length > 0) return
+    const relativePath = getRelativePathForMini(miniSearchPath)
+    const pathSegments = relativePath.includes(' / ') ? relativePath.split(' / ') : [relativePath]
+    if (miniSelectedSegmentIndex === null) {
+      if (pathSegments.length > 1) {
+        setMiniSelectedSegmentIndex(pathSegments.length - 2)
+      } else if (pathSegments.length === 1 && pathSegments[0] !== 'Root') {
+        setMiniSelectedSegmentIndex(0)
+      }
+    } else {
+      if (miniSearchPath === rootDirectory) {
+        setMiniSelectedSegmentIndex(null)
+        return
+      }
+      const parentPath = getParentPath(miniSearchPath) || rootDirectory
+      setMiniSearchPath(parentPath)
+      setMiniSearchText('')
+      setMiniSelectedSegmentIndex(null)
+      setMiniIsNavigating(true)
+    }
+  }
+
+  const MINI_SEARCH_MAX_RESULTS = 3
+
+  const handleMiniSearchKeyDown = (e: React.KeyboardEvent) => {
+    const maxIdx = Math.min(miniSearchResults.length, MINI_SEARCH_MAX_RESULTS) - 1
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setMiniSelectedIndex(Math.min(miniSelectedIndex + 1, maxIdx))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setMiniSelectedIndex(Math.max(0, miniSelectedIndex - 1))
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      if (miniSearchResults.length > 0) {
+        const idx = Math.min(miniSelectedIndex, miniSearchResults.length - 1)
+        const item = miniSearchResults[idx]
+        if (item.type === 'folder') {
+          setMiniSearchPath(item.path)
+          setMiniSearchText('')
+          setMiniSelectedIndex(0)
+          setMiniSelectedSegmentIndex(null)
+          setMiniIsNavigating(true)
+        } else {
+          handleOpenFile(item)
+          closeMiniSearch()
+        }
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      if (miniSearchResults.length > 0) {
+        const idx = Math.min(miniSelectedIndex, miniSearchResults.length - 1)
+        const item = miniSearchResults[idx]
+        if (item.type === 'folder') {
+          setCurrentDirectory(item.path)
+          addLog(`Navigated to: ${item.path}`)
+          setStatus(`Navigated to ${item.name}`, 'info')
+        } else {
+          handleOpenFile(item)
+        }
+        closeMiniSearch()
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      closeMiniSearch()
+    } else if (e.key === 'Backspace') {
+      e.preventDefault()
+      if (miniSearchText.length > 0) {
+        setMiniSearchText((prev) => prev.slice(0, -1))
+      } else {
+        handleMiniSearchBackspace()
+      }
+    }
+  }
+
+  const handleMiniSearchKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault()
+      setMiniSearchText((prev) => prev + e.key)
+    }
+  }
+
+  const miniPathDisplay = React.useMemo(() => {
+    let pathToDisplay: string
+    if (miniSearchText.trim() && miniSearchResults.length > 0) {
+      const idx = Math.min(miniSelectedIndex, miniSearchResults.length - 1)
+      const match = miniSearchResults[idx]
+      const matchPath = match.path
+      const matchName = match.name
+      if (matchPath === miniSearchPath) {
+        pathToDisplay = getRelativePathForMini(miniSearchPath)
+      } else if (matchPath.startsWith(miniSearchPath + '\\') || matchPath.startsWith(miniSearchPath + '/')) {
+        pathToDisplay = getRelativePathForMini(miniSearchPath) + ' / ' + matchName
+      } else {
+        pathToDisplay = getRelativePathForMini(matchPath)
+      }
+    } else {
+      pathToDisplay = getRelativePathForMini(miniSearchPath)
+    }
+    return pathToDisplay.includes(' / ') ? pathToDisplay.split(' / ') : [pathToDisplay]
+  }, [miniSearchText, miniSearchResults, miniSelectedIndex, miniSearchPath, getRelativePathForMini])
+
+  const miniPathSegmentsDisplay = React.useMemo(() => {
+    const skipCount = activeChevronIndex !== null ? activeChevronIndex + 1 : 0
+    const segmentsToShow = miniPathDisplay.slice(skipCount)
+    return (
+      <>
+        <Text as="span" display="inline-block" fontSize="xs" mr={1} color={miniSeparatorColor} fontWeight="medium">&gt;</Text>
+        {segmentsToShow.map((segment, index, array) => {
+          const origIndex = skipCount + index
+          const isCurrentFolder = origIndex === miniPathDisplay.length - 1
+          const isSelected = origIndex === miniSelectedSegmentIndex
+          const isPreview = miniSearchText.trim() && miniSearchResults.length > 0 && isCurrentFolder
+          return (
+            <React.Fragment key={origIndex}>
+              {isPreview ? (
+                <Box as="span" bg="blue.400" color="white" px={2} py={0.5} fontSize="xs" fontWeight="bold" borderRadius="full" display="inline-block" border="1px solid" borderColor="blue.500" mr={1}>
+                  {segment}
+                </Box>
+              ) : isCurrentFolder ? (
+                <Box as="span" bg={miniCurrentFolderBg} color={miniCurrentFolderColor} px={2} py={0.5} fontSize="xs" fontWeight="bold" borderRadius="md" display="inline-block" mr={1}>
+                  {segment}
+                </Box>
+              ) : isSelected ? (
+                <Box as="span" bg="transparent" color={miniCurrentFolderBg} px={2} py={0.5} fontSize="xs" fontWeight="bold" borderRadius="md" display="inline-block" border="2px solid" borderColor={miniCurrentFolderBg} mr={1}>
+                  {segment}
+                </Box>
+              ) : (
+                <Text as="span" display="inline-block" fontSize="xs" mr={1}>{segment}</Text>
+              )}
+              {index < array.length - 1 && <Text as="span" mx={0.5} color={miniSeparatorColor} fontSize="xs">/</Text>}
+            </React.Fragment>
+          )
+        })}
+      </>
+    )
+  }, [miniPathDisplay, miniSelectedSegmentIndex, miniSearchText, miniSearchResults, miniCurrentFolderBg, miniCurrentFolderColor, miniSeparatorColor, activeChevronIndex])
+
+  useEffect(() => {
+    if (miniSearchText.trim() && miniSelectedSegmentIndex !== null) {
+      setMiniSelectedSegmentIndex(null)
+    }
+  }, [miniSearchText, miniSelectedSegmentIndex])
+
+  useEffect(() => {
+    if (activeChevronIndex !== null && miniSearchInputRef.current) {
+      miniSearchInputRef.current.focus()
+    }
+  }, [activeChevronIndex])
+
+  useEffect(() => {
+    if (activeChevronIndex === null) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (!miniSearchContainerRef.current?.contains(target)) {
+        const dropdown = document.querySelector('[data-mini-search-dropdown]')
+        if (!dropdown?.contains(target)) {
+          closeMiniSearch()
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [activeChevronIndex])
 
   const handleCreateFolder = async () => {
     try {
@@ -744,7 +1060,7 @@ export const FolderInfoBar: React.FC = () => {
           </Tooltip>
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
-        <Flex ref={addressBarRef} flex={1} ml={2} mr={1} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="1px solid" borderColor={inputBorderColor}>
+        <Flex ref={addressBarRef} flex={1} ml={2} mr={1} align="center" h="33px" gap={1} onClick={handleClick} cursor="text" borderRadius="md" bg={inputBgColor} px={2} position="relative" overflow="hidden" minW={0} style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any} border="1px solid" borderColor={inputBorderColor}>
           {isRefreshing && (
             <Box
               position="absolute"
@@ -770,7 +1086,7 @@ export const FolderInfoBar: React.FC = () => {
               }}
             />
           )}
-          <Box position="relative" zIndex={2} width="100%" display="flex" alignItems="center" gap={1}>
+          <Box position="relative" zIndex={2} flexShrink={0} display="flex" alignItems="center" gap={1} flexWrap="nowrap">
             {isEditing ? (
               <Input
                 ref={inputRef}
@@ -790,7 +1106,10 @@ export const FolderInfoBar: React.FC = () => {
                 style={{ fontFamily: 'monospace', fontSize: '14px' }}
               />
             ) : (
-              breadcrumbs.map((crumb, idx) => (
+              (activeChevronIndex !== null
+                ? breadcrumbs.slice(0, activeChevronIndex + 1)
+                : breadcrumbs
+              ).map((crumb, idx) => (
                 <Flex key={crumb.path} align="center" flexShrink={crumb.isClientPill ? 1 : 0}>
                   {crumb.isClientPill ? (
                     <Tooltip label={hasClientLink ? `${getClientName() || crumb.label} — Ctrl+click to open client page` : getClientName() || crumb.label} placement="bottom" hasArrow openDelay={400}>
@@ -832,16 +1151,16 @@ export const FolderInfoBar: React.FC = () => {
                       align="center"
                       px={2}
                       py="2px"
-                      cursor={idx === breadcrumbs.length - 1 ? 'default' : 'pointer'}
-                      bg={idx === breadcrumbs.length - 1 ? activeButtonBg : 'transparent'}
+                      cursor={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'default' : 'pointer'}
+                      bg={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonBg : 'transparent'}
                       borderRadius="md"
-                      _hover={idx !== breadcrumbs.length - 1 ? { bg: breadcrumbHoverBg } : undefined}
+                      _hover={idx !== breadcrumbs.length - 1 || activeChevronIndex !== null ? { bg: breadcrumbHoverBg } : undefined}
                       transition="background 0.2s ease"
                       position="relative"
                       zIndex={1}
                       onClick={async (e) => {
                         e.stopPropagation();
-                        if (idx !== breadcrumbs.length - 1) {
+                        if (idx !== breadcrumbs.length - 1 || activeChevronIndex !== null) {
                           const normalizedPath = normalizePath(crumb.path);
                           try {
                             const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
@@ -862,23 +1181,110 @@ export const FolderInfoBar: React.FC = () => {
                     >
                       <Text
                         fontSize="sm"
-                        fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
-                        color={idx === breadcrumbs.length - 1 ? activeButtonColor : textColor}
+                        fontWeight={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'medium' : 'normal'}
+                        color={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonColor : textColor}
                         userSelect="none"
                       >
                         {crumb.label}
                       </Text>
                     </Flex>
                   )}
-                  {idx < breadcrumbs.length - 1 && (
-                    <Box as="span" display="inline-flex" alignItems="center" mx={1} opacity={0.8} color={textColor}>
-                      <ChevronRight size={16} />
-                    </Box>
+                  {(activeChevronIndex !== null || idx < breadcrumbs.length - 1) && (
+                    activeChevronIndex === null ? (
+                      <Tooltip label="Click to search at this level" placement="bottom" hasArrow>
+                        <Box
+                          as="span"
+                          display="inline-flex"
+                          alignItems="center"
+                          mx={1}
+                          opacity={0.8}
+                          color={textColor}
+                          cursor="pointer"
+                          borderRadius="md"
+                          p={0.5}
+                          _hover={{ bg: breadcrumbHoverBg }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openMiniSearch(idx)
+                          }}
+                        >
+                          <ChevronRight size={16} />
+                        </Box>
+                      </Tooltip>
+                    ) : (
+                      <Box as="span" mx={1} display="inline-flex" alignItems="center" flexShrink={0} opacity={0.8} color={textColor}>
+                        <ChevronRight size={16} />
+                      </Box>
+                    )
                   )}
                 </Flex>
               ))
             )}
           </Box>
+          {activeChevronIndex !== null && (
+            <Box
+              ref={miniSearchContainerRef}
+              ml={2}
+              flex={1}
+              minW={0}
+              display="flex"
+              alignItems="center"
+              position="relative"
+              h="100%"
+              minH="28px"
+              px={2}
+              overflow="visible"
+              borderLeft="1px solid"
+              borderColor={inputBorderColor}
+            >
+              <Input
+                ref={miniSearchInputRef}
+                value={miniSearchText}
+                onChange={(e) => setMiniSearchText(e.target.value)}
+                onKeyDown={handleMiniSearchKeyDown}
+                onKeyPress={handleMiniSearchKeyPress}
+                position="absolute"
+                top={0}
+                left={0}
+                right={0}
+                bottom={0}
+                opacity={0}
+                w="100%"
+                h="100%"
+                zIndex={2}
+                cursor="text"
+                tabIndex={0}
+                autoFocus
+                border="none"
+                outline="none"
+                _focus={{ outline: 'none' }}
+              />
+              <Flex align="center" flexWrap="wrap" gap={1}>
+                {miniPathSegmentsDisplay}
+              </Flex>
+              <MiniSearchDropdown
+                containerRef={miniSearchContainerRef}
+                results={miniSearchResults.slice(0, 3)}
+                selectedIndex={Math.min(miniSelectedIndex, 2)}
+                dropdownBg={dropdownBg}
+                dropdownHighlightBg={dropdownHighlightBg}
+                dropdownHoverBg={dropdownHoverBg}
+                folderIconColor={folderIconColor}
+                fileIconColor={fileIconColor}
+                inputBorderColor={inputBorderColor}
+                onSelect={(item) => {
+                  if (item.type === 'folder') {
+                    setCurrentDirectory(item.path)
+                    addLog(`Navigated to: ${item.path}`)
+                    setStatus(`Navigated to ${item.name}`, 'info')
+                  } else {
+                    handleOpenFile(item)
+                  }
+                  closeMiniSearch()
+                }}
+              />
+            </Box>
+          )}
         </Flex>
         {/* Year navigation - when inside annual accounts\XX\202X folders */}
         {yearNav && (
