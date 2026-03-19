@@ -47,14 +47,14 @@ export interface FileTableRowProps {
   observeFileElement: (element: HTMLElement | null, filePath: string) => void;
   unobserveFileElement: (element: HTMLElement | null) => void;
   rowHandlers: {
-    onMouseEnter: () => void;
-    onMouseLeave: (e: React.MouseEvent) => void;
-    onContextMenu: (e: React.MouseEvent) => void;
-    onClick: (e: React.MouseEvent) => void;
-    onMouseDown: (e: React.MouseEvent) => void;
-    onMouseUp: (e: React.MouseEvent) => void;
+    onMouseEnter: (index: number) => void;
+    onMouseLeave: (index: number, e: React.MouseEvent) => void;
+    onContextMenu: (file: FileItem, e: React.MouseEvent) => void;
+    onClick: (file: FileItem, index: number, e?: React.MouseEvent) => void;
+    onMouseDown: (file: FileItem, index: number, e: React.MouseEvent) => void;
+    onMouseUp: (file: FileItem, index: number, e: React.MouseEvent) => void;
     draggable: boolean;
-    onDragStart: (e: React.DragEvent) => void;
+    onDragStart: (file: FileItem, index: number, e: React.DragEvent) => void;
     onDragEnd: (e: React.DragEvent) => void;
   };
   folderDropHandlers: Record<string, any> | {};
