@@ -2871,13 +2871,22 @@ export const FileGrid: React.FC = () => {
         draggedFiles = e.dataTransfer.getData('application/x-file-list');
       }
       
-      if (!draggedFiles) {
-        return;
+      // 5. Electron native startDrag: OS provides files in dataTransfer.files when getData is empty
+      if (!draggedFiles && hasExternalFiles && e.dataTransfer.files?.length) {
+        filePaths = Array.from(e.dataTransfer.files)
+          .map((f: File) => (f as any).path || f.name)
+          .filter(Boolean);
       }
       
-      try {
-        filePaths = JSON.parse(draggedFiles) as string[];
-      } catch (error) {
+      if (filePaths.length === 0 && draggedFiles) {
+        try {
+          filePaths = JSON.parse(draggedFiles) as string[];
+        } catch (error) {
+          return;
+        }
+      }
+      
+      if (filePaths.length === 0) {
         return;
       }
     } else {
