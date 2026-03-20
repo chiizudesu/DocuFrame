@@ -30,7 +30,7 @@ const Block: React.FC<{
     cursor={cursor}
     border="none"
     userSelect="none"
-    _hover={onClick ? { bg: 'blue.700' } : undefined}
+    _hover={onClick ? { bg: 'rgba(255, 255, 255, 0.14)' } : undefined}
     _focus={{ outline: 'none', boxShadow: 'none' }}
     _focusVisible={{ outline: 'none', boxShadow: 'none' }}
     transition="background 0.15s"

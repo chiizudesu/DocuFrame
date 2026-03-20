@@ -7,7 +7,6 @@ import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
 import { FloatingTaskTimerWindow } from './components/FloatingTaskTimerWindow';
 import { AppProvider } from './context/AppContext';
-import { ClientSearchOverlay } from './components/ClientSearchOverlay';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
 
@@ -278,9 +277,8 @@ const AppContent: React.FC = () => {
     >
       <Layout />
       <QuickNavigateOverlay />
-      <ClientSearchOverlay />
-      <SettingsWindow isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      <Calculator isOpen={isCalculatorOpen} onClose={() => setIsCalculatorOpen(false)} />
+      {isSettingsOpen && <SettingsWindow isOpen onClose={() => setIsSettingsOpen(false)} />}
+      {isCalculatorOpen && <Calculator isOpen onClose={() => setIsCalculatorOpen(false)} />}
     </Box>
   );
 };

@@ -2314,7 +2314,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                 <Box pb={3.5}>
                   <Heading size="sm" mb={1.5} color={textColor}>Group View</Heading>
                   <Text fontSize="sm" color={secondaryTextColor}>
-                    Control when files are grouped by index prefix in the file grid
+                    Control when files are grouped by index prefix in the file grid. Blacklist entries match{' '}
+                    <Text as="span" fontWeight="semibold">only that folder</Text> — subfolders still use group view.
                   </Text>
                 </Box>
 

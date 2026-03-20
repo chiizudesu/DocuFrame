@@ -199,6 +199,39 @@ function isErrnoCode(err: unknown, code: string): boolean {
   return (err as NodeJS.ErrnoException)?.code === code;
 }
 
+function isTransientFsLock(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === 'EBUSY' || code === 'EPERM' || code === 'EACCES';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Windows/AV often returns EBUSY when multiple saves overlap (FileGrid column widths, sort prefs, quick access, etc.). */
+async function withFileIoRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const maxAttempts = 8;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      await sleep(Math.min(60 * 2 ** (attempt - 1), 750));
+    }
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      if (isTransientFsLock(e) && attempt < maxAttempts - 1) {
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastErr;
+}
+
+/** One save at a time so read→merge→write cycles never overlap (fixes EBUSY from parallel `set-config`). */
+let configSaveChain: Promise<void> = Promise.resolve();
+
 interface PDFText {
   R: Array<{
     T: string;
@@ -450,18 +483,31 @@ async function loadConfig(): Promise<Config> {
 }
 
 // Save config - merges with existing config so undefined keys don't overwrite stored values
-async function saveConfig(config: Config) {
+function saveConfig(config: Config): Promise<void> {
   if (!config) {
-    throw new Error('Config object is undefined or null');
+    return Promise.reject(new Error('Config object is undefined or null'));
   }
-  
+  const done = configSaveChain.then(() => saveConfigInternal(config));
+  configSaveChain = done.catch(() => {});
+  return done;
+}
+
+async function saveConfigInternal(config: Config) {
   try {
     let existing: Record<string, unknown> = {};
     try {
-      const data = await fsPromises.readFile(configPath, 'utf-8');
-      existing = JSON.parse(data) as Record<string, unknown>;
-    } catch {
-      // File missing or invalid - start fresh
+      const data = await withFileIoRetry(() => fsPromises.readFile(configPath, 'utf-8'));
+      try {
+        existing = JSON.parse(data) as Record<string, unknown>;
+      } catch {
+        existing = {};
+      }
+    } catch (e) {
+      if (isErrnoCode(e, 'ENOENT')) {
+        existing = {};
+      } else {
+        throw e;
+      }
     }
     const merged = { ...existing };
     for (const [key, value] of Object.entries(config)) {
@@ -475,12 +521,12 @@ async function saveConfig(config: Config) {
     }
     try {
       if (fs.existsSync(configPath)) {
-        await fsPromises.copyFile(configPath, configBackupPath);
+        await withFileIoRetry(() => fsPromises.copyFile(configPath, configBackupPath));
       }
     } catch (e) {
       console.warn('[Main] Config pre-save backup (config.json.bak) failed:', e);
     }
-    await fsPromises.writeFile(configPath, configData);
+    await withFileIoRetry(() => fsPromises.writeFile(configPath, configData, 'utf8'));
   } catch (error) {
     console.error('[Main] Error in saveConfig:', error);
     throw error;

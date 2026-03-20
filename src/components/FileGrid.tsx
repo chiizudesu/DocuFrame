@@ -537,12 +537,27 @@ export const FileGrid: React.FC = () => {
 
   // Group files by index prefix when grouping is enabled
   const groupedFiles = useMemo(() => {
-    if (!isGroupedByIndex || sortedFiles.length === 0) return null;
-    
+    if (!isGroupedByIndex) {
+      console.log(
+        `[GroupView FileGrid] flat_table reason=flag_off dir="${currentDirectory || ''}" itemCount=${sortedFiles.length}`,
+      );
+      return null;
+    }
+    if (sortedFiles.length === 0) {
+      console.log(
+        `[GroupView FileGrid] flat_table reason=empty_list dir="${currentDirectory || ''}" (loading or no files)`,
+      );
+      return null;
+    }
+
     const grouped = groupFilesByIndex(sortedFiles);
-    // Return null if no groups were created (shouldn't happen, but safety check)
-    return Object.keys(grouped).length > 0 ? grouped : null;
-  }, [sortedFiles, isGroupedByIndex]);
+    const groupKeys = Object.keys(grouped);
+    const ok = groupKeys.length > 0;
+    console.log(
+      `[GroupView FileGrid] ${ok ? 'group_table' : 'flat_table'} dir="${currentDirectory || ''}" itemCount=${sortedFiles.length} groupKeys=${groupKeys.join(',')} folderRowCount=${grouped.folders?.length ?? 0}`,
+    );
+    return ok ? grouped : null;
+  }, [sortedFiles, isGroupedByIndex, currentDirectory]);
 
   // Pre-compute file name to path map for O(1) drag lookups (moved early to avoid initialization errors)
   const fileNameToPathMap = useMemo(() => {
@@ -4519,30 +4534,38 @@ export const FileGrid: React.FC = () => {
         toggleColumnVisibility={toggleColumnVisibility}
         closeHeaderContextMenu={closeHeaderContextMenu}
       />
-      <MergePDFDialog 
-        isOpen={isMergePDFOpen} 
-        onClose={() => setMergePDFOpen(false)} 
-        currentDirectory={currentDirectory}
-        preselectedFiles={selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'))}
-      />
-      <ExtractedTextDialog
-        isOpen={isExtractedTextOpen}
-        onClose={() => setExtractedTextOpen(false)}
-        fileName={extractedTextData.fileName}
-        extractedText={extractedTextData.text}
-      />
-      <CustomPropertiesDialog
-        isOpen={isPropertiesOpen}
-        onClose={() => setPropertiesOpen(false)}
-        file={propertiesFile}
-        onUnblock={handleUnblockFile}
-      />
-      <ImagePasteDialog
-        isOpen={isImagePasteOpen}
-        onClose={() => setImagePasteOpen(false)}
-        currentDirectory={currentDirectory}
-        onImageSaved={handleImageSaved}
-      />
+      {isMergePDFOpen && (
+        <MergePDFDialog
+          isOpen
+          onClose={() => setMergePDFOpen(false)}
+          currentDirectory={currentDirectory}
+          preselectedFiles={selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'))}
+        />
+      )}
+      {isExtractedTextOpen && (
+        <ExtractedTextDialog
+          isOpen
+          onClose={() => setExtractedTextOpen(false)}
+          fileName={extractedTextData.fileName}
+          extractedText={extractedTextData.text}
+        />
+      )}
+      {isPropertiesOpen && propertiesFile && (
+        <CustomPropertiesDialog
+          isOpen
+          onClose={() => setPropertiesOpen(false)}
+          file={propertiesFile}
+          onUnblock={handleUnblockFile}
+        />
+      )}
+      {isImagePasteOpen && (
+        <ImagePasteDialog
+          isOpen
+          onClose={() => setImagePasteOpen(false)}
+          currentDirectory={currentDirectory}
+          onImageSaved={handleImageSaved}
+        />
+      )}
       
       {/* Index prefix: mount only when open so folder navigation does not keep re-rendering the modal tree */}
       {isIndexPrefixDialogOpen && (

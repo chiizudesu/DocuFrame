@@ -199,8 +199,8 @@ export const AppProvider: React.FC<{
   // File grouping by index prefix - always on except blacklisted directories (from settings)
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
-  // Directory whose contents are actually displayed (lags behind currentDirectory until load completes)
-  const [displayedDirectory, setDisplayedDirectory] = useState<string>('');
+  /** No-op: FileGrid still calls this after loads; group view uses currentDirectory only */
+  const setDisplayedDirectory = useCallback((_path: string) => {}, []);
   
   // Task Timer file operation logging
   const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
@@ -317,7 +317,9 @@ export const AppProvider: React.FC<{
   const prevDirectoryRef = useRef<string>('');
   useEffect(() => {
     if (prevDirectoryRef.current !== currentDirectory) {
-      console.log('[Directory] Changed:', { from: prevDirectoryRef.current || '(empty)', to: currentDirectory || '(empty)' });
+      console.log(
+        `[Directory] ${prevDirectoryRef.current || '(empty)'} → ${currentDirectory || '(empty)'}`,
+      );
       prevDirectoryRef.current = currentDirectory;
     }
   }, [currentDirectory]);
@@ -345,18 +347,37 @@ export const AppProvider: React.FC<{
     });
   }, [recentClientPaths]);
 
-  // Compute isGroupedByIndex from displayedDirectory (not currentDirectory) so group view only
-  // changes when the new folder's contents are actually shown, not when navigation starts
+  // Blacklist = disable group view only when the current folder path exactly matches an entry
+  // (not for subfolders — e.g. Annual Accounts listed, but A & E Glass inside it still groups).
   const isGroupedByIndex = useMemo(() => {
-    if (!groupViewAlwaysEnabled) return false;
-    const dir = normalizePath(displayedDirectory || currentDirectory || '');
-    if (!dir) return true;
+    if (!groupViewAlwaysEnabled) {
+      console.log(
+        `[GroupView] grouped=OFF reason=setting_off rawDir="${currentDirectory || ''}"`,
+      );
+      return false;
+    }
+    const dir = normalizePath(currentDirectory || '');
+    if (!dir) {
+      console.log(`[GroupView] grouped=ON reason=no_path_yet rawDir="${currentDirectory || ''}"`);
+      return true;
+    }
+    const blacklistHits: string[] = [];
     const isBlacklisted = groupViewBlacklist.some((b) => {
       const nb = normalizePath(b);
-      return dir === nb || dir.startsWith(nb + '/') || dir.startsWith(nb + '\\');
+      if (!nb) return false;
+      if (dir === nb) {
+        blacklistHits.push(nb);
+        return true;
+      }
+      return false;
     });
-    return !isBlacklisted;
-  }, [displayedDirectory, currentDirectory, groupViewAlwaysEnabled, groupViewBlacklist]);
+    const result = !isBlacklisted;
+    const hits = blacklistHits.length > 0 ? blacklistHits.join(' | ') : 'none';
+    console.log(
+      `[GroupView] grouped=${result} blacklisted=${isBlacklisted} normalized="${dir}" raw="${currentDirectory}" blacklistCount=${groupViewBlacklist.length} hits=${hits}`,
+    );
+    return result;
+  }, [currentDirectory, groupViewAlwaysEnabled, groupViewBlacklist]);
 
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {

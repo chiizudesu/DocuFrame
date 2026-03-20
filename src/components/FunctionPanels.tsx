@@ -1531,73 +1531,90 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       </Flex>
     </Flex>
     
-    {/* Dialogs */}
-    <TransferMappingDialog isOpen={isTransferMappingOpen} onClose={() => setTransferMappingOpen(false)} />
-    <OrgCodesDialog isOpen={isOrgCodesOpen} onClose={() => setOrgCodesOpen(false)} />
-    <MergePDFDialog 
-      isOpen={isMergePDFOpen} 
-      onClose={() => setMergePDFOpen(false)} 
-      currentDirectory={currentDirectory}
-      onFileOperation={logFileOperation}
-    />
-    <ExtractionResultDialog 
-      isOpen={isExtractionResultOpen} 
-      onClose={() => setExtractionResultOpen(false)} 
-      type={extractionResult?.type || 'zip'}
-      extractedFiles={extractionResult?.extractedFiles || []}
-      sourceFiles={extractionResult?.sourceFiles || []}
-    />
-    <LateClaimsDialog isOpen={isLateClaimsOpen} onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
-    <AIEditorDialog 
-      key={`aiEditor-${dialogKeys.aiEditor}`}
-      isOpen={isAIEditorOpen} 
-      onClose={() => setAIEditorOpen(false)}
-      onMinimize={() => handleMinimizeDialog('aiEditor')}
-    />
-    <AITemplaterDialog 
-      key={`aiTemplater-${dialogKeys.aiTemplater}`}
-      isOpen={isAITemplaterOpen} 
-      onClose={() => handleCloseMinimizedDialog('aiTemplater')}
-      currentDirectory={currentDirectory}
-      onMinimize={() => handleMinimizeDialog('aiTemplater')}
-    />
-    <DocumentAnalysisDialog 
-      key={`documentAnalysis-${dialogKeys.documentAnalysis}`}
-      isOpen={isDocumentAnalysisOpen} 
-      onClose={() => setDocumentAnalysisOpen(false)} 
-      currentDirectory={currentDirectory}
-      selectedFiles={selectedFiles}
-      folderItems={folderItems}
-      onMinimize={() => handleMinimizeDialog('documentAnalysis')}
-    />
-    <PdfToCsvDialog 
-      key={`pdfToCsv-${dialogKeys.pdfToCsv}`}
-      isOpen={isPdfToCsvOpen} 
-      onClose={() => setPdfToCsvOpen(false)} 
-      currentDirectory={currentDirectory}
-      selectedFiles={selectedFiles}
-      folderItems={folderItems}
-      onMinimize={() => handleMinimizeDialog('pdfToCsv')}
-    />
-    <ManageTemplatesDialog 
-      key={`manageTemplates-${dialogKeys.manageTemplates}`}
-      isOpen={isManageTemplatesOpen} 
-      onClose={() => setManageTemplatesOpen(false)} 
-      currentDirectory={currentDirectory}
-      onMinimize={() => handleMinimizeDialog('manageTemplates')}
-    />
-    <CalculatorDialog isOpen={isCalculatorOpen} onClose={() => setCalculatorOpen(false)} />
-    <UpdateDialog 
-      isOpen={isUpdateDialogOpen} 
-      onClose={() => setIsUpdateDialogOpen(false)}
-      onCheckForUpdates={handleCheckForUpdates}
-      onDownloadUpdate={handleDownloadUpdate}
-      onInstallUpdate={handleInstallUpdate}
-      updateInfo={updateInfo}
-    />
-    <ClientSearchOverlay 
-      isOpen={isClientSearchOpen} 
-      onClose={() => setClientSearchOpen(false)} 
-    />
+    {/* Dialogs: mount only when open (or minimized for stateful AI dialogs) so navigation does not reconcile closed modal trees */}
+    {isTransferMappingOpen && (
+      <TransferMappingDialog isOpen onClose={() => setTransferMappingOpen(false)} />
+    )}
+    {isOrgCodesOpen && <OrgCodesDialog isOpen onClose={() => setOrgCodesOpen(false)} />}
+    {isMergePDFOpen && (
+      <MergePDFDialog
+        isOpen
+        onClose={() => setMergePDFOpen(false)}
+        currentDirectory={currentDirectory}
+        onFileOperation={logFileOperation}
+      />
+    )}
+    {isExtractionResultOpen && (
+      <ExtractionResultDialog
+        isOpen
+        onClose={() => setExtractionResultOpen(false)}
+        type={extractionResult?.type || 'zip'}
+        extractedFiles={extractionResult?.extractedFiles || []}
+        sourceFiles={extractionResult?.sourceFiles || []}
+      />
+    )}
+    {isLateClaimsOpen && (
+      <LateClaimsDialog isOpen onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
+    )}
+    {(isAIEditorOpen || minimizedDialogs.some((d) => d.type === 'aiEditor')) && (
+      <AIEditorDialog
+        key={`aiEditor-${dialogKeys.aiEditor}`}
+        isOpen={isAIEditorOpen}
+        onClose={() => setAIEditorOpen(false)}
+        onMinimize={() => handleMinimizeDialog('aiEditor')}
+      />
+    )}
+    {(isAITemplaterOpen || minimizedDialogs.some((d) => d.type === 'aiTemplater')) && (
+      <AITemplaterDialog
+        key={`aiTemplater-${dialogKeys.aiTemplater}`}
+        isOpen={isAITemplaterOpen}
+        onClose={() => handleCloseMinimizedDialog('aiTemplater')}
+        currentDirectory={currentDirectory}
+        onMinimize={() => handleMinimizeDialog('aiTemplater')}
+      />
+    )}
+    {(isDocumentAnalysisOpen || minimizedDialogs.some((d) => d.type === 'documentAnalysis')) && (
+      <DocumentAnalysisDialog
+        key={`documentAnalysis-${dialogKeys.documentAnalysis}`}
+        isOpen={isDocumentAnalysisOpen}
+        onClose={() => setDocumentAnalysisOpen(false)}
+        currentDirectory={currentDirectory}
+        selectedFiles={selectedFiles}
+        folderItems={folderItems}
+        onMinimize={() => handleMinimizeDialog('documentAnalysis')}
+      />
+    )}
+    {(isPdfToCsvOpen || minimizedDialogs.some((d) => d.type === 'pdfToCsv')) && (
+      <PdfToCsvDialog
+        key={`pdfToCsv-${dialogKeys.pdfToCsv}`}
+        isOpen={isPdfToCsvOpen}
+        onClose={() => setPdfToCsvOpen(false)}
+        currentDirectory={currentDirectory}
+        selectedFiles={selectedFiles}
+        folderItems={folderItems}
+        onMinimize={() => handleMinimizeDialog('pdfToCsv')}
+      />
+    )}
+    {(isManageTemplatesOpen || minimizedDialogs.some((d) => d.type === 'manageTemplates')) && (
+      <ManageTemplatesDialog
+        key={`manageTemplates-${dialogKeys.manageTemplates}`}
+        isOpen={isManageTemplatesOpen}
+        onClose={() => setManageTemplatesOpen(false)}
+        currentDirectory={currentDirectory}
+        onMinimize={() => handleMinimizeDialog('manageTemplates')}
+      />
+    )}
+    {isCalculatorOpen && <CalculatorDialog isOpen onClose={() => setCalculatorOpen(false)} />}
+    {isUpdateDialogOpen && (
+      <UpdateDialog
+        isOpen
+        onClose={() => setIsUpdateDialogOpen(false)}
+        onCheckForUpdates={handleCheckForUpdates}
+        onDownloadUpdate={handleDownloadUpdate}
+        onInstallUpdate={handleInstallUpdate}
+        updateInfo={updateInfo}
+      />
+    )}
+    {isClientSearchOpen && <ClientSearchOverlay isOpen onClose={() => setClientSearchOpen(false)} />}
   </>;
 };

@@ -44,7 +44,7 @@ export interface AppSettings {
   showClientInfoBar?: boolean; // Enable/disable client info bar below file grid
   isGroupedByIndex?: boolean; // Deprecated - use groupViewAlwaysEnabled and groupViewBlacklist
   groupViewAlwaysEnabled?: boolean; // When true, group view on for all except blacklist (default true)
-  groupViewBlacklist?: string[]; // Directories where group view is disabled (paths normalized)
+  groupViewBlacklist?: string[]; // Exact folder paths where group view is off (subfolders still group)
   // Pomodoro timer settings
   pomodoroSessionMinutes?: number; // Session duration in minutes (default 25)
   pomodoroBreakMinutes?: number; // Break duration in minutes (default 5)
