@@ -105,6 +105,24 @@ export function normalizePath(path: string): string {
   return normalized;
 }
 
+/**
+ * Canonical path key for jump UI (typing pill “at anchor”, backspace).
+ * Windows drive root: `C:` and `C:\` after {@link normalizePath} may differ; treat as the same folder.
+ */
+export function normalizePathJumpKey(path: string): string {
+  const n = normalizePath(path);
+  if (!n) return '';
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
+  if (isWindows && /^[a-zA-Z]:$/.test(n)) {
+    return `${n}\\`;
+  }
+  return n;
+}
+
+export function pathsEqualForJump(pathA: string, pathB: string): boolean {
+  return normalizePathJumpKey(pathA) === normalizePathJumpKey(pathB);
+}
+
 // Get the relative path from a base directory to a target path
 export function getRelativePath(basePath: string, targetPath: string): string {
   const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
@@ -125,6 +143,15 @@ export function getRelativePath(basePath: string, targetPath: string): string {
   relative = relative.replace(isWindows ? /^\\+/ : /^\/+/, '');
   
   return relative;
+}
+
+/** Returns path segments of targetPath relative to basePath. E.g. basePath/a, targetPath a/b/c -> ['b','c']. */
+export function getRelativePathSegments(basePath: string, targetPath: string): string[] {
+  const relative = getRelativePath(basePath, targetPath);
+  if (!relative || relative === normalizePath(targetPath)) return [];
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
+  const separator = isWindows ? '\\' : '/';
+  return relative.split(separator).filter(Boolean);
 }
 
 /** Client folders live at Root/annual accounts/clientname */

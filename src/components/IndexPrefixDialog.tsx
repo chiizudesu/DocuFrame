@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -29,7 +29,7 @@ interface IndexPrefixDialogProps {
   allowCopy?: boolean;
 }
 
-export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
+const IndexPrefixDialogInner: React.FC<IndexPrefixDialogProps> = ({
   isOpen,
   onClose,
   onSelect,
@@ -56,17 +56,6 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
   const handleConfirm = (forceCopyMode?: boolean) => {
     // If removing prefix (selectedIndex is null), never use copy mode
     const copyMode = selectedIndex === null ? false : (forceCopyMode !== undefined ? forceCopyMode : isCopyMode);
-    console.log('[IndexPrefixDialog] handleConfirm called', { 
-      selectedIndex, 
-      currentPrefix, 
-      isCopyMode,
-      forceCopyMode,
-      finalCopyMode: copyMode,
-      filesCount: files.length,
-      fileNames: files.map(f => f.name)
-    });
-    // Allow null to remove prefix, or any selected index
-    console.log('[IndexPrefixDialog] Calling onSelect with:', { indexKey: selectedIndex, isCopy: copyMode });
     onSelect(selectedIndex, copyMode);
     onClose();
   };
@@ -177,15 +166,7 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
             <Button 
               colorScheme="green" 
               onClick={() => {
-                console.log('[IndexPrefixDialog] Add a Copy button clicked', { 
-                  selectedIndex, 
-                  filesCount: files.length,
-                  fileNames: files.map(f => f.name),
-                  willSetCopyMode: true
-                });
                 setIsCopyMode(true);
-                // Pass copy mode directly to avoid state update timing issues
-                console.log('[IndexPrefixDialog] Executing copy operation with forceCopyMode=true');
                 handleConfirm(true);
               }}
               isDisabled={selectedIndex === null} 
@@ -208,4 +189,6 @@ export const IndexPrefixDialog: React.FC<IndexPrefixDialogProps> = ({
     </Modal>
   );
 };
+
+export const IndexPrefixDialog = memo(IndexPrefixDialogInner);
 

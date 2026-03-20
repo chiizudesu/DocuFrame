@@ -5,13 +5,18 @@ const MAX_RESULTS = 20;
 
 /**
  * Filter and sort directory contents by search query.
- * Same logic as JumpModeOverlay: includes match, folders first, starts-with prioritized.
+ * Empty query: first 3 folders A–Z (jump bar suggestions). With query: match, folders first, starts-with prioritized.
  */
 export function filterAndSortDirectoryFiles(
   files: FileItem[],
   query: string
 ): FileItem[] {
-  if (!query.trim()) return [];
+  if (!query.trim()) {
+    return files
+      .filter((f) => f.type === 'folder')
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+      .slice(0, 3);
+  }
   const q = query.toLowerCase();
   return files
     .filter((file) => file.name.toLowerCase().includes(q))
@@ -38,6 +43,8 @@ export interface UseDirectorySearchOptions {
   isActive: boolean;
   /** Initial search text (e.g. from first keystroke) */
   initialSearchText?: string;
+  /** If set, only matching items are listed (e.g. hide dot folders like FileGrid) */
+  itemPredicate?: (item: FileItem) => boolean;
 }
 
 export interface UseDirectorySearchResult {
@@ -55,6 +62,7 @@ export function useDirectorySearch({
   directoryPath,
   isActive,
   initialSearchText = '',
+  itemPredicate,
 }: UseDirectorySearchOptions): UseDirectorySearchResult {
   const [searchText, setSearchText] = useState(initialSearchText);
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -93,9 +101,14 @@ export function useDirectorySearch({
     setSearchText(initialSearchText);
   }, [initialSearchText]);
 
+  const scopedFiles = useMemo(() => {
+    if (!itemPredicate) return files;
+    return files.filter(itemPredicate);
+  }, [files, itemPredicate]);
+
   const searchResults = useMemo(() => {
-    return filterAndSortDirectoryFiles(files, searchText);
-  }, [files, searchText]);
+    return filterAndSortDirectoryFiles(scopedFiles, searchText);
+  }, [scopedFiles, searchText]);
 
   useEffect(() => {
     setSelectedResultIndex(0);

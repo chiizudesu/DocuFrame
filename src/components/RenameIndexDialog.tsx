@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, memo } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -26,7 +26,7 @@ interface RenameIndexDialogProps {
   files: FileItem[];
 }
 
-export const RenameIndexDialog: React.FC<RenameIndexDialogProps> = ({
+const RenameIndexDialogInner: React.FC<RenameIndexDialogProps> = ({
   isOpen,
   onClose,
   onConfirm,
@@ -43,7 +43,7 @@ export const RenameIndexDialog: React.FC<RenameIndexDialogProps> = ({
   const textColor = useColorModeValue('gray.800', 'gray.100');
   const descColor = useColorModeValue('gray.600', 'gray.400');
 
-  const indexKeys = getAllIndexKeys();
+  const indexKeys = useMemo(() => getAllIndexKeys(), []);
   
   // Get unique source indexes from selected files
   const sourceIndexes = Array.from(new Set(files.map(f => extractIndexPrefix(f.name)).filter(Boolean) as string[]));
@@ -205,7 +205,7 @@ export const RenameIndexDialog: React.FC<RenameIndexDialogProps> = ({
   );
 };
 
-
+export const RenameIndexDialog = memo(RenameIndexDialogInner);
 
 
 

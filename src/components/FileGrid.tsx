@@ -26,7 +26,6 @@ import { FileListView } from './FileGrid/FileListView';
 
 // formatDate function - will be optimized inside component
 
-// JumpModeOverlay component moved to main app level
 
 // Stable empty object for non-folder rows - avoids new {} every render, enables FileTableRow memo
 const EMPTY_FOLDER_HANDLERS = Object.freeze({});
@@ -53,8 +52,6 @@ export const FileGrid: React.FC = () => {
     removeRecentlyTransferredFile,
     addTabToCurrentWindow,
     isQuickNavigating,
-    isJumpModeActive,
-    setIsJumpModeActive,
     hideTemporaryFiles, // NEW
     hideDotFiles, // NEW
     addQuickAccessPath,
@@ -206,6 +203,11 @@ export const FileGrid: React.FC = () => {
   const [isSmartRenameDialogOpen, setIsSmartRenameDialogOpen] = useState(false)
   const [smartRenameFile, setSmartRenameFile] = useState<FileItem | null>(null)
   const [prefixDialogFiles, setPrefixDialogFiles] = useState<FileItem[]>([])
+  const closeIndexPrefixDialog = useCallback(() => {
+    setIsIndexPrefixDialogOpen(false)
+    setPrefixDialogFiles([])
+  }, [])
+  const closeRenameIndexDialog = useCallback(() => setIsRenameIndexDialogOpen(false), [])
   const [isMoveToDialogOpen, setIsMoveToDialogOpen] = useState(false)
   const [moveToFiles, setMoveToFiles] = useState<FileItem[]>([])
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
@@ -2255,9 +2257,9 @@ export const FileGrid: React.FC = () => {
       // Check if any input field is focused
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      
+
       if (isRenaming || isInputFocused) return;
-      
+
       if (e.key === 'Enter' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFilesSet.has(f.name))
         if (selectedFileObjs.length === 1) {
@@ -4293,10 +4295,6 @@ export const FileGrid: React.FC = () => {
       height="100%" 
       position="relative"
       onClick={handleGridClick}
-      style={{ 
-        filter: isJumpModeActive ? 'blur(2px)' : 'none',
-        transition: 'filter 0.2s ease-in-out'
-      }}
     >
       <FileListView
         dropAreaRef={dropAreaRef}
@@ -4396,7 +4394,6 @@ export const FileGrid: React.FC = () => {
         setTemplateSubmenuPosition={setTemplateSubmenuPosition}
         setTemplateSubmenuOpen={setTemplateSubmenuOpen}
         setMoveToFiles={setMoveToFiles}
-        setIsJumpModeActive={setIsJumpModeActive}
         setIsMoveToDialogOpen={setIsMoveToDialogOpen}
       />
       <BlankContextMenu
@@ -4547,19 +4544,18 @@ export const FileGrid: React.FC = () => {
         onImageSaved={handleImageSaved}
       />
       
-      {/* Index Prefix Dialogs */}
-      <IndexPrefixDialog
-        isOpen={isIndexPrefixDialogOpen}
-        onClose={() => {
-          setIsIndexPrefixDialogOpen(false);
-          setPrefixDialogFiles([]);
-        }}
-        onSelect={handleAssignPrefix}
-        currentPrefix={prefixDialogFiles.length > 0 ? extractIndexPrefix(prefixDialogFiles[0].name) : null}
-        files={prefixDialogFiles}
-        title="Manage Index Prefix"
-        allowCopy={true}
-      />
+      {/* Index prefix: mount only when open so folder navigation does not keep re-rendering the modal tree */}
+      {isIndexPrefixDialogOpen && (
+        <IndexPrefixDialog
+          isOpen
+          onClose={closeIndexPrefixDialog}
+          onSelect={handleAssignPrefix}
+          currentPrefix={prefixDialogFiles.length > 0 ? extractIndexPrefix(prefixDialogFiles[0].name) : null}
+          files={prefixDialogFiles}
+          title="Manage Index Prefix"
+          allowCopy={true}
+        />
+      )}
       {/* Move To Dialog with FolderNavigation */}
       {isMoveToDialogOpen && moveToFiles.length > 0 && (
         <MoveToDialogWrapper
@@ -4593,16 +4589,18 @@ export const FileGrid: React.FC = () => {
           addLog={addLog}
         />
       )}
-      <RenameIndexDialog
-        isOpen={isRenameIndexDialogOpen}
-        onClose={() => setIsRenameIndexDialogOpen(false)}
-        onConfirm={handleRenameIndex}
-        files={selectedFiles.length > 1 && contextMenu.fileItem && selectedFilesSet.has(contextMenu.fileItem.name)
-          ? sortedFiles.filter(f => selectedFilesSet.has(f.name) && f.type === 'file')
-          : contextMenu.fileItem && contextMenu.fileItem.type === 'file'
-            ? [contextMenu.fileItem]
-            : []}
-      />
+      {isRenameIndexDialogOpen && (
+        <RenameIndexDialog
+          isOpen
+          onClose={closeRenameIndexDialog}
+          onConfirm={handleRenameIndex}
+          files={selectedFiles.length > 1 && contextMenu.fileItem && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name) && f.type === 'file')
+            : contextMenu.fileItem && contextMenu.fileItem.type === 'file'
+              ? [contextMenu.fileItem]
+              : []}
+        />
+      )}
       {smartRenameFile && (
         <SmartRenameDialog
           isOpen={isSmartRenameDialogOpen}
@@ -4616,7 +4614,6 @@ export const FileGrid: React.FC = () => {
         />
       )}
 
-      {/* JumpModeOverlay moved to main app level */}
     </Box>
   )
 }

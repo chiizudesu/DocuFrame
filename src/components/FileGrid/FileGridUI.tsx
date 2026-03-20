@@ -65,7 +65,6 @@ export interface FileContextMenuProps {
   setTemplateSubmenuPosition: (position: { x: number; y: number } | null) => void;
   setTemplateSubmenuOpen: (open: boolean) => void;
   setMoveToFiles: (files: FileItem[]) => void;
-  setIsJumpModeActive: (active: boolean) => void;
   setIsMoveToDialogOpen: (open: boolean) => void;
 }
 
@@ -84,9 +83,9 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   setTemplateSubmenuPosition,
   setTemplateSubmenuOpen,
   setMoveToFiles,
-  setIsJumpModeActive,
   setIsMoveToDialogOpen,
 }) => {
+  const { addressBarJumpRef } = useAppContext();
   const boxBg = useColorModeValue('white', 'gray.800');
   const borderCol = useColorModeValue('gray.200', 'gray.700');
   const hoverBg = useColorModeValue('gray.100', 'gray.700');
@@ -335,7 +334,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
           <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => {
             const filesToMove = getClipboardFiles();
             setMoveToFiles(filesToMove);
-            setIsJumpModeActive(false); // Deactivate jump mode
+            addressBarJumpRef.current?.close();
             setIsMoveToDialogOpen(true);
             handleCloseContextMenu();
           }}>
@@ -626,7 +625,7 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
   const [filterKeyword, setFilterKeyword] = useState<string>('');
   const pillBg = useColorModeValue('blue.100', 'blue.800');
   const pillColor = useColorModeValue('blue.800', 'blue.100');
-  const { isQuickNavigating, isJumpModeActive } = useAppContext();
+  const { isQuickNavigating, addressBarJumpRef } = useAppContext();
   const initializedRef = useRef(false);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
@@ -697,7 +696,7 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
       const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
       
       if (isQuickNavigating) return;
-      if (isJumpModeActive) return;
+      if (addressBarJumpRef.current?.isActive()) return;
       
       const quickNavigateInput = document.querySelector('input[placeholder*="Search files"], input[placeholder*="Navigate"]');
       if (quickNavigateInput && quickNavigateInput instanceof HTMLElement) {
@@ -757,7 +756,7 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [filterKeyword, isQuickNavigating, dialogRef, items, onSelectFolder, isJumpModeActive]);
+  }, [filterKeyword, isQuickNavigating, dialogRef, items, onSelectFolder, addressBarJumpRef]);
 
   const filteredItems = useMemo(() => {
     if (!filterKeyword.trim()) {
@@ -903,21 +902,19 @@ export const MoveToDialogWrapper: React.FC<MoveToDialogWrapperProps> = ({
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const overlayBg = useColorModeValue('blackAlpha.600', 'blackAlpha.800');
-  const { isJumpModeActive, setIsJumpModeActive } = useAppContext();
+  const { addressBarJumpRef } = useAppContext();
 
   useEffect(() => {
-    if (isJumpModeActive) {
-      setIsJumpModeActive(false);
-    }
-    
+    addressBarJumpRef.current?.close();
+
     const timer = setTimeout(() => {
       if (dialogRef.current) {
         dialogRef.current.focus();
       }
     }, 50);
-    
+
     return () => clearTimeout(timer);
-  }, [isJumpModeActive, setIsJumpModeActive]);
+  }, [addressBarJumpRef]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

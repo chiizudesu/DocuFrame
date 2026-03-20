@@ -30,7 +30,7 @@ const Block: React.FC<{
     cursor={cursor}
     border="none"
     userSelect="none"
-    _hover={onClick ? { bg: 'green.600' } : undefined}
+    _hover={onClick ? { bg: 'blue.700' } : undefined}
     _focus={{ outline: 'none', boxShadow: 'none' }}
     _focusVisible={{ outline: 'none', boxShadow: 'none' }}
     transition="background 0.15s"
@@ -49,6 +49,7 @@ const Block: React.FC<{
       noOfLines={truncate ? 1 : undefined}
       overflow={truncate ? 'hidden' : undefined}
       textOverflow={truncate ? 'ellipsis' : undefined}
+      whiteSpace={truncate ? undefined : 'nowrap'}
     >
       {children}
     </Text>
@@ -59,7 +60,8 @@ const Section: React.FC<{
   children: React.ReactNode;
   hasBorder?: boolean;
   flexShrink?: number;
-}> = ({ children, hasBorder = true, flexShrink = 0 }) => (
+  minW?: string | number;
+}> = ({ children, hasBorder = true, flexShrink = 0, minW }) => (
   <Flex
     align="center"
     gap={1.5}
@@ -69,7 +71,7 @@ const Section: React.FC<{
     borderRight={hasBorder ? '1px solid' : undefined}
     borderColor={hasBorder ? 'whiteAlpha.300' : undefined}
     flexShrink={flexShrink}
-    minW={flexShrink ? 0 : undefined}
+    minW={minW ?? (flexShrink ? 0 : undefined)}
     overflow={flexShrink ? 'hidden' : undefined}
   >
     {children}
@@ -95,7 +97,7 @@ export const ClientInfoBar: React.FC = () => {
   const noClientColor = useColorModeValue('gray.600', 'gray.300');
 
   const hasClient = !!clientInfo;
-  const clientBg = useColorModeValue('green.600', 'green.700'); // Light theme: softer green; dark: unchanged
+  const clientBg = useColorModeValue('blue.600', 'blue.700');
   const bg = hasClient ? clientBg : noClientBg;
   const color = hasClient ? 'white' : noClientColor;
   const [showCopiedIrd, setShowCopiedIrd] = useState(false);
@@ -152,13 +154,11 @@ export const ClientInfoBar: React.FC = () => {
     >
       {hasClient ? (
         <Flex align="center" flexWrap="nowrap" minW={0} overflow="hidden" flex={1} userSelect="none">
-          <Section flexShrink={1}>
+          <Section flexShrink={0} minW="200px">
             <Block
               onClick={hasClientLink ? openClientLink : undefined}
               cursor={hasClientLink ? 'pointer' : 'default'}
-              truncate
               fontWeight="semibold"
-              maxW="200px"
             >
               {getClientName() || '-'}
             </Block>

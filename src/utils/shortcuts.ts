@@ -77,6 +77,26 @@ export function eventMatchesShortcut(event: KeyboardEvent, shortcutRaw: string |
 		return eventKey === '`';
 	}
 
+	// Named navigation keys (parseShortcut lowercases the last token)
+	if (key === 'backspace') {
+		return eventKey === 'Backspace';
+	}
+	if (key === 'delete' || key === 'del') {
+		return eventKey === 'Delete';
+	}
+	if (key === 'escape' || key === 'esc') {
+		return eventKey === 'Escape';
+	}
+	if (key === 'enter' || key === 'return') {
+		return eventKey === 'Enter';
+	}
+	if (key === 'tab') {
+		return eventKey === 'Tab';
+	}
+	if (key === 'space' || key === 'spacebar') {
+		return eventKey === ' ';
+	}
+
 	// Normal character key
 	return eventKey.toLowerCase() === key.toLowerCase();
 }

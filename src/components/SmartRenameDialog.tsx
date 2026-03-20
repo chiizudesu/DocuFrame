@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, memo, useEffect } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -31,7 +31,7 @@ interface SmartRenameDialogProps {
   existingFiles?: FileItem[]; // List of existing files to check for duplicates
 }
 
-export const SmartRenameDialog: React.FC<SmartRenameDialogProps> = ({
+const SmartRenameDialogInner: React.FC<SmartRenameDialogProps> = ({
   isOpen,
   onClose,
   onConfirm,
@@ -53,7 +53,7 @@ export const SmartRenameDialog: React.FC<SmartRenameDialogProps> = ({
   const placeholderColor = useColorModeValue('gray.400', 'gray.500');
 
   // Generate suggestion when dialog opens
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen && file) {
       generateSuggestion();
     } else {
@@ -140,7 +140,7 @@ IMPORTANT: Only return the suggested filename itself, nothing else. No explanati
     
     // Check for duplicate filenames (excluding the current file being renamed)
     // Use case-insensitive comparison but exclude the current file by path
-    const duplicateExists = existingFiles.some(
+    const duplicateExists = existingFilesRef.current.some(
       f => f.path !== file.path && f.name.toLowerCase() === trimmedName.toLowerCase()
     );
     
@@ -240,4 +240,13 @@ IMPORTANT: Only return the suggested filename itself, nothing else. No explanati
     </Modal>
   );
 };
+
+/** Skip re-renders when FileGrid updates unrelated state but `sortedFiles` reference is unchanged. */
+export const SmartRenameDialog = memo(
+  SmartRenameDialogInner,
+  (prev, next) =>
+    prev.isOpen === next.isOpen &&
+    prev.file.path === next.file.path &&
+    prev.existingFiles === next.existingFiles,
+);
 

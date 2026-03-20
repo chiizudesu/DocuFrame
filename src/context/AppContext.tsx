@@ -2,6 +2,11 @@ import React, { useEffect, useState, useRef, useCallback, useMemo, ReactNode } f
 import { createContext, useContext, useContextSelector } from 'use-context-selector';
 import { settingsService } from '../services/settings';
 import { normalizePath, getClientFolderPath } from '../utils/path';
+import type { AddressBarJumpApi } from '../types/addressBarJump';
+import {
+  DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
+  LEGACY_JUMP_MODE_ON_PARENT_SHORTCUT,
+} from '../constants/shortcutDefaults';
 
 interface FileItem {
   name: string;
@@ -100,13 +105,11 @@ interface AppContextType {
   setCalculatorShortcut: (shortcut: string) => void;
   clientSearchShortcut: string;
   setClientSearchShortcut: (shortcut: string) => void;
-  jumpModeShortcut: string;
-  setJumpModeShortcut: (shortcut: string) => void;
   jumpModeOnParentShortcut: string;
   setJumpModeOnParentShortcut: (shortcut: string) => void;
-  backspaceNavigationShortcut: string;
-  setBackspaceNavigationShortcut: (shortcut: string) => void;
-  enableBackspaceNavigationShortcut: boolean;
+  enableJumpModeOnParentShortcut: boolean;
+  setEnableJumpModeOnParentShortcut: (value: boolean) => void;
+  addressBarJumpRef: React.MutableRefObject<AddressBarJumpApi | null>;
   showClientInfoBar: boolean;
   setShowClientInfoBar: (show: boolean) => void;
   // Create folder dialog (opened from context menu or shortcut)
@@ -118,9 +121,6 @@ interface AppContextType {
   closeCurrentTab: () => void;
   // Settings reload function
   reloadSettings: () => Promise<void>;
-  // Jump mode state
-  isJumpModeActive: boolean;
-  setIsJumpModeActive: (value: boolean) => void;
   // Quick Access (pinned folders)
   quickAccessPaths: string[];
   setQuickAccessPaths: (paths: string[]) => void;
@@ -181,15 +181,14 @@ export const AppProvider: React.FC<{
   const [activationShortcut, setActivationShortcut] = useState<string>('`');
   const [calculatorShortcut, setCalculatorShortcut] = useState<string>('Alt+Q');
   const [clientSearchShortcut, setClientSearchShortcut] = useState<string>('Alt+F');
-  const [jumpModeShortcut, setJumpModeShortcut] = useState<string>('Ctrl+J');
-  const [jumpModeOnParentShortcut, setJumpModeOnParentShortcut] = useState<string>('Ctrl+Backspace');
-  const [backspaceNavigationShortcut, setBackspaceNavigationShortcut] = useState<string>('Backspace');
-  const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState<boolean>(true);
+  const [jumpModeOnParentShortcut, setJumpModeOnParentShortcut] = useState<string>(
+    DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
+  );
+  const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState<boolean>(true);
+  const addressBarJumpRef = useRef<AddressBarJumpApi | null>(null);
   const [showClientInfoBar, setShowClientInfoBar] = useState<boolean>(true);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState<boolean>(false);
 
-  // Jump mode state
-  const [isJumpModeActive, setIsJumpModeActive] = useState<boolean>(false);
   // Quick Access (pinned folders)
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
   // Recent client folders (latest 5 visited)
@@ -246,16 +245,24 @@ export const AppProvider: React.FC<{
       if (settings.clientSearchShortcut) {
         setClientSearchShortcut(settings.clientSearchShortcut);
       }
-      if (settings.jumpModeShortcut) {
-        setJumpModeShortcut(settings.jumpModeShortcut);
+      const jp = settings.jumpModeOnParentShortcut;
+      if (!jp) {
+        setJumpModeOnParentShortcut(DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT);
+      } else if (jp === LEGACY_JUMP_MODE_ON_PARENT_SHORTCUT) {
+        setJumpModeOnParentShortcut(DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT);
+        settingsService
+          .getSettings()
+          .then((c) =>
+            settingsService.setSettings({
+              ...c,
+              jumpModeOnParentShortcut: DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
+            }),
+          )
+          .catch(() => {});
+      } else {
+        setJumpModeOnParentShortcut(jp);
       }
-      if (settings.jumpModeOnParentShortcut) {
-        setJumpModeOnParentShortcut(settings.jumpModeOnParentShortcut);
-      }
-      if (settings.backspaceNavigationShortcut) {
-        setBackspaceNavigationShortcut(settings.backspaceNavigationShortcut);
-      }
-      setEnableBackspaceNavigationShortcut(settings.enableBackspaceNavigationShortcut !== false);
+      setEnableJumpModeOnParentShortcut(settings.enableJumpModeOnParentShortcut !== false);
       setShowClientInfoBar(settings.showClientInfoBar !== false);
       setGroupViewAlwaysEnabled(settings.groupViewAlwaysEnabled !== false);
       setGroupViewBlacklist(Array.isArray(settings.groupViewBlacklist) ? settings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
@@ -549,13 +556,11 @@ export const AppProvider: React.FC<{
       setCalculatorShortcut,
       clientSearchShortcut,
       setClientSearchShortcut,
-      jumpModeShortcut,
-      setJumpModeShortcut,
       jumpModeOnParentShortcut,
       setJumpModeOnParentShortcut,
-      backspaceNavigationShortcut,
-      setBackspaceNavigationShortcut,
-      enableBackspaceNavigationShortcut,
+      enableJumpModeOnParentShortcut,
+      setEnableJumpModeOnParentShortcut,
+      addressBarJumpRef,
       showClientInfoBar,
       setShowClientInfoBar,
       isCreateFolderOpen,
@@ -564,8 +569,6 @@ export const AppProvider: React.FC<{
       addTabToCurrentWindow,
       closeCurrentTab,
       reloadSettings: loadSettings,
-      isJumpModeActive,
-      setIsJumpModeActive,
       quickAccessPaths,
       setQuickAccessPaths,
       addQuickAccessPath,
