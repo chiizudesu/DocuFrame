@@ -1,7 +1,6 @@
 // Define the settings interface
 export interface AppSettings {
   rootPath: string;
-  apiKey?: string;
   claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
@@ -30,7 +29,6 @@ export interface AppSettings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   aiEditorInstructions?: string;
-  aiEditorAgent?: 'openai' | 'claude';
   quickAccessPaths?: string[];
   recentClientPaths?: string[]; // Latest 5 client folders visited (paths)
   workShiftStart?: string; // Format: "HH:MM" (24-hour)
@@ -91,8 +89,8 @@ class SettingsService {
       // Merge with disk config; omit undefined so we never wipe keys from stale React state
       const currentConfig = await (window.electronAPI as any).getConfig();
       const definedOnly = Object.fromEntries(
-        Object.entries(settings as Record<string, unknown>).filter(([, v]) => v !== undefined)
-      ) as AppSettings;
+        Object.entries(settings as unknown as Record<string, unknown>).filter(([, v]) => v !== undefined)
+      ) as unknown as AppSettings;
       const mergedConfig = { ...currentConfig, ...definedOnly };
       await (window.electronAPI as any).setConfig(mergedConfig);
       this.settings = mergedConfig;

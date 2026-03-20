@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Grid, GridItem, Box, Flex, useColorModeValue, Text, HStack, IconButton } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Grid, GridItem, Box } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
 import { ClientInfoBar } from './ClientInfoBar';
 import { PreviewPane } from './PreviewPane';
 import { AIFileManagerPane } from './AIFileManagerPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
-import { ThemeToggle } from './ThemeToggle';
 import { FileGrid } from './FileGrid';
 import { FolderTabSystem } from './FolderTabSystem';
 import { Footer } from './Footer';
@@ -23,12 +23,7 @@ export const Layout: React.FC = () => {
   const [minimizedDialogs, setMinimizedDialogs] = useState<MinimizedDialog[]>([]);
   const [onRestoreDialog, setOnRestoreDialog] = useState<((type: DialogType) => void) | undefined>();
   const [onCloseMinimizedDialog, setOnCloseMinimizedDialog] = useState<((type: DialogType) => void) | undefined>();
-  const borderColor = useColorModeValue('#cbd5e1', 'gray.600');
-  const subtleBorderColor = useColorModeValue('#e2e8f0', 'gray.600');
-  const accentBorderColor = useColorModeValue('#d1d5db', 'gray.700');
-  const bgColor = useColorModeValue('#ffffff', 'gray.800');
-  const headerBgColor = useColorModeValue('white', 'gray.700'); // Light theme: match active tab; dark: unchanged
-  const mainBgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright content area; dark: unchanged
+  const resizeHandleHoverBg = useColorModeValue('rgba(59, 130, 246, 0.35)', 'rgba(59, 130, 246, 0.45)');
 
   // Sidebar resize functionality
   const isSidebarDragging = useRef(false);
@@ -128,15 +123,31 @@ export const Layout: React.FC = () => {
         "header header header header"
         "sidebar main preview aiFileManager"
         "status status status status"
-      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isAIFileManagerOpen ? '420px' : '0px'}`} h="100%" gap="0" bg={mainBgColor}>
+      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isAIFileManagerOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
-    <GridItem area="header" bg={headerBgColor} p={0} overflow="hidden" position="relative" zIndex={2}>
+    <GridItem
+      area="header"
+      bg="df.toolbar"
+      p={0}
+      overflow="hidden"
+      position="relative"
+      zIndex={2}
+      borderBottomWidth="1px"
+      borderBottomStyle="solid"
+      borderBottomColor="df.border"
+    >
       <Box>
-        <Box p={2}>
+        <Box px={2} py={2} bg="df.tabStrip">
           <FolderInfoBar />
         </Box>
       </Box>
-      <Box borderTop="1px" borderColor={accentBorderColor} bg={bgColor} overflow="hidden">
+      <Box
+        borderTopWidth="1px"
+        borderTopStyle="solid"
+        borderTopColor="df.border"
+        bg="df.toolbar"
+        overflow="hidden"
+      >
         <FunctionPanels 
           minimizedDialogs={minimizedDialogs}
           setMinimizedDialogs={setMinimizedDialogs}
@@ -146,7 +157,7 @@ export const Layout: React.FC = () => {
       </Box>
     </GridItem>
     {/* Folder Tab System - z-index below header so address bar renders on top when tabs overlap */}
-    <GridItem area="tabs" position="relative" zIndex={1}>
+    <GridItem area="tabs" position="relative" zIndex={1} bg="df.toolbar">
       <FolderTabSystem 
         onActiveTabChange={handleActiveTabChange}
         minimizedDialogs={minimizedDialogs}
@@ -155,7 +166,17 @@ export const Layout: React.FC = () => {
       />
     </GridItem>
     {/* Client Info Sidebar (formerly Folder Tree) */}
-    <GridItem area="sidebar" borderRight="1px" borderRightColor={subtleBorderColor} borderTop="1px" borderTopColor={useColorModeValue('gray.200', 'gray.600')} bg={mainBgColor} overflow="hidden" display="flex" flexDirection="column" position="relative">
+    <GridItem
+      area="sidebar"
+      bg="df.sidebar"
+      overflow="hidden"
+      display="flex"
+      flexDirection="column"
+      position="relative"
+      borderRightWidth="1px"
+      borderRightStyle="solid"
+      borderRightColor="df.border"
+    >
       <Box flex="1" overflow="hidden">
         <ClientInfoPane />
       </Box>
@@ -171,8 +192,8 @@ export const Layout: React.FC = () => {
           onMouseDown={handleSidebarMouseDown}
           bg="transparent"
           _hover={{
-            bg: useColorModeValue('blue.200', 'blue.600'),
-            opacity: 0.7
+            bg: resizeHandleHoverBg,
+            opacity: 0.85,
           }}
           transition="all 0.2s"
           zIndex={10}
@@ -180,15 +201,13 @@ export const Layout: React.FC = () => {
       )}
     </GridItem>
     {/* Main Content Area - z-index 0 so dropdowns from header (z-index 10000) render above */}
-    <GridItem 
-      area="main" 
-      bg={mainBgColor} 
-      borderTop="1px"
-      borderColor={borderColor}
-      overflow="hidden" 
-      display="flex" 
-      flexDirection="column" 
-      minHeight="0"
+    <GridItem
+      area="main"
+      bg="df.canvas"
+      overflow="hidden"
+      display="flex"
+      flexDirection="column"
+      minHeight={0}
       position="relative"
       zIndex={0}
     >
@@ -196,7 +215,13 @@ export const Layout: React.FC = () => {
         <FileGrid />
       </Box>
       {showClientInfoBar && clientInfo && (
-        <Box flexShrink={0} borderTop="1px" borderColor={accentBorderColor} overflow="hidden">
+        <Box
+          flexShrink={0}
+          overflow="hidden"
+          borderTopWidth="1px"
+          borderTopStyle="solid"
+          borderTopColor="df.border"
+        >
           <ClientInfoBar />
         </Box>
       )}
@@ -204,13 +229,14 @@ export const Layout: React.FC = () => {
     {/* Preview Pane */}
     <GridItem 
       area="preview" 
-      bg={bgColor} 
-      borderLeft="1px" 
-      borderColor={borderColor} 
+      bg="df.toolbar" 
       overflow="hidden" 
       display="flex" 
       flexDirection="column" 
       boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
+      borderLeftWidth="1px"
+      borderLeftStyle="solid"
+      borderLeftColor="df.border"
       visibility={isPreviewPaneOpen ? 'visible' : 'hidden'}
       width={isPreviewPaneOpen ? 'auto' : '0px'}
     >
@@ -219,20 +245,27 @@ export const Layout: React.FC = () => {
     {/* AI File Manager Pane - lazy-mount: only render when open to avoid re-renders on context change */}
     <GridItem 
       area="aiFileManager" 
-      bg={bgColor} 
-      borderLeft="1px" 
-      borderColor={borderColor} 
+      bg="df.toolbar" 
       overflow="hidden" 
       display="flex" 
       flexDirection="column" 
       boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
+      borderLeftWidth="1px"
+      borderLeftStyle="solid"
+      borderLeftColor="df.border"
       visibility={isAIFileManagerOpen ? 'visible' : 'hidden'}
       width={isAIFileManagerOpen ? 'auto' : '0px'}
     >
       {isAIFileManagerOpen && <AIFileManagerPane />}
     </GridItem>
     {/* Status Footer */}
-    <GridItem area="status" bg={bgColor} borderTop="1px" borderColor={borderColor}>
+    <GridItem
+      area="status"
+      bg="df.footer"
+      borderTopWidth="1px"
+      borderTopStyle="solid"
+      borderTopColor="df.border"
+    >
       <Footer />
     </GridItem>
   </Grid>;

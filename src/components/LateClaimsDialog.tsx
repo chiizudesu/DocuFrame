@@ -1,24 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   VStack,
   Text,
   Box,
-  Divider,
   Alert,
-  AlertIcon,
-  AlertTitle,
-  AlertDescription,
   Spinner,
-  useColorModeValue,
   Flex,
   Badge,
   SimpleGrid,
+  Separator,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
 import { AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -54,11 +48,10 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   const [gstData, setGstData] = useState<GSTData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const { surfaceBg: bgColor, titleBarBg, borderColor, inputBg, cardBg } = useDialogChrome();
   const textColor = useColorModeValue('gray.800', 'white');
-  const secondaryBgColor = useColorModeValue('gray.50', 'gray.700');
-  const cardBgColor = useColorModeValue('gray.100', 'gray.800');
+  const secondaryBgColor = cardBg;
+  const cardBgColor = useColorModeValue('gray.100', '#171923');
 
   // Auto-load GST data when dialog opens
   useEffect(() => {
@@ -264,165 +257,187 @@ export const LateClaimsDialog: React.FC<LateClaimsDialogProps> = ({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="xl" isCentered>
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor} color={textColor} borderRadius="lg" boxShadow="lg" maxW="700px" border="1px solid" borderColor={borderColor}>
-        <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={0}>
-          GST Return Summary
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody p={6}>
-          {isLoading ? (
-            <Flex justify="center" align="center" minH="120px"><Spinner /></Flex>
-          ) : error ? (
-            <Alert status="error">
-              <AlertIcon />
-              <Box>
-                <AlertTitle>Error!</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Box>
-            </Alert>
-          ) : gstData ? (
-            (() => {
-              const { lateClaimsAmount, totalSalesAndIncome, totalPurchasesAndExpenses, extractedText, gstAmountDue, gstToPay, period } = gstData;
-              const lateClaimsTarget = determineLateClaimsTarget(extractedText);
-              const grossedUpAmount = calculateGrossedUpLateClaimsAmount(lateClaimsAmount);
-              
-              // Primary focus: GST Amount Due
-              const isGSTDue = gstAmountDue > 0;
-              // Late claims indicator: shows if "late claims" text exists in document
-              const hasLateClaimsIndicator = lateClaimsTarget !== 'none';
-              // Late claims adjustment: shows when there's a numeric amount to gross up
-              const hasLateClaims = lateClaimsAmount > 0;
-              
-              return (
-                <VStack align="stretch" spacing={4}>
-                  {/* Period and Late Claims Indicator - Horizontal Layout */}
-                  <SimpleGrid columns={2} spacing={3}>
-                    <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
-                      <Text fontSize="xs" fontWeight="semibold" color={useColorModeValue('gray.600', 'gray.400')} mb={1}>
-                        Period
-                      </Text>
-                      <Text fontSize="sm" color={textColor} fontWeight="medium">
-                        {period}
-                      </Text>
-                    </Box>
-                    <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
-                      <Text fontSize="xs" fontWeight="semibold" color={useColorModeValue('gray.600', 'gray.400')} mb={1}>
-                        Includes Late Claims
-                      </Text>
-                      <Flex align="center" gap={2}>
-                        <Text fontSize="lg" fontWeight="bold" color={hasLateClaimsIndicator ? 'green.500' : 'red.500'}>
-                          {hasLateClaimsIndicator ? '✓ Yes' : '✗ No'}
-                        </Text>
-                      </Flex>
-                    </Box>
-                  </SimpleGrid>
+    <Dialog.Root open={isOpen} size='xl' placement='center' onOpenChange={e => {
+      if (!e.open) {
+        handleClose();
+      }
+    }}>
+      <Portal>
 
-                  {/* Main GST Amount Due Display */}
-                  <Box 
-                    bg={isGSTDue ? useColorModeValue('red.50', 'red.800') : useColorModeValue('green.50', 'green.800')} 
-                    color="white"
-                    borderRadius="lg" 
-                    p={4} 
-                    boxShadow="lg" 
-                    textAlign="left"
-                    border="2px solid"
-                    borderColor={isGSTDue ? useColorModeValue('red.200', 'red.600') : useColorModeValue('green.200', 'green.600')}
-                  >
-                    <Flex align="center" gap={3}>
-                      {isGSTDue ? <AlertTriangle size={28} /> : <CheckCircle size={28} />}
-                      <Box flex="1">
-                        <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>
-                          {gstToPay >= 0 ? 'GST to Pay' : 'GST Refund'} (Box 15)
-                        </Text>
-                        <Text fontSize="3xl" fontWeight="extrabold">
-                          {formatCurrency(Math.abs(gstToPay))}
-                        </Text>
-                        <Badge 
-                          colorScheme={isGSTDue ? 'red' : 'green'} 
-                          variant="subtle" 
-                          mt={1}
-                          fontSize="xs"
-                        >
-                          {isGSTDue ? 'PAYMENT REQUIRED' : 'REFUND DUE'}
-                        </Badge>
-                      </Box>
-                    </Flex>
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg={bgColor}
+            color={textColor}
+            borderRadius="lg"
+            boxShadow="lg"
+            maxW="700px"
+            border="1px solid"
+            borderColor={borderColor}>
+            <Dialog.Header
+              fontSize="lg"
+              fontWeight="bold"
+              textAlign="center"
+              pb={0}
+              bg={titleBarBg}
+              borderBottomWidth="1px"
+              borderColor={borderColor}
+            >
+              GST Return Summary
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body p={6}>
+              {isLoading ? (
+                <Flex justify="center" align="center" minH="120px"><Spinner /></Flex>
+              ) : error ? (
+                <Alert.Root status="error">
+                  <Alert.Indicator />
+                  <Box>
+                    <Alert.Title>Error!</Alert.Title>
+                    <Alert.Description>{error}</Alert.Description>
                   </Box>
+                </Alert.Root>
+              ) : gstData ? (
+                (() => {
+                  const { lateClaimsAmount, totalSalesAndIncome, totalPurchasesAndExpenses, extractedText, gstAmountDue, gstToPay, period } = gstData;
+                  const lateClaimsTarget = determineLateClaimsTarget(extractedText);
+                  const grossedUpAmount = calculateGrossedUpLateClaimsAmount(lateClaimsAmount);
                   
-                  {/* GST Breakdown and Late Claims - Side by Side */}
-                  <SimpleGrid columns={hasLateClaims ? 2 : 1} spacing={4}>
-                    {/* GST Breakdown */}
-                    <Box bg={cardBgColor} borderRadius="md" p={4} border="1px solid" borderColor={borderColor}>
-                      <Text fontSize="sm" fontWeight="semibold" mb={3} color={textColor}>
-                        GST Breakdown
-                      </Text>
-                      <VStack align="stretch" spacing={2}>
-                        <Flex justify="space-between" fontSize="sm">
-                          <Text color={useColorModeValue('gray.600', 'gray.400')}>GST Collected:</Text>
-                          <Text fontWeight="medium">{formatCurrency(gstData.totalGSTCollected)}</Text>
-                        </Flex>
-                        <Flex justify="space-between" fontSize="sm">
-                          <Text color={useColorModeValue('gray.600', 'gray.400')}>GST Credits:</Text>
-                          <Text fontWeight="medium">{formatCurrency(gstData.totalGSTCredits)}</Text>
-                        </Flex>
-                        <Divider />
-                        <Flex justify="space-between" fontSize="sm" fontWeight="semibold">
-                          <Text>Net GST:</Text>
-                          <Text color={isGSTDue ? 'red.500' : 'green.500'}>{formatCurrency(gstAmountDue)}</Text>
-                        </Flex>
-                      </VStack>
-                    </Box>
-                    
-                    {/* Late Claims Section - Only show if there's a numeric amount to gross up */}
-                    {hasLateClaims && (
-                      <Box bg={useColorModeValue('orange.50', 'orange.900')} borderRadius="md" p={4} border="1px solid" borderColor={useColorModeValue('orange.200', 'orange.700')}>
-                        <Text fontSize="sm" fontWeight="semibold" mb={3} color={useColorModeValue('orange.800', 'orange.100')}>
-                          Late Claims Adjustment
-                        </Text>
-                        <VStack align="stretch" spacing={2}>
-                          <Flex justify="space-between" fontSize="sm">
-                            <Text color={useColorModeValue('orange.700', 'orange.200')}>Late Claims Amount:</Text>
-                            <Text fontWeight="medium">{formatCurrency(lateClaimsAmount)}</Text>
-                          </Flex>
-                          <Flex justify="space-between" fontSize="sm">
-                            <Text color={useColorModeValue('orange.700', 'orange.200')}>Grossed Up Amount:</Text>
-                            <Text fontWeight="medium">{formatCurrency(grossedUpAmount)}</Text>
-                          </Flex>
-                          <Divider borderColor={useColorModeValue('orange.300', 'orange.600')} />
-                          <Box>
-                            <Flex justify="space-between" fontSize="sm" fontWeight="semibold" mb={1}>
-                              <Text color={useColorModeValue('orange.700', 'orange.200')}>
-                                Added to {lateClaimsTarget === 'purchases' ? 'Purchases' : 'Sales'}:
-                              </Text>
-                              <Text fontWeight="bold" color={useColorModeValue('orange.800', 'orange.100')}>
-                                {formatCurrency(lateClaimsTarget === 'purchases' ? totalPurchasesAndExpenses + grossedUpAmount : totalSalesAndIncome + grossedUpAmount)}
-                              </Text>
-                            </Flex>
-                            <Text fontSize="xs" color={useColorModeValue('orange.600', 'orange.300')}>
-                              {formatCurrency(lateClaimsTarget === 'purchases' ? totalPurchasesAndExpenses : totalSalesAndIncome)} + {formatCurrency(grossedUpAmount)}
+                  // Primary focus: GST Amount Due
+                  const isGSTDue = gstAmountDue > 0;
+                  // Late claims indicator: shows if "late claims" text exists in document
+                  const hasLateClaimsIndicator = lateClaimsTarget !== 'none';
+                  // Late claims adjustment: shows when there's a numeric amount to gross up
+                  const hasLateClaims = lateClaimsAmount > 0;
+                  
+                  return (
+                    <VStack align="stretch" gap={4}>
+                      {/* Period and Late Claims Indicator - Horizontal Layout */}
+                      <SimpleGrid columns={2} gap={3}>
+                        <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
+                          <Text fontSize="xs" fontWeight="semibold" color={useColorModeValue('gray.600', 'gray.400')} mb={1}>
+                            Period
+                          </Text>
+                          <Text fontSize="sm" color={textColor} fontWeight="medium">
+                            {period}
+                          </Text>
+                        </Box>
+                        <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
+                          <Text fontSize="xs" fontWeight="semibold" color={useColorModeValue('gray.600', 'gray.400')} mb={1}>
+                            Includes Late Claims
+                          </Text>
+                          <Flex align="center" gap={2}>
+                            <Text fontSize="lg" fontWeight="bold" color={hasLateClaimsIndicator ? 'green.500' : 'red.500'}>
+                              {hasLateClaimsIndicator ? '✓ Yes' : '✗ No'}
                             </Text>
+                          </Flex>
+                        </Box>
+                      </SimpleGrid>
+                      {/* Main GST Amount Due Display */}
+                      <Box 
+                        bg={isGSTDue ? useColorModeValue('red.50', 'red.800') : useColorModeValue('green.50', 'green.800')} 
+                        color="white"
+                        borderRadius="lg" 
+                        p={4} 
+                        boxShadow="lg" 
+                        textAlign="left"
+                        border="2px solid"
+                        borderColor={isGSTDue ? useColorModeValue('red.200', 'red.600') : useColorModeValue('green.200', 'green.600')}
+                      >
+                        <Flex align="center" gap={3}>
+                          {isGSTDue ? <AlertTriangle size={28} /> : <CheckCircle size={28} />}
+                          <Box flex="1">
+                            <Text fontWeight="bold" fontSize="md" letterSpacing="wide" mb={1}>
+                              {gstToPay >= 0 ? 'GST to Pay' : 'GST Refund'} (Box 15)
+                            </Text>
+                            <Text fontSize="3xl" fontWeight="extrabold">
+                              {formatCurrency(Math.abs(gstToPay))}
+                            </Text>
+                            <Badge 
+                              colorPalette={isGSTDue ? 'red' : 'green'} 
+                              variant="subtle" 
+                              mt={1}
+                              fontSize="xs"
+                            >
+                              {isGSTDue ? 'PAYMENT REQUIRED' : 'REFUND DUE'}
+                            </Badge>
                           </Box>
-                        </VStack>
+                        </Flex>
                       </Box>
-                    )}
-                  </SimpleGrid>
-                  
-                  {/* File Information */}
-                  <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
-                    <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} fontWeight="medium">
-                      Source: {gstData.fileName}
-                    </Text>
-                  </Box>
-                </VStack>
-              );
-            }) ()
-          ) : (
-            <Text>No GST data found.</Text>
-          )}
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+                      {/* GST Breakdown and Late Claims - Side by Side */}
+                      <SimpleGrid columns={hasLateClaims ? 2 : 1} gap={4}>
+                        {/* GST Breakdown */}
+                        <Box bg={cardBgColor} borderRadius="md" p={4} border="1px solid" borderColor={borderColor}>
+                          <Text fontSize="sm" fontWeight="semibold" mb={3} color={textColor}>
+                            GST Breakdown
+                          </Text>
+                          <VStack align="stretch" gap={2}>
+                            <Flex justify="space-between" fontSize="sm">
+                              <Text color={useColorModeValue('gray.600', 'gray.400')}>GST Collected:</Text>
+                              <Text fontWeight="medium">{formatCurrency(gstData.totalGSTCollected)}</Text>
+                            </Flex>
+                            <Flex justify="space-between" fontSize="sm">
+                              <Text color={useColorModeValue('gray.600', 'gray.400')}>GST Credits:</Text>
+                              <Text fontWeight="medium">{formatCurrency(gstData.totalGSTCredits)}</Text>
+                            </Flex>
+                            <Separator />
+                            <Flex justify="space-between" fontSize="sm" fontWeight="semibold">
+                              <Text>Net GST:</Text>
+                              <Text color={isGSTDue ? 'red.500' : 'green.500'}>{formatCurrency(gstAmountDue)}</Text>
+                            </Flex>
+                          </VStack>
+                        </Box>
+                        
+                        {/* Late Claims Section - Only show if there's a numeric amount to gross up */}
+                        {hasLateClaims && (
+                          <Box bg={useColorModeValue('orange.50', 'orange.900')} borderRadius="md" p={4} border="1px solid" borderColor={useColorModeValue('orange.200', 'orange.700')}>
+                            <Text fontSize="sm" fontWeight="semibold" mb={3} color={useColorModeValue('orange.800', 'orange.100')}>
+                              Late Claims Adjustment
+                            </Text>
+                            <VStack align="stretch" gap={2}>
+                              <Flex justify="space-between" fontSize="sm">
+                                <Text color={useColorModeValue('orange.700', 'orange.200')}>Late Claims Amount:</Text>
+                                <Text fontWeight="medium">{formatCurrency(lateClaimsAmount)}</Text>
+                              </Flex>
+                              <Flex justify="space-between" fontSize="sm">
+                                <Text color={useColorModeValue('orange.700', 'orange.200')}>Grossed Up Amount:</Text>
+                                <Text fontWeight="medium">{formatCurrency(grossedUpAmount)}</Text>
+                              </Flex>
+                              <Separator borderColor={useColorModeValue('orange.300', 'orange.600')} />
+                              <Box>
+                                <Flex justify="space-between" fontSize="sm" fontWeight="semibold" mb={1}>
+                                  <Text color={useColorModeValue('orange.700', 'orange.200')}>
+                                    Added to {lateClaimsTarget === 'purchases' ? 'Purchases' : 'Sales'}:
+                                  </Text>
+                                  <Text fontWeight="bold" color={useColorModeValue('orange.800', 'orange.100')}>
+                                    {formatCurrency(lateClaimsTarget === 'purchases' ? totalPurchasesAndExpenses + grossedUpAmount : totalSalesAndIncome + grossedUpAmount)}
+                                  </Text>
+                                </Flex>
+                                <Text fontSize="xs" color={useColorModeValue('orange.600', 'orange.300')}>
+                                  {formatCurrency(lateClaimsTarget === 'purchases' ? totalPurchasesAndExpenses : totalSalesAndIncome)} + {formatCurrency(grossedUpAmount)}
+                                </Text>
+                              </Box>
+                            </VStack>
+                          </Box>
+                        )}
+                      </SimpleGrid>
+                      {/* File Information */}
+                      <Box bg={secondaryBgColor} borderRadius="md" p={3} border="1px solid" borderColor={borderColor}>
+                        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} fontWeight="medium">
+                          Source: {gstData.fileName}
+                        </Text>
+                      </Box>
+                    </VStack>
+                  );
+                }) ()
+              ) : (
+                <Text>No GST data found.</Text>
+              )}
+            </Dialog.Body>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 }; 

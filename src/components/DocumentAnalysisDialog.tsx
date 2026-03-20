@@ -1,48 +1,33 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { showToast } from "@/components/ui/toaster"
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Button,
-  Select,
   VStack,
   Text,
   Box,
   Flex,
   Spinner,
-  useColorModeValue,
-  useColorMode,
   IconButton,
   Alert,
-  AlertIcon,
-  FormControl,
-  FormLabel,
   HStack,
   Input,
-  Divider,
   Badge,
-  useToast,
-  Card,
-  CardBody,
   Textarea,
   Grid,
   GridItem,
   Heading,
-  Collapse,
-  Code,
-  Wrap,
-  WrapItem,
-  Slide,
-  ScaleFade,
-  Center
+  Center,
+  Separator,
+  Field,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
-import { Copy, Sparkles, Brain, FileSearch, Send, RefreshCw, MessageCircle, FileText, Upload, Table as TableIcon, ChevronDown, ChevronUp, Calendar, DollarSign, Users, FileX, Zap, ArrowLeft, CheckCircle, Minus } from 'lucide-react';
+import { Copy, Sparkles, Brain, Send, RefreshCw, FileText, Upload, Table as TableIcon, Calendar, DollarSign, Users, FileX, ArrowLeft, CheckCircle, Minus, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, type AIAgent, analyzePdfDocument, analyzePdfDocumentStream, analyzeMultiplePdfDocumentsStream } from '../services/aiService';
+import { analyzePdfDocument, analyzePdfDocumentStream, analyzeMultiplePdfDocumentsStream } from '../services/aiService';
 
 interface FileItem { 
   name: string; 
@@ -64,7 +49,6 @@ interface ChatMessage {
   type: 'user' | 'ai';
   content: string;
   timestamp: Date;
-  agent?: AIAgent;
 }
 
 // Quick action presets
@@ -183,7 +167,6 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   folderItems,
   onMinimize
 }) => {
-  const [selectedAgent, setSelectedAgent] = useState<DocumentAIAgent>('claude');
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [selectedFileItems, setSelectedFileItems] = useState<FileItem[]>([]);
   const [availableFiles, setAvailableFiles] = useState<FileItem[]>([]);
@@ -201,15 +184,34 @@ export const DocumentAnalysisDialog: React.FC<DocumentAnalysisDialogProps> = ({
   const [isStreaming, setIsStreaming] = useState(false);
   const [lastClickedIndex, setLastClickedIndex] = useState<number>(-1);
   const analysisBoxRef = React.useRef<HTMLDivElement>(null);
-
-  const toast = useToast();
-  const { colorMode } = useColorMode();
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const cardBg = useColorModeValue('gray.50', 'gray.700');
-  const fileBg = useColorModeValue('gray.100', 'gray.700');
-  const selectedFileBg = useColorModeValue('blue.100', 'blue.700');
-  const hoverBg = useColorModeValue('gray.200', 'gray.600');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    borderColor,
+    cardBg,
+    selectedBg: selectedFileBg,
+    textColor,
+    secondaryTextColor,
+    inputBg,
+  } = useDialogChrome();
+  const fileBg = useColorModeValue('gray.100', 'df.rowHover');
+  const fileListUnselectedBg = useColorModeValue('white', 'gray.900');
+  const fileListSelectedHoverBg = useColorModeValue('blue.100', 'blue.700');
+  const fileListBorderSelected = useColorModeValue('blue.400', 'blue.300');
+  const fileListHoverBorder = useColorModeValue('blue.200', 'blue.400');
+  const fileIconMuted = useColorModeValue('#64748b', '#cbd5e1');
+  const fileTextSelected = useColorModeValue('blue.800', 'blue.100');
+  const fileCheckColor = useColorModeValue('#2563eb', '#60a5fa');
+  const userMsgBg = useColorModeValue('blue.50', 'blue.900');
+  const mdTableBorder = useColorModeValue('gray.300', 'gray.600');
+  const mdTableHeaderBg = useColorModeValue('gray.100', 'gray.700');
+  const mdTableRowAlt = useColorModeValue('gray.50', '#171923');
+  const mdCodeBg = useColorModeValue('gray.200', 'gray.600');
+  const streamingMuted = useColorModeValue('gray.500', 'gray.400');
+  const greenChipBg = useColorModeValue('green.100', 'green.800');
+  const greenChipBorder = useColorModeValue('green.200', 'green.600');
+  const greenChipText = useColorModeValue('green.700', 'green.200');
+  const greenCheckIcon = useColorModeValue('#16a34a', '#22c55e');
 
   useEffect(() => {
     if (isOpen) {
@@ -413,8 +415,7 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
       console.log('Prompt type:', promptType);
       console.log('Final prompt length:', analysisPrompt.length);
       console.log('Final prompt preview (first 300 chars):', analysisPrompt.substring(0, 300));
-      console.log('Selected AI agent:', selectedAgent);
-      console.log('PDF file path:', selectedFile.path);
+      console.log('PDF file path:', primaryFile.path);
       
       // Use Claude's native PDF document API with streaming
       console.log('Calling analyzePdfDocumentStream...');
@@ -425,7 +426,6 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
           primaryFile.path, 
           primaryFile.name, 
           analysisPrompt, 
-          selectedAgent,
           (chunk: string) => {
             // Accumulate text as it streams in
             setAnalysis(prev => {
@@ -493,7 +493,6 @@ Structure your response to be useful for someone who needs to understand all the
         await analyzeMultiplePdfDocumentsStream(
           readFiles, // Pass all files with their base64 data
           combinedPrompt,
-          selectedAgent,
           (chunk: string) => {
             // Accumulate text as it streams in
             setAnalysis(prev => {
@@ -526,7 +525,7 @@ Structure your response to be useful for someone who needs to understand all the
 
       console.log('Analysis completed successfully:', successMessage);
       
-      toast({
+      showToast({
         title: 'Analysis Complete',
         description: successMessage,
         status: 'success',
@@ -540,7 +539,7 @@ Structure your response to be useful for someone who needs to understand all the
       console.error('Error message:', errorMessage);
       setError(`Failed to analyze document: ${errorMessage}`);
       setAnalysis(''); // Clear placeholder on error
-      toast({
+      showToast({
         title: 'Analysis Failed',
         description: errorMessage,
         status: 'error',
@@ -638,14 +637,13 @@ Please provide a helpful, detailed response based on the PDF document content an
       console.log('PDF file path:', documentText);
 
       // Use PDF document API for follow-up questions (use first file for follow-ups)
-      const response = await analyzePdfDocument(documentText, primaryFile.name, conversationalPrompt, selectedAgent);
+      const response = await analyzePdfDocument(documentText, primaryFile.name, conversationalPrompt);
       
       const aiMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         type: 'ai',
         content: response,
         timestamp: new Date(),
-        agent: selectedAgent
       };
 
       setChatMessages(prev => [...prev, aiMessage]);
@@ -662,7 +660,7 @@ Please provide a helpful, detailed response based on the PDF document content an
     } catch (error) {
       console.error('Follow-up error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      toast({
+      showToast({
         title: 'Follow-up Failed',
         description: errorMessage,
         status: 'error',
@@ -679,7 +677,7 @@ Please provide a helpful, detailed response based on the PDF document content an
     navigator.clipboard.writeText(analysis);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    toast({
+    showToast({
       title: 'Copied to Clipboard',
       description: 'Analysis has been copied to clipboard',
       status: 'success',
@@ -713,7 +711,6 @@ Please provide a helpful, detailed response based on the PDF document content an
       setError(null);
       setDocumentText('');
       setCopied(false);
-      setSelectedAgent('claude');
       setCustomPrompt('');
       setSelectedQuickAction(null);
       setCurrentStage('setup');
@@ -732,434 +729,405 @@ Please provide a helpful, detailed response based on the PDF document content an
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleOverlayClick} size="4xl">
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent 
-        maxW="900px" 
-        maxH="85vh" 
-        h="650px"
-        overflow="hidden"
-        my="auto"
-      >
-        <ModalHeader>
-          <Flex align="center" gap={2}>
-            {currentStage === 'results' ? (
-              <IconButton
-                aria-label="Back to setup"
-                icon={<ArrowLeft size={16} />}
-                size="sm"
-                variant="ghost"
-                onClick={handleBackToSetup}
-              />
-            ) : (
-              <Brain size={20} />
-            )}
-            <Text>Analyze Documents</Text>
-          </Flex>
-        </ModalHeader>
-        {onMinimize && (
-          <IconButton
-            aria-label="Minimize"
-            icon={<Minus size={16} />}
-            size="sm"
-            variant="ghost"
-            position="absolute"
-            top={4}
-            right={12}
-            onClick={onMinimize}
-            zIndex={10}
-          />
-        )}
-        <ModalCloseButton />
-        
-        <ModalBody p={0} overflow="hidden">
-          {currentStage === 'setup' ? (
-            // Setup Stage
-            <ScaleFade initialScale={0.9} in={currentStage === 'setup'}>
-              <Grid templateColumns="1fr 1fr" h="550px" overflow="hidden">
-                {/* Left Panel - File Selection */}
-                <GridItem bg={cardBg} borderRight="1px" borderColor={borderColor} overflow="hidden">
-                  <VStack p={4} spacing={3} h="100%" overflow="hidden">
-                    <Box w="100%" flex="1" overflow="hidden" display="flex" flexDirection="column">
-                      <Flex align="center" justify="space-between" mb={3}>
-                        <Heading size="sm">Select Document</Heading>
-                        {(selectedFileItems.length > 0 || selectedFile) && (
-                          <Box 
-                            px={2} 
-                            py={1} 
-                            bg={useColorModeValue('green.100', 'green.800')} 
-                            borderRadius="md" 
-                            border="1px" 
-                            borderColor={useColorModeValue('green.200', 'green.600')}
-                            maxW="180px"
-                          >
-                            <Flex align="center" gap={1}>
-                              <Box flexShrink={0}>
-                                <CheckCircle size={12} color={useColorModeValue('#16a34a', '#22c55e')} />
-                              </Box>
-                              <Text 
-                                fontSize="xs" 
-                                color={useColorModeValue('green.700', 'green.200')} 
-                                fontWeight="medium"
-                                noOfLines={1}
-                                title={selectedFileItems.length > 0 ? `${selectedFileItems.length} file(s) selected` : selectedFile?.name}
-                              >
-                                {selectedFileItems.length > 1 
-                                  ? `${selectedFileItems.length} files selected`
-                                  : (selectedFileItems[0]?.name || selectedFile?.name || '')}
-                              </Text>
-                            </Flex>
-                          </Box>
-                        )}
-                      </Flex>
-                      
-                      {/* Drag & Drop Zone */}
-                      <Box
-                        border="2px dashed"
-                        borderColor={isDragOver ? 'blue.400' : borderColor}
-                        borderRadius="md"
-                        p={4}
-                        textAlign="center"
-                        mb={3}
-                        bg={isDragOver ? 'blue.50' : 'transparent'}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        cursor="pointer"
-                        transition="all 0.2s"
-                        flexShrink={0}
-                      >
-                        <Upload size={24} style={{ margin: '0 auto 8px' }} />
-                        <Text fontSize="sm" fontWeight="medium" mb={1}>
-                          Drop PDF here
-                        </Text>
-                        <Text fontSize="xs" color="gray.500">
-                          or select from list below
-                        </Text>
-                      </Box>
-                      
-                      {/* File List */}
-                      <Box flex="1" overflow="hidden" display="flex" flexDirection="column">
-                        <Text fontSize="sm" fontWeight="medium" mb={2} flexShrink={0}>
-                          Available PDFs ({availableFiles.length})
-                        </Text>
-                        <Box flex="1" overflowY="auto" minH="0">
-                          {availableFiles.length === 0 ? (
-                            <Center h="100px">
-                              <Text fontSize="sm" color="gray.500" textAlign="center">
-                                No PDF files found in current directory
-                              </Text>
-                            </Center>
-                          ) : (
-                            <VStack spacing={1} align="stretch">
-                              {availableFiles.map((file, index) => {
-                                const isSelected = selectedFileItems.some(f => f.name === file.name) || selectedFile?.name === file.name;
-                                return (
-                                  <Box
-                                    key={index}
-                                    p={3}
-                                    bg={isSelected ? useColorModeValue('blue.50', 'blue.800') : useColorModeValue('white', 'gray.900')}
-                                    borderRadius="md"
-                                    cursor="pointer"
-                                    border="1px solid"
-                                    borderColor={isSelected ? useColorModeValue('blue.400', 'blue.300') : 'transparent'}
-                                    _hover={{
-                                      bg: isSelected ? useColorModeValue('blue.100', 'blue.700') : useColorModeValue('gray.100', 'gray.700'),
-                                      borderColor: useColorModeValue('blue.200', 'blue.400'),
-                                      transform: 'translateY(-1px)',
-                                      boxShadow: useColorModeValue('sm', 'dark-lg'),
-                                    }}
-                                    onClick={(e) => handleFileSelect(file, index, e)}
-                                    transition="all 0.15s"
-                                    display="flex"
-                                    alignItems="center"
-                                    gap={2}
-                                    userSelect="none"
-                                  >
-                                    <FileText size={18} color={isSelected ? '#2563eb' : useColorModeValue('#64748b', '#cbd5e1')} />
-                                    <Text
-                                      fontSize="sm"
-                                      fontWeight={isSelected ? 'medium' : 'normal'}
-                                      noOfLines={2}
-                                      title={file.name}
-                                      flex="1"
-                                      color={isSelected ? useColorModeValue('blue.800', 'blue.100') : undefined}
-                                    >
-                                      {file.name}
-                                    </Text>
-                                    {isSelected && (
-                                      <CheckCircle size={16} color={useColorModeValue('#2563eb', '#60a5fa')} />
-                                    )}
-                                  </Box>
-                                );
-                              })}
-                            </VStack>
+    <Dialog.Root open={isOpen} size='xl' onOpenChange={e => {
+      if (!e.open) {
+        handleOverlayClick();
+      }
+    }}>
+      <Portal>
+
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg={bgColor}
+            maxW="900px"
+            maxH="85vh"
+            h="650px"
+            overflow="hidden"
+            my="auto"
+            display="flex"
+            flexDirection="column"
+            borderRadius={0}
+            boxShadow="xl"
+          >
+            <Box
+              flexShrink={0}
+              bg={titleBarBg}
+              borderBottom="1px solid"
+              borderColor={borderColor}
+              px={3}
+              py={2}
+              role="banner"
+            >
+              <Flex align="center" justify="space-between" w="full" minH="32px" gap={2}>
+                <Flex align="center" gap={2} minW={0}>
+                  {currentStage === 'results' ? (
+                    <IconButton
+                      aria-label="Back to setup"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleBackToSetup}><ArrowLeft size={16} /></IconButton>
+                  ) : (
+                    <Brain size={18} />
+                  )}
+                  <Text fontSize="sm" fontWeight="600" color={textColor}>Analyze Documents</Text>
+                </Flex>
+                <HStack gap={2} flexShrink={0}>
+                  {onMinimize && (
+                    <IconButton aria-label="Minimize" size="sm" variant="ghost" onClick={onMinimize}><Minus size={16} /></IconButton>
+                  )}
+                  <IconButton aria-label="Close" size="sm" variant="ghost" onClick={handleClose}><X size={16} /></IconButton>
+                </HStack>
+              </Flex>
+            </Box>
+            <Box
+              flex="1"
+              minH={0}
+              overflow="hidden"
+              display="flex"
+              flexDirection="column"
+              p={0}
+            >
+              {currentStage === 'setup' ? (
+                <Grid templateColumns="1fr 1fr" h="550px" overflow="hidden">
+                  {/* Left Panel - File Selection */}
+                  <GridItem bg={cardBg} borderRight="1px" borderColor={borderColor} overflow="hidden">
+                    <VStack p={4} gap={3} h="100%" overflow="hidden">
+                      <Box w="100%" flex="1" overflow="hidden" display="flex" flexDirection="column">
+                        <Flex align="center" justify="space-between" mb={3}>
+                          <Heading size="sm">Select Document</Heading>
+                          {(selectedFileItems.length > 0 || selectedFile) && (
+                            <Box 
+                              px={2} 
+                              py={1} 
+                              bg={greenChipBg} 
+                              borderRadius="md" 
+                              border="1px" 
+                              borderColor={greenChipBorder}
+                              maxW="180px"
+                            >
+                              <Flex align="center" gap={1}>
+                                <Box flexShrink={0}>
+                                  <CheckCircle size={12} color={greenCheckIcon} />
+                                </Box>
+                                <Text 
+                                  fontSize="xs" 
+                                  color={greenChipText} 
+                                  fontWeight="medium"
+                                  lineClamp={1}
+                                  title={selectedFileItems.length > 0 ? `${selectedFileItems.length} file(s) selected` : selectedFile?.name}
+                                >
+                                  {selectedFileItems.length > 1 
+                                    ? `${selectedFileItems.length} files selected`
+                                    : (selectedFileItems[0]?.name || selectedFile?.name || '')}
+                                </Text>
+                              </Flex>
+                            </Box>
                           )}
+                        </Flex>
+                        
+                        {/* Drag & Drop Zone */}
+                        <Box
+                          border="2px dashed"
+                          borderColor={isDragOver ? 'blue.400' : borderColor}
+                          borderRadius="md"
+                          p={4}
+                          textAlign="center"
+                          mb={3}
+                          bg={isDragOver ? 'blue.50' : 'transparent'}
+                          onDragOver={handleDragOver}
+                          onDragLeave={handleDragLeave}
+                          onDrop={handleDrop}
+                          cursor="pointer"
+                          transition="all 0.2s"
+                          flexShrink={0}
+                        >
+                          <Upload size={24} style={{ margin: '0 auto 8px' }} />
+                          <Text fontSize="sm" fontWeight="medium" mb={1}>
+                            Drop PDF here
+                          </Text>
+                          <Text fontSize="xs" color="gray.500">
+                            or select from list below
+                          </Text>
+                        </Box>
+                        
+                        {/* File List */}
+                        <Box flex="1" overflow="hidden" display="flex" flexDirection="column">
+                          <Text fontSize="sm" fontWeight="medium" mb={2} flexShrink={0}>
+                            Available PDFs ({availableFiles.length})
+                          </Text>
+                          <Box flex="1" overflowY="auto" minH="0">
+                            {availableFiles.length === 0 ? (
+                              <Center h="100px">
+                                <Text fontSize="sm" color="gray.500" textAlign="center">
+                                  No PDF files found in current directory
+                                </Text>
+                              </Center>
+                            ) : (
+                              <VStack gap={1} align="stretch">
+                                {availableFiles.map((file, index) => {
+                                  const isSelected = selectedFileItems.some(f => f.name === file.name) || selectedFile?.name === file.name;
+                                  return (
+                                    <Box
+                                      key={index}
+                                      p={3}
+                                      bg={isSelected ? selectedFileBg : fileListUnselectedBg}
+                                      borderRadius="md"
+                                      cursor="pointer"
+                                      border="1px solid"
+                                      borderColor={isSelected ? fileListBorderSelected : 'transparent'}
+                                      _hover={{
+                                        bg: isSelected ? fileListSelectedHoverBg : fileBg,
+                                        borderColor: fileListHoverBorder,
+                                      }}
+                                      onClick={(e) => handleFileSelect(file, index, e)}
+                                      transition="background 0.15s, border-color 0.15s"
+                                      display="flex"
+                                      alignItems="center"
+                                      gap={2}
+                                      userSelect="none"
+                                    >
+                                      <FileText size={18} color={isSelected ? '#2563eb' : fileIconMuted} />
+                                      <Text
+                                        fontSize="sm"
+                                        fontWeight={isSelected ? 'medium' : 'normal'}
+                                        lineClamp={2}
+                                        title={file.name}
+                                        flex="1"
+                                        color={isSelected ? fileTextSelected : undefined}
+                                      >
+                                        {file.name}
+                                      </Text>
+                                      {isSelected && (
+                                        <CheckCircle size={16} color={fileCheckColor} />
+                                      )}
+                                    </Box>
+                                  );
+                                })}
+                              </VStack>
+                            )}
+                          </Box>
                         </Box>
                       </Box>
-                    </Box>
-                  </VStack>
-                </GridItem>
+                    </VStack>
+                  </GridItem>
 
-                {/* Right Panel - Controls */}
-                <GridItem overflow="hidden">
-                  <VStack p={4} spacing={4} h="100%" overflow="hidden">
-                    {/* AI Agent Selection */}
-                    <Box w="100%">
-                      <FormControl>
-                        <FormLabel fontSize="sm" fontWeight="medium">AI Agent</FormLabel>
-                        <Select
-                          value={selectedAgent}
-                          onChange={(e) => setSelectedAgent(e.target.value as DocumentAIAgent)}
-                          size="sm"
-                        >
-                          {DOCUMENT_AI_AGENTS.map(agent => (
-                            <option key={agent.value} value={agent.value}>
-                              {agent.label}
-                            </option>
-                          ))}
-                        </Select>
-                        <Text fontSize="xs" color="gray.500" mt={1}>
-                          {DOCUMENT_AI_AGENTS.find(a => a.value === selectedAgent)?.description}
-                        </Text>
-                      </FormControl>
-                    </Box>
-
-                    {/* Quick Actions */}
-                    <Box w="100%">
-                      <Text fontSize="sm" fontWeight="medium" mb={2}>Quick Actions</Text>
-                      <Wrap spacing={1}>
-                        {QUICK_ACTIONS.map((action) => {
-                          const Icon = action.icon;
-                          return (
-                            <WrapItem key={action.id}>
+                  {/* Right Panel - Controls */}
+                  <GridItem overflow="hidden">
+                    <VStack p={4} gap={4} h="100%" overflow="hidden">
+                      {/* Quick Actions */}
+                      <Box w="100%">
+                        <Text fontSize="sm" fontWeight="medium" mb={2}>Quick Actions</Text>
+                        <Flex gap={1} flexWrap="wrap">
+                          {QUICK_ACTIONS.map((action) => {
+                            const Icon = action.icon;
+                            return (
                               <Button
+                                key={action.id}
                                 size="xs"
                                 variant={selectedQuickAction === action.id ? 'solid' : 'outline'}
-                                colorScheme={selectedQuickAction === action.id ? 'blue' : 'gray'}
-                                leftIcon={<Icon size={12} />}
+                                colorPalette={selectedQuickAction === action.id ? 'blue' : 'gray'}
                                 onClick={() => handleQuickAction(action.id)}
-                                fontSize="xs"
-                              >
-                                {action.label}
-                              </Button>
-                            </WrapItem>
-                          );
-                        })}
-                      </Wrap>
-                    </Box>
+                                fontSize="xs"><Icon size={12} />{action.label}</Button>
+                            );
+                          })}
+                        </Flex>
+                      </Box>
 
-                    {/* Custom Instructions */}
-                    <Box w="100%" flex="1" overflow="hidden" display="flex" flexDirection="column">
-                      <FormControl flex="1" display="flex" flexDirection="column">
-                        <FormLabel fontSize="sm" fontWeight="medium" flexShrink={0} mb={2}>
-                          Custom Instructions
+                      {/* Custom Instructions */}
+                      <Box w="100%" flex="1" overflow="hidden" display="flex" flexDirection="column">
+                        <Field.Root flex="1" display="flex" flexDirection="column">
+                          <Field.Label fontSize="sm" fontWeight="medium" flexShrink={0} mb={2}>
+                            Custom Instructions
+                            {customPrompt.trim() && (
+                              <Badge ml={2} colorPalette="blue" fontSize="xs">
+                                Active
+                              </Badge>
+                            )}
+                          </Field.Label>
+                          <Textarea
+                            placeholder="Type custom analysis instructions here...
+  e.g., 'extract first 5 rows to a table with description, debit and credit columns'"
+                            value={customPrompt}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              console.log('Custom prompt changed:', newValue); // Debug log
+                              setCustomPrompt(newValue);
+                              setSelectedQuickAction(null); // Clear quick action when typing custom
+                            }}
+                            size="sm"
+                            flex="1"
+                            resize="none"
+                            minH="80px"
+                            bg={bgColor}
+                            borderColor={customPrompt.trim() ? 'blue.300' : borderColor}
+                            borderRadius="md"
+                            _focus={{
+                              borderColor: 'blue.500',
+                              boxShadow: '0 0 0 1px var(--chakra-colors-blue-500)'
+                            }}
+                          />
                           {customPrompt.trim() && (
-                            <Badge ml={2} colorScheme="blue" fontSize="xs">
-                              Active
+                            <Text fontSize="xs" color="blue.500" mt={1}>
+                              Custom instructions will override quick actions
+                            </Text>
+                          )}
+                        </Field.Root>
+                      </Box>
+                      
+                      {/* Analyze Button */}
+                      <Button
+                        colorPalette="blue"
+                        size="sm"
+                        disabled={(selectedFileItems.length === 0 && !selectedFile) || loading}
+                        onClick={handleAnalyzeDocument}
+                        w="100%"><Sparkles size={16} />{selectedFileItems.length > 1 
+                          ? `Analyze ${selectedFileItems.length} Documents`
+                          : 'Analyze Document'}</Button>
+
+                      {error && (
+                        <Alert.Root status="error" size="sm">
+                          <Alert.Indicator />
+                          <Text fontSize="sm">{error}</Text>
+                        </Alert.Root>
+                      )}
+                    </VStack>
+                  </GridItem>
+                </Grid>
+              ) : (
+                <VStack h="550px" gap={0} overflow="hidden">
+                  {error && (
+                    <Alert.Root status="error" size="sm" flexShrink={0}>
+                      <Alert.Indicator />
+                      <Text fontSize="sm">{error}</Text>
+                    </Alert.Root>
+                  )}
+                  
+                  {loading && !isStreaming && (
+                    <Flex flex={1} align="center" justify="center" direction="column" gap={4}>
+                      <Spinner size="lg" />
+                      <Text color={secondaryTextColor}>Analyzing document...</Text>
+                      {(selectedFileItems.length > 0 || selectedFile) && (
+                        <Text fontSize="sm" color={secondaryTextColor}>
+                          Processing: {selectedFileItems.length > 1 
+                            ? `${selectedFileItems.length} documents`
+                            : (selectedFileItems[0]?.name || selectedFile?.name || '')}
+                        </Text>
+                      )}
+                    </Flex>
+                  )}
+                  
+                  {analysis && (
+                    <VStack flex={1} gap={0} align="stretch" overflow="hidden" w="100%">
+                      {/* Analysis Results Header */}
+                      <Flex justify="space-between" align="center" p={4} borderBottom="1px" borderColor={borderColor} flexShrink={0}>
+                        <HStack gap={2}>
+                          <Heading size="sm">Analysis Results</Heading>
+                          {isStreaming && (
+                            <Badge colorPalette="blue" fontSize="xs" animation="pulse 2s ease-in-out infinite">
+                              Streaming...
                             </Badge>
                           )}
-                        </FormLabel>
-                        <Textarea
-                          placeholder="Type custom analysis instructions here...
-e.g., 'extract first 5 rows to a table with description, debit and credit columns'"
-                          value={customPrompt}
-                          onChange={(e) => {
-                            const newValue = e.target.value;
-                            console.log('Custom prompt changed:', newValue); // Debug log
-                            setCustomPrompt(newValue);
-                            setSelectedQuickAction(null); // Clear quick action when typing custom
-                          }}
-                          size="sm"
-                          flex="1"
-                          resize="none"
-                          minH="80px"
-                          bg={useColorModeValue('white', 'gray.800')}
-                          borderColor={customPrompt.trim() ? 'blue.300' : borderColor}
-                          borderRadius="md"
-                          _focus={{
-                            borderColor: 'blue.500',
-                            boxShadow: '0 0 0 1px var(--chakra-colors-blue-500)'
-                          }}
-                        />
-                        {customPrompt.trim() && (
-                          <Text fontSize="xs" color="blue.500" mt={1}>
-                            Custom instructions will override quick actions
-                          </Text>
-                        )}
-                      </FormControl>
-                    </Box>
-                    
-                    {/* Analyze Button */}
-                    <Button
-                      leftIcon={<Sparkles size={16} />}
-                      colorScheme="blue"
-                      size="sm"
-                      isDisabled={(selectedFileItems.length === 0 && !selectedFile) || loading}
-                      isLoading={loading}
-                      onClick={handleAnalyzeDocument}
-                      w="100%"
-                    >
-                      {selectedFileItems.length > 1 
-                        ? `Analyze ${selectedFileItems.length} Documents`
-                        : 'Analyze Document'}
-                    </Button>
-
-                    {error && (
-                      <Alert status="error" size="sm">
-                        <AlertIcon />
-                        <Text fontSize="sm">{error}</Text>
-                      </Alert>
-                    )}
-                  </VStack>
-                </GridItem>
-              </Grid>
-            </ScaleFade>
-          ) : (
-            // Results Stage
-            <ScaleFade initialScale={0.9} in={currentStage === 'results'}>
-              <VStack h="550px" spacing={0} overflow="hidden">
-                {error && (
-                  <Alert status="error" size="sm" flexShrink={0}>
-                    <AlertIcon />
-                    <Text fontSize="sm">{error}</Text>
-                  </Alert>
-                )}
-                
-                {loading && !isStreaming && (
-                  <Flex flex={1} align="center" justify="center" direction="column" gap={4}>
-                    <Spinner size="lg" />
-                    <Text color="gray.500">Analyzing document...</Text>
-                    {(selectedFileItems.length > 0 || selectedFile) && (
-                      <Text fontSize="sm" color="gray.400">
-                        Processing: {selectedFileItems.length > 1 
-                          ? `${selectedFileItems.length} documents`
-                          : (selectedFileItems[0]?.name || selectedFile?.name || '')}
-                      </Text>
-                    )}
-                  </Flex>
-                )}
-                
-                {analysis && (
-                  <VStack flex={1} spacing={0} align="stretch" overflow="hidden" w="100%">
-                    {/* Analysis Results Header */}
-                    <Flex justify="space-between" align="center" p={4} borderBottom="1px" borderColor={borderColor} flexShrink={0}>
-                      <HStack spacing={2}>
-                        <Heading size="sm">Analysis Results</Heading>
-                        {isStreaming && (
-                          <Badge colorScheme="blue" fontSize="xs" animation="pulse 2s ease-in-out infinite">
-                            Streaming...
-                          </Badge>
-                        )}
-                      </HStack>
-                      <HStack spacing={2}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleStartNewAnalysis}
-                          leftIcon={<RefreshCw size={14} />}
-                        >
-                          New Analysis
-                        </Button>
-                        
-                        <IconButton
-                          aria-label="Copy analysis"
-                          icon={<Copy size={16} />}
-                          size="sm"
-                          variant="ghost"
-                          onClick={handleCopyAnalysis}
-                          colorScheme={copied ? "green" : "gray"}
-                        />
-                      </HStack>
-                    </Flex>
-                    
-                    {/* Results Content */}
-                    <Box 
-                      flex={1} 
-                      overflowY="auto" 
-                      p={6} 
-                      minH="0" 
-                      ref={analysisBoxRef}
-                      bg={useColorModeValue('gray.50', 'gray.900')}
-                    >
+                        </HStack>
+                        <HStack gap={2}>
+                          <Button size="sm" variant="outline" onClick={handleStartNewAnalysis}><RefreshCw size={14} />New Analysis
+                                                    </Button>
+                          
+                          <IconButton
+                            aria-label="Copy analysis"
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleCopyAnalysis}
+                            colorPalette={copied ? "green" : "gray"}><Copy size={16} /></IconButton>
+                        </HStack>
+                      </Flex>
+                      
+                      {/* Results Content */}
                       <Box
-                          bg={useColorModeValue('white', 'gray.800')}
-                          p={6}
-                          borderRadius="lg"
-                          boxShadow={useColorModeValue('sm', 'dark-lg')}
-                          border="1px solid"
-                          borderColor={useColorModeValue('gray.200', 'gray.700')}
-                          sx={{
-                            '& h1, & h2, & h3, & h4': {
+                        flex={1}
+                        overflowY="auto"
+                        p={4}
+                        minH="0"
+                        ref={analysisBoxRef}
+                        bg={cardBg}
+                      >
+                        <Box
+                          bg={bgColor}
+                          p={4}
+                          borderRadius="md"
+                          borderWidth="1px"
+                          borderColor={borderColor}
+                          css={{
+                            '& & h1, & h2, & h3, & h4': {
                               fontWeight: 'bold',
                               marginBottom: '0.25rem',
                               marginTop: '0.5rem',
                               '&:first-child': {
-                                marginTop: '0'
-                              }
+                                marginTop: '0',
+                              },
                             },
-                            '& h1': { fontSize: 'lg' },
-                            '& h2': { fontSize: 'md' },
-                            '& h3, & h4': { fontSize: 'sm', fontWeight: '600' },
-                            '& p': {
+                            '& & h1': { fontSize: 'lg' },
+                            '& & h2': { fontSize: 'md' },
+                            '& & h3, & h4': { fontSize: 'sm', fontWeight: '600' },
+                            '& & p': {
                               marginBottom: '0.25rem',
                               lineHeight: '1.4',
-                              fontSize: 'sm'
+                              fontSize: 'sm',
                             },
-                            '& ul, & ol': {
+                            '& & ul, & ol': {
                               marginLeft: '1rem',
                               marginBottom: '0.25rem',
                               marginTop: '0.25rem',
-                              paddingLeft: '0.5rem'
+                              paddingLeft: '0.5rem',
                             },
-                            '& li': {
+                            '& & li': {
                               marginBottom: '0.125rem',
                               fontSize: 'sm',
-                              lineHeight: '1.4'
+                              lineHeight: '1.4',
                             },
-                            '& strong': {
-                              fontWeight: 'bold'
+                            '& & strong': {
+                              fontWeight: 'bold',
                             },
-                            '& em': {
-                              fontStyle: 'italic'
+                            '& & em': {
+                              fontStyle: 'italic',
                             },
-                            '& code': {
-                              backgroundColor: useColorModeValue('gray.200', 'gray.600'),
+                            '& & code': {
+                              backgroundColor: mdCodeBg,
                               padding: '0.125rem 0.25rem',
                               borderRadius: '0.25rem',
-                              fontSize: 'xs'
-                            }
+                              fontSize: 'xs',
+                            },
                           }}
                         >
-                          <Box 
+                          <Box
                             whiteSpace="pre-wrap"
-                            sx={{
-                              '& table': {
+                            css={{
+                              '& & table': {
                                 borderCollapse: 'collapse',
                                 width: '100%',
                                 marginTop: '1rem',
                                 marginBottom: '1rem',
                                 border: '1px solid',
-                                borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                borderColor: mdTableBorder,
                               },
-                              '& th': {
+                              '& & th': {
                                 border: '1px solid',
-                                borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                borderColor: mdTableBorder,
                                 padding: '0.5rem',
-                                backgroundColor: useColorModeValue('gray.100', 'gray.700'),
+                                backgroundColor: mdTableHeaderBg,
                                 fontWeight: 'bold',
                                 fontSize: 'sm',
-                                textAlign: 'left'
+                                textAlign: 'left',
                               },
-                              '& td': {
+                              '& & td': {
                                 border: '1px solid',
-                                borderColor: useColorModeValue('gray.300', 'gray.600'),
+                                borderColor: mdTableBorder,
                                 padding: '0.5rem',
-                                fontSize: 'sm'
+                                fontSize: 'sm',
                               },
-                              '& tr:nth-of-type(even)': {
-                                backgroundColor: useColorModeValue('gray.50', 'gray.800')
-                              }
+                              '& & tr:nth-of-type(even)': {
+                                backgroundColor: mdTableRowAlt,
+                              },
                             }}
                           >
                             {analysis.trim() ? (
@@ -1174,174 +1142,150 @@ e.g., 'extract first 5 rows to a table with description, debit and credit column
                                     bg="blue.500"
                                     ml={1}
                                     animation="blink 1s step-end infinite"
-                                    sx={{
+                                    css={{
                                       '@keyframes blink': {
                                         '0%, 100%': { opacity: 1 },
                                         '50%': { opacity: 0 },
-                                      }
+                                      },
                                     }}
                                   />
                                 )}
                               </>
                             ) : isStreaming ? (
-                              <Flex align="center" gap={2} color={useColorModeValue('gray.500', 'gray.400')}>
+                              <Flex align="center" gap={2} color={streamingMuted}>
                                 <Spinner size="sm" />
                                 <Text fontSize="sm">AI is analyzing...</Text>
                               </Flex>
                             ) : null}
                           </Box>
                         </Box>
-                      
-                      {/* Chat Messages */}
-                      {chatMessages.length > 0 && (
-                        <VStack spacing={3} align="stretch" mt={4}>
-                          <Divider />
-                          <Heading size="xs" color="gray.600">Follow-up Conversation</Heading>
-                          {chatMessages.map(message => (
-                            <Box key={message.id}>
-                              <Flex align="center" gap={2} mb={1}>
-                                <Text fontSize="xs" fontWeight="medium" color="gray.500">
-                                  {message.type === 'user' ? 'You' : `AI (${message.agent})`}
-                                </Text>
-                                <Text fontSize="xs" color="gray.400">
-                                  {message.timestamp.toLocaleTimeString()}
-                                </Text>
-                              </Flex>
-                              <Box
-                                bg={message.type === 'user' ? useColorModeValue('blue.50', 'blue.900') : cardBg}
-                                p={3}
-                                borderRadius="md"
-                                border="1px"
-                                borderColor={borderColor}
-                                fontSize="sm"
-                                sx={{
-                                  '& h1, & h2, & h3, & h4': {
-                                    fontWeight: 'bold',
-                                    marginBottom: '0.25rem',
-                                    marginTop: '0.5rem',
-                                    '&:first-child': {
-                                      marginTop: '0'
-                                    }
-                                  },
-                                  '& h3, & h4': {
-                                    fontSize: 'sm',
-                                    fontWeight: '600'
-                                  },
-                                  '& p': {
-                                    marginBottom: '0.25rem',
-                                    lineHeight: '1.4',
-                                    fontSize: 'sm'
-                                  },
-                                  '& ul, & ol': {
-                                    marginLeft: '1rem',
-                                    marginBottom: '0.25rem',
-                                    marginTop: '0.25rem'
-                                  },
-                                  '& li': {
-                                    fontSize: 'sm',
-                                    marginBottom: '0.125rem',
-                                    lineHeight: '1.4'
-                                  },
-                                  '& strong': {
-                                    fontWeight: '600'
-                                  },
-                                  '& table': {
-                                    borderCollapse: 'collapse',
-                                    width: '100%',
-                                    marginTop: '1rem',
-                                    marginBottom: '1rem',
-                                    border: '1px solid',
-                                    borderColor: useColorModeValue('gray.300', 'gray.600'),
-                                  },
-                                  '& th': {
-                                    border: '1px solid',
-                                    borderColor: useColorModeValue('gray.300', 'gray.600'),
-                                    padding: '0.5rem',
-                                    backgroundColor: useColorModeValue('gray.100', 'gray.700'),
-                                    fontWeight: 'bold',
-                                    fontSize: 'sm',
-                                    textAlign: 'left'
-                                  },
-                                  '& td': {
-                                    border: '1px solid',
-                                    borderColor: useColorModeValue('gray.300', 'gray.600'),
-                                    padding: '0.5rem',
-                                    fontSize: 'sm'
-                                  },
-                                  '& tr:nth-of-type(even)': {
-                                    backgroundColor: useColorModeValue('gray.50', 'gray.800')
-                                  }
-                                }}
-                              >
-                                <Box whiteSpace="pre-wrap">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+
+                        {chatMessages.length > 0 && (
+                          <VStack gap={3} align="stretch" mt={4}>
+                            <Separator />
+                            <Heading size="xs" color={secondaryTextColor}>Follow-up Conversation</Heading>
+                            {chatMessages.map(message => (
+                              <Box key={message.id}>
+                                <Flex align="center" gap={2} mb={1}>
+                                  <Text fontSize="xs" fontWeight="medium" color={secondaryTextColor}>
+                                    {message.type === 'user' ? 'You' : 'AI'}
+                                  </Text>
+                                  <Text fontSize="xs" color={secondaryTextColor}>
+                                    {message.timestamp.toLocaleTimeString()}
+                                  </Text>
+                                </Flex>
+                                <Box
+                                  bg={message.type === 'user' ? userMsgBg : cardBg}
+                                  p={3}
+                                  borderRadius="md"
+                                  border="1px"
+                                  borderColor={borderColor}
+                                  fontSize="sm"
+                                  css={{
+                                    '& & h1, & h2, & h3, & h4': {
+                                      fontWeight: 'bold',
+                                      marginBottom: '0.25rem',
+                                      marginTop: '0.5rem',
+                                      '&:first-child': {
+                                        marginTop: '0',
+                                      },
+                                    },
+                                    '& & h3, & h4': {
+                                      fontSize: 'sm',
+                                      fontWeight: '600',
+                                    },
+                                    '& & p': {
+                                      marginBottom: '0.25rem',
+                                      lineHeight: '1.4',
+                                      fontSize: 'sm',
+                                    },
+                                    '& & ul, & ol': {
+                                      marginLeft: '1rem',
+                                      marginBottom: '0.25rem',
+                                      marginTop: '0.25rem',
+                                    },
+                                    '& & li': {
+                                      fontSize: 'sm',
+                                      marginBottom: '0.125rem',
+                                      lineHeight: '1.4',
+                                    },
+                                    '& & strong': {
+                                      fontWeight: '600',
+                                    },
+                                    '& & table': {
+                                      borderCollapse: 'collapse',
+                                      width: '100%',
+                                      marginTop: '1rem',
+                                      marginBottom: '1rem',
+                                      border: '1px solid',
+                                      borderColor: mdTableBorder,
+                                    },
+                                    '& & th': {
+                                      border: '1px solid',
+                                      borderColor: mdTableBorder,
+                                      padding: '0.5rem',
+                                      backgroundColor: mdTableHeaderBg,
+                                      fontWeight: 'bold',
+                                      fontSize: 'sm',
+                                      textAlign: 'left',
+                                    },
+                                    '& & td': {
+                                      border: '1px solid',
+                                      borderColor: mdTableBorder,
+                                      padding: '0.5rem',
+                                      fontSize: 'sm',
+                                    },
+                                    '& & tr:nth-of-type(even)': {
+                                      backgroundColor: mdTableRowAlt,
+                                    },
+                                  }}
+                                >
+                                  <Box whiteSpace="pre-wrap">
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                                  </Box>
                                 </Box>
                               </Box>
-                            </Box>
-                          ))}
-                        </VStack>
-                      )}
-                    </Box>
-                    
-                    {/* Follow-up Input */}
-                    <Box p={4} borderTop="1px" borderColor={borderColor} flexShrink={0}>
-                      <Flex gap={2}>
-                        <Input
-                          placeholder="Ask a follow-up question..."
-                          value={followUpQuestion}
-                          onChange={(e) => setFollowUpQuestion(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendFollowUp()}
-                          size="sm"
-                          disabled={loading || isStreaming}
-                          bg={colorMode === 'dark' ? 'gray.800' : 'white'}
-                          color={colorMode === 'dark' ? 'white' : 'gray.900'}
-                          borderColor={borderColor}
-                          _focus={{
-                            borderColor: 'blue.500',
-                            boxShadow: '0 0 0 1px var(--chakra-colors-blue-500)',
-                            bg: colorMode === 'dark' ? 'gray.800' : 'white'
-                          }}
-                          _hover={{
-                            bg: colorMode === 'dark' ? 'gray.800' : 'white'
-                          }}
-                          _placeholder={{
-                            color: colorMode === 'dark' ? 'gray.400' : 'gray.500'
-                          }}
-                          style={{
-                            backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff',
-                            color: colorMode === 'dark' ? '#ffffff' : '#1a202c',
-                          }}
-                          sx={{
-                            backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff' + ' !important',
-                            '&::placeholder': {
-                              color: colorMode === 'dark' ? '#a0aec0' : '#718096' + ' !important'
-                            },
-                            '&:hover': {
-                              backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff' + ' !important'
-                            },
-                            '&:focus': {
-                              backgroundColor: colorMode === 'dark' ? '#1a202c' : '#ffffff' + ' !important'
-                            }
-                          }}
-                        />
-                        <IconButton
-                          aria-label="Send message"
-                          icon={<Send size={16} />}
-                          onClick={handleSendFollowUp}
-                          colorScheme="blue"
-                          size="sm"
-                          isDisabled={!followUpQuestion.trim() || loading || isStreaming}
-                          isLoading={loading}
-                        />
-                      </Flex>
-                    </Box>
-                  </VStack>
-                )}
-              </VStack>
-            </ScaleFade>
-          )}
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+                            ))}
+                          </VStack>
+                        )}
+                      </Box>
+                      
+                      {/* Follow-up Input */}
+                      <Box p={4} borderTop="1px" borderColor={borderColor} flexShrink={0}>
+                        <Flex gap={2}>
+                          <Input
+                            placeholder="Ask a follow-up question..."
+                            value={followUpQuestion}
+                            onChange={(e) => setFollowUpQuestion(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendFollowUp()}
+                            size="sm"
+                            disabled={loading || isStreaming}
+                            bg={inputBg}
+                            color={textColor}
+                            borderColor={borderColor}
+                            _placeholder={{ color: secondaryTextColor }}
+                            _focus={{
+                              borderColor: 'blue.500',
+                              boxShadow: '0 0 0 1px var(--chakra-colors-blue-500)',
+                            }}
+                          />
+                          <IconButton
+                            aria-label="Send message"
+                            onClick={handleSendFollowUp}
+                            colorPalette="blue"
+                            size="sm"
+                            disabled={!followUpQuestion.trim() || loading || isStreaming}><Send size={16} /></IconButton>
+                        </Flex>
+                      </Box>
+                    </VStack>
+                  )}
+                </VStack>
+              )}
+            </Box>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 }; 

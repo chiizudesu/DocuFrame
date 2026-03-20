@@ -1,5 +1,6 @@
 import React from 'react';
-import { IconButton, useColorMode, Flex, Text, useColorModeValue } from '@chakra-ui/react';
+import { useColorMode, useColorModeValue } from "./ui/color-mode";
+import { IconButton, Flex, Text } from '@chakra-ui/react';
 import { Moon, Sun, Settings } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { getAppVersion } from '../utils/version';
@@ -44,22 +45,18 @@ export const ThemeToggle: React.FC = () => {
       <Text fontSize="10px" color={colorMode === 'light' ? 'gray.400' : 'gray.600'} mr={2} userSelect="none">
         v{getAppVersion()}
       </Text>
-      <IconButton 
-        icon={colorMode === 'light' ? <Moon size={16} /> : <Sun size={16} />} 
-        aria-label="Toggle theme" 
-        variant="ghost" 
-        size="sm" 
-        onClick={handleToggle} 
-        color={buttonColor} 
-      />
-      <IconButton 
-        icon={<Settings size={16} />} 
-        aria-label="Settings" 
-        variant="ghost" 
-        size="sm" 
-        onClick={handleSettingsClick} 
-        color={buttonColor} 
-      />
+      <IconButton
+        aria-label="Toggle theme"
+        variant="ghost"
+        size="sm"
+        onClick={handleToggle}
+        color={buttonColor}>{colorMode === 'light' ? <Moon size={16} /> : <Sun size={16} />}</IconButton>
+      <IconButton
+        aria-label="Settings"
+        variant="ghost"
+        size="sm"
+        onClick={handleSettingsClick}
+        color={buttonColor}><Settings size={16} /></IconButton>
     </Flex>
   );
 };

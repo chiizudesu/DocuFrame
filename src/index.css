@@ -83,6 +83,47 @@
   background: rgba(156, 163, 175, 0.5) !important;
 }
 
+/* Address bar refresh shimmer (plain CSS — Chakra v3 style resolver cannot merge @keyframes into the same object as transform) */
+@keyframes docuframe-address-refresh-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* AI File Manager — plain CSS keyframes (Chakra v3 style resolver cannot merge emotion keyframes with animation prop) */
+@keyframes docuframe-ai-fm-reading-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes docuframe-ai-fm-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes docuframe-ai-fm-proposal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    opacity: 0.9;
+    box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.4);
+  }
+}
+
 /* Pulse animation for timer indicator */
 @keyframes pulse {
   0%, 100% {

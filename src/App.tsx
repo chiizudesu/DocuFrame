@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Box, useColorMode, ChakraProvider } from '@chakra-ui/react';
-import { theme } from './theme';
+import { useColorMode } from "./components/ui/color-mode";
+import { Box } from '@chakra-ui/react';
 import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
 import { FloatingTaskTimerWindow } from './components/FloatingTaskTimerWindow';
-import { AppProvider } from './context/AppContext';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
 
@@ -18,7 +17,6 @@ const AppContent: React.FC = () => {
     setInitialCommandMode,
     isSettingsOpen,
     setIsSettingsOpen,
-    currentDirectory,
     setCurrentDirectory,
     setStatus,
     addLog,
@@ -252,7 +250,7 @@ const AppContent: React.FC = () => {
       <Box
         w="100%"
         h="100vh"
-        bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'}
+        bg="df.canvas"
         color={colorMode === 'dark' ? 'white' : '#334155'}
         overflow="hidden"
         position="relative"
@@ -270,7 +268,7 @@ const AppContent: React.FC = () => {
     <Box
       w="100%"
       h="100vh"
-      bg={colorMode === 'dark' ? 'gray.900' : '#f8fafc'}
+      bg="df.canvas"
       color={colorMode === 'dark' ? 'white' : '#334155'}
       overflow="hidden"
       position="relative"
@@ -291,11 +289,5 @@ export const App: React.FC = () => {
       toggleColorMode();
     }
   }, []);
-  return (
-    <ChakraProvider theme={theme}>
-      <AppProvider>
-        <AppContent />
-      </AppProvider>
-    </ChakraProvider>
-  );
+  return <AppContent />;
 };

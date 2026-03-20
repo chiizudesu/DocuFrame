@@ -400,7 +400,6 @@ function getWatchedDirectories(): string[] {
 function buildDefaultConfig(): Config {
   return {
     rootPath: app.getPath('documents'),
-    apiKey: undefined,
     gstTemplatePath: undefined,
     clientbasePath: undefined,
     templateFolderPath: undefined,

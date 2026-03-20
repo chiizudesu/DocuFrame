@@ -1,9 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
-import { ChakraProvider, ColorModeScript } from '@chakra-ui/react';
 import { AppProvider } from './context/AppContext';
-import { theme } from './theme';
+import { Provider } from './components/ui/provider';
+import { Toaster } from './components/ui/toaster';
 import './styles/scrollbar.css';
 
 // Check if this is the floating timer window and make it transparent
@@ -20,11 +20,11 @@ const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    <AppProvider>
-      <ChakraProvider theme={theme}>
-        <ColorModeScript initialColorMode={theme.config.initialColorMode} />
+    <Provider defaultTheme="dark">
+      <Toaster />
+      <AppProvider>
         <App />
-      </ChakraProvider>
-    </AppProvider>
+      </AppProvider>
+    </Provider>
   </React.StrictMode>
 );

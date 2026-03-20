@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react'
-import { Box, Flex, Icon } from '@chakra-ui/react'
+import { Box, Flex } from '@chakra-ui/react';
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import type { SortColumn } from './FileGridUtils'
 
@@ -46,21 +46,21 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
   const thHoverSx = useMemo(() => ({ bg: headerHoverBg }), [headerHoverBg])
   const thAfterSx = useMemo(
     () =>
-      ({
+      (({
         content: '""',
         position: 'absolute' as const,
         right: 0,
         top: '25%',
         bottom: '25%',
         width: '1px',
-        bg: headerDividerBg,
-      }) as const,
+        bg: headerDividerBg
+      }) as const),
     [headerDividerBg],
   )
   const resizeHoverSx = useMemo(() => ({ bg: dragGhostAccent }), [dragGhostAccent])
   const resizeHandleAfterSx = useMemo(
     () =>
-      ({
+      (({
         content: '""',
         position: 'absolute' as const,
         right: '2px',
@@ -68,8 +68,8 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
         bottom: '25%',
         width: '1px',
         bg: 'transparent',
-        _hover: { bg: 'white' },
-      }) as const,
+        _hover: { bg: 'white' }
+      }) as const),
     [],
   )
 
@@ -153,12 +153,13 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
               <Flex alignItems="center">
                 {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isType ? 'Type' : ''}
                 {sortColumn === column && (
-                  <Icon
-                    as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                    ml={1}
-                    boxSize={2.5}
-                    color="#4F46E5"
-                  />
+                  <Box as="span" display="inline-flex" ml={1} lineHeight={0} color="#4F46E5">
+                    {sortDirection === 'asc' ? (
+                      <ChevronUp size={10} strokeWidth={2.5} />
+                    ) : (
+                      <ChevronDown size={10} strokeWidth={2.5} />
+                    )}
+                  </Box>
                 )}
               </Flex>
 

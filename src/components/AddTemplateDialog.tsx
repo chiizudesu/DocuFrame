@@ -1,26 +1,20 @@
 import React, { useState } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Button,
   VStack,
   Text,
   Box,
   Flex,
-  useColorModeValue,
   Textarea,
-  FormControl,
-  FormLabel,
   Input,
   Alert,
-  AlertIcon,
   Code,
-  Divider,
-  Checkbox
+  Checkbox,
+  Field,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
 import { FilePlus2, Save } from 'lucide-react';
 import * as yaml from 'js-yaml';
@@ -43,8 +37,7 @@ export const AddTemplateDialog: React.FC<AddTemplateDialogProps> = ({ isOpen, on
   const [isSaving, setIsSaving] = useState(false);
   const [currentStep, setCurrentStep] = useState<'input' | 'placeholders' | 'yaml'>('input');
 
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const { surfaceBg: bgColor, titleBarBg, borderColor, inputBg } = useDialogChrome();
 
   const handleAnalyzeText = () => {
     if (!rawText.trim() || !templateName.trim()) {
@@ -228,232 +221,228 @@ export const AddTemplateDialog: React.FC<AddTemplateDialogProps> = ({ isOpen, on
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="xl" isCentered>
-      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent 
-        bg={bgColor} 
-        color={useColorModeValue('gray.900', 'white')} 
-        borderRadius="lg"
-        boxShadow="lg" 
-        maxW="900px"
-        maxH="90vh"
-        w="95%"
-      >
-        <ModalHeader fontSize="lg" fontWeight="bold" textAlign="center" pb={2}>
-          <Flex align="center" justify="center" gap={2}>
-            <FilePlus2 size={22} />
-            Add Template YAML
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody p={6} overflow="hidden" display="flex" flexDirection="column">
-          <VStack spacing={4} align="stretch" h="70vh">
-            
-            {currentStep === 'input' && (
-              <>
-                {/* Template Name */}
-                <FormControl>
-                  <FormLabel fontSize="sm">Template Name</FormLabel>
-                  <Input
-                    placeholder="Enter template name (e.g., 'Client Email')"
-                    value={templateName}
-                    onChange={(e) => setTemplateName(e.target.value)}
-                    size="sm"
-                  />
-                </FormControl>
+    <Dialog.Root open={isOpen} size='xl' placement='center' onOpenChange={e => {
+      if (!e.open) {
+        handleClose();
+      }
+    }}>
+      <Portal>
 
-                {/* Raw Text Input */}
-                <FormControl flex="1" display="flex" flexDirection="column">
-                  <FormLabel fontSize="sm">
-                    Raw Email/Template Text
-                    <Text fontSize="xs" color="gray.500" fontWeight="normal">
-                      Paste your email template with hardcoded values (dates, amounts, names, etc.)
-                    </Text>
-                  </FormLabel>
-                  <Textarea
-                    placeholder="Dear John Smith,&#10;&#10;Your tax return for 2024 has been completed. The total amount is $1,250.00.&#10;&#10;Please contact us at (04) 123-4567 if you have any questions.&#10;&#10;Best regards,&#10;Tax Team"
-                    value={rawText}
-                    onChange={(e) => setRawText(e.target.value)}
-                    size="sm"
-                    flex="1"
-                    minH="200px"
-                    resize="vertical"
-                  />
-                </FormControl>
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg={bgColor}
+            color={useColorModeValue('gray.900', 'white')}
+            borderRadius="lg"
+            boxShadow="lg"
+            maxW="900px"
+            maxH="90vh"
+            w="95%">
+            <Dialog.Header fontSize="lg" fontWeight="bold" textAlign="center" pb={2}>
+              <Flex align="center" justify="center" gap={2}>
+                <FilePlus2 size={22} />
+                Add Template YAML
+              </Flex>
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body p={6} overflow="hidden" display="flex" flexDirection="column">
+              <VStack gap={4} align="stretch" h="70vh">
+                
+                {currentStep === 'input' && (
+                  <>
+                    {/* Template Name */}
+                    <Field.Root>
+                      <Field.Label fontSize="sm">Template Name</Field.Label>
+                      <Input
+                        placeholder="Enter template name (e.g., 'Client Email')"
+                        value={templateName}
+                        onChange={(e) => setTemplateName(e.target.value)}
+                        size="sm"
+                      />
+                    </Field.Root>
 
-                <Button
-                  leftIcon={<FilePlus2 size={16} />}
-                  colorScheme="blue"
-                  onClick={handleAnalyzeText}
-                  isLoading={isAnalyzing}
-                  loadingText="Analyzing..."
-                  isDisabled={!templateName.trim() || !rawText.trim()}
-                  size="sm"
-                >
-                  Analyze Template
-                </Button>
-              </>
-            )}
+                    {/* Raw Text Input */}
+                    <Field.Root flex="1" display="flex" flexDirection="column">
+                      <Field.Label fontSize="sm">
+                        Raw Email/Template Text
+                        <Text fontSize="xs" color="gray.500" fontWeight="normal">
+                          Paste your email template with hardcoded values (dates, amounts, names, etc.)
+                        </Text>
+                      </Field.Label>
+                      <Textarea
+                        placeholder="Dear John Smith,&#10;&#10;Your tax return for 2024 has been completed. The total amount is $1,250.00.&#10;&#10;Please contact us at (04) 123-4567 if you have any questions.&#10;&#10;Best regards,&#10;Tax Team"
+                        value={rawText}
+                        onChange={(e) => setRawText(e.target.value)}
+                        size="sm"
+                        flex="1"
+                        minH="200px"
+                        resize="vertical"
+                      />
+                    </Field.Root>
 
-            {currentStep === 'placeholders' && (
-              <>
-                <Box>
-                  <Text fontSize="md" fontWeight="semibold" mb={2}>
-                    Detected Values → Placeholders
-                  </Text>
-                  <Text fontSize="sm" color="gray.500" mb={4}>
-                    Review and edit the detected values that will be converted to placeholders:
-                  </Text>
-                </Box>
+                    <Button
+                      colorPalette="blue"
+                      onClick={handleAnalyzeText}
+                      disabled={isAnalyzing || !templateName.trim() || !rawText.trim()}
+                      size="sm"><FilePlus2 size={16} />Analyze Template
+                                      </Button>
+                  </>
+                )}
 
-                <Box 
-                  flex="1" 
-                  overflowY="auto" 
-                  border="1px solid" 
-                  borderColor={useColorModeValue('gray.200', 'gray.600')} 
-                  borderRadius="md" 
-                  p={4}
-                  bg={useColorModeValue('gray.50', 'gray.700')}
-                >
-                  <VStack spacing={3} align="stretch">
-                    {detectedPlaceholders.map((placeholder, index) => (
-                      <Flex key={index} align="center" gap={3} p={3} bg={useColorModeValue('white', 'gray.600')} borderRadius="md" border="1px solid" borderColor={useColorModeValue('gray.200', 'gray.500')}>
-                        <Checkbox
-                          isChecked={placeholder.accepted}
-                          onChange={(e) => updatePlaceholder(index, 'accepted', e.target.checked)}
-                        />
-                        <Box flex="1">
-                          <Text fontSize="sm" fontWeight="medium" color="red.500">
-                            "{placeholder.original}"
-                          </Text>
-                        </Box>
-                        <Text fontSize="sm" color="gray.500" mx={2}>→</Text>
-                        <Box flex="1">
-                          <Input
-                            size="sm"
-                            value={placeholder.suggested}
-                            onChange={(e) => updatePlaceholder(index, 'suggested', e.target.value)}
-                            placeholder="placeholder_name"
-                            fontSize="sm"
-                          />
-                        </Box>
-                      </Flex>
-                    ))}
-                    
-                    {detectedPlaceholders.length === 0 && (
-                      <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
-                        No potential placeholders detected. The template will be used as-is.
+                {currentStep === 'placeholders' && (
+                  <>
+                    <Box>
+                      <Text fontSize="md" fontWeight="semibold" mb={2}>
+                        Detected Values → Placeholders
                       </Text>
-                    )}
-                  </VStack>
-                </Box>
+                      <Text fontSize="sm" color="gray.500" mb={4}>
+                        Review and edit the detected values that will be converted to placeholders:
+                      </Text>
+                    </Box>
 
-                <Flex gap={2}>
-                  <Button
-                    variant="outline"
-                    onClick={() => setCurrentStep('input')}
-                    size="sm"
-                    flex="1"
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    leftIcon={<Save size={16} />}
-                    colorScheme="green"
-                    onClick={handleConfirmPlaceholders}
-                    size="sm"
-                    flex="2"
-                  >
-                    Generate YAML
-                  </Button>
-                </Flex>
-              </>
-            )}
-
-            {currentStep === 'yaml' && (
-              <>
-                <Flex gap={4} flex="1" minH="0">
-                  {/* Left side - Processed Template */}
-                  <VStack flex="1" align="stretch" minH="0">
-                    <Text fontSize="sm" fontWeight="semibold">Processed Template:</Text>
-                    <Textarea
-                      value={processedText}
-                      isReadOnly
-                      size="sm"
-                      flex="1"
-                      minH="150px"
-                      bg={useColorModeValue('gray.100', 'gray.700')}
-                      fontSize="xs"
-                      resize="none"
-                    />
-                  </VStack>
-
-                  {/* Right side - YAML Output */}
-                  <VStack flex="1" align="stretch" minH="0">
-                    <Text fontSize="sm" fontWeight="semibold">YAML Output (Editable):</Text>
-                    <Textarea
-                      value={editableYaml}
-                      onChange={(e) => setEditableYaml(e.target.value)}
-                      size="sm"
-                      flex="1"
-                      minH="150px"
-                      fontFamily="mono"
-                      fontSize="xs"
+                    <Box 
+                      flex="1" 
+                      overflowY="auto" 
+                      border="1px solid" 
+                      borderColor={useColorModeValue('gray.200', 'gray.600')} 
+                      borderRadius="md" 
+                      p={4}
                       bg={useColorModeValue('gray.50', 'gray.700')}
-                      resize="none"
-                    />
-                  </VStack>
-                </Flex>
+                    >
+                      <VStack gap={3} align="stretch">
+                        {detectedPlaceholders.map((placeholder, index) => (
+                          <Flex key={index} align="center" gap={3} p={3} bg={useColorModeValue('white', 'gray.600')} borderRadius="md" border="1px solid" borderColor={useColorModeValue('gray.200', 'gray.500')}>
+                            <Checkbox.Root
+                              checked={placeholder.accepted}
+                              onCheckedChange={(d) => updatePlaceholder(index, 'accepted', d.checked === true)}><Checkbox.HiddenInput /><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control></Checkbox.Root>
+                            <Box flex="1">
+                              <Text fontSize="sm" fontWeight="medium" color="red.500">
+                                "{placeholder.original}"
+                              </Text>
+                            </Box>
+                            <Text fontSize="sm" color="gray.500" mx={2}>→</Text>
+                            <Box flex="1">
+                              <Input
+                                size="sm"
+                                value={placeholder.suggested}
+                                onChange={(e) => updatePlaceholder(index, 'suggested', e.target.value)}
+                                placeholder="placeholder_name"
+                                fontSize="sm"
+                              />
+                            </Box>
+                          </Flex>
+                        ))}
+                        
+                        {detectedPlaceholders.length === 0 && (
+                          <Text fontSize="sm" color="gray.500" textAlign="center" py={4}>
+                            No potential placeholders detected. The template will be used as-is.
+                          </Text>
+                        )}
+                      </VStack>
+                    </Box>
 
-                <Flex gap={2}>
-                  <Button
-                    variant="outline"
-                    onClick={() => setCurrentStep('placeholders')}
-                    size="sm"
-                    flex="1"
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    leftIcon={<Save size={16} />}
-                    colorScheme="green"
-                    onClick={handleSaveTemplate}
-                    isLoading={isSaving}
-                    loadingText="Saving..."
-                    size="sm"
-                    flex="2"
-                  >
-                    Save Template
-                  </Button>
-                </Flex>
-              </>
-            )}
+                    <Flex gap={2}>
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentStep('input')}
+                        size="sm"
+                        flex="1"
+                      >
+                        Back
+                      </Button>
+                      <Button
+                        colorPalette="green"
+                        onClick={handleConfirmPlaceholders}
+                        size="sm"
+                        flex="2"><Save size={16} />Generate YAML
+                                          </Button>
+                    </Flex>
+                  </>
+                )}
 
-            {/* Status Messages */}
-            {error && (
-              <Alert status="error" borderRadius="md" fontSize="sm">
-                <AlertIcon />
-                {error}
-              </Alert>
-            )}
+                {currentStep === 'yaml' && (
+                  <>
+                    <Flex gap={4} flex="1" minH="0">
+                      {/* Left side - Processed Template */}
+                      <VStack flex="1" align="stretch" minH="0">
+                        <Text fontSize="sm" fontWeight="semibold">Processed Template:</Text>
+                        <Textarea
+                          value={processedText}
+                          readOnly
+                          size="sm"
+                          flex="1"
+                          minH="150px"
+                          bg={useColorModeValue('gray.100', 'gray.700')}
+                          fontSize="xs"
+                          resize="none"
+                        />
+                      </VStack>
 
-            {success && (
-              <Alert status="success" borderRadius="md" fontSize="sm">
-                <AlertIcon />
-                {success}
-              </Alert>
-            )}
+                      {/* Right side - YAML Output */}
+                      <VStack flex="1" align="stretch" minH="0">
+                        <Text fontSize="sm" fontWeight="semibold">YAML Output (Editable):</Text>
+                        <Textarea
+                          value={editableYaml}
+                          onChange={(e) => setEditableYaml(e.target.value)}
+                          size="sm"
+                          flex="1"
+                          minH="150px"
+                          fontFamily="mono"
+                          fontSize="xs"
+                          bg={useColorModeValue('gray.50', 'gray.700')}
+                          resize="none"
+                        />
+                      </VStack>
+                    </Flex>
 
-            {/* Help Text */}
-            <Box bg={useColorModeValue('gray.50', 'gray.700')} p={3} borderRadius="md" fontSize="xs">
-              <Text fontWeight="semibold" mb={1}>Template Format Help:</Text>
-              <Text>• Use <Code fontSize="xs">{'{{variable_name}}'}</Code> for placeholders</Text>
-              <Text>• Categories will be auto-generated from placeholders</Text>
-              <Text>• Example: <Code fontSize="xs">{'{{client_name}}'}</Code>, <Code fontSize="xs">{'{{tax_year}}'}</Code></Text>
-            </Box>
-          </VStack>
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+                    <Flex gap={2}>
+                      <Button
+                        variant="outline"
+                        onClick={() => setCurrentStep('placeholders')}
+                        size="sm"
+                        flex="1"
+                      >
+                        Back
+                      </Button>
+                      <Button
+                        colorPalette="green"
+                        onClick={handleSaveTemplate}
+                        disabled={isSaving}
+                        size="sm"
+                        flex="2"><Save size={16} />Save Template
+                                          </Button>
+                    </Flex>
+                  </>
+                )}
+
+                {/* Status Messages */}
+                {error && (
+                  <Alert.Root status="error" borderRadius="md" fontSize="sm">
+                    <Alert.Indicator />
+                    {error}
+                  </Alert.Root>
+                )}
+
+                {success && (
+                  <Alert.Root status="success" borderRadius="md" fontSize="sm">
+                    <Alert.Indicator />
+                    {success}
+                  </Alert.Root>
+                )}
+
+                {/* Help Text */}
+                <Box bg={useColorModeValue('gray.50', 'gray.700')} p={3} borderRadius="md" fontSize="xs">
+                  <Text fontWeight="semibold" mb={1}>Template Format Help:</Text>
+                  <Text>• Use <Code fontSize="xs">{'{{variable_name}}'}</Code> for placeholders</Text>
+                  <Text>• Categories will be auto-generated from placeholders</Text>
+                  <Text>• Example: <Code fontSize="xs">{'{{client_name}}'}</Code>, <Code fontSize="xs">{'{{tax_year}}'}</Code></Text>
+                </Box>
+              </VStack>
+            </Dialog.Body>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 }; 

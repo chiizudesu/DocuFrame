@@ -1,18 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Box,
-  Text,
-  Flex,
-  Icon,
-  useColorModeValue,
-  Image,
-  Spinner,
-  Button,
-  VStack,
-} from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Text, Flex, Icon, Image, Spinner, Button, VStack } from '@chakra-ui/react';
 import { FileText, ExternalLink, Download } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { FileItem } from '../types';
+import {
+  docuFramePalette,
+  dfHomeIconColor,
+  DF_GROUP_HEADER_LAYER_TEXT,
+  DF_GROUP_HEADER_PILL_TEXT,
+} from '../docuFrameColors';
 
 export const PreviewPane: React.FC = () => {
   // All hooks must be called in the same order every render
@@ -29,6 +26,17 @@ export const PreviewPane: React.FC = () => {
   const secondaryTextColor = useColorModeValue('gray.600', 'gray.300');
   const iconColor = useColorModeValue('gray.500', 'gray.400');
   const controlBg = useColorModeValue('gray.100', 'gray.700');
+
+  const emptyPaneBg = useColorModeValue(
+    docuFramePalette.light.rowSelected,
+    `linear-gradient(180deg, ${docuFramePalette.dark.canvas} 0%, ${docuFramePalette.dark.rowSelected} 100%)`
+  );
+  const emptyIconColor = useColorModeValue(dfHomeIconColor.light, dfHomeIconColor.dark);
+  const emptyTitleColor = useColorModeValue('gray.800', DF_GROUP_HEADER_PILL_TEXT);
+  const emptySubtextColor = useColorModeValue(
+    docuFramePalette.light.subtext,
+    DF_GROUP_HEADER_LAYER_TEXT
+  );
 
   // Auto-preview selected files
   useEffect(() => {
@@ -92,13 +100,13 @@ export const PreviewPane: React.FC = () => {
         flexDirection="column"
         gap={3}
         p={6}
-        bg={bgColor}
+        bg={emptyPaneBg}
       >
-        <Icon as={FileText} boxSize={12} color={iconColor} />
-        <Text color={textColor} textAlign="center" fontSize="lg" fontWeight="medium">
+        <Icon boxSize={12} color={emptyIconColor} asChild><FileText /></Icon>
+        <Text color={emptyTitleColor} textAlign="center" fontSize="lg" fontWeight="medium">
           No File Selected
         </Text>
-        <Text color={secondaryTextColor} textAlign="center" fontSize="sm">
+        <Text color={emptySubtextColor} textAlign="center" fontSize="sm">
           Select a file to preview
         </Text>
       </Box>
@@ -119,11 +127,10 @@ export const PreviewPane: React.FC = () => {
         justify="center"
         bg={headerBg}
       >
-        <Text fontWeight="bold" fontSize="sm" color={textColor} noOfLines={1}>
+        <Text fontWeight="bold" fontSize="sm" color={textColor} lineClamp={1}>
           {previewFile.name}
         </Text>
       </Flex>
-      
       {/* Preview Content */}
       <Box flex={1} overflow="auto" p={0} bg={bgColor}>
         {isLoading ? (
@@ -143,7 +150,7 @@ export const PreviewPane: React.FC = () => {
         ) : (
           <>
             {isImage ? (
-              <VStack spacing={4} align="stretch" height="100%">
+              <VStack gap={4} align="stretch" height="100%">
                 {/* Scrollable Image Container */}
                 <Box
                   flex={1}
@@ -167,35 +174,13 @@ export const PreviewPane: React.FC = () => {
                       display: 'block',
                       minWidth: 'auto',
                       minHeight: 'auto'
-                    }}
-                    fallback={
-                      <Flex
-                        width="100%"
-                        height="200px"
-                        alignItems="center"
-                        justifyContent="center"
-                        flexDirection="column"
-                        gap={3}
-                      >
-                        <Icon as={FileText} boxSize={8} color={iconColor} />
-                        <Text color={secondaryTextColor} fontSize="sm">
-                          Image loading...
-                        </Text>
-                      </Flex>
-                    }
-                  />
+                    }} />
                 </Box>
-                <Button
-                  leftIcon={<ExternalLink size={16} />}
-                  onClick={openWithSystemDefault}
-                  variant="outline"
-                  size="sm"
-                >
-                  Open with System Default
-                </Button>
+                <Button onClick={openWithSystemDefault} variant="outline" size="sm"><ExternalLink size={16} />Open with System Default
+                                  </Button>
               </VStack>
             ) : isPDF ? (
-              <VStack spacing={0} align="stretch" height="100%">
+              <VStack gap={0} align="stretch" height="100%">
                 {/* Embedded PDF Viewer - Scrollable, full container */}
                 <Box
                   bg={controlBg}
@@ -321,16 +306,9 @@ export const PreviewPane: React.FC = () => {
 
                 {/* PDF Controls */}
                 <Flex gap={2} justify="center">
+                  <Button onClick={openWithSystemDefault} variant="outline" size="sm"><ExternalLink size={16} />Open with System Default
+                                      </Button>
                   <Button
-                    leftIcon={<ExternalLink size={16} />}
-                    onClick={openWithSystemDefault}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Open with System Default
-                  </Button>
-                  <Button
-                    leftIcon={<Download size={16} />}
                     onClick={() => {
                       // Create a temporary link to download the PDF
                       const link = document.createElement('a');
@@ -339,10 +317,8 @@ export const PreviewPane: React.FC = () => {
                       link.click();
                     }}
                     variant="outline"
-                    size="sm"
-                  >
-                    Download
-                  </Button>
+                    size="sm"><Download size={16} />Download
+                                      </Button>
                 </Flex>
 
                 {/* PDF Information */}
@@ -350,7 +326,7 @@ export const PreviewPane: React.FC = () => {
                   <Text color={textColor} fontSize="xs" fontWeight="medium" mb={2}>
                     File Information:
                   </Text>
-                  <VStack spacing={1} align="start" fontSize="xs" color={secondaryTextColor}>
+                  <VStack gap={1} align="start" fontSize="xs" color={secondaryTextColor}>
                     <Text>• Name: {previewFile.name}</Text>
                     <Text>• Type: PDF Document</Text>
                     <Text>• Path: {previewFile.path}</Text>
@@ -373,21 +349,15 @@ export const PreviewPane: React.FC = () => {
                 gap={3}
                 p={6}
               >
-                <Icon as={FileText} boxSize={16} color={iconColor} />
+                <Icon boxSize={16} color={iconColor} asChild><FileText /></Icon>
                 <Text color={textColor} textAlign="center" fontSize="lg" fontWeight="medium">
                   Preview Not Available
                 </Text>
                 <Text fontSize="sm" color={secondaryTextColor} textAlign="center" mb={3}>
                   {previewFile.name}
                 </Text>
-                <Button
-                  leftIcon={<ExternalLink size={16} />}
-                  onClick={openWithSystemDefault}
-                  variant="outline"
-                  size="sm"
-                >
-                  Open with System Default
-                </Button>
+                <Button onClick={openWithSystemDefault} variant="outline" size="sm"><ExternalLink size={16} />Open with System Default
+                                  </Button>
               </Box>
             )}
           </>

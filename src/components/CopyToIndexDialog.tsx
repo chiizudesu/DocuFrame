@@ -1,20 +1,7 @@
 import React, { useState } from 'react';
-import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  ModalCloseButton,
-  Button,
-  VStack,
-  Box,
-  Text,
-  useColorModeValue,
-  Flex,
-  Badge,
-} from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { Button, VStack, Box, Text, Flex, Badge, Dialog, Portal } from '@chakra-ui/react';
 import { getAllIndexKeys, getIndexInfo, extractIndexPrefix, setIndexPrefix } from '../utils/indexPrefix';
 import type { FileItem } from '../types';
 
@@ -36,12 +23,15 @@ export const CopyToIndexDialog: React.FC<CopyToIndexDialogProps> = ({
   const [selectedIndex, setSelectedIndex] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const hoverBg = useColorModeValue('gray.50', 'gray.700');
-  const selectedBg = useColorModeValue('blue.50', 'blue.900');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const textColor = useColorModeValue('gray.800', 'gray.100');
-  const descColor = useColorModeValue('gray.600', 'gray.400');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    borderColor,
+    selectedBg,
+    textColor,
+    secondaryTextColor: descColor,
+  } = useDialogChrome();
+  const hoverBg = useColorModeValue('gray.50', 'df.rowHover');
 
   const indexKeys = getAllIndexKeys();
   
@@ -63,79 +53,90 @@ export const CopyToIndexDialog: React.FC<CopyToIndexDialogProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="md" isCentered>
-      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor}>
-        <ModalHeader>Copy Files to Index</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <Text mb={4} fontSize="sm" color={descColor}>
-            Copy {files.length} file{files.length !== 1 ? 's' : ''} to a new index prefix
-          </Text>
-          <VStack spacing={2} align="stretch" maxH="400px" overflowY="auto">
-            {indexKeys.map((indexKey) => {
-              const info = getIndexInfo(indexKey);
-              const isSelected = selectedIndex === indexKey;
-              const isCurrentIndex = currentIndexes.has(indexKey);
-              
-              return (
-                <Box
-                  key={indexKey}
-                  p={3}
-                  borderRadius="md"
-                  borderWidth="1px"
-                  borderColor={isSelected ? 'blue.400' : borderColor}
-                  bg={isSelected ? selectedBg : bgColor}
-                  cursor="pointer"
-                  onClick={() => setSelectedIndex(indexKey)}
-                  _hover={{ bg: hoverBg }}
-                  transition="all 0.2s"
-                  opacity={isCurrentIndex ? 0.6 : 1}
-                >
-                  <Flex align="center" justify="space-between">
-                    <Flex direction="column">
-                      <Flex align="center" gap={2}>
-                        <Text fontWeight="semibold" fontSize="md" color={textColor}>
-                          {indexKey}
-                        </Text>
-                        {isSelected && (
-                          <Badge colorScheme="blue" size="sm">
-                            Selected
-                          </Badge>
-                        )}
-                        {isCurrentIndex && (
-                          <Badge colorScheme="gray" size="sm">
-                            Current
-                          </Badge>
-                        )}
+    <Dialog.Root open={isOpen} size='md' placement='center' onOpenChange={e => {
+      if (!e.open) {
+        onClose();
+      }
+    }}>
+      <Portal>
+
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content bg={bgColor}>
+            <Dialog.Header bg={titleBarBg} borderBottomWidth="1px" borderColor={borderColor}>
+              Copy Files to Index
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body>
+              <Text mb={4} fontSize="sm" color={descColor}>
+                Copy {files.length} file{files.length !== 1 ? 's' : ''} to a new index prefix
+              </Text>
+              <VStack gap={2} align="stretch" maxH="400px" overflowY="auto">
+                {indexKeys.map((indexKey) => {
+                  const info = getIndexInfo(indexKey);
+                  const isSelected = selectedIndex === indexKey;
+                  const isCurrentIndex = currentIndexes.has(indexKey);
+                  
+                  return (
+                    <Box
+                      key={indexKey}
+                      p={3}
+                      borderRadius="md"
+                      borderWidth="1px"
+                      borderColor={isSelected ? 'blue.400' : borderColor}
+                      bg={isSelected ? selectedBg : bgColor}
+                      cursor="pointer"
+                      onClick={() => setSelectedIndex(indexKey)}
+                      _hover={{ bg: hoverBg }}
+                      transition="all 0.2s"
+                      opacity={isCurrentIndex ? 0.6 : 1}
+                    >
+                      <Flex align="center" justify="space-between">
+                        <Flex direction="column">
+                          <Flex align="center" gap={2}>
+                            <Text fontWeight="semibold" fontSize="md" color={textColor}>
+                              {indexKey}
+                            </Text>
+                            {isSelected && (
+                              <Badge colorPalette="blue" size="sm">
+                                Selected
+                              </Badge>
+                            )}
+                            {isCurrentIndex && (
+                              <Badge colorPalette="gray" size="sm">
+                                Current
+                              </Badge>
+                            )}
+                          </Flex>
+                          {info.description && (
+                            <Text fontSize="sm" color={descColor} mt={1}>
+                              {info.description}
+                            </Text>
+                          )}
+                        </Flex>
                       </Flex>
-                      {info.description && (
-                        <Text fontSize="sm" color={descColor} mt={1}>
-                          {info.description}
-                        </Text>
-                      )}
-                    </Flex>
-                  </Flex>
-                </Box>
-              );
-            })}
-          </VStack>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" mr={3} onClick={onClose} isDisabled={isProcessing}>
-            Cancel
-          </Button>
-          <Button 
-            colorScheme="blue" 
-            onClick={handleConfirm} 
-            isDisabled={!selectedIndex || isProcessing}
-            isLoading={isProcessing}
-          >
-            Copy Files
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+                    </Box>
+                  );
+                })}
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <Button variant="ghost" mr={3} onClick={onClose} disabled={isProcessing}>
+                Cancel
+              </Button>
+              <Button 
+                colorPalette="blue" 
+                onClick={handleConfirm} 
+                disabled={!selectedIndex || isProcessing}
+              >
+                Copy Files
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 };
 

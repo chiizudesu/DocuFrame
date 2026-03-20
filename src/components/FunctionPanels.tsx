@@ -1,5 +1,17 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Box, Flex, Icon, Text, Tooltip, Divider, IconButton, useColorModeValue, useColorMode, useToast, Menu, MenuButton, MenuList, MenuItem, MenuDivider, Input, Popover, PopoverTrigger, PopoverContent, PopoverBody } from '@chakra-ui/react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { showToast } from "@/components/ui/toaster"
+import {
+  Box,
+  Flex,
+  Text,
+  IconButton,
+  Input,
+  Popover,
+  Separator,
+  Portal,
+} from '@chakra-ui/react';
+import { Tooltip } from '@/components/ui/tooltip';
 import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
@@ -20,6 +32,23 @@ import { getAppVersion } from '../utils/version';
 import { taskTimerService, TimerState } from '../services/taskTimer';
 import { extractIndexPrefix, getAllIndexKeys } from '../utils/indexPrefix';
 import { joinPath } from '../utils/path';
+import {
+  DF_SESSION_RAIL_BG,
+  DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG,
+  docuFramePalette,
+} from '../docuFrameColors';
+
+/** No blue Chakra/Ark focus ring — toolbar + transfer popovers use flat chrome */
+const suppressFocusRing = {
+  outline: 'none',
+  boxShadow: 'none',
+} as const;
+
+/** Function row: ~10px shorter strip + matching icon hit targets */
+const FN_TOOLBAR_ROW_H = '40px';
+const FN_TOOLBAR_BTN = '32px';
+const FN_TOOLBAR_ICON = 18;
+const FN_TOOLBAR_SEP_H = '24px';
 
 // Add client search shortcut functionality
 const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) => {
@@ -93,20 +122,55 @@ const TransferDropdownMenu: React.FC<{
   const [templateMode, setTemplateMode] = useState<'dropdown' | 'custom'>('dropdown');
   const [indexPopoverOpen, setIndexPopoverOpen] = useState(false);
   const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
+  const indexColRef = useRef<HTMLDivElement>(null);
+  const templateColRef = useRef<HTMLDivElement>(null);
+  const [indexColPx, setIndexColPx] = useState<number | null>(null);
+  const [templateColPx, setTemplateColPx] = useState<number | null>(null);
 
-  // Default index to "AA" when menu opens
+  // Default index to "AA" when panel opens; close nested popovers when panel closes
   useEffect(() => {
     if (isOpen && transferSelectedIndex === null) {
       setTransferSelectedIndex('AA');
     }
+    if (!isOpen) {
+      setIndexPopoverOpen(false);
+      setTemplatePopoverOpen(false);
+      setIndexMode('dropdown');
+      setTemplateMode('dropdown');
+    }
   }, [isOpen, transferSelectedIndex, setTransferSelectedIndex]);
 
-  const menuListBg = useColorModeValue('white', 'gray.800');
-  const menuListBorder = useColorModeValue('gray.200', 'gray.700');
-  const menuItemBg = useColorModeValue('gray.50', 'gray.700');
-  const menuHoverBg = useColorModeValue('gray.100', 'gray.600');
-  const menuPlaceholderColor = useColorModeValue('gray.400', 'gray.500');
-  const inputBg = useColorModeValue('gray.50', 'gray.700');
+  // Match inner list width to the trigger column (sameWidth is unreliable nested in portalled popovers)
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setIndexColPx(null);
+      setTemplateColPx(null);
+      return;
+    }
+    const measure = () => {
+      if (indexColRef.current) {
+        setIndexColPx(Math.round(indexColRef.current.getBoundingClientRect().width));
+      }
+      if (templateColRef.current) {
+        setTemplateColPx(Math.round(templateColRef.current.getBoundingClientRect().width));
+      }
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (indexColRef.current) ro.observe(indexColRef.current);
+    if (templateColRef.current) ro.observe(templateColRef.current);
+    return () => ro.disconnect();
+  }, [isOpen, indexMode, templateMode]);
+
+  const p = docuFramePalette;
+  const panelBg = useColorModeValue(p.light.toolbar, p.dark.tabStrip);
+  const triggerBg = useColorModeValue(p.light.tableHeader, p.dark.tabInactive);
+  const menuListBg = useColorModeValue(p.light.listRow, p.dark.tabStrip);
+  const menuListBorder = useColorModeValue(p.light.border, p.dark.border);
+  const menuHoverBg = useColorModeValue(p.light.rowHover, p.dark.chromeHover);
+  const menuPlaceholderColor = useColorModeValue(p.light.subtext, p.dark.subtext);
+  const inputBg = useColorModeValue(p.light.listRow, p.dark.listRow);
+  const labelColor = useColorModeValue('gray.800', 'gray.100');
 
   const indexKeys = useMemo(() => {
     const keys = getAllIndexKeys().filter(k => k !== 'Other');
@@ -161,306 +225,341 @@ const TransferDropdownMenu: React.FC<{
     : 'Template';
 
   return (
-    <Menu closeOnSelect={false} isOpen={isOpen} onClose={handleMenuClose} onOpen={() => onOpenChange(true)} placement="bottom-end" strategy="fixed">
-      <Tooltip label="Transfer file from Downloads" placement="bottom" hasArrow>
-        <MenuButton
-          as={IconButton}
-          icon={<Icon as={Download} boxSize={5} />}
-          aria-label="Transfer file from Downloads"
-          variant="ghost"
-          size="sm"
-          borderRadius={0}
-          color={buttonColor}
-          _hover={{ bg: buttonHoverBg }}
-          h="40px"
-          w="40px"
-        />
-      </Tooltip>
-      <MenuList
-        bg={menuListBg}
-        borderColor={menuListBorder}
-        borderRadius={0}
-        minW="320px"
-        maxW="50ch"
-        px={3}
-        py={3}
-        zIndex={10000}
+    <Popover.Root
+      open={isOpen}
+      closeOnInteractOutside
+      onOpenChange={({ open }) => {
+        if (open) onOpenChange(true);
+        else handleMenuClose();
+      }}
+      positioning={{
+        placement: 'bottom-end',
+        strategy: 'fixed',
+      }}
+    >
+      <Tooltip
+        content="Transfer file from Downloads"
+        showArrow
+        openDelay={0}
+        closeDelay={0}
+        positioning={{
+          placement: "bottom",
+          gutter: 8,
+        }}
       >
-        <Flex gap={2} align="stretch" w="100%">
-          {/* Left column: 25% - Index selector */}
-          <Box w="25%" minW="0" onClick={(e) => e.stopPropagation()}>
-            {indexMode === 'dropdown' ? (
-              <Popover isOpen={indexPopoverOpen} onOpen={() => setIndexPopoverOpen(true)} onClose={() => setIndexPopoverOpen(false)} placement="bottom-start" closeOnBlur={true}>
-                <PopoverTrigger>
-                  <Flex
-                    as="button"
-                    type="button"
-                    w="100%"
-                    h="40px"
-                    minH="40px"
-                    align="center"
-                    justify="space-between"
-                    gap={1}
-                    py={2}
-                    px={3}
-                    fontSize="sm"
-                    borderRadius={0}
-                    bg={menuItemBg}
-                    border="1px solid"
-                    borderColor={menuListBorder}
-                    cursor="pointer"
-                    _hover={{ bg: menuHoverBg }}
-                    _focus={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
-                    onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setIndexPopoverOpen(false); setIndexMode('custom'); setTransferCustomIndex(transferSelectedIndex || ''); }}
-                    title="Double-click to edit manually"
-                  >
-                    <Text noOfLines={1} fontSize="sm" fontWeight="medium">
-                      {indexDisplay}
-                    </Text>
-                    <ChevronDown size={14} style={{ flexShrink: 0 }} />
-                  </Flex>
-                </PopoverTrigger>
-                <PopoverContent w="auto" minW="120px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }} zIndex={10001}>
-                  <PopoverBody p={0}>
-                    <Box display="flex" flexDirection="column" py={1}>
-                      {indexKeys.map((index) => (
-                        <Box
-                          key={index}
-                          as="button"
-                          type="button"
-                          w="100%"
-                          textAlign="left"
-                          py={2}
-                          px={3}
-                          fontSize="sm"
-                          bg="transparent"
-                          cursor="pointer"
-                          border="none"
-                          onClick={() => handleSelectIndex(index)}
-                          _hover={{ bg: menuHoverBg }}
-                          _focus={{ bg: menuHoverBg }}
-                        >
-                          {index}
-                        </Box>
-                      ))}
-                    </Box>
-                  </PopoverBody>
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <Box w="100%" h="40px" minH="40px">
-                <Input
-                  size="sm"
-                  w="100%"
-                  h="100%"
-                  minH="40px"
-                  py={2}
-                  px={3}
-                  fontSize="sm"
-                  borderRadius={0}
-                  bg={inputBg}
-                  border="1px solid"
-                  borderColor={menuListBorder}
-                  placeholder="Custom index"
-                  value={transferCustomIndex}
-                  onChange={(e) => setTransferCustomIndex(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      const t = transferCustomIndex.trim();
-                      if (t) setTransferSelectedIndex(t);
-                      setIndexMode('dropdown');
-                      setTransferCustomIndex('');
-                    }
-                  }}
-                  onBlur={() => {
-                    const t = transferCustomIndex.trim();
-                    if (t) setTransferSelectedIndex(t);
-                    setIndexMode('dropdown');
-                    setTransferCustomIndex('');
-                  }}
-                  _placeholder={{ color: menuPlaceholderColor }}
-                />
-              </Box>
-            )}
-          </Box>
-
-          {/* Right column: 75% - Template/filename selector */}
-          <Box w="75%" minW="0" onClick={(e) => e.stopPropagation()}>
-            {templateMode === 'dropdown' ? (
-              <Popover isOpen={templatePopoverOpen} onOpen={() => setTemplatePopoverOpen(true)} onClose={() => setTemplatePopoverOpen(false)} placement="bottom-start" closeOnBlur={true}>
-                <PopoverTrigger>
-                  <Flex
-                    as="button"
-                    type="button"
-                    w="100%"
-                    h="40px"
-                    minH="40px"
-                    align="center"
-                    justify="space-between"
-                    gap={1}
-                    py={2}
-                    px={3}
-                    fontSize="sm"
-                    borderRadius={0}
-                    bg={menuItemBg}
-                    border="1px solid"
-                    borderColor={menuListBorder}
-                    cursor="pointer"
-                    _hover={{ bg: menuHoverBg }}
-                    _focus={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
-                    disabled={!effectiveIndex}
-                    opacity={!effectiveIndex ? 0.5 : 1}
-                    onDoubleClick={(e) => { if (effectiveIndex) { e.preventDefault(); e.stopPropagation(); setTemplatePopoverOpen(false); setTemplateMode('custom'); } }}
-                    title="Double-click to edit manually"
-                  >
-                    <Text noOfLines={1} fontSize="sm" fontWeight="medium">
-                      {!effectiveIndex ? 'Select index first' : templateDisplay}
-                    </Text>
-                    <ChevronDown size={14} style={{ flexShrink: 0 }} />
-                  </Flex>
-                </PopoverTrigger>
-                <PopoverContent w="auto" minW="200px" maxW="400px" maxH="240px" overflowY="auto" borderColor={menuListBorder} bg={menuListBg} _focus={{ outline: 'none' }} zIndex={10001}>
-                  <PopoverBody p={0}>
-                    <Box display="flex" flexDirection="column" py={1}>
-                      {templates.length === 0 ? (
-                        <Box py={2} px={3} fontSize="sm" color={menuPlaceholderColor}>
-                          No templates
-                        </Box>
-                      ) : (
-                        templates.map((t) => {
-                          const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
-                          return (
-                            <Box
-                              key={t.command}
-                              as="button"
-                              type="button"
-                              w="100%"
-                              textAlign="left"
-                              py={2}
-                              px={3}
-                              fontSize="sm"
-                              bg="transparent"
-                              cursor="pointer"
-                              border="none"
-                              onClick={() => handleTransferTemplate(t.command)}
-                              _hover={{ bg: menuHoverBg }}
-                              _focus={{ bg: menuHoverBg }}
-                              title={t.filename}
-                            >
-                              {displayText}
-                            </Box>
-                          );
-                        })
-                      )}
-                    </Box>
-                  </PopoverBody>
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <Box w="100%" h="40px" minH="40px">
-                <Input
-                  size="sm"
-                  w="100%"
-                  h="100%"
-                  minH="40px"
-                  py={2}
-                  px={3}
-                  fontSize="sm"
-                  borderRadius={0}
-                  bg={inputBg}
-                  border="1px solid"
-                  borderColor={menuListBorder}
-                  placeholder="Custom filename"
-                  value={transferManualFilename}
-                  onChange={(e) => setTransferManualFilename(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      const trimmed = transferManualFilename.trim();
-                      if (trimmed && effectiveIndex) {
-                        handleTransferManual();
+        <Box display="inline-flex">
+          <Popover.Trigger asChild>
+            <IconButton
+              aria-label="Transfer file from Downloads"
+              variant="ghost"
+              size="sm"
+              borderRadius={0}
+              color={buttonColor}
+              _hover={{ bg: buttonHoverBg }}
+              _focus={suppressFocusRing}
+              _focusVisible={suppressFocusRing}
+              h={FN_TOOLBAR_BTN}
+              w={FN_TOOLBAR_BTN}
+            >
+              <Download size={FN_TOOLBAR_ICON} strokeWidth={2} />
+            </IconButton>
+          </Popover.Trigger>
+        </Box>
+      </Tooltip>
+      <Portal>
+        <Popover.Positioner>
+          <Popover.Content
+            minW="320px"
+            maxW="min(90vw, 520px)"
+            borderWidth="1px"
+            borderStyle="solid"
+            borderColor={menuListBorder}
+            bg={panelBg}
+            zIndex={10000}
+            _focus={suppressFocusRing}
+            _focusVisible={suppressFocusRing}
+            p={2}
+          >
+            <Flex gap={2} align="stretch" w="100%">
+              {/* Left column: 25% - Index selector */}
+              <Box ref={indexColRef} w="25%" minW="0" onClick={(e) => e.stopPropagation()}>
+                {indexMode === 'dropdown' ? (
+                  <Popover.Root
+                    open={indexPopoverOpen}
+                    closeOnInteractOutside={true}
+                    onOpenChange={e => {
+                      if (e.open) {
+                        setIndexPopoverOpen(true);
                       } else {
+                        setIndexPopoverOpen(false);
+                      }
+                    }}
+                    positioning={{
+                      placement: 'bottom-start',
+                      gutter: 0,
+                    }}>
+                    <Popover.Trigger asChild>
+                      <Flex
+                        w="100%"
+                        h="40px"
+                        minH="40px"
+                        align="center"
+                        justify="space-between"
+                        gap={1}
+                        py={2}
+                        px={3}
+                        fontSize="sm"
+                        borderRadius={0}
+                        bg={triggerBg}
+                        border="1px solid"
+                        borderColor={menuListBorder}
+                        cursor="pointer"
+                        _hover={{ bg: menuHoverBg }}
+                        _focus={suppressFocusRing}
+                        _focusVisible={suppressFocusRing}
+                        title="Double-click to edit manually"
+                        asChild><button
+                          type="button"
+                          onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); setIndexPopoverOpen(false); setIndexMode('custom'); setTransferCustomIndex(transferSelectedIndex || ''); }}>
+                          <Text lineClamp={1} fontSize="sm" fontWeight="medium" color={labelColor}>
+                            {indexDisplay}
+                          </Text>
+                          <ChevronDown size={14} style={{ flexShrink: 0 }} />
+                        </button></Flex>
+                    </Popover.Trigger>
+                    <Popover.Positioner>
+                      <Popover.Content
+                        w={indexColPx != null ? `${indexColPx}px` : undefined}
+                        minW={indexColPx != null ? `${indexColPx}px` : undefined}
+                        maxW={indexColPx != null ? `${indexColPx}px` : undefined}
+                        maxH="240px"
+                        overflowY="auto"
+                        borderWidth="1px"
+                        borderStyle="solid"
+                        borderColor={menuListBorder}
+                        bg={menuListBg}
+                        zIndex={10001}
+                        _focus={suppressFocusRing}
+                        _focusVisible={suppressFocusRing}
+                      >
+                        <Popover.Body p={0}>
+                          <Box display="flex" flexDirection="column" py={1}>
+                            {indexKeys.map((index) => (
+                              <Box
+                                key={index}
+                                w="100%"
+                                textAlign="left"
+                                py={2}
+                                px={3}
+                                fontSize="sm"
+                                color={labelColor}
+                                bg="transparent"
+                                cursor="pointer"
+                                border="none"
+                                _hover={{ bg: menuHoverBg }}
+                                _focus={suppressFocusRing}
+                                _focusVisible={{ ...suppressFocusRing, bg: menuHoverBg }}
+                                asChild
+                              >
+                                <button type="button" onClick={() => handleSelectIndex(index)}>
+                                  {index}
+                                </button>
+                              </Box>
+                            ))}
+                          </Box>
+                        </Popover.Body>
+                      </Popover.Content>
+                    </Popover.Positioner>
+                  </Popover.Root>
+                ) : (
+                  <Box w="100%" h="40px" minH="40px">
+                    <Input
+                      size="sm"
+                      w="100%"
+                      h="100%"
+                      minH="40px"
+                      py={2}
+                      px={3}
+                      fontSize="sm"
+                      borderRadius={0}
+                      bg={inputBg}
+                      border="1px solid"
+                      borderColor={menuListBorder}
+                      placeholder="Custom index"
+                      value={transferCustomIndex}
+                      onChange={(e) => setTransferCustomIndex(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const t = transferCustomIndex.trim();
+                          if (t) setTransferSelectedIndex(t);
+                          setIndexMode('dropdown');
+                          setTransferCustomIndex('');
+                        }
+                      }}
+                      onBlur={() => {
+                        const t = transferCustomIndex.trim();
+                        if (t) setTransferSelectedIndex(t);
+                        setIndexMode('dropdown');
+                        setTransferCustomIndex('');
+                      }}
+                      _placeholder={{ color: menuPlaceholderColor }}
+                      _focus={suppressFocusRing}
+                      _focusVisible={suppressFocusRing}
+                    />
+                  </Box>
+                )}
+              </Box>
+
+              {/* Right column: 75% - Template/filename selector */}
+              <Box ref={templateColRef} w="75%" minW="0" onClick={(e) => e.stopPropagation()}>
+                {templateMode === 'dropdown' ? (
+                  <Popover.Root
+                    open={templatePopoverOpen}
+                    closeOnInteractOutside={true}
+                    onOpenChange={e => {
+                      if (e.open) {
+                        setTemplatePopoverOpen(true);
+                      } else {
+                        setTemplatePopoverOpen(false);
+                      }
+                    }}
+                    positioning={{
+                      placement: 'bottom-start',
+                      gutter: 0,
+                    }}>
+                    <Popover.Trigger asChild>
+                      <Flex
+                        w="100%"
+                        h="40px"
+                        minH="40px"
+                        align="center"
+                        justify="space-between"
+                        gap={1}
+                        py={2}
+                        px={3}
+                        fontSize="sm"
+                        borderRadius={0}
+                        bg={triggerBg}
+                        border="1px solid"
+                        borderColor={menuListBorder}
+                        cursor="pointer"
+                        _hover={{ bg: menuHoverBg }}
+                        _focus={suppressFocusRing}
+                        _focusVisible={suppressFocusRing}
+                        opacity={!effectiveIndex ? 0.5 : 1}
+                        title="Double-click to edit manually"
+                        asChild><button
+                          type="button"
+                          disabled={!effectiveIndex}
+                          onDoubleClick={(e) => { if (effectiveIndex) { e.preventDefault(); e.stopPropagation(); setTemplatePopoverOpen(false); setTemplateMode('custom'); } }}>
+                          <Text lineClamp={1} fontSize="sm" fontWeight="medium" color={labelColor}>
+                            {!effectiveIndex ? 'Select index first' : templateDisplay}
+                          </Text>
+                          <ChevronDown size={14} style={{ flexShrink: 0 }} />
+                        </button></Flex>
+                    </Popover.Trigger>
+                    <Popover.Positioner>
+                      <Popover.Content
+                        w={templateColPx != null ? `${templateColPx}px` : undefined}
+                        minW={templateColPx != null ? `${templateColPx}px` : undefined}
+                        maxW={templateColPx != null ? `${templateColPx}px` : undefined}
+                        maxH="240px"
+                        overflowY="auto"
+                        borderWidth="1px"
+                        borderStyle="solid"
+                        borderColor={menuListBorder}
+                        bg={menuListBg}
+                        zIndex={10001}
+                        _focus={suppressFocusRing}
+                        _focusVisible={suppressFocusRing}
+                      >
+                        <Popover.Body p={0}>
+                          <Box display="flex" flexDirection="column" py={1}>
+                            {templates.length === 0 ? (
+                              <Box py={2} px={3} fontSize="sm" color={menuPlaceholderColor}>
+                                No templates
+                              </Box>
+                            ) : (
+                              templates.map((t) => {
+                                const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
+                                return (
+                                  <Box
+                                    key={t.command}
+                                    w="100%"
+                                    textAlign="left"
+                                    py={2}
+                                    px={3}
+                                    fontSize="sm"
+                                    color={labelColor}
+                                    bg="transparent"
+                                    cursor="pointer"
+                                    border="none"
+                                    _hover={{ bg: menuHoverBg }}
+                                    _focus={suppressFocusRing}
+                                    _focusVisible={{ ...suppressFocusRing, bg: menuHoverBg }}
+                                    title={t.filename}
+                                    asChild
+                                  >
+                                    <button type="button" onClick={() => handleTransferTemplate(t.command)}>
+                                      <Text as="span" lineClamp={2} fontSize="sm" textAlign="left" color={labelColor}>
+                                        {displayText}
+                                      </Text>
+                                    </button>
+                                  </Box>
+                                );
+                              })
+                            )}
+                          </Box>
+                        </Popover.Body>
+                      </Popover.Content>
+                    </Popover.Positioner>
+                  </Popover.Root>
+                ) : (
+                  <Box w="100%" h="40px" minH="40px">
+                    <Input
+                      size="sm"
+                      w="100%"
+                      h="100%"
+                      minH="40px"
+                      py={2}
+                      px={3}
+                      fontSize="sm"
+                      borderRadius={0}
+                      bg={inputBg}
+                      border="1px solid"
+                      borderColor={menuListBorder}
+                      placeholder="Custom filename"
+                      value={transferManualFilename}
+                      onChange={(e) => setTransferManualFilename(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const trimmed = transferManualFilename.trim();
+                          if (trimmed && effectiveIndex) {
+                            handleTransferManual();
+                          } else {
+                            setTemplateMode('dropdown');
+                            setTransferManualFilename('');
+                          }
+                        }
+                      }}
+                      onBlur={() => {
                         setTemplateMode('dropdown');
                         setTransferManualFilename('');
-                      }
-                    }
-                  }}
-                  onBlur={() => {
-                    setTemplateMode('dropdown');
-                    setTransferManualFilename('');
-                  }}
-                  _placeholder={{ color: menuPlaceholderColor }}
-                />
+                      }}
+                      _placeholder={{ color: menuPlaceholderColor }}
+                      _focus={suppressFocusRing}
+                      _focusVisible={suppressFocusRing}
+                    />
+                  </Box>
+                )}
               </Box>
-            )}
-          </Box>
-        </Flex>
-      </MenuList>
-    </Menu>
-  );
-};
-
-const GSTPreviewTooltip: React.FC<{ currentDirectory: string }> = ({ currentDirectory }) => {
-  const [preview, setPreview] = useState<{ original: string; preview: string }[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPreview(null);
-    setError(null);
-    setLoading(true);
-    window.electronAPI.executeCommand('gst_rename_preview', currentDirectory)
-      .then((result: any) => {
-        setLoading(false);
-        if (result && result.success && Array.isArray(result.files) && result.files.length > 0) {
-          setPreview(result.files);
-        } else {
-          setPreview([]);
-        }
-      })
-      .catch((_err: any) => {
-        setLoading(false);
-        setError('Failed to load preview');
-      });
-  }, [currentDirectory]);
-  
-  void error;
-
-  if (loading) return <Box p={2} fontSize="sm">Loading preview...</Box>;
-  if (error) return <Box p={2} color="red.400" fontSize="sm">{error}</Box>;
-  if (!preview || preview.length === 0) return <Box p={2} fontSize="sm">Rename files according to GST standards</Box>;
-
-  return (
-    <Box p={2} w="fit-content" overflowX="auto">
-      <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
-        {preview.map((item, idx) => (
-          <Box
-            key={idx}
-            fontSize="sm"
-            borderRadius="lg"
-            bg={useColorModeValue('gray.100', 'gray.700')}
-            px={3}
-            py={2}
-            boxShadow="sm"
-            borderWidth="1px"
-            borderColor={useColorModeValue('gray.200', 'gray.600')}
-            w="fit-content"
-            overflow="visible"
-            display="flex"
-            flexDirection="column"
-            gap={1}
-          >
-            <Text whiteSpace="normal" wordBreak="break-all" title={item.original} fontWeight="medium" overflow="visible">
-              {item.original}
-            </Text>
-            <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={item.preview} fontWeight="medium" overflow="visible">
-              {item.preview}
-            </Text>
-          </Box>
-        ))}
-      </Box>
-    </Box>
+            </Flex>
+          </Popover.Content>
+        </Popover.Positioner>
+      </Portal>
+    </Popover.Root>
   );
 };
 
@@ -491,7 +590,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setIsPreviewPaneOpen,
     sessionLayerViewEnabled,
     setSessionLayerViewEnabled,
-    isGroupedByIndex,
     isAIFileManagerOpen,
     setIsAIFileManagerOpen,
     addRecentlyTransferredFiles,
@@ -591,11 +689,13 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     extractedFiles: string[];
     sourceFiles: string[];
   } | null>(null);
-  const buttonHoverBg = useColorModeValue('gray.300', 'gray.700');
+  const buttonHoverBg = useColorModeValue('gray.300', 'rgba(255,255,255,0.08)');
   const dividerColor = useColorModeValue('#e2e8f0', 'gray.600');
-  const minimizedIconActiveBg = useColorModeValue('#64748b', 'blue.800');
-  const minimizedIconColor = useColorModeValue('#e2e8f0', 'gray.300');
-  const minimizedIconHoverBg = useColorModeValue('#5a6c7d', 'blue.700');
+  const toggleActiveBg = DF_SESSION_RAIL_BG;
+  const toggleActiveHoverBg = DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG;
+  const minimizedIconActiveBg = DF_SESSION_RAIL_BG;
+  const minimizedIconColor = 'white';
+  const minimizedIconHoverBg = DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG;
 
   const handleAction = async (action: string) => {
     if (action === 'transfer_mapping') {
@@ -859,7 +959,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         } else {
           addLog(result.message, 'error');
           setStatus('Transfer Latest failed', 'error');
-          toast({
+          showToast({
             title: 'Transfer Failed',
             description: result.message,
             status: 'error',
@@ -873,7 +973,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         addLog(errorMsg, 'error');
         setStatus('Transfer Latest failed', 'error');
         console.error('[FunctionPanels] Transfer Latest error:', error);
-        toast({
+        showToast({
           title: 'Transfer Failed',
           description: errorMsg,
           status: 'error',
@@ -1121,9 +1221,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       .filter(k => !indexesInDir.has(k))
       .sort((a, b) => a.localeCompare(b));
   }, [folderItems]);
-
-  const toast = useToast();
-
   // Handle transfer from panel (two-phase dropdown)
   const handleTransferFromPanel = useCallback(async (opts: { command?: string; newName?: string }) => {
     try {
@@ -1151,7 +1248,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       } else {
         addLog(result.message, 'error');
         setStatus('Transfer failed', 'error');
-        toast({
+        showToast({
           title: 'Transfer Failed',
           description: result.message,
           status: 'error',
@@ -1164,7 +1261,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Transfer failed: ${errorMessage}`, 'error');
       setStatus('Transfer failed', 'error');
-      toast({
+      showToast({
         title: 'Transfer Failed',
         description: errorMessage,
         status: 'error',
@@ -1173,7 +1270,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         position: 'top',
       });
     }
-  }, [currentDirectory, addLog, setStatus, setFolderItems, toast]);
+  }, [currentDirectory, addLog, setStatus, setFolderItems]);
 
   // Icon-only function button component
   const FunctionButton: React.FC<{
@@ -1189,61 +1286,30 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     color = 'blue.400',
     isDisabled = false
   }) => {
-    const { currentDirectory } = useAppContext();
-    const [showPreview, setShowPreview] = useState(false);
-    
-    if (action === 'gst_rename') {
-      return (
-        <Box onMouseEnter={() => setShowPreview(true)} onMouseLeave={() => setShowPreview(false)}>
-          <Tooltip
-            isOpen={showPreview}
-            placement="bottom"
-            hasArrow
-            label={<GSTPreviewTooltip currentDirectory={currentDirectory} />}
-            bg={useColorModeValue('white', 'gray.800')}
-            color={useColorModeValue('gray.800', 'white')}
-            p={0}
-            minW="340px"
-            borderRadius={0}
-            boxShadow="lg"
-          >
-            <IconButton
-              aria-label={description}
-              icon={<Icon as={icon} boxSize={5} />}
-              size="sm"
-              variant="ghost"
-              borderRadius={0}
-              color={isDisabled ? 'gray.400' : color}
-              onClick={() => !isDisabled && handleAction(action)}
-              isDisabled={isDisabled}
-              opacity={isDisabled ? 0.5 : 1}
-              cursor={isDisabled ? 'not-allowed' : 'pointer'}
-              _hover={{ bg: isDisabled ? undefined : buttonHoverBg }}
-              h="40px"
-              w="40px"
-            />
-          </Tooltip>
-        </Box>
-      );
-    }
-    
     return (
-      <Tooltip label={description} placement="bottom" hasArrow>
+      <Tooltip
+        content={description}
+        showArrow
+        openDelay={0}
+        closeDelay={0}
+        positioning={{
+          placement: "bottom",
+          gutter: 8,
+        }}
+      >
         <IconButton
           aria-label={description}
-          icon={<Icon as={icon} boxSize={5} />}
           size="sm"
           variant="ghost"
           borderRadius={0}
           color={isDisabled ? 'gray.400' : color}
           onClick={() => !isDisabled && handleAction(action)}
-          isDisabled={isDisabled}
+          disabled={isDisabled}
           opacity={isDisabled ? 0.5 : 1}
           cursor={isDisabled ? 'not-allowed' : 'pointer'}
           _hover={{ bg: isDisabled ? undefined : buttonHoverBg }}
-          h="40px"
-          w="40px"
-        />
+          h={FN_TOOLBAR_BTN}
+          w={FN_TOOLBAR_BTN}>{React.createElement(icon, { size: FN_TOOLBAR_ICON, strokeWidth: 2 })}</IconButton>
       </Tooltip>
     );
   };
@@ -1264,381 +1330,402 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     }
   };
 
-  return <>
-    <Flex 
-      direction="row" 
-      align="center" 
-      h="50px" 
-      px={2} 
-      gap={1}
-      borderRadius={0}
-      bg={useColorModeValue('#f8fafc', 'gray.900')}
-    >
-      {/* GST Functions */}
-      <Flex gap={1}>
-        <FunctionButton 
-          icon={Download} 
-          action="gst_transfer" 
-          description="Transfer latest file from DL to current path" 
-          color="blue.600" 
-        />
-        <FunctionButton 
-          icon={FileEdit} 
-          action="gst_rename" 
-          description="Rename files according to GST standards" 
-          color="green.400" 
-        />
-        <FunctionButton 
-          icon={Calculator} 
-          action="late_claims" 
-          description="Calculate GST late claims adjustments" 
-          color="orange.400" 
-        />
-      </Flex>
-      
-      <Divider orientation="vertical" borderColor={dividerColor} h="30px" />
-      
-      {/* File Management Functions */}
-      <Flex gap={1}>
-        <FunctionButton 
-          icon={FilePlus2} 
-          action="merge_pdfs" 
-          description="Combine multiple PDF files into one document" 
-          color="red.400" 
-        />
-        <FunctionButton 
-          icon={Archive} 
-          action="extract_zips" 
-          description="Extract all ZIP files in current directory" 
-          color="orange.400" 
-        />
-        <FunctionButton 
-          icon={Mail} 
-          action="extract_eml" 
-          description="Extract attachments from EML files" 
-          color="cyan.400" 
-        />
-        <FunctionButton 
-          icon={Settings} 
-          action="transfer_mapping" 
-          description="Edit transfer command mappings" 
-          color="gray.600" 
-        />
-      </Flex>
-      
-      <Divider orientation="vertical" borderColor={dividerColor} h="30px" />
-      
-      {/* Utilities Functions */}
-      <Flex gap={1}>
-        <FunctionButton 
-          icon={Wand2} 
-          action="ai_editor" 
-          description="Email AI editor for content generation" 
-          color="yellow.400" 
-        />
-        <FunctionButton 
-          icon={Sparkles} 
-          action="ai_templater" 
-          description="Create AI templates for content generation" 
-          color="purple.400" 
-        />
-        <FunctionButton 
-          icon={Brain} 
-          action="analyze_docs" 
-          description="AI-powered document analysis and insights" 
-          color="blue.400" 
-        />
-        <FunctionButton 
-          icon={FileSpreadsheet} 
-          action="pdf_to_csv" 
-          description="Convert PDF tables to CSV format" 
-          color="green.400" 
-        />
-        <FunctionButton 
-          icon={FileEdit} 
-          action="manage_templates" 
-          description="Create, edit, and manage template YAMLs" 
-          color="indigo.400" 
-        />
-        <FunctionButton 
-          icon={Clock} 
-          action="task_timer" 
-          description="Open floating task timer window" 
-          color="green.400" 
-        />
-        <FunctionButton 
-          icon={RotateCcw} 
-          action="update" 
-          description="Update application and components" 
-          color="pink.400" 
-        />
-      </Flex>
-      
-      {/* Minimized Dialogs - if any */}
-      {minimizedDialogs.length > 0 && (
-        <>
-          <Divider orientation="vertical" borderColor={dividerColor} h="30px" />
-          <Flex gap={0.5} align="center">
-            {minimizedDialogs.map((dialog) => {
-              const getDialogIcon = (type: DialogType) => {
-                switch (type) {
-                  case 'documentAnalysis':
-                    return Brain;
-                  case 'aiEditor':
-                    return Mail;
-                  case 'aiTemplater':
-                    return FileType;
-                  case 'pdfToCsv':
-                    return FileSpreadsheet;
-                  case 'manageTemplates':
-                    return FileText;
-                  default:
-                    return FileText;
-                }
-              };
-              const DialogIcon = getDialogIcon(dialog.type);
-              return (
-                <Box
-                  key={dialog.type}
-                  position="relative"
-                  _hover={{
-                    '& .close-button': {
-                      opacity: 1,
-                    },
-                  }}
-                >
-                  <Tooltip label={dialog.label} placement="bottom" hasArrow>
-                    <IconButton
-                      aria-label={dialog.label}
-                      icon={<Icon as={DialogIcon} boxSize={5} />}
-                      size="sm"
-                      variant="solid"
-                      borderRadius={0}
-                      bg={minimizedIconActiveBg}
-                      color={minimizedIconColor}
-                      onClick={() => handleRestoreDialog(dialog.type)}
-                      _hover={{ bg: minimizedIconHoverBg }}
-                      h="40px"
-                      w="40px"
-                    />
-                  </Tooltip>
-                  <IconButton
-                    aria-label={`Close ${dialog.label}`}
-                    icon={<X size={10} />}
-                    size="xs"
-                    position="absolute"
-                    top={-1}
-                    right={-1}
-                    variant="solid"
-                    colorScheme="red"
-                    borderRadius={0}
-                    minW="16px"
-                    h="16px"
-                    opacity={0}
-                    className="close-button"
-                    transition="opacity 0.2s"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseMinimizedDialog(dialog.type);
+  return (
+    <>
+      <Flex 
+        direction="row" 
+        align="center" 
+        h={FN_TOOLBAR_ROW_H} 
+        px={2} 
+        gap={1}
+        borderRadius={0}
+        bg="df.toolbar"
+      >
+        {/* GST Functions */}
+        <Flex gap={1}>
+          <FunctionButton 
+            icon={Download} 
+            action="gst_transfer" 
+            description="Transfer latest file from DL to current path" 
+            color="blue.600" 
+          />
+          <FunctionButton 
+            icon={FileEdit} 
+            action="gst_rename" 
+            description="Rename files according to GST standards" 
+            color="green.400" 
+          />
+          <FunctionButton 
+            icon={Calculator} 
+            action="late_claims" 
+            description="Calculate GST late claims adjustments" 
+            color="orange.400" 
+          />
+        </Flex>
+        
+        <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
+        
+        {/* File Management Functions */}
+        <Flex gap={1}>
+          <FunctionButton 
+            icon={FilePlus2} 
+            action="merge_pdfs" 
+            description="Combine multiple PDF files into one document" 
+            color="red.400" 
+          />
+          <FunctionButton 
+            icon={Archive} 
+            action="extract_zips" 
+            description="Extract all ZIP files in current directory" 
+            color="orange.400" 
+          />
+          <FunctionButton 
+            icon={Mail} 
+            action="extract_eml" 
+            description="Extract attachments from EML files" 
+            color="cyan.400" 
+          />
+          <FunctionButton 
+            icon={Settings} 
+            action="transfer_mapping" 
+            description="Edit transfer command mappings" 
+            color="gray.600" 
+          />
+        </Flex>
+        
+        <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
+        
+        {/* Utilities Functions */}
+        <Flex gap={1}>
+          <FunctionButton 
+            icon={Wand2} 
+            action="ai_editor" 
+            description="Email AI editor for content generation" 
+            color="yellow.400" 
+          />
+          <FunctionButton 
+            icon={Sparkles} 
+            action="ai_templater" 
+            description="Create AI templates for content generation" 
+            color="purple.400" 
+          />
+          <FunctionButton 
+            icon={Brain} 
+            action="analyze_docs" 
+            description="AI-powered document analysis and insights" 
+            color="blue.400" 
+          />
+          <FunctionButton 
+            icon={FileSpreadsheet} 
+            action="pdf_to_csv" 
+            description="Convert PDF tables to CSV format" 
+            color="green.400" 
+          />
+          <FunctionButton 
+            icon={FileEdit} 
+            action="manage_templates" 
+            description="Create, edit, and manage template YAMLs" 
+            color="indigo.400" 
+          />
+          <FunctionButton 
+            icon={Clock} 
+            action="task_timer" 
+            description="Open floating task timer window" 
+            color="green.400" 
+          />
+          <FunctionButton 
+            icon={RotateCcw} 
+            action="update" 
+            description="Update application and components" 
+            color="pink.400" 
+          />
+        </Flex>
+        
+        {/* Minimized Dialogs - if any */}
+        {minimizedDialogs.length > 0 && (
+          <>
+            <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
+            <Flex gap={0.5} align="center">
+              {minimizedDialogs.map((dialog) => {
+                const getDialogIcon = (type: DialogType) => {
+                  switch (type) {
+                    case 'documentAnalysis':
+                      return Brain;
+                    case 'aiEditor':
+                      return Mail;
+                    case 'aiTemplater':
+                      return FileType;
+                    case 'pdfToCsv':
+                      return FileSpreadsheet;
+                    case 'manageTemplates':
+                      return FileText;
+                    default:
+                      return FileText;
+                  }
+                };
+                const DialogIcon = getDialogIcon(dialog.type);
+                return (
+                  <Box
+                    key={dialog.type}
+                    position="relative"
+                    _hover={{
+                      '& .close-button': {
+                        opacity: 1,
+                      },
                     }}
-                  />
-                </Box>
-              );
-            })}
-          </Flex>
-        </>
+                  >
+                    <Tooltip
+                      content={dialog.label}
+                      showArrow
+                      openDelay={0}
+                      closeDelay={0}
+                      positioning={{ placement: "bottom", gutter: 8 }}
+                    >
+                      <IconButton
+                        aria-label={dialog.label}
+                        size="sm"
+                        variant="solid"
+                        borderRadius={0}
+                        bg={minimizedIconActiveBg}
+                        color={minimizedIconColor}
+                        onClick={() => handleRestoreDialog(dialog.type)}
+                        _hover={{ bg: minimizedIconHoverBg }}
+                        h={FN_TOOLBAR_BTN}
+                        w={FN_TOOLBAR_BTN}>{React.createElement(DialogIcon, { size: FN_TOOLBAR_ICON, strokeWidth: 2 })}</IconButton>
+                    </Tooltip>
+                    <IconButton
+                      aria-label={`Close ${dialog.label}`}
+                      size="xs"
+                      position="absolute"
+                      top={-1}
+                      right={-1}
+                      variant="solid"
+                      colorPalette="red"
+                      borderRadius="full"
+                      w="16px"
+                      minW="16px"
+                      h="16px"
+                      p={0}
+                      opacity={0}
+                      className="close-button"
+                      transition="opacity 0.2s"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCloseMinimizedDialog(dialog.type);
+                      }}><X size={10} /></IconButton>
+                  </Box>
+                );
+              })}
+            </Flex>
+          </>
+        )}
+        
+        {/* Spacer */}
+        <Box flex="1" />
+        
+        {/* Folder Management Buttons - Same style as Settings */}
+        <Flex gap={0.5} align="center">
+          <Tooltip
+            content="Toggle Layer View"
+            showArrow
+            openDelay={0}
+            closeDelay={0}
+            positioning={{ placement: "bottom", gutter: 8 }}
+          >
+            <IconButton
+              aria-label="Toggle layer view"
+              size="sm"
+              variant={sessionLayerViewEnabled ? 'solid' : 'ghost'}
+              borderRadius={0}
+              bg={sessionLayerViewEnabled ? toggleActiveBg : undefined}
+              color={sessionLayerViewEnabled ? 'white' : buttonColor}
+              onClick={() => {
+                const next = !sessionLayerViewEnabled;
+                setSessionLayerViewEnabled(next);
+                addLog(`Layer view ${next ? 'on' : 'off'} (session)`);
+                setStatus(`Layer view ${next ? 'on' : 'off'} for this session`, 'info');
+              }}
+              _hover={{ bg: sessionLayerViewEnabled ? toggleActiveHoverBg : buttonHoverBg }}
+              _focus={suppressFocusRing}
+              _focusVisible={suppressFocusRing}
+              h={FN_TOOLBAR_BTN}
+              w={FN_TOOLBAR_BTN}><Layers size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
+          </Tooltip>
+
+          <Tooltip
+            content={isPreviewPaneOpen ? 'Hide preview pane' : 'Show preview pane'}
+            showArrow
+            openDelay={0}
+            closeDelay={0}
+            positioning={{ placement: 'bottom', gutter: 8 }}
+          >
+            <IconButton
+              aria-label="Preview pane"
+              size="sm"
+              variant={isPreviewPaneOpen ? "solid" : "ghost"}
+              borderRadius={0}
+              bg={isPreviewPaneOpen ? toggleActiveBg : undefined}
+              color={isPreviewPaneOpen ? "white" : buttonColor}
+              onClick={() => {
+                setIsPreviewPaneOpen(!isPreviewPaneOpen);
+                addLog(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`);
+                setStatus(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`, 'info');
+              }}
+              _hover={{ bg: isPreviewPaneOpen ? toggleActiveHoverBg : buttonHoverBg }}
+              _focus={suppressFocusRing}
+              _focusVisible={suppressFocusRing}
+              h={FN_TOOLBAR_BTN}
+              w={FN_TOOLBAR_BTN}><Columns2 size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
+          </Tooltip>
+
+          <Tooltip
+            content={isAIFileManagerOpen ? 'Hide AI file manager' : 'Show AI file manager'}
+            showArrow
+            openDelay={0}
+            closeDelay={0}
+            positioning={{ placement: "bottom", gutter: 8 }}
+          >
+            <IconButton
+              aria-label="AI file manager"
+              size="sm"
+              variant={isAIFileManagerOpen ? "solid" : "ghost"}
+              borderRadius={0}
+              bg={isAIFileManagerOpen ? toggleActiveBg : undefined}
+              color={isAIFileManagerOpen ? "white" : buttonColor}
+              onClick={() => {
+                setIsAIFileManagerOpen(!isAIFileManagerOpen);
+                addLog(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`);
+                setStatus(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`, 'info');
+              }}
+              _hover={{ bg: isAIFileManagerOpen ? toggleActiveHoverBg : buttonHoverBg }}
+              _focus={suppressFocusRing}
+              _focusVisible={suppressFocusRing}
+              h={FN_TOOLBAR_BTN}
+              w={FN_TOOLBAR_BTN}><Brain size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
+          </Tooltip>
+
+          <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
+
+          <TransferDropdownMenu
+            isOpen={isTransferMenuOpen}
+            onOpenChange={setIsTransferMenuOpen}
+            buttonColor={buttonColor}
+            buttonHoverBg={buttonHoverBg}
+            indexesNotInDir={indexesNotInDir}
+            groupedTransferTemplates={groupedTransferTemplates}
+            transferSelectedIndex={transferSelectedIndex}
+            transferCustomIndex={transferCustomIndex}
+            transferManualFilename={transferManualFilename}
+            setTransferSelectedIndex={setTransferSelectedIndex}
+            setTransferCustomIndex={setTransferCustomIndex}
+            setTransferManualFilename={setTransferManualFilename}
+            onTransfer={handleTransferFromPanel}
+            onClose={() => {
+              setTransferSelectedIndex(null);
+              setTransferCustomIndex('');
+              setTransferManualFilename('');
+            }}
+          />
+        </Flex>
+        
+        {/* Right side: Settings */}
+        <Flex gap={0.5} align="center">
+          <IconButton
+            aria-label="Settings"
+            variant="ghost"
+            size="sm"
+            borderRadius={0}
+            onClick={handleSettingsClick}
+            color={buttonColor}
+            h={FN_TOOLBAR_BTN}
+            w={FN_TOOLBAR_BTN}><Settings size={15} /></IconButton>
+        </Flex>
+      </Flex>
+      {/* Dialogs: mount only when open (or minimized for stateful AI dialogs) so navigation does not reconcile closed modal trees */}
+      {isTransferMappingOpen && (
+        <TransferMappingDialog isOpen onClose={() => setTransferMappingOpen(false)} />
       )}
-      
-      {/* Spacer */}
-      <Box flex="1" />
-      
-      {/* Folder Management Buttons - Same style as Settings */}
-      <Flex gap={0.5} align="center">
-        <Tooltip label="Toggle Layer View" placement="bottom" hasArrow>
-          <IconButton
-            aria-label="Toggle layer view"
-            icon={<Icon as={Layers} boxSize={5} />}
-            size="sm"
-            variant={isGroupedByIndex ? 'solid' : 'ghost'}
-            borderRadius={0}
-            bg={isGroupedByIndex ? useColorModeValue('blue.600', 'blue.700') : undefined}
-            color={isGroupedByIndex ? 'white' : buttonColor}
-            onClick={() => {
-              const next = !sessionLayerViewEnabled;
-              setSessionLayerViewEnabled(next);
-              addLog(`Layer view ${next ? 'on' : 'off'} (session)`);
-              setStatus(`Layer view ${next ? 'on' : 'off'} for this session`, 'info');
-            }}
-            _hover={{ bg: isGroupedByIndex ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
-
-        <Tooltip label={isPreviewPaneOpen ? 'Hide preview pane' : 'Show preview pane'} placement="bottom" hasArrow>
-          <IconButton
-            aria-label="Preview pane"
-            icon={<Icon as={Columns2} boxSize={5} />}
-            size="sm"
-            variant={isPreviewPaneOpen ? "solid" : "ghost"}
-            borderRadius={0}
-            bg={isPreviewPaneOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
-            color={isPreviewPaneOpen ? "white" : buttonColor}
-            onClick={() => {
-              setIsPreviewPaneOpen(!isPreviewPaneOpen);
-              addLog(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`);
-              setStatus(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`, 'info');
-            }}
-            _hover={{ bg: isPreviewPaneOpen ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
-
-        <Tooltip label={isAIFileManagerOpen ? 'Hide AI file manager' : 'Show AI file manager'} placement="bottom" hasArrow>
-          <IconButton
-            aria-label="AI file manager"
-            icon={<Icon as={Brain} boxSize={5} />}
-            size="sm"
-            variant={isAIFileManagerOpen ? "solid" : "ghost"}
-            borderRadius={0}
-            bg={isAIFileManagerOpen ? useColorModeValue('blue.600', 'blue.700') : undefined}
-            color={isAIFileManagerOpen ? "white" : buttonColor}
-            onClick={() => {
-              setIsAIFileManagerOpen(!isAIFileManagerOpen);
-              addLog(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`);
-              setStatus(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`, 'info');
-            }}
-            _hover={{ bg: isAIFileManagerOpen ? useColorModeValue('blue.700', 'blue.600') : buttonHoverBg }}
-            h="40px"
-            w="40px"
-          />
-        </Tooltip>
-
-        <Divider orientation="vertical" borderColor={dividerColor} h="30px" />
-
-        <TransferDropdownMenu
-          isOpen={isTransferMenuOpen}
-          onOpenChange={setIsTransferMenuOpen}
-          buttonColor={buttonColor}
-          buttonHoverBg={buttonHoverBg}
-          indexesNotInDir={indexesNotInDir}
-          groupedTransferTemplates={groupedTransferTemplates}
-          transferSelectedIndex={transferSelectedIndex}
-          transferCustomIndex={transferCustomIndex}
-          transferManualFilename={transferManualFilename}
-          setTransferSelectedIndex={setTransferSelectedIndex}
-          setTransferCustomIndex={setTransferCustomIndex}
-          setTransferManualFilename={setTransferManualFilename}
-          onTransfer={handleTransferFromPanel}
-          onClose={() => {
-            setTransferSelectedIndex(null);
-            setTransferCustomIndex('');
-            setTransferManualFilename('');
-          }}
+      {isOrgCodesOpen && <OrgCodesDialog isOpen onClose={() => setOrgCodesOpen(false)} />}
+      {isMergePDFOpen && (
+        <MergePDFDialog
+          isOpen
+          onClose={() => setMergePDFOpen(false)}
+          currentDirectory={currentDirectory}
+          onFileOperation={logFileOperation}
         />
-      </Flex>
-      
-      {/* Right side: Settings */}
-      <Flex gap={0.5} align="center">
-        <IconButton 
-          icon={<Settings size={16} />} 
-          aria-label="Settings" 
-          variant="ghost" 
-          size="sm" 
-          borderRadius={0}
-          onClick={handleSettingsClick} 
-          color={buttonColor}
-          h="40px"
-          w="40px"
+      )}
+      {isExtractionResultOpen && (
+        <ExtractionResultDialog
+          isOpen
+          onClose={() => setExtractionResultOpen(false)}
+          type={extractionResult?.type || 'zip'}
+          extractedFiles={extractionResult?.extractedFiles || []}
+          sourceFiles={extractionResult?.sourceFiles || []}
         />
-      </Flex>
-    </Flex>
-    
-    {/* Dialogs: mount only when open (or minimized for stateful AI dialogs) so navigation does not reconcile closed modal trees */}
-    {isTransferMappingOpen && (
-      <TransferMappingDialog isOpen onClose={() => setTransferMappingOpen(false)} />
-    )}
-    {isOrgCodesOpen && <OrgCodesDialog isOpen onClose={() => setOrgCodesOpen(false)} />}
-    {isMergePDFOpen && (
-      <MergePDFDialog
-        isOpen
-        onClose={() => setMergePDFOpen(false)}
-        currentDirectory={currentDirectory}
-        onFileOperation={logFileOperation}
-      />
-    )}
-    {isExtractionResultOpen && (
-      <ExtractionResultDialog
-        isOpen
-        onClose={() => setExtractionResultOpen(false)}
-        type={extractionResult?.type || 'zip'}
-        extractedFiles={extractionResult?.extractedFiles || []}
-        sourceFiles={extractionResult?.sourceFiles || []}
-      />
-    )}
-    {isLateClaimsOpen && (
-      <LateClaimsDialog isOpen onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
-    )}
-    {(isAIEditorOpen || minimizedDialogs.some((d) => d.type === 'aiEditor')) && (
-      <AIEditorDialog
-        key={`aiEditor-${dialogKeys.aiEditor}`}
-        isOpen={isAIEditorOpen}
-        onClose={() => setAIEditorOpen(false)}
-        onMinimize={() => handleMinimizeDialog('aiEditor')}
-      />
-    )}
-    {(isAITemplaterOpen || minimizedDialogs.some((d) => d.type === 'aiTemplater')) && (
-      <AITemplaterDialog
-        key={`aiTemplater-${dialogKeys.aiTemplater}`}
-        isOpen={isAITemplaterOpen}
-        onClose={() => handleCloseMinimizedDialog('aiTemplater')}
-        currentDirectory={currentDirectory}
-        onMinimize={() => handleMinimizeDialog('aiTemplater')}
-      />
-    )}
-    {(isDocumentAnalysisOpen || minimizedDialogs.some((d) => d.type === 'documentAnalysis')) && (
-      <DocumentAnalysisDialog
-        key={`documentAnalysis-${dialogKeys.documentAnalysis}`}
-        isOpen={isDocumentAnalysisOpen}
-        onClose={() => setDocumentAnalysisOpen(false)}
-        currentDirectory={currentDirectory}
-        selectedFiles={selectedFiles}
-        folderItems={folderItems}
-        onMinimize={() => handleMinimizeDialog('documentAnalysis')}
-      />
-    )}
-    {(isPdfToCsvOpen || minimizedDialogs.some((d) => d.type === 'pdfToCsv')) && (
-      <PdfToCsvDialog
-        key={`pdfToCsv-${dialogKeys.pdfToCsv}`}
-        isOpen={isPdfToCsvOpen}
-        onClose={() => setPdfToCsvOpen(false)}
-        currentDirectory={currentDirectory}
-        selectedFiles={selectedFiles}
-        folderItems={folderItems}
-        onMinimize={() => handleMinimizeDialog('pdfToCsv')}
-      />
-    )}
-    {(isManageTemplatesOpen || minimizedDialogs.some((d) => d.type === 'manageTemplates')) && (
-      <ManageTemplatesDialog
-        key={`manageTemplates-${dialogKeys.manageTemplates}`}
-        isOpen={isManageTemplatesOpen}
-        onClose={() => setManageTemplatesOpen(false)}
-        currentDirectory={currentDirectory}
-        onMinimize={() => handleMinimizeDialog('manageTemplates')}
-      />
-    )}
-    {isCalculatorOpen && <CalculatorDialog isOpen onClose={() => setCalculatorOpen(false)} />}
-    {isUpdateDialogOpen && (
-      <UpdateDialog
-        isOpen
-        onClose={() => setIsUpdateDialogOpen(false)}
-        onCheckForUpdates={handleCheckForUpdates}
-        onDownloadUpdate={handleDownloadUpdate}
-        onInstallUpdate={handleInstallUpdate}
-        updateInfo={updateInfo}
-      />
-    )}
-    {isClientSearchOpen && <ClientSearchOverlay isOpen onClose={() => setClientSearchOpen(false)} />}
-  </>;
+      )}
+      {isLateClaimsOpen && (
+        <LateClaimsDialog isOpen onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
+      )}
+      {(isAIEditorOpen || minimizedDialogs.some((d) => d.type === 'aiEditor')) && (
+        <AIEditorDialog
+          key={`aiEditor-${dialogKeys.aiEditor}`}
+          isOpen={isAIEditorOpen}
+          onClose={() => setAIEditorOpen(false)}
+          onMinimize={() => handleMinimizeDialog('aiEditor')}
+        />
+      )}
+      {(isAITemplaterOpen || minimizedDialogs.some((d) => d.type === 'aiTemplater')) && (
+        <AITemplaterDialog
+          key={`aiTemplater-${dialogKeys.aiTemplater}`}
+          isOpen={isAITemplaterOpen}
+          onClose={() => handleCloseMinimizedDialog('aiTemplater')}
+          currentDirectory={currentDirectory}
+          onMinimize={() => handleMinimizeDialog('aiTemplater')}
+        />
+      )}
+      {(isDocumentAnalysisOpen || minimizedDialogs.some((d) => d.type === 'documentAnalysis')) && (
+        <DocumentAnalysisDialog
+          key={`documentAnalysis-${dialogKeys.documentAnalysis}`}
+          isOpen={isDocumentAnalysisOpen}
+          onClose={() => setDocumentAnalysisOpen(false)}
+          currentDirectory={currentDirectory}
+          selectedFiles={selectedFiles}
+          folderItems={folderItems}
+          onMinimize={() => handleMinimizeDialog('documentAnalysis')}
+        />
+      )}
+      {(isPdfToCsvOpen || minimizedDialogs.some((d) => d.type === 'pdfToCsv')) && (
+        <PdfToCsvDialog
+          key={`pdfToCsv-${dialogKeys.pdfToCsv}`}
+          isOpen={isPdfToCsvOpen}
+          onClose={() => setPdfToCsvOpen(false)}
+          currentDirectory={currentDirectory}
+          selectedFiles={selectedFiles}
+          folderItems={folderItems}
+          onMinimize={() => handleMinimizeDialog('pdfToCsv')}
+        />
+      )}
+      {(isManageTemplatesOpen || minimizedDialogs.some((d) => d.type === 'manageTemplates')) && (
+        <ManageTemplatesDialog
+          key={`manageTemplates-${dialogKeys.manageTemplates}`}
+          isOpen={isManageTemplatesOpen}
+          onClose={() => setManageTemplatesOpen(false)}
+          currentDirectory={currentDirectory}
+          onMinimize={() => handleMinimizeDialog('manageTemplates')}
+        />
+      )}
+      {isCalculatorOpen && <CalculatorDialog isOpen onClose={() => setCalculatorOpen(false)} />}
+      {isUpdateDialogOpen && (
+        <UpdateDialog
+          isOpen
+          onClose={() => setIsUpdateDialogOpen(false)}
+          onCheckForUpdates={handleCheckForUpdates}
+          onDownloadUpdate={handleDownloadUpdate}
+          onInstallUpdate={handleInstallUpdate}
+          updateInfo={updateInfo}
+        />
+      )}
+      {isClientSearchOpen && <ClientSearchOverlay isOpen onClose={() => setClientSearchOpen(false)} />}
+    </>
+  );
 };

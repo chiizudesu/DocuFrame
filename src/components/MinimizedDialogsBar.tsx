@@ -1,12 +1,7 @@
 import React from 'react';
-import {
-  Box,
-  HStack,
-  IconButton,
-  Tooltip,
-  useColorModeValue,
-  Flex,
-} from '@chakra-ui/react';
+import { Box, HStack, IconButton, Flex } from '@chakra-ui/react';
+import { DF_SESSION_RAIL_BG, DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG } from '../docuFrameColors';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Brain, Mail, FileType, FileText, FileSpreadsheet, X } from 'lucide-react';
 
 export type DialogType = 'documentAnalysis' | 'aiEditor' | 'aiTemplater' | 'pdfToCsv' | 'manageTemplates';
@@ -44,9 +39,9 @@ export const MinimizedDialogsBar: React.FC<MinimizedDialogsBarProps> = ({
   onRestore,
   onClose,
 }) => {
-  const iconHoverBg = useColorModeValue('gray.200', 'gray.600');
-  const iconActiveBg = useColorModeValue('gray.100', 'blue.800');
-  const iconColor = useColorModeValue('#334155', 'gray.300');
+  const iconHoverBg = DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG;
+  const iconActiveBg = DF_SESSION_RAIL_BG;
+  const iconColor = 'white';
   
   // Don't render if no minimized dialogs
   if (minimizedDialogs.length === 0) {
@@ -54,7 +49,7 @@ export const MinimizedDialogsBar: React.FC<MinimizedDialogsBarProps> = ({
   }
 
   return (
-    <HStack spacing={1} alignItems="center" mr={2}>
+    <HStack gap={1} alignItems="center" mr={2}>
       {minimizedDialogs.map((dialog) => {
         const Icon = getDialogIcon(dialog.type);
         return (
@@ -67,7 +62,9 @@ export const MinimizedDialogsBar: React.FC<MinimizedDialogsBarProps> = ({
               },
             }}
           >
-            <Tooltip label={dialog.label} placement="bottom">
+            <Tooltip content={dialog.label} positioning={{
+              placement: "bottom"
+            }}>
               <Flex
                 align="center"
                 justify="center"
@@ -86,13 +83,12 @@ export const MinimizedDialogsBar: React.FC<MinimizedDialogsBarProps> = ({
             </Tooltip>
             <IconButton
               aria-label={`Close ${dialog.label}`}
-              icon={<X size={10} />}
               size="xs"
               position="absolute"
               top={-1}
               right={-1}
               variant="solid"
-              colorScheme="red"
+              colorPalette="red"
               borderRadius="full"
               minW="16px"
               h="16px"
@@ -102,8 +98,7 @@ export const MinimizedDialogsBar: React.FC<MinimizedDialogsBarProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 onClose(dialog.type);
-              }}
-            />
+              }}><X size={10} /></IconButton>
           </Box>
         );
       })}

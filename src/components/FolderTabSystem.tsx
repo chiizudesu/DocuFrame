@@ -1,16 +1,14 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import {
-  Box,
-  Flex,
-  Text,
-  IconButton,
-  useColorModeValue,
-  Button,
-  useToast,
-} from '@chakra-ui/react';
-import { X, Plus, ExternalLink, Minimize2, Maximize2 } from 'lucide-react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Flex, Text, IconButton, Button } from '@chakra-ui/react';
+import { X, Plus } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
+import { showToast } from "@/components/ui/toaster"
+import { docuFramePalette as P } from '../docuFrameColors'
+
+/** Bottom “inverse fillet” where active tab meets FolderInfoBar (Chrome-style outward curve). */
+const TAB_BOTTOM_FLARE_PX = 8
 
 interface FolderTab {
   id: string;
@@ -32,7 +30,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   onCloseMinimizedDialog
 }) => {
   const { currentDirectory, setCurrentDirectory, rootDirectory, newTabShortcut, closeTabShortcut, addTabToCurrentWindow, closeCurrentTab, addLog } = useAppContext();
-  const toast = useToast();
   const [isMaximized, setIsMaximized] = useState(false);
   
   // Window controls
@@ -69,14 +66,13 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   const [fileDropTarget, setFileDropTarget] = useState<string | null>(null); // For file drag/drop
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  // Light theme: Windows 11-style - tab bar slightly darker than content for contrast
-  const bgColor = useColorModeValue('#e2e8f0', 'gray.900');
-  const activeBg = useColorModeValue('white', 'gray.700');
-  const inactiveBg = useColorModeValue('gray.100', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  // v2: tab strip gray.900, active tab gray.700 (same as FolderInfoBar row)
+  const bgColor = 'df.toolbar';
+  const activeBg = 'df.tabActive';
+  const inactiveBg = 'df.tabInactive';
   // Subtle separator: 3px gap with 1px line on the 2nd pixel (like File Explorer)
-  const separatorColor = useColorModeValue('gray.400', 'gray.600');
-  const hoverBg = useColorModeValue('gray.200', 'gray.750');
+  const separatorColor = useColorModeValue('gray.400', 'df.border');
+  const hoverBg = useColorModeValue('gray.200', 'df.chromeHover');
   // Tab-specific colors (must be at top level - hooks can't be called inside map)
   const fileDropBg = useColorModeValue('blue.500', 'blue.900');
   const fileDropHoverBg = useColorModeValue('blue.600', 'blue.800');
@@ -91,6 +87,9 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   const windowControlColor = useColorModeValue('#64748b', 'gray.400');
   const windowControlHoverBg = useColorModeValue('#e5e7eb', 'gray.600');
   const windowControlActiveBg = useColorModeValue('#d1d5db', 'gray.500');
+  /** Solid hex for box-shadow flares (must match `df.tabActive` / active tab fill). */
+  const tabFlareFill = useColorModeValue(P.light.tabActive, P.dark.tabActive);
+  const halfFlare = TAB_BOTTOM_FLARE_PX / 2;
 
   // Helper function to get directory name from path
   function getDirectoryName(path: string): string {
@@ -131,6 +130,9 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
       path: targetPath,
       name: getDirectoryName(targetPath),
     };
+    // #region agent log
+    fetch('http://127.0.0.1:7543/ingest/65ddb22e-57cb-49a6-baa1-e8b05064640a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'27c943'},body:JSON.stringify({sessionId:'27c943',location:'FolderTabSystem.tsx:addNewTab',message:'addNewTab called',data:{path,rootDirectory,currentDirectory,targetPath,newTabName:newTab.name,newTabId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     setTabs(prev => [...prev, newTab]);
     // Don't switch to the new tab - keep the current active tab
     // setActiveTabId(newTabId);
@@ -430,25 +432,12 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
     }
   }, [draggedTab, tabs]);
 
+  // #region agent log
+  fetch('http://127.0.0.1:7543/ingest/65ddb22e-57cb-49a6-baa1-e8b05064640a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'27c943'},body:JSON.stringify({sessionId:'27c943',location:'FolderTabSystem.tsx:render',message:'Render tabs',data:{tabCount:tabs.length,activeTabId,tabs:tabs.map(t=>({id:t.id,name:t.name,path:t.path}))},timestamp:Date.now(),hypothesisId:'H1,H2'})}).catch(()=>{});
+  // #endregion
+
   return (
-    <Box
-      ref={tabsRef}
-      bg={bgColor}
-      px={0}
-      pt="3px"
-      pb={0}
-      position="relative"
-      _after={{
-        content: '""',
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '1px',
-        bg: borderColor,
-        zIndex: 1,
-      }}
-    >
+    <Box ref={tabsRef} bg={bgColor} px={0} pt="3px" pb={0} position="relative">
       <Flex align="center" gap="0" height="34px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
         {/* App Icon - Left side */}
         <Box 
@@ -463,8 +452,14 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
           </Box>
         </Box>
         
-        {/* Tabs Container with top padding */}
-        <Box pt={1} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        {/* Tab strip: flex:1 so it fills all space between the icon and window controls.
+            No overflow on this container — allows bottom-corner flares to paint outside. */}
+        <Box
+          flex="1"
+          minW={0}
+          pt={1}
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
           <Flex align="end" gap="0" height="34px">
             {/* Tabs with | separators and space between */}
             {tabs.map((tab, index) => (
@@ -473,6 +468,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
               <Box w="1px" h="15px" bg={separatorColor} alignSelf="center" mt="3px" mx="1px" flexShrink={0} opacity={0.5} aria-hidden />
             )}
             <Box
+              flexShrink={0}
               draggable={true}
               onDragStart={(e) => {
                 // Only start tab drag if not dragging files
@@ -540,7 +536,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                         const errorMessage = error instanceof Error ? error.message : String(error);
                         console.error('Failed to move files:', error);
                         addLog(`Failed to move files to "${tab.name}": ${errorMessage}`, 'error');
-                        toast({
+                        showToast({
                           title: 'Move Failed',
                           description: errorMessage,
                           status: 'error',
@@ -564,7 +560,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                       const errorMessage = error instanceof Error ? error.message : String(error);
                       console.error('Failed to move files:', error);
                       addLog(`Failed to move files to "${tab.name}": ${errorMessage}`, 'error');
-                      toast({
+                      showToast({
                         title: 'Move Failed',
                         description: errorMessage,
                         status: 'error',
@@ -608,6 +604,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 }}
               onDragEnd={handleDragEnd}
               position="relative"
+              overflow="visible"
             >
               <Flex
                 align="center"
@@ -665,30 +662,37 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 }
                 fontWeight={activeTabId === tab.id ? '500' : '400'}
               >
-                <Text
-                  fontSize="sm"
-                  isTruncated
-                  flex={1}
-                  userSelect="none"
-                  lineHeight="1.3"
+                <span
+                  ref={(el) => {
+                    // #region agent log
+                    if (el) fetch('http://127.0.0.1:7543/ingest/65ddb22e-57cb-49a6-baa1-e8b05064640a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'27c943'},body:JSON.stringify({sessionId:'27c943',location:'FolderTabSystem.tsx:span-ref',message:'Tab name span',data:{tabId:tab.id,tabName:tab.name,spanWidth:el.offsetWidth,spanText:el.textContent,parentWidth:el.parentElement?.offsetWidth},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+                    // #endregion
+                  }}
+                  style={{
+                    flex: '1 1 0%',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    fontSize: 'inherit',
+                    lineHeight: '1.3',
+                    userSelect: 'none',
+                  }}
                 >
                   {tab.name}
-                </Text>
+                </span>
                 
                 {tabs.length > 1 && (
                   <Box
-                    as="button"
                     ml={2}
-                    p="2px"
-                    borderRadius="3px"
+                    w="22px"
+                    h="22px"
+                    flexShrink={0}
+                    borderRadius="full"
                     opacity={activeTabId === tab.id ? 0.5 : 0.6}
                     _hover={{ 
                       opacity: 1,
                       bg: closeButtonHoverBg
-                    }}
-                    onClick={(e: React.MouseEvent) => {
-                      e.stopPropagation();
-                      closeTab(tab.id);
                     }}
                     display="flex"
                     alignItems="center"
@@ -698,11 +702,60 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                       ? activeTabTextColor
                       : inactiveTabTextColor
                     }
-                  >
-                    <X size={14} strokeWidth={2} />
-                  </Box>
+                    asChild><button
+                      type="button"
+                      aria-label="Close tab"
+                      style={{
+                        borderRadius: '9999px',
+                        border: 'none',
+                        padding: 0,
+                        margin: 0,
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        color: 'inherit',
+                      }}
+                      onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        closeTab(tab.id);
+                      }}>
+                      <X size={14} strokeWidth={2} />
+                    </button></Box>
                 )}
               </Flex>
+
+              {/* Outward curves at tab bottom corners (strip shows through via shaped shadow). */}
+              {activeTabId === tab.id && fileDropTarget !== tab.id && (
+                <>
+                  <Box
+                    aria-hidden
+                    position="absolute"
+                    bottom="-1px"
+                    left={`-${TAB_BOTTOM_FLARE_PX}px`}
+                    w={`${TAB_BOTTOM_FLARE_PX}px`}
+                    h={`${TAB_BOTTOM_FLARE_PX}px`}
+                    pointerEvents="none"
+                    zIndex={6}
+                    borderBottomRightRadius={`${TAB_BOTTOM_FLARE_PX}px`}
+                    style={{
+                      boxShadow: `${halfFlare}px ${halfFlare}px 0 ${halfFlare}px ${tabFlareFill}`,
+                    }}
+                  />
+                  <Box
+                    aria-hidden
+                    position="absolute"
+                    bottom="-1px"
+                    right={`-${TAB_BOTTOM_FLARE_PX}px`}
+                    w={`${TAB_BOTTOM_FLARE_PX}px`}
+                    h={`${TAB_BOTTOM_FLARE_PX}px`}
+                    pointerEvents="none"
+                    zIndex={6}
+                    borderBottomLeftRadius={`${TAB_BOTTOM_FLARE_PX}px`}
+                    style={{
+                      boxShadow: `-${halfFlare}px ${halfFlare}px 0 ${halfFlare}px ${tabFlareFill}`,
+                    }}
+                  />
+                </>
+              )}
               
               {/* Tab reorder drag indicator */}
               {dragOverTab === tab.id && draggedTab !== tab.id && (
@@ -745,7 +798,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             px={2}
           >
             <Box
-              as="button"
               ml={0}
               p={0}
               borderRadius="6px"
@@ -754,7 +806,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 opacity: 1,
                 bg: addButtonHoverBg
               }}
-              onClick={() => addNewTab()}
               display="flex"
               alignItems="center"
               justifyContent="center"
@@ -762,18 +813,16 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
               color={addButtonColor}
               h="27px"
               w="27px"
-            >
-              <Plus size={16} strokeWidth={2} />
-            </Box>
+              asChild><button onClick={() => addNewTab()}>
+                <Plus size={16} strokeWidth={2} />
+              </button></Box>
           </Flex>
           </Flex>
         </Box>
-        
-        {/* Flex spacer - pushes window controls to far right */}
-        <Box flex="1" />
-        
-        {/* Window Controls - Right side */}
-        <Flex 
+
+        {/* Window Controls - flexShrink:0 so they're never squeezed by the tab strip */}
+        <Flex
+          flexShrink={0}
           height="34px" 
           align="center" 
           justify="flex-end"
@@ -796,14 +845,10 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             display="flex"
             alignItems="center"
             justifyContent="center"
-            cursor="default"
-            icon={<Box w="10px" h="1px" bg={windowControlColor} borderRadius="1px" />}
-          />
-          {/* Maximize/Restore */}
+            cursor="default"><Box w="10px" h="1px" bg={windowControlColor} borderRadius="1px" /></IconButton>
+          {/* Maximize/Restore — single child icon so title bar never stacks both glyphs */}
           <Box
-            as="button"
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
-            onClick={isMaximized ? handleUnmaximize : handleMaximize}
             color={windowControlColor}
             bg="transparent"
             border="none"
@@ -820,47 +865,36 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             display="flex"
             alignItems="center"
             justifyContent="center"
-            sx={{
-              '& .window-icon': {
-                borderColor: 'currentColor',
-              },
-              '& .maximize-icon': {
-                display: isMaximized ? 'none' : 'block',
-              },
-              '& .restore-icon': {
-                display: isMaximized ? 'block' : 'none',
-              },
-            }}
+            asChild
           >
-            {/* Maximize icon - single square */}
-            <Box
-              className="window-icon maximize-icon"
-              w="10px"
-              h="10px"
-              border="1px solid"
-              bg="transparent"
-            />
-            {/* Restore icon - two overlapping squares */}
-            <Box className="window-icon restore-icon" position="relative" w="10px" h="10px">
-              <Box
-                position="absolute"
-                top="0px"
-                right="0px"
-                w="7px"
-                h="7px"
-                border="1px solid"
-                bg="transparent"
-              />
-              <Box
-                position="absolute"
-                bottom="0px"
-                left="0px"
-                w="7px"
-                h="7px"
-                border="1px solid"
-                bg="transparent"
-              />
-            </Box>
+            <button type="button" onClick={isMaximized ? handleUnmaximize : handleMaximize}>
+              {isMaximized ? (
+                <Box position="relative" w="10px" h="10px" borderColor="currentColor">
+                  <Box
+                    position="absolute"
+                    top="0px"
+                    right="0px"
+                    w="7px"
+                    h="7px"
+                    border="1px solid"
+                    borderColor="currentColor"
+                    bg="transparent"
+                  />
+                  <Box
+                    position="absolute"
+                    bottom="0px"
+                    left="0px"
+                    w="7px"
+                    h="7px"
+                    border="1px solid"
+                    borderColor="currentColor"
+                    bg="transparent"
+                  />
+                </Box>
+              ) : (
+                <Box w="10px" h="10px" border="1px solid" borderColor="currentColor" bg="transparent" />
+              )}
+            </button>
           </Box>
           {/* Close */}
           <IconButton
@@ -879,9 +913,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             display="flex"
             alignItems="center"
             justifyContent="center"
-            cursor="default"
-            icon={<X size={16} strokeWidth={1.5} style={{ display: 'block', margin: 'auto' }} />}
-          />
+            cursor="default"><X size={16} strokeWidth={1.5} style={{ display: 'block', margin: 'auto' }} /></IconButton>
         </Flex>
       </Flex>
     </Box>

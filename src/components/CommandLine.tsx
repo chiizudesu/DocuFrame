@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Flex, Input, IconButton, Text, useColorModeValue } from '@chakra-ui/react';
+import { Flex, Input, IconButton, Text } from '@chakra-ui/react';
 import { Send, ArrowUp, ArrowDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
@@ -21,9 +21,7 @@ export const CommandLine: React.FC<CommandLineProps> = ({ onFileOperation }) => 
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [transferMappings, setTransferMappings] = useState<{ [key: string]: string }>({});
   const inputRef = useRef<HTMLInputElement>(null);
-  const bgColor = useColorModeValue('white', 'gray.900');
-  const borderColor = useColorModeValue('gray.200', 'gray.700');
-  
+
   // Load transfer mappings on mount and when updated
   const loadTransferMappings = useCallback(async () => {
     try {
@@ -261,7 +259,7 @@ export const CommandLine: React.FC<CommandLineProps> = ({ onFileOperation }) => 
   }, []);
 
   return (
-    <Flex align="center" bg={bgColor} border="1px" borderColor={borderColor} borderRadius="md" overflow="hidden" h="35px" width="600px" position="absolute" top="44%" left="50%" transform="translate(-50%, -50%)">
+    <Flex align="center" bg="df.canvas" border="1px" borderColor="df.border" borderRadius="md" overflow="hidden" h="35px" width="600px" position="absolute" top="44%" left="50%" transform="translate(-50%, -50%)">
       <Text px={3} color="blue.500" fontSize="sm" fontFamily="monospace">
         $
       </Text>
@@ -271,36 +269,34 @@ export const CommandLine: React.FC<CommandLineProps> = ({ onFileOperation }) => 
         value={command} 
         onChange={e => setCommand(e.target.value)} 
         onKeyDown={handleKeyDown} 
-        variant="unstyled" 
+        variant="outline"
+        borderWidth={0}
+        boxShadow="none"
+        _focusVisible={{ borderWidth: 0, boxShadow: 'none' }}
         px={2} 
         h="100%" 
         fontSize="sm" 
         fontFamily="monospace" 
         flex="1" 
-        color={useColorModeValue('gray.800', 'white')} 
         height="31px"
+        bg="transparent"
+        _placeholder={{ color: 'df.subtext' }}
       />
-      <IconButton 
-        icon={<ArrowUp size={14} />} 
-        aria-label="Previous command" 
-        variant="ghost" 
-        size="sm" 
-        onClick={() => navigateHistory(-1)} 
-      />
-      <IconButton 
-        icon={<ArrowDown size={14} />} 
-        aria-label="Next command" 
-        variant="ghost" 
-        size="sm" 
-        onClick={() => navigateHistory(1)} 
-      />
-      <IconButton 
-        icon={<Send size={14} />} 
-        aria-label="Execute command" 
-        variant="ghost" 
-        size="sm" 
-        onClick={handleSubmit} 
-      />
+      <IconButton
+        aria-label="Previous command"
+        variant="ghost"
+        size="sm"
+        onClick={() => navigateHistory(-1)}><ArrowUp size={14} /></IconButton>
+      <IconButton
+        aria-label="Next command"
+        variant="ghost"
+        size="sm"
+        onClick={() => navigateHistory(1)}><ArrowDown size={14} /></IconButton>
+      <IconButton
+        aria-label="Execute command"
+        variant="ghost"
+        size="sm"
+        onClick={handleSubmit}><Send size={14} /></IconButton>
     </Flex>
   );
 };

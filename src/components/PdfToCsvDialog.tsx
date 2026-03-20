@@ -1,52 +1,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { showToast } from "@/components/ui/toaster"
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Button,
   VStack,
   Text,
   Box,
   Flex,
   Spinner,
-  useColorModeValue,
   IconButton,
   Alert,
-  AlertIcon,
-  FormControl,
-  FormLabel,
   HStack,
   Input,
-  Badge,
-  useToast,
   Grid,
   GridItem,
   Heading,
-  ScaleFade,
   Center,
   Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  TableContainer,
-  Select,
   Tag,
-  TagLabel,
-  TagCloseButton
+  Field,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
-import { FileText, Upload, FileSpreadsheet, Minus, X, CheckCircle, ArrowRight, Brain, RotateCcw } from 'lucide-react';
-import { DOCUMENT_AI_AGENTS, type DocumentAIAgent, detectPdfHeaders, extractPdfTableDataStream } from '../services/aiService';
-
-interface FileItem { 
-  name: string; 
-  path: string; 
-  type: string; 
-}
+import { FileText, Upload, FileSpreadsheet, Minus, X, CheckCircle, ArrowRight, RotateCcw } from 'lucide-react';
+import { detectPdfHeaders, extractPdfTableDataStream } from '../services/aiService';
+import type { FileItem } from '../types';
 
 interface PdfToCsvDialogProps {
   isOpen: boolean;
@@ -59,6 +38,110 @@ interface PdfToCsvDialogProps {
 
 const FIXED_CSV_COLUMNS = ['Date', 'Amount', 'Payee', 'Description', 'Reference', 'Cheque Number'];
 
+type PdfToCsvFilePickerPanelProps = {
+  files: FileItem[];
+  selectedFile: FileItem | null;
+  isDragOver: boolean;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+  onSelectFile: (file: FileItem) => void;
+  borderColor: string;
+  secondaryTextColor: string;
+  fileItemBg: string;
+  selectedFileBg: string;
+  selectedBorderColor: string;
+  hoverBg: string;
+  hoverBorderColor: string;
+  checkIconColor: string;
+};
+
+const PdfToCsvFilePickerPanel: React.FC<PdfToCsvFilePickerPanelProps> = ({
+  files,
+  selectedFile,
+  isDragOver,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onSelectFile,
+  borderColor,
+  secondaryTextColor,
+  fileItemBg,
+  selectedFileBg,
+  selectedBorderColor,
+  hoverBg,
+  hoverBorderColor,
+  checkIconColor,
+}) => (
+  <Box w="100%" flex="1" display="flex" flexDirection="column" overflow="hidden">
+    <Heading size="sm" mb={3}>Select PDF File</Heading>
+    <Box
+      border="2px dashed"
+      borderColor={isDragOver ? 'blue.400' : borderColor}
+      borderRadius="md"
+      p={4}
+      textAlign="center"
+      mb={3}
+      bg={isDragOver ? 'blue.50' : 'transparent'}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      cursor="pointer"
+      transition="all 0.2s"
+      flexShrink={0}
+    >
+      <Upload size={24} style={{ margin: '0 auto 8px' }} />
+      <Text fontSize="sm" fontWeight="medium" mb={1}>
+        Drop PDF here
+      </Text>
+      <Text fontSize="xs" color={secondaryTextColor}>
+        or select from list below
+      </Text>
+    </Box>
+    <Box flex="1" overflowY="auto" minH="0">
+      {files.length === 0 ? (
+        <Center h="100px">
+          <Text fontSize="sm" color={secondaryTextColor} textAlign="center">
+            No PDF files found in current directory
+          </Text>
+        </Center>
+      ) : (
+        <VStack gap={1} align="stretch">
+          {files.map((file, index) => {
+            const isSel = selectedFile?.name === file.name;
+            return (
+              <Box
+                key={`${file.path || file.name}-${index}`}
+                p={3}
+                bg={isSel ? selectedFileBg : fileItemBg}
+                borderRadius="md"
+                cursor="pointer"
+                border="1px solid"
+                borderColor={isSel ? selectedBorderColor : 'transparent'}
+                _hover={{
+                  bg: isSel ? selectedFileBg : hoverBg,
+                  borderColor: hoverBorderColor,
+                }}
+                onClick={() => onSelectFile(file)}
+                transition="all 0.15s"
+                display="flex"
+                alignItems="center"
+                gap={2}
+              >
+                <FileText size={18} />
+                <Text fontSize="sm" flex="1" lineClamp={1} title={file.name}>
+                  {file.name}
+                </Text>
+                {isSel ? <CheckCircle size={16} color={checkIconColor} /> : null}
+              </Box>
+            );
+          })}
+        </VStack>
+      )}
+    </Box>
+  </Box>
+);
+
 export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({ 
   isOpen, 
   onClose, 
@@ -67,7 +150,6 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
   folderItems,
   onMinimize
 }) => {
-  const [selectedAgent, setSelectedAgent] = useState<DocumentAIAgent>('claude');
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
   const [availableFiles, setAvailableFiles] = useState<FileItem[]>([]);
   const [detectedHeaders, setDetectedHeaders] = useState<string[]>([]);
@@ -87,16 +169,18 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
   const [showAgentSelect, setShowAgentSelect] = useState(false);
   const previewTableRef = React.useRef<HTMLDivElement>(null);
   const showPreview = isProcessing || conversionComplete;
-
-  const toast = useToast();
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const cardBg = useColorModeValue('gray.50', 'gray.700');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    borderColor,
+    inputBg,
+    cardBg,
+    textColor,
+    secondaryTextColor,
+  } = useDialogChrome();
   const fileBg = useColorModeValue('gray.100', 'gray.700');
   const selectedFileBg = useColorModeValue('blue.100', 'blue.700');
   const hoverBg = useColorModeValue('gray.200', 'gray.600');
-  const headerBg = useColorModeValue('gray.100', 'gray.700');
-  const headerTextColor = useColorModeValue('gray.800', 'gray.100');
   const fileItemBg = useColorModeValue('white', 'gray.900');
   const selectedBorderColor = useColorModeValue('blue.400', 'blue.300');
   const hoverBorderColor = useColorModeValue('blue.200', 'blue.400');
@@ -123,10 +207,8 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
       }
       setLoadingHeaders(false);
       setLoadingData(false);
-      setShowAgentSelect(false);
-      
       // Filter PDF files
-      const pdfFiles = folderItems.filter(file => 
+      const pdfFiles: FileItem[] = folderItems.filter((file) =>
         file.name.toLowerCase().endsWith('.pdf')
       );
       setAvailableFiles(pdfFiles);
@@ -156,9 +238,8 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
       const headers = await detectPdfHeaders(
         file.path, 
         file.name, 
-        selectedAgent, 
         true,
-        (status) => {
+        (status: string) => {
           setHeaderDetectionStatus(status);
         }
       );
@@ -169,9 +250,8 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
         const allPageHeaders = await detectPdfHeaders(
           file.path, 
           file.name, 
-          selectedAgent, 
           false,
-          (status) => {
+          (status: string) => {
             setHeaderDetectionStatus(status);
           }
         );
@@ -183,7 +263,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
         } else {
           setDetectedHeaders(allPageHeaders);
           setHeaderDetectionStatus('');
-          toast({
+          showToast({
             title: 'Headers Detected',
             description: `Found ${allPageHeaders.length} header(s)`,
             status: 'success',
@@ -195,7 +275,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
         // Headers found on first page - use them and stop
         setDetectedHeaders(headers);
         setHeaderDetectionStatus('');
-        toast({
+        showToast({
           title: 'Headers Detected',
           description: `Found ${headers.length} header(s)`,
           status: 'success',
@@ -212,7 +292,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
     } finally {
       setLoadingHeaders(false);
     }
-  }, [selectedAgent, toast]);
+  }, []);
 
   const handleFileSelect = useCallback((file: FileItem) => {
     setSelectedFile(file);
@@ -314,7 +394,6 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
         selectedFile.path,
         selectedFile.name,
         columnMappings,
-        selectedAgent,
         (newRows) => {
           // Accumulate rows as pages complete
           console.log('[PDF to CSV] Page complete, rows:', newRows.length);
@@ -333,7 +412,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
       setProgress(null);
       console.log('[PDF to CSV] Complete. Total rows:', data.length);
       
-      toast({
+      showToast({
         title: 'Conversion Complete',
         description: `Successfully extracted ${data.length} row(s)`,
         status: 'success',
@@ -384,7 +463,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
 
       await (window.electronAPI as any).writeTextFile(filePath, csvContent);
 
-      toast({
+      showToast({
         title: 'CSV Saved',
         description: `Saved to ${fileName}`,
         status: 'success',
@@ -406,7 +485,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
       console.error('Save CSV error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       setError(`Failed to save CSV: ${errorMessage}`);
-      toast({
+      showToast({
         title: 'Save Failed',
         description: errorMessage,
         status: 'error',
@@ -490,518 +569,379 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
   const unmappedHeaders = detectedHeaders.filter(h => !mappedHeaders.has(h));
 
   return (
-    <Modal isOpen={isOpen} onClose={handleOverlayClick} size="6xl">
-      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent 
-        maxW={selectedFile ? "1100px" : "500px"}
-        w={selectedFile ? "1100px" : "500px"}
-        maxH="85vh" 
-        h="650px"
-        overflow="hidden"
-        my="auto"
-        borderRadius={0}
-        transition="width 0.3s ease"
-      >
-        <ModalHeader 
-          borderBottom="1px solid" 
-          borderColor={borderColor}
-          pb={3}
-          bg={headerBg}
-        >
-          <Flex align="center" justify="space-between" pr={16}>
-            <Flex align="center" gap={2}>
-              <FileSpreadsheet size={20} />
-              <Text fontWeight="semibold" color={headerTextColor}>
-                PDF to CSV Converter
-              </Text>
-            </Flex>
-            {/* AI Agent Pill */}
-            <Box position="relative">
-              <Badge 
-                colorScheme="blue" 
-                fontSize="xs" 
-                px={2} 
-                py={1}
-                cursor="pointer"
-                onClick={() => setShowAgentSelect(!showAgentSelect)}
-                display="flex"
-                alignItems="center"
-                gap={1}
-              >
-                <Brain size={12} />
-                <Text>{DOCUMENT_AI_AGENTS.find(a => a.value === selectedAgent)?.label}</Text>
-              </Badge>
-              {showAgentSelect && (
-                <Box position="absolute" top="100%" right={0} mt={2} bg={bgColor} border="1px" borderColor={borderColor} borderRadius={0} boxShadow="lg" zIndex={1000}>
-                  <VStack align="stretch" p={2} spacing={1}>
-                    {DOCUMENT_AI_AGENTS.map(agent => (
-                      <Button
-                        key={agent.value}
-                        size="sm"
-                        variant={selectedAgent === agent.value ? 'solid' : 'ghost'}
-                        colorScheme={selectedAgent === agent.value ? 'blue' : 'gray'}
-                        onClick={() => {
-                          setSelectedAgent(agent.value);
-                          setShowAgentSelect(false);
-                        }}
-                        justifyContent="flex-start"
-                      >
-                        {agent.label}
-                      </Button>
-                    ))}
-                  </VStack>
-                </Box>
-              )}
-            </Box>
-          </Flex>
-        </ModalHeader>
-        {onMinimize && (
-          <IconButton
-            aria-label="Minimize"
-            icon={<Minus size={16} />}
-            size="sm"
-            variant="ghost"
-            position="absolute"
-            top={4}
-            right={12}
-            onClick={onMinimize}
-            zIndex={10}
-          />
-        )}
-        <ModalCloseButton />
-        
-        <ModalBody p={0} overflow="hidden">
-          {!showPreview ? (
-            selectedFile ? (
-              <Grid templateColumns="1fr 1.5fr" h="550px" overflow="hidden" gap={0}>
-              {/* Left Panel - File Selection */}
-              <GridItem bg={cardBg} borderRight="1px" borderColor={borderColor} overflow="hidden" display="flex" flexDirection="column">
-                <VStack p={4} spacing={3} h="100%" overflow="hidden">
-                  <Box w="100%" flex="1" display="flex" flexDirection="column" overflow="hidden">
-                    <Heading size="sm" mb={3}>Select PDF File</Heading>
-                  
-                  {/* Drag & Drop Zone */}
-                  <Box
-                    border="2px dashed"
-                    borderColor={isDragOver ? 'blue.400' : borderColor}
-                    borderRadius="md"
-                    p={4}
-                    textAlign="center"
-                    mb={3}
-                    bg={isDragOver ? 'blue.50' : 'transparent'}
-                    onDragOver={handleDragOverFile}
-                    onDragLeave={handleDragLeaveFile}
-                    onDrop={handleDropFile}
-                    cursor="pointer"
-                    transition="all 0.2s"
-                    flexShrink={0}
-                  >
-                    <Upload size={24} style={{ margin: '0 auto 8px' }} />
-                    <Text fontSize="sm" fontWeight="medium" mb={1}>
-                      Drop PDF here
-                    </Text>
-                    <Text fontSize="xs" color="gray.500">
-                      or select from list below
-                    </Text>
-                  </Box>
-                  
-                  {/* File List */}
-                  <Box flex="1" overflowY="auto" minH="0">
-                    {availableFiles.length === 0 ? (
-                      <Center h="100px">
-                        <Text fontSize="sm" color="gray.500" textAlign="center">
-                          No PDF files found in current directory
-                        </Text>
-                      </Center>
-                    ) : (
-                      <VStack spacing={1} align="stretch">
-                        {availableFiles.map((file, index) => {
-                          const isSelected = selectedFile?.name === file.name;
-                          return (
-                            <Box
-                              key={index}
-                              p={3}
-                              bg={isSelected ? selectedFileBg : fileItemBg}
-                              borderRadius="md"
-                              cursor="pointer"
-                              border="1px solid"
-                              borderColor={isSelected ? selectedBorderColor : 'transparent'}
-                              _hover={{
-                                bg: isSelected ? selectedFileBg : hoverBg,
-                                borderColor: hoverBorderColor,
-                              }}
-                              onClick={() => handleFileSelect(file)}
-                              transition="all 0.15s"
-                              display="flex"
-                              alignItems="center"
-                              gap={2}
-                            >
-                              <FileText size={18} />
-                              <Text fontSize="sm" flex="1" noOfLines={1} title={file.name}>
-                                {file.name}
-                              </Text>
-                              {isSelected && <CheckCircle size={16} color={checkIconColor} />}
-                            </Box>
-                          );
-                        })}
-                      </VStack>
-                    )}
-                  </Box>
-                </Box>
-              </VStack>
-            </GridItem>
+    <Dialog.Root open={isOpen} size='xl' onOpenChange={e => {
+      if (!e.open) {
+        handleOverlayClick();
+      }
+    }}>
+      <Portal>
 
-            {/* Right Panel - Column Mapping */}
-            <GridItem overflow="hidden" display="flex" flexDirection="column">
-              <VStack p={4} spacing={3} h="100%" overflow="hidden">
-                <Box w="100%" flex="1" display="flex" flexDirection="column" overflow="hidden" minH="0">
-                  <Heading size="sm" mb={3}>Map Columns to CSV Headers</Heading>
-                  
-                  {loadingHeaders && (
-                    <Center py={4}>
-                      <VStack spacing={3}>
-                        <Spinner size="lg" />
-                        <VStack spacing={1}>
-                          <Text fontSize="sm" fontWeight="medium" color="gray.700">
-                            {headerDetectionStatus || 'Detecting headers...'}
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg={bgColor}
+            maxW={selectedFile ? "1100px" : "500px"}
+            w={selectedFile ? "1100px" : "500px"}
+            maxH="85vh"
+            h="650px"
+            overflow="hidden"
+            my="auto"
+            borderRadius={0}
+            boxShadow="xl"
+            display="flex"
+            flexDirection="column">
+            <Box
+              flexShrink={0}
+              bg={titleBarBg}
+              borderBottom="1px solid"
+              borderColor={borderColor}
+              borderRadius={0}
+              px={3}
+              py={2}
+              role="banner"
+            >
+              <Flex align="center" justify="space-between" w="full" minH="32px" gap={2}>
+                <Flex align="center" gap={2} minW={0}>
+                  <FileSpreadsheet size={18} />
+                  <Text fontSize="sm" fontWeight="600" color={textColor}>
+                    PDF to CSV Converter
+                  </Text>
+                </Flex>
+                <HStack gap={2} flexShrink={0}>
+                  {onMinimize && (
+                    <IconButton aria-label="Minimize" size="sm" variant="ghost" onClick={onMinimize}><Minus size={16} /></IconButton>
+                  )}
+                  <IconButton aria-label="Close" size="sm" variant="ghost" onClick={handleClose}><X size={16} /></IconButton>
+                </HStack>
+              </Flex>
+            </Box>
+            <Box
+              flex="1"
+              minH={0}
+              overflow="hidden"
+              display="flex"
+              flexDirection="column"
+              p={0}
+              position="relative"
+            >
+              {!showPreview ? (
+                selectedFile ? (
+                  <Grid templateColumns="1fr 1.5fr" h="550px" overflow="hidden" gap={0}>
+                  {/* Left Panel - File Selection */}
+                  <GridItem bg={cardBg} borderRight="1px" borderColor={borderColor} overflow="hidden" display="flex" flexDirection="column">
+                    <VStack p={4} gap={3} h="100%" overflow="hidden">
+                      <PdfToCsvFilePickerPanel
+                        files={availableFiles}
+                        selectedFile={selectedFile}
+                        isDragOver={isDragOver}
+                        onDragOver={handleDragOverFile}
+                        onDragLeave={handleDragLeaveFile}
+                        onDrop={handleDropFile}
+                        onSelectFile={handleFileSelect}
+                        borderColor={borderColor}
+                        secondaryTextColor={secondaryTextColor}
+                        fileItemBg={fileItemBg}
+                        selectedFileBg={selectedFileBg}
+                        selectedBorderColor={selectedBorderColor}
+                        hoverBg={hoverBg}
+                        hoverBorderColor={hoverBorderColor}
+                        checkIconColor={checkIconColor}
+                      />
+                    </VStack>
+                </GridItem>
+
+                {/* Right Panel - Column Mapping */}
+                <GridItem overflow="hidden" display="flex" flexDirection="column">
+                  <VStack p={4} gap={3} h="100%" overflow="hidden">
+                    <Box w="100%" flex="1" display="flex" flexDirection="column" overflow="hidden" minH="0">
+                      <Heading size="sm" mb={3}>Map Columns to CSV Headers</Heading>
+                      
+                      {loadingHeaders && (
+                        <Center py={4}>
+                          <VStack gap={3}>
+                            <Spinner size="lg" />
+                            <VStack gap={1}>
+                              <Text fontSize="sm" fontWeight="medium" color={textColor}>
+                                {headerDetectionStatus || 'Detecting headers...'}
+                              </Text>
+                              {headerDetectionStatus && (
+                                <Text fontSize="xs" color={secondaryTextColor}>
+                                  Please wait, this may take a moment
+                                </Text>
+                              )}
+                            </VStack>
+                          </VStack>
+                        </Center>
+                      )}
+
+                      {!loadingHeaders && selectedFile && detectedHeaders.length === 0 && !error && (
+                        <Center py={4}>
+                          <Text fontSize="sm" color={secondaryTextColor}>No headers detected</Text>
+                        </Center>
+                      )}
+
+                      {selectedFile && !loadingHeaders && detectedHeaders.length > 0 && (
+                        <>
+                          <Text fontSize="xs" color={secondaryTextColor} mb={2} lineHeight="short">
+                            Drag document headers from the right and drop them onto the CSV columns on the left.
                           </Text>
-                          {headerDetectionStatus && (
-                            <Text fontSize="xs" color="gray.500">
-                              Please wait, this may take a moment
+                        <Grid templateColumns="1fr 1fr" gap={4} flex="1" overflow="hidden" minH="0">
+                          {/* Fixed CSV Columns (Drop Zones) */}
+                          <Box display="flex" flexDirection="column" overflow="hidden" minH="0">
+                            <Text fontSize="xs" fontWeight="medium" mb={2} color={secondaryTextColor}>
+                              CSV Columns (Drop zones)
+                            </Text>
+                            <Box flex="1" overflowY="auto" minH="0">
+                              <VStack gap={2} align="stretch">
+                                {FIXED_CSV_COLUMNS.map(column => {
+                                  const isDragOver = dragOverColumn === column;
+                                  const mappedHeadersForColumn = columnMappings[column] || [];
+                                  return (
+                                    <Box
+                                      key={column}
+                                      p={2}
+                                      bg={isDragOver ? dragOverBg : bgColor}
+                                      border="2px dashed"
+                                      borderColor={isDragOver ? 'blue.400' : borderColor}
+                                      borderRadius="md"
+                                      minH="50px"
+                                      onDragOver={(e) => handleDragOver(e, column)}
+                                      onDragLeave={handleDragLeave}
+                                      onDrop={(e) => handleDrop(e, column)}
+                                      transition="all 0.2s"
+                                    >
+                                      <Text fontSize="xs" fontWeight="medium" mb={1}>
+                                        {column}
+                                      </Text>
+                                      {mappedHeadersForColumn.length > 0 && (
+                                        <Flex wrap="wrap" gap={1} mt={1}>
+                                          {mappedHeadersForColumn.map(header => (
+                                            <Tag.Root key={header} size="sm" colorPalette="blue" fontSize="xs">
+                                              <Tag.Label>{header}</Tag.Label>
+                                              <Tag.CloseTrigger onClick={() => handleRemoveMapping(column, header)} />
+                                            </Tag.Root>
+                                          ))}
+                                        </Flex>
+                                      )}
+                                    </Box>
+                                  );
+                                })}
+                              </VStack>
+                            </Box>
+                          </Box>
+
+                          {/* Document Headers (Draggable) */}
+                          <Box display="flex" flexDirection="column" overflow="hidden" minH="0">
+                            <Text fontSize="xs" fontWeight="medium" mb={2} color={secondaryTextColor}>
+                              Document Headers (Drag to map)
+                            </Text>
+                            <Box flex="1" overflowY="auto" minH="0">
+                              <VStack gap={1} align="stretch">
+                                {unmappedHeaders.map(header => (
+                                  <Box
+                                    key={header}
+                                    p={2}
+                                    bg={bgColor}
+                                    borderRadius="md"
+                                    border="1px solid"
+                                    borderColor={borderColor}
+                                    cursor="move"
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, header)}
+                                    _hover={{
+                                      bg: hoverBg,
+                                      transform: 'translateX(4px)',
+                                    }}
+                                    transition="all 0.15s"
+                                  >
+                                    <Text fontSize="sm">{header}</Text>
+                                  </Box>
+                                ))}
+                                {unmappedHeaders.length === 0 && (
+                                  <Center h="100px">
+                                    <Text fontSize="xs" color={secondaryTextColor} textAlign="center">
+                                      All headers mapped
+                                    </Text>
+                                  </Center>
+                                )}
+                              </VStack>
+                            </Box>
+                          </Box>
+                        </Grid>
+                        </>
+                      )}
+
+                      {selectedFile && !loadingHeaders && detectedHeaders.length === 0 && !error && (
+                        <Center flex="1">
+                          <Text fontSize="sm" color={secondaryTextColor}>No headers detected</Text>
+                        </Center>
+                      )}
+
+                      {!selectedFile && (
+                        <Center flex="1">
+                          <Text fontSize="sm" color={secondaryTextColor}>Select a PDF file to begin mapping</Text>
+                        </Center>
+                      )}
+                    </Box>
+
+                    {/* File Name Input and Convert Button - Bottom of right panel */}
+                    <Box w="100%" pt={3} borderTop="1px" borderColor={borderColor}>
+                      <HStack gap={3} align="flex-end">
+                        <Field.Root flex="0 0 auto" w="200px">
+                          <Field.Label fontSize="sm" fontWeight="medium">CSV File Name</Field.Label>
+                          <Input
+                            placeholder="output.csv"
+                            value={csvFileName}
+                            onChange={(e) => setCsvFileName(e.target.value)}
+                            size="sm"
+                            bg={inputBg}
+                            borderColor={borderColor}
+                          />
+                        </Field.Root>
+
+                        <Button
+                          colorPalette="blue"
+                          size="md"
+                          disabled={!selectedFile || loadingHeaders || isProcessing || Object.values(columnMappings).every(m => m.length === 0) || !csvFileName.trim()}
+                          onClick={handleConvertToCsv}
+                          flexShrink={0}><ArrowRight size={16} />Convert to CSV
+                                              </Button>
+                      </HStack>
+                    </Box>
+                  </VStack>
+                </GridItem>
+              </Grid>
+                ) : (
+                  /* No file selected - show only file selection */
+                  (<Box bg={cardBg} h="550px" overflow="hidden" display="flex" flexDirection="column">
+                    <VStack p={4} gap={3} h="100%" overflow="hidden">
+                      <PdfToCsvFilePickerPanel
+                        files={folderItems.filter((f) => f.name.toLowerCase().endsWith('.pdf'))}
+                        selectedFile={selectedFile}
+                        isDragOver={isDragOver}
+                        onDragOver={handleDragOverFile}
+                        onDragLeave={handleDragLeaveFile}
+                        onDrop={handleDropFile}
+                        onSelectFile={handleFileSelect}
+                        borderColor={borderColor}
+                        secondaryTextColor={secondaryTextColor}
+                        fileItemBg={fileItemBg}
+                        selectedFileBg={selectedFileBg}
+                        selectedBorderColor={selectedBorderColor}
+                        hoverBg={hoverBg}
+                        hoverBorderColor={hoverBorderColor}
+                        checkIconColor={checkIconColor}
+                      />
+                    </VStack>
+                  </Box>)
+                )
+              ) : (
+                /* Processing or Complete - Show Progress Bar or Preview */
+                (<VStack h="550px" gap={0} overflow="hidden" p={4}>
+                  <Box w="100%" mb={4}>
+                    <Flex align="center" justify="space-between" mb={3}>
+                      <Heading size="sm">
+                        {conversionComplete 
+                          ? `Conversion Complete - ${csvData.length} rows extracted`
+                          : isProcessing 
+                            ? 'Converting PDF to CSV...'
+                            : 'Preview'}
+                      </Heading>
+                      {conversionComplete && (
+                        <HStack>
+                          <Button size="sm" variant="outline" onClick={handleStartOver}><RotateCcw size={14} />Convert Another
+                                                  </Button>
+                          <Button
+                            size="sm"
+                            colorPalette="green"
+                            onClick={handleSaveCsv}
+                            disabled={!csvFileName.trim()}><FileSpreadsheet size={14} />Save CSV
+                                                  </Button>
+                        </HStack>
+                      )}
+                    </Flex>
+                  </Box>
+                  {/* Progress Bar or Preview Table */}
+                  {isProcessing && !conversionComplete ? (
+                    <Center flex="1" w="100%">
+                      <VStack gap={6} w="80%" maxW="400px">
+                        <Spinner size="xl" borderWidth="4px" color="blue.500" />
+                        <VStack gap={2} w="100%">
+                          <Text fontSize="md" fontWeight="medium" color={secondaryTextColor}>
+                            {progress?.status || 'Initializing...'}
+                          </Text>
+                          {progress && progress.totalPages > 0 && (
+                            <>
+                              <Box w="100%" bg={progressBarBg} borderRadius="full" h="8px" overflow="hidden">
+                                <Box 
+                                  bg="blue.500" 
+                                  h="100%" 
+                                  borderRadius="full"
+                                  w={`${Math.round((progress.currentPage / progress.totalPages) * 100)}%`}
+                                  transition="width 0.3s ease"
+                                />
+                              </Box>
+                              <Text fontSize="sm" color={secondaryTextColor}>
+                                Page {progress.currentPage} of {progress.totalPages}
+                              </Text>
+                            </>
+                          )}
+                          {csvData.length > 0 && (
+                            <Text fontSize="sm" color="green.500" fontWeight="medium">
+                              {csvData.length} rows extracted so far
                             </Text>
                           )}
                         </VStack>
                       </VStack>
                     </Center>
-                  )}
-
-                  {!loadingHeaders && selectedFile && detectedHeaders.length === 0 && !error && (
-                    <Center py={4}>
-                      <Text fontSize="sm" color="gray.500">No headers detected</Text>
-                    </Center>
-                  )}
-
-                  {selectedFile && !loadingHeaders && detectedHeaders.length > 0 && (
-                    <Grid templateColumns="1fr 1fr" gap={4} flex="1" overflow="hidden" minH="0">
-                      {/* Fixed CSV Columns (Drop Zones) */}
-                      <Box display="flex" flexDirection="column" overflow="hidden" minH="0">
-                        <Text fontSize="xs" fontWeight="medium" mb={2} color="gray.600">
-                          CSV Columns (Drop zones)
-                        </Text>
-                        <Box flex="1" overflowY="auto" minH="0">
-                          <VStack spacing={2} align="stretch">
-                            {FIXED_CSV_COLUMNS.map(column => {
-                              const isDragOver = dragOverColumn === column;
-                              const mappedHeadersForColumn = columnMappings[column] || [];
-                              return (
-                                <Box
-                                  key={column}
-                                  p={2}
-                                  bg={isDragOver ? dragOverBg : bgColor}
-                                  border="2px dashed"
-                                  borderColor={isDragOver ? 'blue.400' : borderColor}
-                                  borderRadius="md"
-                                  minH="50px"
-                                  onDragOver={(e) => handleDragOver(e, column)}
-                                  onDragLeave={handleDragLeave}
-                                  onDrop={(e) => handleDrop(e, column)}
-                                  transition="all 0.2s"
-                                >
-                                  <Text fontSize="xs" fontWeight="medium" mb={1}>
-                                    {column}
-                                  </Text>
-                                  {mappedHeadersForColumn.length > 0 && (
-                                    <Flex wrap="wrap" gap={1} mt={1}>
-                                      {mappedHeadersForColumn.map(header => (
-                                        <Tag key={header} size="sm" colorScheme="blue" fontSize="xs">
-                                          <TagLabel>{header}</TagLabel>
-                                          <TagCloseButton onClick={() => handleRemoveMapping(column, header)} />
-                                        </Tag>
-                                      ))}
-                                    </Flex>
-                                  )}
-                                </Box>
-                              );
-                            })}
-                          </VStack>
-                        </Box>
-                      </Box>
-
-                      {/* Document Headers (Draggable) */}
-                      <Box display="flex" flexDirection="column" overflow="hidden" minH="0">
-                        <Text fontSize="xs" fontWeight="medium" mb={2} color="gray.600">
-                          Document Headers (Drag to map)
-                        </Text>
-                        <Box flex="1" overflowY="auto" minH="0">
-                          <VStack spacing={1} align="stretch">
-                            {unmappedHeaders.map(header => (
-                              <Box
-                                key={header}
-                                p={2}
-                                bg={bgColor}
-                                borderRadius="md"
-                                border="1px solid"
-                                borderColor={borderColor}
-                                cursor="move"
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, header)}
-                                _hover={{
-                                  bg: hoverBg,
-                                  transform: 'translateX(4px)',
-                                }}
-                                transition="all 0.15s"
-                              >
-                                <Text fontSize="sm">{header}</Text>
-                              </Box>
-                            ))}
-                            {unmappedHeaders.length === 0 && (
-                              <Center h="100px">
-                                <Text fontSize="xs" color="gray.500" textAlign="center">
-                                  All headers mapped
-                                </Text>
-                              </Center>
-                            )}
-                          </VStack>
-                        </Box>
-                      </Box>
-                    </Grid>
-                  )}
-
-                  {selectedFile && !loadingHeaders && detectedHeaders.length === 0 && !error && (
-                    <Center flex="1">
-                      <Text fontSize="sm" color="gray.500">No headers detected</Text>
-                    </Center>
-                  )}
-
-                  {!selectedFile && (
-                    <Center flex="1">
-                      <Text fontSize="sm" color="gray.500">Select a PDF file to begin mapping</Text>
-                    </Center>
-                  )}
-                </Box>
-
-                {/* File Name Input and Convert Button - Bottom of right panel */}
-                <Box w="100%" pt={3} borderTop="1px" borderColor={borderColor}>
-                  <HStack spacing={3} align="flex-end">
-                    <FormControl flex="0 0 auto" w="200px">
-                      <FormLabel fontSize="sm" fontWeight="medium">CSV File Name</FormLabel>
-                      <Input
-                        placeholder="output.csv"
-                        value={csvFileName}
-                        onChange={(e) => setCsvFileName(e.target.value)}
-                        size="sm"
-                      />
-                    </FormControl>
-
-                    <Button
-                      leftIcon={<ArrowRight size={16} />}
-                      colorScheme="blue"
-                      size="md"
-                      isDisabled={!selectedFile || loadingHeaders || isProcessing || Object.values(columnMappings).every(m => m.length === 0) || !csvFileName.trim()}
-                      isLoading={isProcessing}
-                      loadingText="Converting..."
-                      onClick={handleConvertToCsv}
-                      flexShrink={0}
-                    >
-                      Convert to CSV
-                    </Button>
-                  </HStack>
-                </Box>
-              </VStack>
-            </GridItem>
-          </Grid>
-            ) : (
-              /* No file selected - show only file selection */
-              <Box bg={cardBg} h="550px" overflow="hidden" display="flex" flexDirection="column">
-                <VStack p={4} spacing={3} h="100%" overflow="hidden">
-                  <Box w="100%" flex="1" display="flex" flexDirection="column" overflow="hidden">
-                    <Heading size="sm" mb={3}>Select PDF File</Heading>
-                    
-                    {/* Drag & Drop Zone */}
-                    <Box
-                      border="2px dashed"
-                      borderColor={isDragOver ? 'blue.400' : borderColor}
+                  ) : (
+                    <Box 
+                      flex="1" 
+                      w="100%" 
+                      overflowY="auto" 
+                      border="1px" 
+                      borderColor={borderColor} 
                       borderRadius="md"
-                      p={4}
-                      textAlign="center"
-                      mb={3}
-                      bg={isDragOver ? 'blue.50' : 'transparent'}
-                      onDragOver={handleDragOverFile}
-                      onDragLeave={handleDragLeaveFile}
-                      onDrop={handleDropFile}
-                      cursor="pointer"
-                      transition="all 0.2s"
-                      flexShrink={0}
+                      ref={previewTableRef}
                     >
-                      <Upload size={24} style={{ margin: '0 auto 8px' }} />
-                      <Text fontSize="sm" fontWeight="medium" mb={1}>
-                        Drop PDF here
-                      </Text>
-                      <Text fontSize="xs" color="gray.500">
-                        or select from list below
-                      </Text>
-                    </Box>
-                    
-                    {/* File List */}
-                    <Box flex="1" overflowY="auto" minH="0">
-                      {availableFiles.length === 0 ? (
-                        <Center h="100px">
-                          <Text fontSize="sm" color="gray.500" textAlign="center">
-                            No PDF files found in current directory
-                          </Text>
-                        </Center>
-                      ) : (
-                        <VStack spacing={1} align="stretch">
-                          {availableFiles.map((file, index) => {
-                            const isSelected = selectedFile?.name === file.name;
-                            return (
-                              <Box
-                                key={index}
-                                p={3}
-                                bg={isSelected ? selectedFileBg : fileItemBg}
-                                borderRadius="md"
-                                cursor="pointer"
-                                border="1px solid"
-                                borderColor={isSelected ? selectedBorderColor : 'transparent'}
-                                _hover={{
-                                  bg: isSelected ? selectedFileBg : hoverBg,
-                                  borderColor: hoverBorderColor,
-                                }}
-                                onClick={() => handleFileSelect(file)}
-                                transition="all 0.15s"
-                                display="flex"
-                                alignItems="center"
-                                gap={2}
-                              >
-                                <FileText size={18} />
-                                <Text fontSize="sm" flex="1" noOfLines={1} title={file.name}>
-                                  {file.name}
-                                </Text>
-                                {isSelected && <CheckCircle size={16} color={checkIconColor} />}
-                              </Box>
-                            );
-                          })}
-                        </VStack>
-                      )}
-                    </Box>
-                  </Box>
-                </VStack>
-              </Box>
-            )
-          ) : (
-            /* Processing or Complete - Show Progress Bar or Preview */
-            <VStack h="550px" spacing={0} overflow="hidden" p={4}>
-              <Box w="100%" mb={4}>
-                <Flex align="center" justify="space-between" mb={3}>
-                  <Heading size="sm">
-                    {conversionComplete 
-                      ? `Conversion Complete - ${csvData.length} rows extracted`
-                      : isProcessing 
-                        ? 'Converting PDF to CSV...'
-                        : 'Preview'}
-                  </Heading>
-                  {conversionComplete && (
-                    <HStack>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        leftIcon={<RotateCcw size={14} />}
-                        onClick={handleStartOver}
-                      >
-                        Convert Another
-                      </Button>
-                      <Button
-                        size="sm"
-                        colorScheme="green"
-                        leftIcon={<FileSpreadsheet size={14} />}
-                        onClick={handleSaveCsv}
-                        isDisabled={!csvFileName.trim()}
-                      >
-                        Save CSV
-                      </Button>
-                    </HStack>
-                  )}
-                </Flex>
-              </Box>
-
-              {/* Progress Bar or Preview Table */}
-              {isProcessing && !conversionComplete ? (
-                <Center flex="1" w="100%">
-                  <VStack spacing={6} w="80%" maxW="400px">
-                    <Spinner size="xl" thickness="4px" color="blue.500" />
-                    <VStack spacing={2} w="100%">
-                      <Text fontSize="md" fontWeight="medium" color="gray.600">
-                        {progress?.status || 'Initializing...'}
-                      </Text>
-                      {progress && progress.totalPages > 0 && (
-                        <>
-                          <Box w="100%" bg={progressBarBg} borderRadius="full" h="8px" overflow="hidden">
-                            <Box 
-                              bg="blue.500" 
-                              h="100%" 
-                              borderRadius="full"
-                              w={`${Math.round((progress.currentPage / progress.totalPages) * 100)}%`}
-                              transition="width 0.3s ease"
-                            />
-                          </Box>
-                          <Text fontSize="sm" color="gray.500">
-                            Page {progress.currentPage} of {progress.totalPages}
-                          </Text>
-                        </>
-                      )}
-                      {csvData.length > 0 && (
-                        <Text fontSize="sm" color="green.500" fontWeight="medium">
-                          {csvData.length} rows extracted so far
-                        </Text>
-                      )}
-                    </VStack>
-                  </VStack>
-                </Center>
-              ) : (
-                <Box 
-                  flex="1" 
-                  w="100%" 
-                  overflowY="auto" 
-                  border="1px" 
-                  borderColor={borderColor} 
-                  borderRadius="md"
-                  ref={previewTableRef}
-                >
-                  <TableContainer>
-                    <Table size="sm" variant="simple">
-                      <Thead position="sticky" top={0} bg={bgColor} zIndex={1}>
-                        <Tr>
-                          {FIXED_CSV_COLUMNS.map(col => (
-                            <Th key={col} fontSize="xs">{col}</Th>
-                          ))}
-                        </Tr>
-                      </Thead>
-                      <Tbody>
-                        {csvData.map((row, idx) => (
-                          <Tr key={idx}>
-                            {FIXED_CSV_COLUMNS.map(col => (
-                              <Td key={col} fontSize="xs" maxW="200px" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" title={row[col] || ''}>
-                                {row[col] || ''}
-                              </Td>
+                      <Table.ScrollArea>
+                        <Table.Root size="sm" variant="line">
+                          <Table.Header position="sticky" top={0} bg={bgColor} zIndex={1}>
+                            <Table.Row>
+                              {FIXED_CSV_COLUMNS.map(col => (
+                                <Table.ColumnHeader key={col} fontSize="xs">{col}</Table.ColumnHeader>
+                              ))}
+                            </Table.Row>
+                          </Table.Header>
+                          <Table.Body>
+                            {csvData.map((row, idx) => (
+                              <Table.Row key={idx}>
+                                {FIXED_CSV_COLUMNS.map(col => (
+                                  <Table.Cell key={col} fontSize="xs" maxW="200px" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" title={row[col] || ''}>
+                                    {row[col] || ''}
+                                  </Table.Cell>
+                                ))}
+                              </Table.Row>
                             ))}
-                          </Tr>
-                        ))}
-                      </Tbody>
-                    </Table>
-                  </TableContainer>
-                </Box>
+                          </Table.Body>
+                        </Table.Root>
+                      </Table.ScrollArea>
+                    </Box>
+                  )}
+                </VStack>)
               )}
-            </VStack>
-          )}
 
-          {error && (
-            <Alert status="error" size="sm" mx={4} mb={4} position="absolute" bottom={0} left={0} right={0}>
-              <AlertIcon />
-              <Text fontSize="sm">{error}</Text>
-            </Alert>
-          )}
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+              {error && (
+                <Alert.Root status="error" size="sm" mx={4} mb={4} position="absolute" bottom={0} left={0} right={0}>
+                  <Alert.Indicator />
+                  <Text fontSize="sm">{error}</Text>
+                </Alert.Root>
+              )}
+            </Box>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 };

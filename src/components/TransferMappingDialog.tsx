@@ -1,28 +1,22 @@
-import React, { useState, useEffect, ChangeEvent, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { showToast } from "@/components/ui/toaster"
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
-  ModalFooter,
   Button,
   Input,
   IconButton,
   Box,
   Text,
-  useToast,
   VStack,
   HStack,
   Flex,
-  Spacer,
-  useColorModeValue,
-  Collapse,
+  Collapsible,
   Badge,
-  Divider,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
-import { AddIcon, DeleteIcon, EditIcon, CheckIcon, CloseIcon, ChevronDownIcon, ChevronRightIcon } from '@chakra-ui/icons';
+import { LuCheck, LuChevronDown, LuChevronRight, LuPencil, LuPlus, LuTrash2, LuX } from 'react-icons/lu';
 
 interface TransferMapping {
   command: string;
@@ -46,15 +40,17 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
   const [editCommand, setEditCommand] = useState('');
   const [editFilename, setEditFilename] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const toast = useToast();
-
-  // Color mode values
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const hoverBg = useColorModeValue('gray.50', 'gray.600');
-  const placeholderColor = useColorModeValue('gray.400', 'gray.500');
-  const groupHeaderBg = useColorModeValue('gray.50', 'gray.800');
-  const groupBorderColor = useColorModeValue('gray.300', 'gray.500');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    borderColor,
+    cardBg,
+    textColor,
+    secondaryTextColor,
+    inputBg,
+    accentText,
+  } = useDialogChrome();
+  const rowHoverBg = useColorModeValue('gray.100', 'gray.600');
   const groupHeaderHoverBg = useColorModeValue('gray.100', 'gray.700');
 
   // Smart grouping logic
@@ -180,7 +176,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
           }
         } catch (error) {
           console.error('Error loading mappings:', error);
-          toast({
+          showToast({
             title: 'Error',
             description: 'Failed to load transfer mappings',
             status: 'error',
@@ -191,7 +187,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
       }
     };
     loadMappings();
-  }, [isOpen, toast]);
+  }, [isOpen]);
 
   const handleSave = async () => {
     try {
@@ -209,7 +205,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
 
       await window.electronAPI.setConfig(updatedConfig);
       
-      toast({
+      showToast({
         title: 'Success',
         description: 'Transfer mappings saved successfully',
         status: 'success',
@@ -223,7 +219,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
       onClose();
     } catch (error) {
       console.error('Error saving transfer mappings:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to save transfer mappings',
         status: 'error',
@@ -283,263 +279,286 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="3xl" isCentered>
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent maxH="85vh">
-        <ModalHeader>
-          <Flex align="center" justify="space-between" pr={8}>
-            <Flex align="center" gap={3}>
-              <Text>Transfer Command Mappings</Text>
-              <Badge colorScheme="blue" variant="subtle">
-                {mappings.length} total
-              </Badge>
-            </Flex>
-            {Object.keys(groupedMappings).length > 1 && (
-              <HStack spacing={1}>
-                <Button size="xs" variant="ghost" onClick={expandAll} fontSize="xs">
-                  Expand All
-                </Button>
-                <Button size="xs" variant="ghost" onClick={collapseAll} fontSize="xs">
-                  Collapse All
-                </Button>
-              </HStack>
-            )}
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody pb={6}>
-          <VStack spacing={4} align="stretch" maxH="55vh" overflowY="auto">
-            {/* Grouped Mappings */}
-            {Object.entries(groupedMappings).map(([groupKey, groupMappings]) => {
-              const { groupKey: displayKey, description } = getGroupInfo(groupKey);
-              const isCollapsed = collapsedGroups.has(groupKey);
-              
-              return (
-                <Box key={groupKey}>
-                  {/* Group Header */}
-                  <Box
-                    bg={groupHeaderBg}
-                    borderWidth={1}
-                    borderColor={groupBorderColor}
-                    borderRadius="md"
-                    p={2}
-                    cursor="pointer"
-                    onClick={() => toggleGroup(groupKey)}
-                    _hover={{ bg: groupHeaderHoverBg }}
-                    transition="background 0.2s"
-                  >
-                    <Flex align="center" gap={2}>
-                      <IconButton
-                        aria-label="Toggle group"
-                        icon={isCollapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-                        size="xs"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleGroup(groupKey);
-                        }}
-                      />
-                      <Box flex={1}>
-                        <Flex align="center" justify="space-between">
-                          <Flex align="center" gap={1}>
-                            <Text fontWeight="semibold" fontSize="sm">
-                              {displayKey}
-                            </Text>
-                            {description && (
-                              <Text fontSize="sm" color={placeholderColor}>
-                                [{description}]
-                              </Text>
-                            )}
-                          </Flex>
-                          <Badge colorScheme="blue" size="sm" variant="subtle">
-                            {groupMappings.length}
-                          </Badge>
-                        </Flex>
-                      </Box>
-                    </Flex>
-                  </Box>
+    <Dialog.Root open={isOpen} size='xl' placement='center' onOpenChange={e => {
+      if (!e.open) {
+        onClose();
+      }
+    }}>
+      <Portal>
 
-                  {/* Group Content */}
-                  <Collapse in={!isCollapsed}>
-                    <VStack spacing={2} align="stretch" mt={1} ml={3}>
-                      {groupMappings.map((mapping, relativeIndex) => {
-                        const absoluteIndex = getOriginalIndex(groupKey, relativeIndex);
-                        
-                        return (
-                          <Box
-                            key={`${groupKey}-${relativeIndex}`}
-                            bg={cardBg}
-                            borderWidth={1}
-                            borderColor={borderColor}
-                            borderRadius="md"
-                            p={3}
-                            _hover={{ bg: hoverBg }}
-                            transition="background 0.2s"
-                            borderLeftWidth={3}
-                            borderLeftColor="blue.300"
-                          >
-                            {editingIndex === absoluteIndex ? (
-                              // Edit Mode
-                              <Flex align="center" gap={3}>
-                                <Input
-                                  value={editCommand}
-                                  onChange={(e) => setEditCommand(e.target.value)}
-                                  placeholder="Command"
-                                  size="sm"
-                                  w="30%"
-                                  onKeyDown={(e) => handleKeyPress(e, 'edit')}
-                                  autoFocus
-                                />
-                                <Input
-                                  value={editFilename}
-                                  onChange={(e) => setEditFilename(e.target.value)}
-                                  placeholder="Filename Template"
-                                  size="sm"
-                                  flex={1}
-                                  onKeyDown={(e) => handleKeyPress(e, 'edit')}
-                                />
-                                <HStack spacing={1}>
-                                  <IconButton
-                                    aria-label="Save edit"
-                                    icon={<CheckIcon />}
-                                    onClick={saveEdit}
-                                    colorScheme="green"
-                                    size="sm"
-                                    variant="ghost"
-                                    isDisabled={!editCommand.trim() || !editFilename.trim()}
-                                  />
-                                  <IconButton
-                                    aria-label="Cancel edit"
-                                    icon={<CloseIcon />}
-                                    onClick={cancelEdit}
-                                    colorScheme="gray"
-                                    size="sm"
-                                    variant="ghost"
-                                  />
-                                </HStack>
-                              </Flex>
-                            ) : (
-                              // Display Mode
-                              <Flex align="center" gap={3} onClick={() => startEdit(absoluteIndex)} cursor="pointer">
-                                <Text w="30%" fontWeight="medium" color="blue.500">
-                                  {mapping.command}
-                                </Text>
-                                <Text flex={1} color="gray.700" _dark={{ color: 'gray.300' }}>
-                                  {mapping.filename}
-                                </Text>
-                                <HStack spacing={1} onClick={(e) => e.stopPropagation()}>
-                                  <IconButton
-                                    aria-label="Edit mapping"
-                                    icon={<EditIcon />}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startEdit(absoluteIndex);
-                                    }}
-                                    colorScheme="blue"
-                                    size="sm"
-                                    variant="ghost"
-                                    opacity={0.7}
-                                    _hover={{ opacity: 1 }}
-                                  />
-                                  <IconButton
-                                    aria-label="Delete mapping"
-                                    icon={<DeleteIcon />}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete(absoluteIndex);
-                                    }}
-                                    colorScheme="red"
-                                    size="sm"
-                                    variant="ghost"
-                                    opacity={0.7}
-                                    _hover={{ opacity: 1 }}
-                                  />
-                                </HStack>
-                              </Flex>
-                            )}
-                          </Box>
-                        );
-                      })}
-                    </VStack>
-                  </Collapse>
-                </Box>
-              );
-            })}
-
-            {/* Empty State */}
-            {mappings.length === 0 && (
-              <Box
-                textAlign="center"
-                py={8}
-                color={placeholderColor}
-                borderWidth={1}
-                borderColor={borderColor}
-                borderRadius="md"
-                borderStyle="dashed"
-              >
-                <Text fontSize="sm">No mappings defined yet</Text>
-                <Text fontSize="xs" mt={1}>Add your first mapping below</Text>
-              </Box>
-            )}
-
-            {/* Divider */}
-            {mappings.length > 0 && <Divider />}
-
-            {/* Add New Mapping Row */}
-            <Box
-              bg={cardBg}
-              borderWidth={1}
-              borderColor="blue.200"
-              borderRadius="md"
-              p={3}
-              borderStyle="dashed"
-              _hover={{ borderColor: 'blue.300', borderStyle: 'solid' }}
-              transition="border 0.2s"
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg={bgColor}
+            maxH="85vh"
+            borderRadius={0}
+            boxShadow="xl"
+            display="flex"
+            flexDirection="column"
+            overflow="hidden"
+          >
+            <Dialog.Header
+              bg={titleBarBg}
+              borderBottom="1px solid"
+              borderColor={borderColor}
+              borderRadius={0}
+              py={1.5}
+              minH="31px"
             >
-              <Text fontSize="sm" fontWeight="medium" mb={3} color="blue.600">
-                Add New Mapping
-              </Text>
-              <Flex align="center" gap={3}>
-                <Input
-                  value={newCommand}
-                  onChange={(e) => setNewCommand(e.target.value)}
-                  placeholder="e.g., FAR"
-                  size="sm"
-                  w="30%"
-                  onKeyDown={(e) => handleKeyPress(e, 'add')}
-                />
-                <Input
-                  value={newFilename}
-                  onChange={(e) => setNewFilename(e.target.value)}
-                  placeholder="e.g., F - Fixed Assets Reconciliation"
-                  size="sm"
-                  flex={1}
-                  onKeyDown={(e) => handleKeyPress(e, 'add')}
-                />
-                <IconButton
-                  aria-label="Add mapping"
-                  icon={<AddIcon />}
-                  onClick={handleAdd}
-                  colorScheme="blue"
-                  size="sm"
-                  isDisabled={!newCommand.trim() || !newFilename.trim()}
-                />
+              <Flex align="center" justify="space-between" pr={10}>
+                <Flex align="center" gap={3}>
+                  <Text fontSize="sm" fontWeight="600" color={textColor}>Transfer Command Mappings</Text>
+                  <Badge colorPalette="blue" variant="subtle">
+                    {mappings.length} total
+                  </Badge>
+                </Flex>
+                {Object.keys(groupedMappings).length > 1 && (
+                  <HStack gap={1}>
+                    <Button size="xs" variant="ghost" onClick={expandAll} fontSize="xs">
+                      Expand All
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={collapseAll} fontSize="xs">
+                      Collapse All
+                    </Button>
+                  </HStack>
+                )}
               </Flex>
-              <Text fontSize="xs" color={placeholderColor} mt={2}>
-                Press Enter to add or click the + button
-              </Text>
-            </Box>
-          </VStack>
-        </ModalBody>
-        <ModalFooter>
-          <Button variant="ghost" mr={3} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button colorScheme="blue" onClick={handleSave}>
-            Save Changes
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body p={0} display="flex" flexDirection="column" flex="1" minH={0} overflow="hidden">
+              <Box flex="1" minH={0} overflowY="auto" px={6} pt={4} pb={3}>
+                <VStack gap={4} align="stretch">
+                  {Object.entries(groupedMappings).map(([groupKey, groupMappings]) => {
+                    const { groupKey: displayKey, description } = getGroupInfo(groupKey);
+                    const isCollapsed = collapsedGroups.has(groupKey);
+
+                    return (
+                      <Box key={groupKey}>
+                        <Box
+                          bg={cardBg}
+                          borderWidth={1}
+                          borderColor={borderColor}
+                          borderRadius="md"
+                          p={2}
+                          cursor="pointer"
+                          onClick={() => toggleGroup(groupKey)}
+                          _hover={{ bg: groupHeaderHoverBg }}
+                          transition="background 0.2s"
+                        >
+                          <Flex align="center" gap={2}>
+                            <IconButton
+                              aria-label="Toggle group"
+                              size="xs"
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleGroup(groupKey);
+                              }}>{isCollapsed ? <LuChevronRight /> : <LuChevronDown />}</IconButton>
+                            <Box flex={1}>
+                              <Flex align="center" justify="space-between">
+                                <Flex align="center" gap={1}>
+                                  <Text fontWeight="semibold" fontSize="sm" color={textColor}>
+                                    {displayKey}
+                                  </Text>
+                                  {description ? (
+                                    <Text fontSize="sm" color={secondaryTextColor}>
+                                      [{description}]
+                                    </Text>
+                                  ) : null}
+                                </Flex>
+                                <Badge colorPalette="blue" size="sm" variant="subtle">
+                                  {groupMappings.length}
+                                </Badge>
+                              </Flex>
+                            </Box>
+                          </Flex>
+                        </Box>
+                        <Collapsible.Root open={!isCollapsed}>
+                          <Collapsible.Content>
+                            <VStack gap={2} align="stretch" mt={1} ml={3}>
+                              {groupMappings.map((mapping, relativeIndex) => {
+                                const absoluteIndex = getOriginalIndex(groupKey, relativeIndex);
+
+                                return (
+                                  <Box
+                                    key={`${groupKey}-${relativeIndex}`}
+                                    bg={bgColor}
+                                    borderWidth={1}
+                                    borderColor={borderColor}
+                                    borderRadius="md"
+                                    p={3}
+                                    _hover={{ bg: rowHoverBg }}
+                                    transition="background 0.2s"
+                                    borderLeftWidth={3}
+                                    borderLeftColor="blue.300"
+                                  >
+                                    {editingIndex === absoluteIndex ? (
+                                      <Flex align="center" gap={3}>
+                                        <Input
+                                          value={editCommand}
+                                          onChange={(e) => setEditCommand(e.target.value)}
+                                          placeholder="Command"
+                                          size="sm"
+                                          w="30%"
+                                          bg={inputBg}
+                                          borderColor={borderColor}
+                                          onKeyDown={(e) => handleKeyPress(e, 'edit')}
+                                          autoFocus
+                                        />
+                                        <Input
+                                          value={editFilename}
+                                          onChange={(e) => setEditFilename(e.target.value)}
+                                          placeholder="Filename Template"
+                                          size="sm"
+                                          flex={1}
+                                          bg={inputBg}
+                                          borderColor={borderColor}
+                                          onKeyDown={(e) => handleKeyPress(e, 'edit')}
+                                        />
+                                        <HStack gap={1}>
+                                          <IconButton
+                                            aria-label="Save edit"
+                                            onClick={saveEdit}
+                                            colorPalette="green"
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={!editCommand.trim() || !editFilename.trim()}><LuCheck /></IconButton>
+                                          <IconButton
+                                            aria-label="Cancel edit"
+                                            onClick={cancelEdit}
+                                            colorPalette="gray"
+                                            size="sm"
+                                            variant="ghost"><LuX /></IconButton>
+                                        </HStack>
+                                      </Flex>
+                                    ) : (
+                                      <Flex align="center" gap={3} onClick={() => startEdit(absoluteIndex)} cursor="pointer">
+                                        <Text w="30%" fontWeight="medium" color={accentText}>
+                                          {mapping.command}
+                                        </Text>
+                                        <Text flex={1} color={textColor}>
+                                          {mapping.filename}
+                                        </Text>
+                                        <HStack gap={1} onClick={(e) => e.stopPropagation()}>
+                                          <IconButton
+                                            aria-label="Edit mapping"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              startEdit(absoluteIndex);
+                                            }}
+                                            colorPalette="blue"
+                                            size="sm"
+                                            variant="ghost"
+                                            opacity={0.7}
+                                            _hover={{ opacity: 1 }}><LuPencil /></IconButton>
+                                          <IconButton
+                                            aria-label="Delete mapping"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDelete(absoluteIndex);
+                                            }}
+                                            colorPalette="red"
+                                            size="sm"
+                                            variant="ghost"
+                                            opacity={0.7}
+                                            _hover={{ opacity: 1 }}><LuTrash2 /></IconButton>
+                                        </HStack>
+                                      </Flex>
+                                    )}
+                                  </Box>
+                                );
+                              })}
+                            </VStack>
+                          </Collapsible.Content>
+                        </Collapsible.Root>
+                      </Box>
+                    );
+                  })}
+
+                  {mappings.length === 0 && (
+                    <Box
+                      textAlign="center"
+                      py={8}
+                      color={secondaryTextColor}
+                      borderWidth={1}
+                      borderColor={borderColor}
+                      borderRadius="md"
+                      borderStyle="dashed"
+                    >
+                      <Text fontSize="sm">No mappings defined yet</Text>
+                      <Text fontSize="xs" mt={1}>Add your first mapping in the form below</Text>
+                    </Box>
+                  )}
+                </VStack>
+              </Box>
+
+              <Box
+                px={6}
+                py={3}
+                borderTop="1px solid"
+                borderColor={borderColor}
+                bg={cardBg}
+                flexShrink={0}
+              >
+                <Box
+                  bg={bgColor}
+                  borderWidth={1}
+                  borderColor={borderColor}
+                  borderRadius="md"
+                  p={3}
+                  borderStyle="dashed"
+                  _hover={{ borderColor: accentText, borderStyle: 'solid' }}
+                  transition="border 0.2s"
+                >
+                  <Text fontSize="sm" fontWeight="medium" mb={3} color={accentText}>
+                    Add New Mapping
+                  </Text>
+                  <Flex align="center" gap={3}>
+                    <Input
+                      value={newCommand}
+                      onChange={(e) => setNewCommand(e.target.value)}
+                      placeholder="e.g., FAR"
+                      size="sm"
+                      w="30%"
+                      bg={inputBg}
+                      borderColor={borderColor}
+                      onKeyDown={(e) => handleKeyPress(e, 'add')}
+                    />
+                    <Input
+                      value={newFilename}
+                      onChange={(e) => setNewFilename(e.target.value)}
+                      placeholder="e.g., F - Fixed Assets Reconciliation"
+                      size="sm"
+                      flex={1}
+                      bg={inputBg}
+                      borderColor={borderColor}
+                      onKeyDown={(e) => handleKeyPress(e, 'add')}
+                    />
+                    <IconButton
+                      aria-label="Add mapping"
+                      onClick={handleAdd}
+                      colorPalette="blue"
+                      size="sm"
+                      disabled={!newCommand.trim() || !newFilename.trim()}><LuPlus /></IconButton>
+                  </Flex>
+                  <Text fontSize="xs" color={secondaryTextColor} mt={2}>
+                    Press Enter to add or click the + button
+                  </Text>
+                </Box>
+              </Box>
+            </Dialog.Body>
+            <Dialog.Footer borderTopWidth="1px" borderColor={borderColor}>
+              <Button variant="outline" mr={3} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button colorPalette="blue" onClick={handleSave}>
+                Save Changes
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 }; 

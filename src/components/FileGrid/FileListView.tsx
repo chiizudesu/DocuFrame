@@ -1,21 +1,9 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
+import { useColorModeValue } from "../ui/color-mode";
 import { ListRowHoverProvider, useListRowIsHovered } from './ListRowHoverContext'
 import { FileListTheadRow } from './FileListThead'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import {
-  Box,
-  Text,
-  Icon,
-  Flex,
-  Input,
-  Image,
-  useColorModeValue,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuDivider,
-  IconButton,
-} from '@chakra-ui/react'
+import { Box, Text, Icon, Flex, Input, Image, Menu, IconButton, Portal, chakra } from '@chakra-ui/react';
 import {
   FolderOpen,
   Upload,
@@ -24,7 +12,20 @@ import {
 import type { FileItem } from '../../types'
 import { FileTableRowProps } from './FileGridUtils'
 import { SortColumn } from './FileGridUtils'
-import { getIndexInfo, getMaxIndexPillWidth } from '../../utils/indexPrefix'
+import { getIndexInfo } from '../../utils/indexPrefix'
+import { DF_GROUP_HEADER_GAP_BG, DF_GROUP_HEADER_LAYER_TEXT } from '../../docuFrameColors'
+
+const fileGridTableStyles = {
+  width: 'fit-content',
+  fontSize: 'xs',
+  userSelect: 'none',
+  minWidth: '690px',
+  position: 'relative' as const,
+  borderCollapse: 'separate' as const,
+  /** v2: ~3px vertical rhythm between rows (same bg as grid — no row “cards”) */
+  borderSpacing: '0 3px',
+  tableLayout: 'fixed' as const,
+}
 
 // FileTableRow Component (extracted from FileGrid.tsx)
 const FileTableRow = React.memo<FileTableRowProps>(({
@@ -74,42 +75,41 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   };
 
   return (
-    <Box
-      as="tr"
+    <chakra.tr
+      draggable={rowHandlers.draggable}
+      {...folderDropHandlers}
+      data-row-index={index}
+      data-file-index={index}
+      data-new-file-row={fileState.isFileNew ? 'true' : undefined}
       onMouseEnter={() => rowHandlers.onMouseEnter(index)}
       onMouseLeave={(e: React.MouseEvent) => rowHandlers.onMouseLeave(index, e)}
       onContextMenu={(e: React.MouseEvent) => rowHandlers.onContextMenu(file, e)}
       onClick={(e: React.MouseEvent) => rowHandlers.onClick(file, index, e)}
       onMouseDown={(e: React.MouseEvent) => rowHandlers.onMouseDown(file, index, e)}
       onMouseUp={(e: React.MouseEvent) => rowHandlers.onMouseUp(file, index, e)}
-      draggable={rowHandlers.draggable}
       onDragStart={(e: React.DragEvent) => rowHandlers.onDragStart(file, index, e)}
       onDragEnd={rowHandlers.onDragEnd}
-      {...folderDropHandlers}
-      data-row-index={index}
-      data-file-index={index}
-      data-new-file-row={fileState.isFileNew ? 'true' : undefined}
     >
       {columnOrder.map((column, colIndex) => {
         const isName = column === 'name';
         const isSize = column === 'size';
         const isModified = column === 'modified';
         const isType = column === 'type';
-        
+
         if (!columnVisibility[column as keyof typeof columnVisibility]) {
           return null;
         }
-        
+
         const selectionShadow = getSelectionBoxShadow(column);
-        
+        const cellKey = `${file.path}-${column}-${colIndex}`;
+
         if (isName) {
           return (
-            <Box
-              as="td"
-              key={`${file.path}-${column}-${colIndex}`}
+            <chakra.td
+              key={cellKey}
               {...cellStylesDisplay}
               boxShadow={selectionShadow}
-              ref={(el: HTMLElement | null) => {
+              ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
                     observedElRef.current = el;
@@ -134,22 +134,18 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                     flexShrink={0}
                   />
                 ) : (
-                  <Icon
-                    as={FolderOpen}
-                    boxSize={4}
-                    mr={1.5}
-                    color="blue.400"
-                    flexShrink={0}
-                  />
+                  <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
+                    <FolderOpen size={16} strokeWidth={2} />
+                  </Box>
                 )}
-                
-                <Text 
-                  fontSize="xs" 
-                  color={fileTextColor} 
-                  style={{ 
-                    userSelect: 'none', 
-                    opacity: fileState.isFileCut ? 0.5 : 1, 
-                    fontStyle: fileState.isFileCut ? 'italic' : 'normal'
+
+                <Text
+                  fontSize="xs"
+                  color={fileTextColor}
+                  style={{
+                    userSelect: 'none',
+                    opacity: fileState.isFileCut ? 0.5 : 1,
+                    fontStyle: fileState.isFileCut ? 'italic' : 'normal',
                   }}
                   overflow="hidden"
                   textOverflow="ellipsis"
@@ -159,71 +155,58 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                   {file.name}
                 </Text>
               </Flex>
-              
-            </Box>
+            </chakra.td>
           );
-        } else if (isSize) {
+        }
+        if (isSize) {
           return (
-            <Box
-              as="td"
-              key={`${file.path}-${column}-${colIndex}`}
-              {...cellStylesDisplay}
-              boxShadow={selectionShadow}
-            >
-              <Text 
-                fontSize="xs" 
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              <Text
+                fontSize="xs"
                 color={fileSubTextColor}
                 style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
               >
-                {file.type === 'folder' ? '-' : (file.size ? formatFileSize(file.size) : '-')}
+                {file.type === 'folder' ? '-' : file.size ? formatFileSize(file.size) : '-'}
               </Text>
-            </Box>
+            </chakra.td>
           );
-        } else if (isModified) {
+        }
+        if (isModified) {
           return (
-            <Box
-              as="td"
-              key={`${file.path}-${column}-${colIndex}`}
-              {...cellStylesDisplay}
-              boxShadow={selectionShadow}
-            >
-              <Text 
-                fontSize="xs" 
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              <Text
+                fontSize="xs"
                 color={fileSubTextColor}
                 style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
               >
                 {file.modified ? formatDate(file.modified) : '-'}
               </Text>
-            </Box>
+            </chakra.td>
           );
-        } else if (isType) {
+        }
+        if (isType) {
           const getFileExtension = (filename: string): string => {
             if (file.type === 'folder') return 'Folder';
             const lastDot = filename.lastIndexOf('.');
             if (lastDot === -1 || lastDot === filename.length - 1) return 'File';
             return filename.substring(lastDot + 1).toUpperCase();
           };
-          
+
           return (
-            <Box
-              as="td"
-              key={`${file.path}-${column}-${colIndex}`}
-              {...cellStylesDisplay}
-              boxShadow={selectionShadow}
-            >
-              <Text 
-                fontSize="xs" 
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              <Text
+                fontSize="xs"
                 color={fileSubTextColor}
                 style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
               >
                 {getFileExtension(file.name)}
               </Text>
-            </Box>
+            </chakra.td>
           );
         }
         return null;
       })}
-    </Box>
+    </chakra.tr>
   );
 }, (prevProps, nextProps) => {
   const columnOrderChanged = prevProps.columnOrder.length !== nextProps.columnOrder.length ||
@@ -268,7 +251,6 @@ interface GroupHeaderDropZoneProps {
   pillText: string;
   dividerColor: string;
   dropZoneBg: string;
-  maxPillWidth: string;
   mt: number;
   clearFolderHoverStates: () => void;
 }
@@ -284,7 +266,6 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   pillText,
   dividerColor,
   dropZoneBg,
-  maxPillWidth,
   mt,
   clearFolderHoverStates,
 }) => {
@@ -293,6 +274,24 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   const [manualFilename, setManualFilename] = useState('');
   const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
   const manualInputRef = useRef<HTMLInputElement>(null);
+  const headerRowRef = useRef<HTMLDivElement>(null);
+  const [squareSide, setSquareSide] = useState(22);
+
+  useLayoutEffect(() => {
+    const el = headerRowRef.current;
+    if (!el) return;
+    const update = () => {
+      const cs = getComputedStyle(el);
+      const pt = parseFloat(cs.paddingTop) || 0;
+      const pb = parseFloat(cs.paddingBottom) || 0;
+      const innerCross = el.clientHeight - pt - pb;
+      setSquareSide(Math.max(Math.round(innerCross), 20));
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const menuListBg = useColorModeValue('white', 'gray.800');
   const menuListBorder = useColorModeValue('gray.200', 'gray.700');
   const menuItemBg = useColorModeValue('gray.50', 'gray.700');
@@ -316,19 +315,27 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     }
   };
 
+  const indexPillLabel = groupKey === 'Other' ? '-' : groupKey;
+  const indexPillTitle =
+    groupKey === 'Other'
+      ? 'Other — non-indexed files'
+      : indexInfo.description
+        ? `${groupKey} — ${indexInfo.description}`
+        : groupKey;
+
   const checkAndSetDropEffect = (e: React.DragEvent): 'internal' | 'external' | 'none' => {
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
     const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasExternalFiles = hasFilesType || (e.dataTransfer.files && e.dataTransfer.files.length > 0);
-    const effectAllowed = e.dataTransfer.effectAllowed;
+    const effectAllowed = e.dataTransfer.effectAllowed as string;
     
     const isInternal = hasCustomType || internalDragFlag;
     
     if (isInternal) {
-      if (effectAllowed === 'copy' || (e.ctrlKey && effectAllowed !== 'move')) {
+      if (effectAllowed === 'copy' || effectAllowed === 'copyMove' || effectAllowed === 'all' || (e.ctrlKey && effectAllowed !== 'move' && effectAllowed !== 'linkMove')) {
         e.dataTransfer.dropEffect = 'copy';
-      } else if (effectAllowed === 'move' || (!e.ctrlKey && effectAllowed !== 'copy')) {
+      } else if (effectAllowed === 'move' || effectAllowed === 'linkMove' || (!e.ctrlKey && effectAllowed !== 'copy' && effectAllowed !== 'copyMove' && effectAllowed !== 'all')) {
         e.dataTransfer.dropEffect = 'move';
       } else {
         e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
@@ -399,147 +406,199 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
       }}
     >
       <Flex
-        align="center"
+        ref={headerRowRef}
+        align="stretch"
         px={0}
-        py={isDraggingOver ? 1.6 : 1.12}
-        gap={2}
-        minHeight="27px"
-        bg={isDraggingOver ? dropZoneBg : 'transparent'}
+        py={0}
+        gap={0}
+        minHeight="22px"
+        bg={isDraggingOver ? dropZoneBg : pillBg}
         transition="background 0.15s ease"
         borderRadius={0}
         cursor={isDraggingOver ? 'copy' : 'default'}
       >
         <Box
-          as="span"
-          px={4}
-          py={1.5}
+          flexShrink={0}
+          alignSelf="stretch"
+          w={`${squareSide}px`}
+          minW={`${squareSide}px`}
+          maxW={`${squareSide}px`}
+          boxSizing="border-box"
           bg={pillBg}
           color={pillText}
-          borderRadius={0}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
           fontSize="xs"
           fontWeight="semibold"
-          display="inline-flex"
-          alignItems="center"
-          width={maxPillWidth}
-          minWidth={maxPillWidth}
-          textAlign="left"
+          title={indexPillTitle}
+          overflow="hidden"
+          py={isDraggingOver ? 1 : 0.5}
         >
-          {isDraggingOver && isCopyMode && '📋 Copy to '}
-          {groupKey}
-          {indexInfo.description && ` - ${indexInfo.description}`}
+          <Text as="span" lineClamp={1} px={1} textAlign="center" w="100%">
+            {indexPillLabel}
+          </Text>
         </Box>
-        <Box flex="1" />
-        <Flex align="center" gap={1}>
+        <Box
+          flexShrink={0}
+          w="3px"
+          minW="3px"
+          alignSelf="stretch"
+          bg={DF_GROUP_HEADER_GAP_BG}
+          aria-hidden
+        />
+        <Flex
+          flex="1"
+          minW={0}
+          align="center"
+          gap={2}
+          px={2}
+          py={isDraggingOver ? 1 : 0.5}
+          color={pillText}
+        >
+          <Text flex="1" fontSize="xs" fontWeight="medium" lineClamp={2} minW={0}>
+            {isDraggingOver && isCopyMode
+              ? `📋 Copy to ${groupKey}${indexInfo.description ? ` — ${indexInfo.description}` : ''}`
+              : indexInfo.description || ''}
+          </Text>
           <Box
             as="span"
-            px={3}
-            py={1.5}
-            bg={pillBg}
+            flexShrink={0}
+            px={2}
+            py={0.5}
+            bg="rgba(255,255,255,0.12)"
             color={pillText}
             borderRadius={0}
             fontSize="xs"
             fontWeight="semibold"
-            width="56px"
+            minW="32px"
             textAlign="center"
           >
             {fileCount}
           </Box>
-          <Menu closeOnSelect={false} isOpen={isTransferMenuOpen} onClose={() => { setManualFilename(''); setIsTransferMenuOpen(false); }} onOpen={() => setIsTransferMenuOpen(true)} placement="bottom-end" strategy="fixed">
-            <MenuButton
-              as={IconButton}
-              aria-label="Transfer to this group"
-              icon={<Plus size={12} />}
-              size="xs"
-              variant="ghost"
-              minW={6}
-              h={6}
-              color={pillText}
-              bg={pillBg}
-              borderRadius={0}
-              _hover={{ bg: dropZoneBg }}
-              onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            />
-            <MenuList
-              bg={menuListBg}
-              borderColor={menuListBorder}
-              minW="200px"
-              maxW="50ch"
-              p={3}
-              zIndex={10000}
-            >
-              {transferTemplates.length === 0 ? (
-                <Box py={2.5} px={4} my={0.5} borderRadius="md" bg={menuItemBg}>
-                  <Text fontSize="sm" color={menuPlaceholderColor}>No templates</Text>
-                </Box>
-              ) : (
-                transferTemplates.map((t) => {
-                  const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
-                  return (
-                    <Box
-                      key={t.command}
-                      as="button"
-                      type="button"
+        </Flex>
+        <Box
+          flexShrink={0}
+          w="3px"
+          minW="3px"
+          alignSelf="stretch"
+          bg={DF_GROUP_HEADER_GAP_BG}
+          aria-hidden
+        />
+        <Box
+          flexShrink={0}
+          alignSelf="stretch"
+          w={`${squareSide}px`}
+          minW={`${squareSide}px`}
+          maxW={`${squareSide}px`}
+          boxSizing="border-box"
+          bg={pillBg}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          py={isDraggingOver ? 1 : 0.5}
+        >
+          <Menu.Root
+            closeOnSelect={false}
+            open={isTransferMenuOpen}
+            onOpenChange={({ open }) => {
+              if (!open) setManualFilename('');
+              setIsTransferMenuOpen(open);
+            }}
+            positioning={{
+              placement: 'bottom-end',
+              strategy: 'fixed'
+            }}>
+            <Menu.Trigger asChild>
+              <IconButton
+                aria-label="Transfer to this group"
+                size="xs"
+                variant="ghost"
+                minW={8}
+                minH={8}
+                w={8}
+                h={8}
+                color={pillText}
+                bg="transparent"
+                borderRadius={0}
+                _hover={{ bg: 'rgba(255,255,255,0.14)' }}
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
+              >
+                <Plus size={12} />
+              </IconButton>
+            </Menu.Trigger>
+            <Portal><Menu.Positioner><Menu.Content>
+                  {transferTemplates.length === 0 ? (
+                    <Box py={2.5} px={4} my={0.5} borderRadius="md" bg={menuItemBg}>
+                      <Text fontSize="sm" color={menuPlaceholderColor}>No templates</Text>
+                    </Box>
+                  ) : (
+                    transferTemplates.map((t) => {
+                      const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
+                      return (
+                        <Box
+                          w="100%"
+                          textAlign="left"
+                          py={2.5}
+                          px={4}
+                          my={0.5}
+                          fontSize="sm"
+                          borderRadius="md"
+                          bg={menuItemBg}
+                          cursor="pointer"
+                          border="none"
+                          _hover={{ bg: menuHoverBg }}
+                          _focus={{ bg: menuHoverBg }}
+                          _focusVisible={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
+                          title={t.filename}
+                          asChild><button
+                            key={t.command}
+                            type="button"
+                            onClick={() => handleTransferTemplate(t.command)}>
+                            {displayText}
+                          </button></Box>
+                      );
+                    })
+                  )}
+                  <Menu.Separator borderColor={menuListBorder} my={2} />
+                  <Box w="100%" my={0.5} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                    <Input
+                      ref={manualInputRef}
                       w="100%"
-                      textAlign="left"
                       py={2.5}
                       px={4}
-                      my={0.5}
+                      h="auto"
+                      minH="40px"
                       fontSize="sm"
                       borderRadius="md"
-                      bg={menuItemBg}
-                      cursor="pointer"
-                      border="none"
-                      onClick={() => handleTransferTemplate(t.command)}
-                      _hover={{ bg: menuHoverBg }}
-                      _focus={{ bg: menuHoverBg }}
-                      _focusVisible={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
-                      title={t.filename}
-                    >
-                      {displayText}
-                    </Box>
-                  );
-                })
-              )}
-              <MenuDivider borderColor={menuListBorder} my={2} />
-              <Box w="100%" my={0.5} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                <Input
-                  ref={manualInputRef}
-                  w="100%"
-                  py={2.5}
-                  px={4}
-                  h="auto"
-                  minH="40px"
-                  fontSize="sm"
-                  borderRadius="md"
-                  bg={inputBg}
-                  border="1px solid"
-                  borderColor={menuListBorder}
-                  placeholder="New filename to transfer..."
-                  value={manualFilename}
-                  onChange={(e) => setManualFilename(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleTransferManual();
-                    }
-                  }}
-                  _placeholder={{ color: menuPlaceholderColor }}
-                  _hover={{ borderColor: menuHoverBg }}
-                  _focus={{ borderColor: 'blue.400', boxShadow: '0 0 0 1px var(--chakra-colors-blue-400)' }}
-                />
-              </Box>
-            </MenuList>
-          </Menu>
-        </Flex>
+                      bg={inputBg}
+                      border="1px solid"
+                      borderColor={menuListBorder}
+                      placeholder="New filename to transfer..."
+                      value={manualFilename}
+                      onChange={(e) => setManualFilename(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleTransferManual();
+                        }
+                      }}
+                      _placeholder={{ color: menuPlaceholderColor }}
+                      _hover={{ borderColor: menuHoverBg }}
+                      _focus={{ borderColor: 'blue.400', boxShadow: '0 0 0 1px var(--chakra-colors-blue-400)' }}
+                    />
+                  </Box>
+                </Menu.Content></Menu.Positioner></Portal>
+          </Menu.Root>
+        </Box>
       </Flex>
-      <Box 
-        height="1px" 
-        bg={dividerColor} 
-        width="100%" 
-        position="absolute"
-        bottom={0}
-        left={0}
-      />
+      <Flex h="1px" w="100%" flexShrink={0} gap={0} align="stretch" aria-hidden>
+        <Box flexShrink={0} w={`${squareSide}px`} minW={`${squareSide}px`} maxW={`${squareSide}px`} bg={dividerColor} />
+        <Box flexShrink={0} w="3px" minW="3px" bg={DF_GROUP_HEADER_GAP_BG} />
+        <Box flex="1" minW={0} bg={dividerColor} />
+        <Box flexShrink={0} w="3px" minW="3px" bg={DF_GROUP_HEADER_GAP_BG} />
+        <Box flexShrink={0} w={`${squareSide}px`} minW={`${squareSide}px`} maxW={`${squareSide}px`} bg={dividerColor} />
+      </Flex>
       {isDraggingOver && (
         <Flex
           position="absolute"
@@ -554,7 +613,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           border="1px dashed"
           borderColor="blue.400"
         >
-          <Icon as={Upload} boxSize={3.5} color="blue.400" mr={2} />
+          <Icon boxSize={3.5} color="blue.400" mr={2} asChild><Upload /></Icon>
           <Text fontSize="xs" fontWeight="semibold" color="blue.400">
             Drop to assign
           </Text>
@@ -570,7 +629,7 @@ const GroupHeaderDropZone = React.memo(GroupHeaderDropZoneInner);
 export interface FileListViewProps {
   // Refs
   dropAreaRef: React.RefObject<HTMLDivElement>;
-  gridContainerRef: React.RefObject<HTMLDivElement>;
+  gridContainerRef: React.Ref<HTMLTableElement>;
   renameInputRef: React.RefObject<HTMLInputElement>;
   
   // State
@@ -621,6 +680,8 @@ export interface FileListViewProps {
   rowHoverBg: string;
   folderHoverState: Set<string>;
   headerDividerBg: string;
+  /** Table + scroll gutter — shows in row spacing (border-spacing) */
+  tableSurfaceBg: string;
   dragGhostBg: string;
   dragGhostBorder: string;
   dragGhostAccent: string;
@@ -660,13 +721,13 @@ export interface FileListViewProps {
   unobserveFileElement: (element: HTMLElement | null) => void;
   formatFileSize: (size: string | undefined) => string;
   formatDate: (dateString: string) => string;
-  handleRenameSubmit: (e?: React.FormEvent) => void;
+  handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void>;
   handleRenameCancel?: () => void;
   setIsRenaming: (name: string | null) => void;
   setRenameValue: (value: string) => void;
   setFileGridBackgroundUrl: (url: string) => void;
   selectedFiles: string[];
-  setSelectedFiles: (files: string[]) => void;
+  setSelectedFiles: React.Dispatch<React.SetStateAction<string[]>>;
   setSelectedFile: (file: string | null) => void;
   clearFolderHoverStates: () => void;
   
@@ -680,6 +741,7 @@ export interface FileListViewProps {
     position: 'relative';
     verticalAlign: 'middle';
     pointerEvents: 'auto';
+    boxSizing: 'border-box';
   };
 }
 
@@ -699,6 +761,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.dragMousePos !== next.dragMousePos || prev.dragOffset !== next.dragOffset) return false;
   if (prev.rowHandlers !== next.rowHandlers) return false;
   if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
+  if (prev.tableSurfaceBg !== next.tableSurfaceBg) return false;
   return true;
 }
 
@@ -746,6 +809,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   rowHoverBg,
   folderHoverState,
   headerDividerBg,
+  tableSurfaceBg,
   dragGhostBg,
   dragGhostBorder,
   dragGhostAccent,
@@ -785,18 +849,14 @@ const FileListViewBody = React.memo(function FileListViewBody({
   cellStyles,
 }: FileListViewProps) {
   const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
-  const pillBg = useColorModeValue('blue.100', 'blue.900'); // Light: more visible; dark: unchanged
-  const pillText = useColorModeValue('blue.700', 'blue.200');
-  const dividerColor = useColorModeValue('gray.200', 'gray.600');
-  const dropZoneBg = useColorModeValue('blue.100', 'blue.800');
+  const groupViewLayerHeaderBg = '#1A365D';
+  const pillBg = groupViewLayerHeaderBg;
+  const pillText = DF_GROUP_HEADER_LAYER_TEXT;
+  const dividerColor = 'rgba(255,255,255,0.22)';
+  const dropZoneBg = '#2C5282';
   const bgFillOpacity = useColorModeValue(0.05, 0.10); // Light: subtler; dark: unchanged
-  const maxPillWidth = useMemo(() => {
-    const maxLength = getMaxIndexPillWidth();
-    return `${Math.max(maxLength * 7, 140)}px`;
-  }, []);
-
   // Virtualizer for ungrouped list (flat sortedFiles). Disabled when grouped to avoid wasted work.
-  const ROW_HEIGHT_ESTIMATE = 30;
+  const ROW_HEIGHT_ESTIMATE = 33;
   const virtualizerCount = isGroupedByIndex ? 0 : sortedFiles.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualizerCount,
@@ -951,7 +1011,6 @@ const FileListViewBody = React.memo(function FileListViewBody({
           }}
         />
       )}
-      
       {/* Glowing green line when new file is above visible rows */}
       {newFileAboveVisible && (
         <Box
@@ -960,11 +1019,11 @@ const FileListViewBody = React.memo(function FileListViewBody({
           left={0}
           right={0}
           height="4px"
-          bg="green.400"
+          bg="#4ADE80"
           opacity={0.9}
           zIndex={998}
           pointerEvents="none"
-          boxShadow="0 0 12px 4px rgba(72, 187, 120, 0.6)"
+          boxShadow="0 0 12px 4px rgba(74, 222, 128, 0.6)"
         />
       )}
       {/* Glowing green line when new file is below visible rows */}
@@ -975,7 +1034,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
           left={0}
           right={0}
           height="4px"
-          bg="green.400"
+          bg="#4ADE80"
           opacity={0.9}
           zIndex={998}
           pointerEvents="none"
@@ -1010,7 +1069,6 @@ const FileListViewBody = React.memo(function FileListViewBody({
           />
         </Box>
       )}
-      
       {/* Legacy support: if backgroundType is not set but fileGridBackgroundUrl exists, show as corner mascot */}
       {enableBackgrounds && !backgroundType && fileGridBackgroundUrl && (
         <Box
@@ -1039,7 +1097,6 @@ const FileListViewBody = React.memo(function FileListViewBody({
           />
         </Box>
       )}
-      
       {/* Scrollable content container */}
       <Box 
         ref={dropAreaRef}
@@ -1053,6 +1110,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
         overflowY="auto"
         overflowX="auto"
         pl={3}
+        bg={tableSurfaceBg}
         onMouseDown={handleSelectionMouseDown}
         style={{ userSelect: isSelecting ? 'none' : 'auto' }}
         onContextMenu={e => {
@@ -1084,7 +1142,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
           pointerEvents="none"
         >
           <Flex direction="column" align="center" color="blue.600">
-            <Icon as={Upload} boxSize={12} mb={2} />
+            <Icon boxSize={12} mb={2} asChild><Upload /></Icon>
             <Text fontSize="lg" fontWeight="bold">
               Drop files here to upload
             </Text>
@@ -1113,90 +1171,283 @@ const FileListViewBody = React.memo(function FileListViewBody({
       
       {isGroupedByIndex && groupedFiles && Object.keys(groupedFiles).length > 0 ? (
         <>
-          <Box
-            as="table"
-            ref={gridContainerRef}
-            width="fit-content"
-            fontSize="xs"
-            userSelect="none"
-            minWidth="690px"
-            position="relative"
-            style={{
-              borderCollapse: 'separate',
-              borderSpacing: '0 3px',
-              tableLayout: 'fixed'
-            }}
-          >
-            <colgroup>
-              {columnOrder.map((column) => {
-                if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
-                return (
-                  <col
-                    key={column}
-                    style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
-                  />
-                );
-              })}
-            </colgroup>
+          <chakra.table ref={gridContainerRef} {...fileGridTableStyles} bg={tableSurfaceBg}>
+              <colgroup>
+                {columnOrder.map((column) => {
+                  if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
+                  return (
+                    <col
+                      key={column}
+                      style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
+                    />
+                  );
+                })}
+              </colgroup>
+              <FileListTheadRow
+                columnOrder={columnOrder}
+                columnVisibility={columnVisibility}
+                sortColumn={sortColumn}
+                sortDirection={sortDirection}
+                tableHeadTextColor={tableHeadTextColor}
+                headerHoverBg={headerHoverBg}
+                headerStickyBg={headerStickyBg}
+                headerDividerBg={headerDividerBg}
+                dragGhostAccent={dragGhostAccent}
+                draggingColumn={draggingColumn}
+                dragTargetColumn={dragTargetColumn}
+                hasDraggedColumn={hasDraggedColumn}
+                setHeaderContextMenu={setHeaderContextMenu}
+                handleSort={handleSort}
+                autoFitColumn={autoFitColumn}
+                handleColumnDragStart={handleColumnDragStart}
+                handleResizeStart={handleResizeStart}
+              />
+              <tbody>
+                  {groupedFiles.folders && groupedFiles.folders.length > 0 && (
+                    <>
+                      {folderVirtualItems.length > 0 && folderVirtualItems[0].start > 0 && (
+                        <tr>
+                            <td
+                              colSpan={columnOrder.length}
+                              style={{ height: folderVirtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
+                            />
+                        </tr>
+                      )}
+                      {folderVirtualItems.map((virtualRow) => {
+                        const file = groupedFiles.folders![virtualRow.index];
+                        const fileIndex = virtualRow.index;
+                        const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
+                        const index = globalIndex >= 0 ? globalIndex : fileIndex;
 
-            <FileListTheadRow
-              columnOrder={columnOrder}
-              columnVisibility={columnVisibility}
-              sortColumn={sortColumn}
-              sortDirection={sortDirection}
-              tableHeadTextColor={tableHeadTextColor}
-              headerHoverBg={headerHoverBg}
-              headerStickyBg={headerStickyBg}
-              headerDividerBg={headerDividerBg}
-              dragGhostAccent={dragGhostAccent}
-              draggingColumn={draggingColumn}
-              dragTargetColumn={dragTargetColumn}
-              hasDraggedColumn={hasDraggedColumn}
-              setHeaderContextMenu={setHeaderContextMenu}
-              handleSort={handleSort}
-              autoFitColumn={autoFitColumn}
-              handleColumnDragStart={handleColumnDragStart}
-              handleResizeStart={handleResizeStart}
-            />
+                        if (isRenaming === file.name) {
+                          return (
+                            <tr key={index}>
+                                  <td colSpan={columnOrder.length} style={{ padding: '4px 8px' }}>
+                                      <form onSubmit={(ev) => { void handleRenameSubmit(ev); }}>
+                                        <Input
+                                          ref={renameInputRef}
+                                          value={renameValue}
+                                          onChange={(e) => setRenameValue(e.target.value)}
+                                          onBlur={onRenameCancel}
+                                          autoFocus
+                                          size="xs"
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Escape') onRenameCancel()
+                                          }}
+                                        />
+                                      </form>
+                                    </td>
+                                </tr>
+                          );
+                        }
 
-            <Box as="tbody">
-              {groupedFiles.folders && groupedFiles.folders.length > 0 && (
-                <>
-                  {folderVirtualItems.length > 0 && folderVirtualItems[0].start > 0 && (
-                    <Box as="tr">
-                      <Box
-                        as="td"
-                        colSpan={columnOrder.length}
-                        style={{ height: folderVirtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
-                      />
-                    </Box>
+                        const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
+                        const folderDropHandlers = createFolderDropHandlers(file, index);
+
+                        return (
+                          <FileTableRow
+                            key={file.path}
+                            file={file}
+                            index={index}
+                            fileState={fileState}
+                            finalBg={finalBg}
+                            rowHoverBg={rowHoverBg}
+                            isFolderDropHovered={isFolderDropHovered}
+                            columnOrder={columnOrder}
+                            columnVisibility={columnVisibility}
+                            cellStyles={finalCellStyles}
+                            nativeIcons={nativeIcons}
+                            fileTextColor={fileTextColor}
+                            fileSubTextColor={fileSubTextColor}
+                            formatFileSize={formatFileSize}
+                            formatDate={formatDate}
+                            observeFileElement={observeFileElement}
+                            unobserveFileElement={unobserveFileElement}
+                            rowHandlers={rowHandlers}
+                            folderDropHandlers={folderDropHandlers}
+                          />
+                        );
+                      })}
+                      {folderVirtualItems.length > 0 && (() => {
+                        const last = folderVirtualItems[folderVirtualItems.length - 1];
+                        const offsetBottom = folderTotalSize - last.end;
+                        return offsetBottom > 0 ? (
+                          <tr>
+                              <td
+                                colSpan={columnOrder.length}
+                                style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
+                              />
+                            </tr>
+                        ) : null;
+                      })()}
+                    </>
                   )}
-                  {folderVirtualItems.map((virtualRow) => {
-                    const file = groupedFiles.folders![virtualRow.index];
-                    const fileIndex = virtualRow.index;
-                    const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
-                    const index = globalIndex >= 0 ? globalIndex : fileIndex;
+                  {Object.entries(groupedFiles)
+                    .filter(([key]) => key !== 'folders')
+                    .sort(([a], [b]) => {
+                      // AA always comes first
+                      if (a === 'AA') return -1;
+                      if (b === 'AA') return 1;
+                      // Other always comes last
+                      if (a === 'Other') return 1;
+                      if (b === 'Other') return -1;
+                      // Everything else sorted alphabetically
+                      return a.localeCompare(b);
+                    })
+                    .map(([groupKey, groupFiles], groupIndex) => {
+                      const indexInfo = getIndexInfo(groupKey);
+                      const hasFolderSection = Boolean(groupedFiles.folders && groupedFiles.folders.length);
+                      const mtValue = groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 1.5;
+                      
+                      return (
+                        <React.Fragment key={groupKey}>
+                          <tr>
+                              <td
+                                colSpan={columnOrder.length}
+                                style={{ padding: '8px 0', background: 'transparent' }}
+                              >
+                                  <GroupHeaderDropZone
+                                    groupKey={groupKey}
+                                    indexInfo={indexInfo}
+                                    fileCount={groupFiles.length}
+                                    onDrop={(e) => handleGroupHeaderDrop(e, groupKey)}
+                                    transferTemplates={groupedTransferTemplates[groupKey] ?? []}
+                                    onTransfer={onTransferFromGroupHeader}
+                                    pillBg={pillBg}
+                                    pillText={pillText}
+                                    dividerColor={dividerColor}
+                                    dropZoneBg={dropZoneBg}
+                                    mt={mtValue}
+                                    clearFolderHoverStates={clearFolderHoverStates}
+                                  />
+                                </td>
+                            </tr>
+                          {groupFiles.map((file, fileIndex) => {
+                            const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
+                            const index = globalIndex >= 0 ? globalIndex : fileIndex;
+                            
+                            if (isRenaming === file.name) {
+                              return (
+                                <tr key={index}>
+                                      <td colSpan={columnOrder.length} style={{ padding: '4px 8px' }}>
+                                          <form onSubmit={(ev) => { void handleRenameSubmit(ev); }}>
+                                            <Input
+                                              ref={renameInputRef}
+                                              value={renameValue}
+                                              onChange={(e) => setRenameValue(e.target.value)}
+                                              onBlur={onRenameCancel}
+                                              autoFocus
+                                              size="xs"
+                                              onKeyDown={(e) => {
+                                                if (e.key === 'Escape') onRenameCancel()
+                                              }}
+                                            />
+                                          </form>
+                                        </td>
+                                    </tr>
+                              );
+                            }
+
+                            const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
+                            const folderDropHandlers = createFolderDropHandlers(file, index);
+
+                            return (
+                              <FileTableRow
+                                key={file.path}
+                                file={file}
+                                index={index}
+                                fileState={fileState}
+                                finalBg={finalBg}
+                                rowHoverBg={rowHoverBg}
+                                isFolderDropHovered={isFolderDropHovered}
+                                columnOrder={columnOrder}
+                                columnVisibility={columnVisibility}
+                                cellStyles={finalCellStyles}
+                                nativeIcons={nativeIcons}
+                                fileTextColor={fileTextColor}
+                                fileSubTextColor={fileSubTextColor}
+                                formatFileSize={formatFileSize}
+                                formatDate={formatDate}
+                                observeFileElement={observeFileElement}
+                                unobserveFileElement={unobserveFileElement}
+                                rowHandlers={rowHandlers}
+                                folderDropHandlers={folderDropHandlers}
+                              />
+                            )
+                          })}
+                        </React.Fragment>
+                      );
+                    })}
+                </tbody>
+          </chakra.table>
+        </>
+      ) : (
+        <>
+          <chakra.table ref={gridContainerRef} {...fileGridTableStyles} bg={tableSurfaceBg}>
+              <colgroup>
+                {columnOrder.map((column) => {
+                  if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
+                  return (
+                    <col
+                      key={column}
+                      style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
+                    />
+                  );
+                })}
+              </colgroup>
+              <FileListTheadRow
+                columnOrder={columnOrder}
+                columnVisibility={columnVisibility}
+                sortColumn={sortColumn}
+                sortDirection={sortDirection}
+                tableHeadTextColor={tableHeadTextColor}
+                headerHoverBg={headerHoverBg}
+                headerStickyBg={headerStickyBg}
+                headerDividerBg={headerDividerBg}
+                dragGhostAccent={dragGhostAccent}
+                draggingColumn={draggingColumn}
+                dragTargetColumn={dragTargetColumn}
+                hasDraggedColumn={hasDraggedColumn}
+                setHeaderContextMenu={setHeaderContextMenu}
+                handleSort={handleSort}
+                autoFitColumn={autoFitColumn}
+                handleColumnDragStart={handleColumnDragStart}
+                handleResizeStart={handleResizeStart}
+              />
+              <tbody>
+                  {virtualItems.length > 0 && virtualItems[0].start > 0 && (
+                    <tr>
+                        <td
+                          colSpan={columnOrder.length}
+                          style={{ height: virtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
+                        />
+                    </tr>
+                  )}
+                  {virtualItems.map((virtualRow) => {
+                    const index = virtualRow.index;
+                    const file = sortedFiles[index];
+                    if (!file) return null;
 
                     if (isRenaming === file.name) {
                       return (
-                        <Box as="tr" key={index}>
-                          <Box as="td" colSpan={columnOrder.length} px={2} py={1}>
-                            <form onSubmit={handleRenameSubmit}>
-                              <Input
-                                ref={renameInputRef}
-                                value={renameValue}
-                                onChange={(e) => setRenameValue(e.target.value)}
-                                onBlur={onRenameCancel}
-                                autoFocus
-                                size="xs"
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Escape') onRenameCancel()
-                                }}
-                              />
-                            </form>
-                          </Box>
-                        </Box>
-                      )
+                        <tr key={file.path}>
+                              <td colSpan={columnOrder.length} style={{ padding: '4px 8px' }}>
+                                  <form onSubmit={(ev) => { void handleRenameSubmit(ev); }}>
+                                    <Input
+                                      ref={renameInputRef}
+                                      value={renameValue}
+                                      onChange={(e) => setRenameValue(e.target.value)}
+                                      onBlur={onRenameCancel}
+                                      autoFocus
+                                      size="xs"
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') onRenameCancel()
+                                      }}
+                                    />
+                                  </form>
+                                </td>
+                            </tr>
+                      );
                     }
 
                     const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
@@ -1226,262 +1477,20 @@ const FileListViewBody = React.memo(function FileListViewBody({
                       />
                     );
                   })}
-                  {folderVirtualItems.length > 0 && (() => {
-                    const last = folderVirtualItems[folderVirtualItems.length - 1];
-                    const offsetBottom = folderTotalSize - last.end;
+                  {virtualItems.length > 0 && (() => {
+                    const lastItem = virtualItems[virtualItems.length - 1];
+                    const offsetBottom = totalSize - lastItem.end;
                     return offsetBottom > 0 ? (
-                      <Box as="tr">
-                        <Box
-                          as="td"
-                          colSpan={columnOrder.length}
-                          style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
-                        />
-                      </Box>
+                      <tr>
+                          <td
+                            colSpan={columnOrder.length}
+                            style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
+                          />
+                        </tr>
                     ) : null;
                   })()}
-                </>
-              )}
-              {Object.entries(groupedFiles)
-                .filter(([key]) => key !== 'folders')
-                .sort(([a], [b]) => {
-                  // AA always comes first
-                  if (a === 'AA') return -1;
-                  if (b === 'AA') return 1;
-                  // Other always comes last
-                  if (a === 'Other') return 1;
-                  if (b === 'Other') return -1;
-                  // Everything else sorted alphabetically
-                  return a.localeCompare(b);
-                })
-                .map(([groupKey, groupFiles], groupIndex) => {
-                  const indexInfo = getIndexInfo(groupKey);
-                  const hasFolderSection = Boolean(groupedFiles.folders && groupedFiles.folders.length);
-                  const mtValue = groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 1.5;
-                  
-                  return (
-                    <React.Fragment key={groupKey}>
-                      <Box as="tr">
-                        <Box
-                          as="td"
-                          colSpan={columnOrder.length}
-                          px={0}
-                          py={2}
-                          bg="transparent"
-                        >
-                          <GroupHeaderDropZone
-                            groupKey={groupKey}
-                            indexInfo={indexInfo}
-                            fileCount={groupFiles.length}
-                            onDrop={(e) => handleGroupHeaderDrop(e, groupKey)}
-                            transferTemplates={groupedTransferTemplates[groupKey] ?? []}
-                            onTransfer={onTransferFromGroupHeader}
-                            pillBg={pillBg}
-                            pillText={pillText}
-                            dividerColor={dividerColor}
-                            dropZoneBg={dropZoneBg}
-                            maxPillWidth={maxPillWidth}
-                            mt={mtValue}
-                            clearFolderHoverStates={clearFolderHoverStates}
-                          />
-                        </Box>
-                      </Box>
-                      
-                      {groupFiles.map((file, fileIndex) => {
-                        const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
-                        const index = globalIndex >= 0 ? globalIndex : fileIndex;
-                        
-                        if (isRenaming === file.name) {
-                          return (
-                            <Box as="tr" key={index}>
-                              <Box
-                                as="td"
-                                colSpan={columnOrder.length}
-                                px={2}
-                                py={1}
-                              >
-                                <form onSubmit={handleRenameSubmit}>
-                                  <Input
-                                    ref={renameInputRef}
-                                    value={renameValue}
-                                    onChange={(e) => setRenameValue(e.target.value)}
-                                    onBlur={onRenameCancel}
-                                    autoFocus
-                                    size="xs"
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Escape') onRenameCancel()
-                                    }}
-                                  />
-                                </form>
-                              </Box>
-                            </Box>
-                          )
-                        }
-
-                        const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
-                        const folderDropHandlers = createFolderDropHandlers(file, index);
-
-                        return (
-                          <FileTableRow
-                            key={file.path}
-                            file={file}
-                            index={index}
-                            fileState={fileState}
-                            finalBg={finalBg}
-                            rowHoverBg={rowHoverBg}
-                            isFolderDropHovered={isFolderDropHovered}
-                            columnOrder={columnOrder}
-                            columnVisibility={columnVisibility}
-                            cellStyles={finalCellStyles}
-                            nativeIcons={nativeIcons}
-                            fileTextColor={fileTextColor}
-                            fileSubTextColor={fileSubTextColor}
-                            formatFileSize={formatFileSize}
-                            formatDate={formatDate}
-                            observeFileElement={observeFileElement}
-                            unobserveFileElement={unobserveFileElement}
-                            rowHandlers={rowHandlers}
-                            folderDropHandlers={folderDropHandlers}
-                          />
-                        )
-                      })}
-                    </React.Fragment>
-                  );
-                })}
-            </Box>
-          </Box>
-        </>
-      ) : (
-        <>
-          <Box
-            as="table"
-            ref={gridContainerRef}
-            width="fit-content"
-            fontSize="xs"
-            userSelect="none"
-            minWidth="690px"
-            position="relative"
-            style={{
-              borderCollapse: 'separate',
-              borderSpacing: '0 3px',
-              tableLayout: 'fixed'
-            }}
-          >
-            <colgroup>
-              {columnOrder.map((column) => {
-                if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
-                return (
-                  <col
-                    key={column}
-                    style={{ width: `${columnWidths[column as keyof typeof columnWidths]}px` }}
-                  />
-                );
-              })}
-            </colgroup>
-
-            <FileListTheadRow
-              columnOrder={columnOrder}
-              columnVisibility={columnVisibility}
-              sortColumn={sortColumn}
-              sortDirection={sortDirection}
-              tableHeadTextColor={tableHeadTextColor}
-              headerHoverBg={headerHoverBg}
-              headerStickyBg={headerStickyBg}
-              headerDividerBg={headerDividerBg}
-              dragGhostAccent={dragGhostAccent}
-              draggingColumn={draggingColumn}
-              dragTargetColumn={dragTargetColumn}
-              hasDraggedColumn={hasDraggedColumn}
-              setHeaderContextMenu={setHeaderContextMenu}
-              handleSort={handleSort}
-              autoFitColumn={autoFitColumn}
-              handleColumnDragStart={handleColumnDragStart}
-              handleResizeStart={handleResizeStart}
-            />
-
-            <Box as="tbody">
-              {virtualItems.length > 0 && virtualItems[0].start > 0 && (
-                <Box as="tr">
-                  <Box
-                    as="td"
-                    colSpan={columnOrder.length}
-                    style={{ height: virtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
-                  />
-                </Box>
-              )}
-              {virtualItems.map((virtualRow) => {
-                const index = virtualRow.index;
-                const file = sortedFiles[index];
-                if (!file) return null;
-
-                if (isRenaming === file.name) {
-                  return (
-                    <Box as="tr" key={file.path}>
-                      <Box
-                        as="td"
-                        colSpan={columnOrder.length}
-                        px={2}
-                        py={1}
-                      >
-                        <form onSubmit={handleRenameSubmit}>
-                          <Input
-                            ref={renameInputRef}
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={onRenameCancel}
-                            autoFocus
-                            size="xs"
-                            onKeyDown={(e) => {
-                              if (e.key === 'Escape') onRenameCancel()
-                            }}
-                          />
-                        </form>
-                      </Box>
-                    </Box>
-                  );
-                }
-
-                const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
-                const folderDropHandlers = createFolderDropHandlers(file, index);
-
-                return (
-                  <FileTableRow
-                    key={file.path}
-                    file={file}
-                    index={index}
-                    fileState={fileState}
-                    finalBg={finalBg}
-                    rowHoverBg={rowHoverBg}
-                    isFolderDropHovered={isFolderDropHovered}
-                    columnOrder={columnOrder}
-                    columnVisibility={columnVisibility}
-                    cellStyles={finalCellStyles}
-                    nativeIcons={nativeIcons}
-                    fileTextColor={fileTextColor}
-                    fileSubTextColor={fileSubTextColor}
-                    formatFileSize={formatFileSize}
-                    formatDate={formatDate}
-                    observeFileElement={observeFileElement}
-                    unobserveFileElement={unobserveFileElement}
-                    rowHandlers={rowHandlers}
-                    folderDropHandlers={folderDropHandlers}
-                  />
-                );
-              })}
-              {virtualItems.length > 0 && (() => {
-                const lastItem = virtualItems[virtualItems.length - 1];
-                const offsetBottom = totalSize - lastItem.end;
-                return offsetBottom > 0 ? (
-                  <Box as="tr">
-                    <Box
-                      as="td"
-                      colSpan={columnOrder.length}
-                      style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
-                    />
-                  </Box>
-                ) : null;
-              })()}
-            </Box>
-          </Box>
+                </tbody>
+          </chakra.table>
 
           {/* Drag ghost preview */}
           {draggingColumn && dragMousePos && isDragThresholdMet && (

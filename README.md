@@ -7,7 +7,7 @@ DocuFrame is a modern file explorer built in Electron, designed specifically for
 - **Bulk file renaming**: Smart, accountant-friendly renaming tools
 - **Drag-and-drop**: Move and organize files and folders with ease
 - **Native Windows icons**: See real file type icons for a familiar experience
-- **AI-powered tools**: (Optional) Integrate with OpenAI/Claude for document analysis and automation
+- **AI-powered tools**: (Optional) Anthropic Claude for document analysis and automation
 - **Customizable templates**: YAML-based templates for common accounting documents
 - **Secure**: Designed to keep sensitive data out of your repository
 

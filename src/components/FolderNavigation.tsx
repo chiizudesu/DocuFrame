@@ -1,129 +1,13 @@
-// 1. Main Process (main.js or main.ts) - Add IPC handlers
-import { ipcMain } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
-import { joinPath } from '../utils/path'
-
-// IPC handler to read directory contents
-ipcMain.handle('read-directory', async (event, dirPath: string) => {
-  try {
-    const items = fs.readdirSync(dirPath, { withFileTypes: true });
-    
-    const folderItems = items.map(item => {
-      const fullPath = path.join(dirPath, item.name);
-      let stats;
-      
-      try {
-        stats = fs.statSync(fullPath);
-      } catch (error) {
-        // Handle permission errors or other issues
-        return null;
-      }
-      
-      return {
-        id: fullPath, // Use full path as unique ID
-        name: item.name,
-        type: item.isDirectory() ? 'folder' : 'file',
-        path: fullPath,
-        size: stats?.size || 0,
-        modified: stats?.mtime || new Date(),
-        isHidden: item.name.startsWith('.'), // Unix/Linux hidden files
-        extension: item.isFile() ? path.extname(item.name) : null
-      };
-    }).filter(item => item !== null);
-    
-    // Sort: folders first, then files, both alphabetically
-    folderItems.sort((a, b) => {
-      if (a.type !== b.type) {
-        return a.type === 'folder' ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name, undefined, { numeric: true });
-    });
-    
-    return folderItems;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to read directory: ${errorMessage}`);
-  }
-});
-
-// IPC handler to check if path exists and is accessible
-ipcMain.handle('check-path', async (event, dirPath: string) => {
-  try {
-    const stats = fs.statSync(dirPath);
-    return {
-      exists: true,
-      isDirectory: stats.isDirectory(),
-      isFile: stats.isFile(),
-      readable: true
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      exists: false,
-      isDirectory: false,
-      isFile: false,
-      readable: false,
-      error: errorMessage
-    };
-  }
-});
-
-// Get user's home directory
-ipcMain.handle('get-home-directory', async () => {
-  return require('os').homedir();
-});
-
-// Get system root directories (drives on Windows)
-ipcMain.handle('get-root-directories', async () => {
-  const os = require('os');
-  const platform = os.platform();
-  
-  if (platform === 'win32') {
-    // Windows: Get all drives
-    const drives = [];
-    for (let i = 65; i <= 90; i++) { // A-Z
-      const drive = String.fromCharCode(i) + ':\\';
-      try {
-        fs.accessSync(drive);
-        drives.push({
-          id: drive,
-          name: `${String.fromCharCode(i)}: Drive`,
-          type: 'folder',
-          path: drive
-        });
-      } catch (error) {
-        // Drive doesn't exist or isn't accessible
-      }
-    }
-    return drives;
-  } else {
-    // Unix/Linux/Mac: Start from root
-    return [{
-      id: '/',
-      name: 'Root',
-      type: 'folder',
-      path: '/'
-    }];
-  }
-});
-
-// 2. Renderer Process (Your React Component) - Updated FolderNavigation
 import React, { useState, useEffect } from 'react';
-import { Box, Text, Icon, Flex, useColorModeValue, Spinner, Alert, AlertIcon } from '@chakra-ui/react';
-import { FolderOpen, File, ChevronRight, ChevronDown, Home, HardDrive } from 'lucide-react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Text, Icon, Flex, Spinner, Alert } from '@chakra-ui/react';
+import { FolderOpen, File, Home, HardDrive } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { joinPath } from '../utils/path';
+import type { FileItem } from '../types';
 
-interface FileItem {
-  id: string;
-  name: string;
-  type: 'folder' | 'file';
-  path: string;
-  size?: number;
-  modified?: Date;
-  isHidden?: boolean;
-  extension?: string | null;
-}
+/** Directory listing row (preload may include extra fields). */
+type NavFileItem = FileItem & { isHidden?: boolean; size?: string | number; modified?: string | Date };
 
 // Utility to format paths for logging (Windows vs others)
 function formatPathForLog(path: string) {
@@ -136,7 +20,7 @@ export const FolderNavigation: React.FC = () => {
   const borderColor = useColorModeValue('gray.600', 'gray.700');
   
   const [currentPath, setCurrentPath] = useState<string>('');
-  const [items, setItems] = useState<FileItem[]>([]);
+  const [items, setItems] = useState<NavFileItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState<boolean>(false);
@@ -163,7 +47,7 @@ export const FolderNavigation: React.FC = () => {
     
     try {
       const roots = await window.electronAPI.getRootDirectories();
-      setItems(roots);
+      setItems(roots as NavFileItem[]);
       setCurrentPath('');
       setCurrentDirectory('Computer');
       addLog('Showing root directories');
@@ -190,11 +74,11 @@ export const FolderNavigation: React.FC = () => {
       const directoryItems = await window.electronAPI.readDirectory(dirPath);
       
       // Filter hidden files if needed
-      const filteredItems = showHidden 
-        ? directoryItems 
-        : directoryItems.filter((item: FileItem) => !item.isHidden);
-      
-      setItems(filteredItems);
+      const filteredItems = showHidden
+        ? directoryItems
+        : directoryItems.filter((item) => !item.isHidden);
+
+      setItems(filteredItems as NavFileItem[]);
       setCurrentPath(dirPath);
       setCurrentDirectory(dirPath);
       addLog(`Loaded directory: ${formatPathForLog(dirPath)} (${filteredItems.length} items)`);
@@ -207,7 +91,7 @@ export const FolderNavigation: React.FC = () => {
     }
   };
 
-  const handleItemClick = async (item: FileItem) => {
+  const handleItemClick = async (item: NavFileItem) => {
     if (item.type === 'folder') {
       await loadDirectory(item.path);
     } else {
@@ -248,7 +132,7 @@ export const FolderNavigation: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const getFileIcon = (item: FileItem) => {
+  const getFileIcon = (item: NavFileItem) => {
     if (item.type === 'folder') {
       return FolderOpen;
     }
@@ -257,12 +141,12 @@ export const FolderNavigation: React.FC = () => {
     return File;
   };
 
-  const renderItem = (item: FileItem) => {
+  const renderItem = (item: NavFileItem) => {
     const IconComponent = getFileIcon(item);
     
     return (
       <Flex
-        key={item.id}
+        key={item.path}
         align="center"
         py={2}
         px={3}
@@ -274,22 +158,21 @@ export const FolderNavigation: React.FC = () => {
         onClick={() => handleItemClick(item)}
       >
         <Icon
-          as={IconComponent}
           color={item.type === 'folder' ? 'blue.500' : useColorModeValue('gray.600', 'gray.400')}
           boxSize={4}
           mr={3}
-        />
+          asChild><IconComponent /></Icon>
         <Box flex="1" minW="0">
           <Text
             fontSize="sm"
-            noOfLines={1}
+            lineClamp={1}
             color={useColorModeValue('gray.800', 'white')}
           >
             {item.name}
           </Text>
           {item.type === 'file' && item.size !== undefined && (
             <Text fontSize="xs" color={useColorModeValue('gray.500', 'gray.400')}>
-              {formatFileSize(item.size)}
+              {typeof item.size === 'number' ? formatFileSize(item.size) : String(item.size)}
             </Text>
           )}
           {item.modified && (
@@ -313,21 +196,17 @@ export const FolderNavigation: React.FC = () => {
         gap={2}
       >
         <Icon
-          as={Home}
           boxSize={4}
           cursor="pointer"
-          onClick={goHome}
           color="blue.500"
           _hover={{ color: 'blue.600' }}
-        />
+          asChild><Home onClick={goHome} /></Icon>
         <Icon
-          as={HardDrive}
           boxSize={4}
           cursor="pointer"
-          onClick={loadRootDirectories}
           color="blue.500"
           _hover={{ color: 'blue.600' }}
-        />
+          asChild><HardDrive onClick={loadRootDirectories} /></Icon>
         {currentPath && (
           <Text
             fontSize="xs"
@@ -339,11 +218,10 @@ export const FolderNavigation: React.FC = () => {
             ← Parent
           </Text>
         )}
-        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} flex="1" noOfLines={1}>
+        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} flex="1" lineClamp={1}>
           {currentPath || 'Computer'}
         </Text>
       </Flex>
-
       {/* Content Area */}
       <Box flex="1" overflowY="auto" p={2}>
         {loading && (
@@ -353,10 +231,10 @@ export const FolderNavigation: React.FC = () => {
         )}
         
         {error && (
-          <Alert status="error" mb={3}>
-            <AlertIcon />
+          <Alert.Root status="error" mb={3}>
+            <Alert.Indicator />
             {error}
-          </Alert>
+          </Alert.Root>
         )}
         
         {!loading && !error && items.length === 0 && (
@@ -370,17 +248,3 @@ export const FolderNavigation: React.FC = () => {
     </Box>
   );
 };
-
-// 3. Preload Script (preload.js) - Expose APIs to renderer
-import { contextBridge, ipcRenderer } from 'electron';
-
-contextBridge.exposeInMainWorld('electronAPI', {
-  readDirectory: (dirPath: string) => ipcRenderer.invoke('read-directory', dirPath),
-  checkPath: (dirPath: string) => ipcRenderer.invoke('check-path', dirPath),
-  getHomeDirectory: () => ipcRenderer.invoke('get-home-directory'),
-  getRootDirectories: () => ipcRenderer.invoke('get-root-directories'),
-  // Add more file operations as needed
-  // openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
-});
-
-// TypeScript declarations are already defined elsewhere in the codebase

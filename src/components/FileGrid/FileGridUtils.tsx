@@ -39,6 +39,7 @@ export interface FileTableRowProps {
     position: 'relative';
     verticalAlign: 'middle';
     pointerEvents: 'auto';
+    boxSizing: 'border-box';
   };
   nativeIcons: Map<string, string>;
   fileTextColor: string;

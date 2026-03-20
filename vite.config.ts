@@ -94,6 +94,9 @@ export default defineConfig({
     },
   },
   server: {
+    hmr: {
+      overlay: false,
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

@@ -6,7 +6,6 @@ const CONFIG_FILE = 'config.json';
 
 interface Settings {
   rootPath: string;
-  apiKey?: string;
   transferCommandMappings: {
     [key: string]: string;  // command -> filename template
   };

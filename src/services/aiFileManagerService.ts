@@ -161,6 +161,57 @@ export function getMatchingItemsForCondition(
   return folderItems.filter(f => matchesCondition(f, condition, selectedSet));
 }
 
+/** Operations whose `condition` may be coerced from "all" to selection (extract/copyToIndex excluded). */
+const OPS_CONDITION_SUPPORTS_SELECTION: ReadonlySet<FileOperation['action']> = new Set([
+  'addPrefix',
+  'addSuffix',
+  'removeSuffix',
+  'removePrefix',
+  'transformCase',
+  'smartRename',
+  'contentBasedRename',
+  'moveToFolder',
+  'delete',
+  'mergePdfs',
+  'createCopies',
+  'contentBasedMerge',
+]);
+
+/** True when the user clearly asked to affect the whole folder, not just the current selection. */
+export function userRequestedFolderWideScope(prompt: string): boolean {
+  const p = prompt.toLowerCase();
+  return /\b(all files?|all items?|everything(\s+in)?(\s+this)?\s+folder|entire folder|whole folder|every file|all (?:the )?(?:pdf|pdfs|documents?|workpapers?)|folder[- ]wide|apply to (?:all|everything))\b/.test(
+    p
+  );
+}
+
+/**
+ * When the user has a non-empty selection, coerce `condition: "all"` to `{ selection: true }`
+ * so chat/commands apply to the selection unless they explicitly asked for folder-wide scope.
+ */
+export function coerceFileOperationsToSelectionWhenNeeded(
+  operations: FileOperation[],
+  selectedFileNames: string[] | undefined,
+  userPrompt: string
+): FileOperation[] {
+  if (!selectedFileNames?.length || userRequestedFolderWideScope(userPrompt)) {
+    return operations;
+  }
+  return operations.map(op => {
+    if (!OPS_CONDITION_SUPPORTS_SELECTION.has(op.action)) return op;
+    const o = op as { condition: Condition };
+    if (o.condition !== 'all') return op;
+    return { ...op, condition: { selection: true } } as FileOperation;
+  });
+}
+
+/** Allow content-based rename AI to suggest subfolders only when the user asked for grouping/folders. */
+export function contentBasedRenameAllowsTargetFolders(userPrompt: string): boolean {
+  return /\b(group|groups|grouped|folder|folders|subfolder|subfolders|organize into|categorize|sort into|put into|separate into|split into|rename and group)\b/i.test(
+    userPrompt
+  );
+}
+
 /**
  * Expand high-level operations into concrete planned items (file-level)
  */
@@ -526,7 +577,9 @@ export async function getContentBasedRenameSuggestions(
   currentDirectory: string,
   model: 'sonnet' | 'haiku' = 'sonnet',
   onContentReading?: (fileName: string | null, index: number, total: number) => void,
-  onContentAnalyzing?: (analyzing: boolean) => void
+  onContentAnalyzing?: (analyzing: boolean) => void,
+  /** If false, rename in place only — do not suggest moving into subfolders. */
+  allowTargetFolders = false
 ): Promise<{ fileName: string; newName: string; targetFolder?: string }[]> {
   const settings = await settingsService.getSettings();
   const apiKey = settings.claudeApiKey;
@@ -558,13 +611,17 @@ export async function getContentBasedRenameSuggestions(
     .map(({ fileName, content }) => `--- ${fileName} ---\n${content}`)
     .join('\n\n');
 
-  const systemPrompt = `You are a file organization assistant. The user wants to rename and optionally group PDF files based on their CONTENT. You will receive extracted text from each PDF.
+  const folderRules = allowTargetFolders
+    ? `- Optionally suggest targetFolder to group related files (e.g. "Invoices", "Reports") only when it clearly helps. Use a single folder name only (no nested paths like "A/B"). Omit targetFolder if the file should stay in the current directory. Do not suggest a folder that matches the current directory name.`
+    : `- Do NOT use targetFolder. Every file stays in the current directory — rename only (same folder). Omit targetFolder from every object.`;
+
+  const systemPrompt = `You are a file organization assistant. The user wants to rename PDF files based on their CONTENT. You will receive extracted text from each PDF.
 
 Rules:
 - Suggest a clear, descriptive new name based on document content (e.g. "Bank Reconciliation - March 2025.pdf")
 - Keep the .pdf extension
-- Optionally suggest targetFolder to group related files (e.g. "Invoices", "Reports"). Use a single folder name only (no nested paths like "A/B"). Omit targetFolder if file should stay in current directory. Do not suggest a folder that matches the current directory name.
-- Return ONLY a JSON array: [{"fileName":"exact current name","newName":"suggested name","targetFolder":"optional folder" or omit}]
+${folderRules}
+- Return ONLY a JSON array of objects with fileName and newName${allowTargetFolders ? '; you may add targetFolder (single segment) when grouping into a subfolder clearly helps' : ''}
 - Include every file in the list
 - No markdown, no explanation`;
 
@@ -583,7 +640,7 @@ Rules:
       role: 'user',
       content: [{
         type: 'text',
-        text: `User request: ${userPrompt}\n\nCurrent directory name: ${currentDirectory.split(/[/\\]/).filter(Boolean).pop() || '(root)'}\n\nExtracted PDF content:\n\n${contentBlock}\n\nReturn JSON array of {fileName, newName, targetFolder?} for each file. Do not use targetFolder that equals the current directory name.`,
+        text: `User request: ${userPrompt}\n\nCurrent directory name: ${currentDirectory.split(/[/\\]/).filter(Boolean).pop() || '(root)'}\n\nExtracted PDF content:\n\n${contentBlock}\n\nReturn JSON array of {fileName, newName${allowTargetFolders ? ', targetFolder?' : ''}} for each file.${allowTargetFolders ? ' Do not use targetFolder that equals the current directory name.' : ' Do not include targetFolder.'}`,
       }],
     }],
     temperature: 0.3,
@@ -640,14 +697,24 @@ export async function expandContentBasedRenameOperations(
     });
     if (pdfFiles.length === 0) continue;
 
-    const suggestions = await getContentBasedRenameSuggestions(pdfFiles, userPrompt, currentDirectory, model, onContentReading, onContentAnalyzing);
+    const allowFolders = contentBasedRenameAllowsTargetFolders(userPrompt);
+    const suggestions = await getContentBasedRenameSuggestions(
+      pdfFiles,
+      userPrompt,
+      currentDirectory,
+      model,
+      onContentReading,
+      onContentAnalyzing,
+      allowFolders
+    );
     const currentDirName = currentDirectory.split(/[/\\]/).filter(Boolean).pop() || '';
 
     for (const s of suggestions) {
       const file = pdfFiles.find(f => f.name === s.fileName);
       if (!file || s.newName === s.fileName) continue;
 
-      let targetFolder = s.targetFolder?.replace(/^[\\/]+|[\\/]+$/g, '') || '';
+      let targetFolder =
+        allowFolders && s.targetFolder ? s.targetFolder.replace(/^[\\/]+|[\\/]+$/g, '') || '' : '';
       // Prevent 2-level nesting: take only first segment if AI returned a path (e.g. "Folder/SubFolder")
       if (targetFolder.includes('/') || targetFolder.includes('\\')) {
         targetFolder = targetFolder.split(/[/\\]/)[0] || '';
@@ -864,7 +931,7 @@ export async function parseFileManagerCommand(
     .join('\n');
 
   const selectionNote = selectedFileNames?.length
-    ? `\nUser has SELECTED these files (use condition {"selection":true} for "selection" or "selected files"): ${JSON.stringify(selectedFileNames)}`
+    ? `\nCRITICAL — SELECTION IS ACTIVE: The user has SELECTED only these items: ${JSON.stringify(selectedFileNames)}. You MUST use condition {"selection":true} on EVERY operation that supports it. Do NOT use condition "all" unless the user explicitly asks to apply to all files in the folder (e.g. "all files", "everything in this folder").`
     : '';
 
   const systemPrompt = `You are a file manager assistant for a workpaper/document organization system. Files use index prefixes like "Q - Report.pdf" or "H - Summary.xlsx". The format is: {Index} - {Name}.ext
@@ -897,9 +964,10 @@ Valid operations (return ONLY a JSON array, no markdown, no explanation):
 7. smartRename: AI suggests improved/cleaned names for files (e.g. "improve naming", "clean up names", "better names")
    {"action":"smartRename","condition":{"selection":true}}
    {"action":"smartRename","condition":"all"}
-7b. contentBasedRename: ONLY when user explicitly mentions reading/analyzing FILE CONTENT or document content. Extracts PDF text (expensive) and renames/groups by content. Use smartRename for name-only requests.
-   - Use when: "rename by content", "group according to file content", "organize by what's inside"
-   - Do NOT use for: "rename", "improve names", "organize" (use smartRename or moveToFolder instead)
+7b. contentBasedRename: ONLY when user wants PDF names derived from READING file/document content. Extracts PDF text (expensive). Renames in the current folder by default.
+   - Use when: "rename by content", "rename based on what's inside the PDF", "read the document and rename"
+   - Do NOT use for: plain "rename", "improve names" without content (use smartRename); "organize into folders" without reading PDFs (use moveToFolder); "smart merge" / merge related PDFs (use contentBasedMerge)
+   - "Rename and group by content" / "group according to file content" still uses contentBasedRename — the content step may suggest subfolders only when the user asked for grouping/folders.
    {"action":"contentBasedRename","condition":{"selection":true}}
 8. moveToFolder: Move files into a child folder (creates folder if it doesn't exist). Target folder is relative to current directory.
    {"action":"moveToFolder","targetFolder":"finals","condition":{"indexEquals":"G"}}

@@ -1,5 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Box, Input, InputGroup, InputRightElement, IconButton, VStack, Button, HStack, Text, Badge, Flex, useColorModeValue, Icon } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import {
+  Box,
+  Input,
+  IconButton,
+  VStack,
+  Button,
+  HStack,
+  Text,
+  Badge,
+  Flex,
+  Icon,
+} from '@chakra-ui/react';
 import { ChevronDown, Search, User, Briefcase } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
@@ -138,34 +150,42 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
         {/* Input container */}
         <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
           <Flex align="center" p={3} minH="47px">
-            <Icon as={Search} size={18} color="blue.400" mr={3} />
-            <InputGroup flex="1">
+            <Icon fontSize="lg" color="blue.400" mr={3} asChild><Search /></Icon>
+            <Box position="relative" flex="1">
               <Input
                 ref={inputRef}
                 value={searchValue}
                 onChange={(e) => handleSearch(e.target.value)}
-
                 placeholder="Type client name..."
-                variant="unstyled"
+                variant="flushed"
+                border="none"
+                _focus={{ border: "none", boxShadow: "none" }}
                 fontSize="md"
                 autoFocus
                 pr="60px"
-                height="41px"
+                h="41px"
               />
-              <InputRightElement width="60px" height="100%" display="flex" alignItems="center" justifyContent="center">
+              <Flex
+                position="absolute"
+                right={0}
+                top="50%"
+                transform="translateY(-50%)"
+                w="60px"
+                h="100%"
+                align="center"
+                justify="center"
+              >
                 <IconButton
                   aria-label="Toggle year"
-                  icon={<Flex align="center">{selectedYear} <ChevronDown size={14} style={{ marginLeft: 4 }} /></Flex>}
                   onClick={toggleYear}
                   size="sm"
                   variant="ghost"
-                  colorScheme="blue"
+                  colorPalette="blue"
                   fontWeight="bold"
                   fontSize="sm"
-                  borderRadius="md"
-                />
-              </InputRightElement>
-            </InputGroup>
+                  borderRadius="md"><Flex align="center">{selectedYear} <ChevronDown size={14} style={{ marginLeft: 4 }} /></Flex></IconButton>
+              </Flex>
+            </Box>
           </Flex>
         </Box>
       </Box>
@@ -192,7 +212,7 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
               <Text color="gray.500" fontSize="sm">Searching...</Text>
             </Flex>
           ) : results.length > 0 ? (
-            <VStack spacing={0} align="stretch" p={2}>
+            <VStack gap={0} align="stretch" p={2}>
               {results.map((row, idx) => {
                 const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
                 const clientNameField = clientNameFields.find(field => row[field] !== undefined);
@@ -210,42 +230,35 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
                     transition="all 0.15s ease"
                   >
                     <Flex justify="space-between" align="center" gap={3}>
-                      <VStack align="start" spacing={1} flex="1" minW="0">
+                      <VStack align="start" gap={1} flex="1" minW="0">
                         <Flex align="center" gap={2} flexWrap="wrap">
-                          <Text fontWeight="medium" fontSize="sm" color={useColorModeValue('gray.800', 'white')} noOfLines={1}>{clientName}</Text>
-                          <Badge colorScheme="purple" borderRadius="sm" px={2} py={0} fontSize="10px" textTransform="none">{group}</Badge>
+                          <Text fontWeight="medium" fontSize="sm" color={useColorModeValue('gray.800', 'white')} lineClamp={1}>{clientName}</Text>
+                          <Badge colorPalette="purple" borderRadius="sm" px={2} py={0} fontSize="10px" textTransform="none">{group}</Badge>
                         </Flex>
-                        {row['Address'] && (<Text fontSize="xs" color="gray.500" noOfLines={1}>{row['Address']}</Text>)}
+                        {row['Address'] && (<Text fontSize="xs" color="gray.500" lineClamp={1}>{row['Address']}</Text>)}
                         {row['IRD No.'] && (<Text fontSize="10px" color="gray.400">IRD: {row['IRD No.']}</Text>)}
                       </VStack>
-                      <HStack spacing={2}>
-                        <Button 
-                          leftIcon={<Icon as={User} boxSize="3" />} 
-                          colorScheme="gray" 
-                          variant="outline" 
-                          size="xs" 
-                          fontSize="11px" 
-                          px={2} 
-                          onClick={() => handleClientAction(row)} 
-                          _hover={{ bg: useColorModeValue('gray.50', 'gray.600'), transform: 'translateY(-1px)' }} 
-                          transition="all 0.15s" 
-                          isDisabled={!row['Client Link']}
-                        >
-                          Client
-                        </Button>
-                        <Button 
-                          leftIcon={<Icon as={Briefcase} boxSize="3" />} 
-                          colorScheme="blue" 
-                          size="xs" 
-                          fontSize="11px" 
-                          px={2} 
-                          onClick={() => handleJobAction(row)} 
-                          _hover={{ transform: 'translateY(-1px)', boxShadow: 'sm' }} 
-                          transition="all 0.15s" 
-                          isDisabled={!row[`${selectedYear} Job Link`]}
-                        >
-                          {selectedYear}
-                        </Button>
+                      <HStack gap={2}>
+                        <Button
+                          colorPalette="gray"
+                          variant="outline"
+                          size="xs"
+                          fontSize="11px"
+                          px={2}
+                          onClick={() => handleClientAction(row)}
+                          _hover={{ bg: useColorModeValue('gray.50', 'gray.600'), transform: 'translateY(-1px)' }}
+                          transition="all 0.15s"
+                          disabled={!row['Client Link']}><Icon boxSize="3" asChild><User /></Icon>Client
+                                                  </Button>
+                        <Button
+                          colorPalette="blue"
+                          size="xs"
+                          fontSize="11px"
+                          px={2}
+                          onClick={() => handleJobAction(row)}
+                          _hover={{ transform: 'translateY(-1px)', boxShadow: 'sm' }}
+                          transition="all 0.15s"
+                          disabled={!row[`${selectedYear} Job Link`]}><Icon boxSize="3" asChild><Briefcase /></Icon>{selectedYear}</Button>
                       </HStack>
                     </Flex>
                   </Box>

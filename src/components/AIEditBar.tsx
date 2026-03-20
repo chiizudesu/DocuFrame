@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { Box, HStack, Input, IconButton, Select, Spinner, useColorModeValue } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { Box, HStack, Input, IconButton, Spinner } from '@chakra-ui/react';
 import { Send } from 'lucide-react';
-import { AI_AGENTS, editTemplateStream } from '../services/aiService';
+import { editTemplateStream } from '../services/aiService';
 
 interface AIEditBarProps {
   currentTemplate: string;
@@ -12,10 +14,15 @@ interface AIEditBarProps {
 export const AIEditBar: React.FC<AIEditBarProps> = ({ currentTemplate, onTemplateUpdated, onError }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  const [agent, setAgent] = useState<string>('claude');
-
-  const itemBgColor = useColorModeValue('gray.50', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const { inputBg, textColor, secondaryTextColor } = useDialogChrome();
+  const barBorder = useColorModeValue('gray.300', 'rgba(105, 195, 244, 0.32)');
+  const barGlow = useColorModeValue('none', 'inset 0 0 0 1px rgba(105, 195, 244, 0.1)');
+  const innerInputBg = useColorModeValue('white', '#2D3748');
+  const innerInputBorder = useColorModeValue('gray.200', 'rgba(105, 195, 244, 0.25)');
+  const innerInputFocusRing = useColorModeValue(
+    '0 0 0 1px #3182ce',
+    '0 0 0 1px rgba(105, 195, 244, 0.85)',
+  );
 
   const handleApply = async () => {
     const trimmed = inputRef.current?.value?.trim();
@@ -23,7 +30,7 @@ export const AIEditBar: React.FC<AIEditBarProps> = ({ currentTemplate, onTemplat
     setLoading(true);
     let buffer = '';
     try {
-      await editTemplateStream(currentTemplate, trimmed, agent as any, (chunk: string) => {
+      await editTemplateStream(currentTemplate, trimmed, (chunk: string) => {
         buffer += chunk;
       });
       if (buffer.trim()) {
@@ -39,19 +46,16 @@ export const AIEditBar: React.FC<AIEditBarProps> = ({ currentTemplate, onTemplat
   };
 
   return (
-    <Box mt={2} p={2} bg={itemBgColor} borderRadius="md" border="1px solid" borderColor={borderColor}>
-      <HStack spacing={2}>
-        <Select
-          size="xs"
-          w="130px"
-          value={agent}
-          onChange={(e) => setAgent(e.target.value)}
-          flexShrink={0}
-        >
-          {AI_AGENTS.map((a) => (
-            <option key={a.value} value={a.value}>{a.label}</option>
-          ))}
-        </Select>
+    <Box
+      mt={2}
+      p={2}
+      bg={inputBg}
+      borderRadius="md"
+      border="1px solid"
+      borderColor={barBorder}
+      boxShadow={barGlow}
+    >
+      <HStack gap={2}>
         <Input
           ref={inputRef}
           onKeyDown={(e) => {
@@ -62,16 +66,23 @@ export const AIEditBar: React.FC<AIEditBarProps> = ({ currentTemplate, onTemplat
           placeholder="AI instruction, e.g. 'add a GST section after tax paragraph'..."
           size="xs"
           flex="1"
-          isDisabled={loading}
+          disabled={loading}
+          bg={innerInputBg}
+          color={textColor}
+          borderWidth="1px"
+          borderColor={innerInputBorder}
+          _placeholder={{ color: secondaryTextColor, opacity: 0.85 }}
+          _focus={{
+            borderColor: 'df.dialogAccent',
+            boxShadow: innerInputFocusRing,
+          }}
         />
         <IconButton
           aria-label="Apply AI edit"
-          icon={loading ? <Spinner size="xs" /> : <Send size={14} />}
           size="xs"
-          colorScheme="blue"
+          colorPalette="blue"
           onClick={handleApply}
-          isDisabled={loading}
-        />
+          disabled={loading}>{loading ? <Spinner size="xs" /> : <Send size={14} />}</IconButton>
       </HStack>
     </Box>
   );

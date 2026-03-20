@@ -1,25 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useDialogChrome } from './ui/dialog-chrome';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalFooter,
-  ModalBody,
-  ModalCloseButton,
   Button,
   Checkbox,
   VStack,
   Input,
   Text,
   Box,
-  FormControl,
-  FormLabel,
-  useColorModeValue,
   Alert,
-  AlertIcon,
   Flex,
-  Icon
+  Icon,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
 import { FileText } from 'lucide-react';
 import type { FileItem } from '../types';
@@ -50,8 +42,14 @@ export const MergePDFDialog: React.FC<MergePDFDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const { addLog, setStatus } = useAppContext();
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    borderColor,
+    inputBg,
+    textColor,
+    secondaryTextColor,
+  } = useDialogChrome();
 
   // Load PDF files from current directory
   useEffect(() => {
@@ -160,87 +158,142 @@ export const MergePDFDialog: React.FC<MergePDFDialogProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="lg" isCentered>
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor}>
-        <ModalHeader>Merge PDF Files</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          {error && (
-            <Alert status="error" mb={4}>
-              <AlertIcon />
-              {error}
-            </Alert>
-          )}
-          
-          {pdfFiles.length > 0 && (
-            <>
-              <FormControl mb={4}>
-                <FormLabel>Select PDF files to merge:</FormLabel>
-                <Box
-                  maxH="200px"
-                  overflowY="auto"
-                  border="1px"
-                  borderColor={borderColor}
-                  borderRadius="md"
-                  p={3}
-                >
-                  <Flex justify="space-between" align="center" mb={2}>
-                    <Text fontSize="sm" color="gray.500">
-                      {selectedFiles.length} of {pdfFiles.length} files selected
-                    </Text>
-                    <Button size="xs" variant="ghost" onClick={handleSelectAll}>
-                      {selectedFiles.length === pdfFiles.length ? 'Deselect All' : 'Select All'}
-                    </Button>
-                  </Flex>
-                  <VStack align="stretch" spacing={2}>
-                    {pdfFiles.map((file) => (
-                      <Checkbox
-                        key={file.name}
-                        isChecked={selectedFiles.includes(file.name)}
-                        onChange={() => handleFileToggle(file.name)}
-                      >
-                        <Flex align="center">
-                          <Icon as={FileText} mr={2} color="red.400" />
-                          <Text fontSize="sm">{file.name}</Text>
-                        </Flex>
-                      </Checkbox>
-                    ))}
-                  </VStack>
-                </Box>
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Output filename:</FormLabel>
-                <Input
-                  value={outputFilename}
-                  onChange={(e) => setOutputFilename(e.target.value)}
-                  placeholder="Enter filename (e.g., merged-document)"
-                  autoFocus
-                />
-                <Text fontSize="xs" color="gray.500" mt={1}>
-                  .pdf extension will be added automatically if not present
-                </Text>
-              </FormControl>
-            </>
-          )}
-        </ModalBody>
-
-        <ModalFooter>
-          <Button variant="ghost" mr={3} onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button
-            colorScheme="blue"
-            onClick={handleMerge}
-            isLoading={isLoading}
-            loadingText="Merging..."
-            isDisabled={selectedFiles.length < 2 || !outputFilename.trim()}
+    <Dialog.Root open={isOpen} placement='center' onOpenChange={e => {
+      if (!e.open) {
+        handleClose();
+      }
+    }}>
+      <Portal>
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content
+            bg={bgColor}
+            borderRadius={0}
+            boxShadow="xl"
+            display="flex"
+            flexDirection="column"
+            overflow="hidden"
+            w="400px"
+            maxW="400px"
           >
-            Merge PDFs
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+            <Dialog.Header
+              bg={titleBarBg}
+              borderBottomWidth="1px"
+              borderColor={borderColor}
+              borderRadius={0}
+              py={1.5}
+              px={3}
+              minH="31px"
+            >
+              <Flex align="center" gap={2}>
+                <Icon color="red.400" asChild><FileText /></Icon>
+                <Text fontSize="sm" fontWeight="600" color={textColor}>
+                  Merge PDF Files
+                </Text>
+              </Flex>
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body overflow="hidden" px={3} py={3}>
+              {error && (
+                <Alert.Root status="error" mb={2}>
+                  <Alert.Indicator />
+                  {error}
+                </Alert.Root>
+              )}
+              {pdfFiles.length > 0 && (
+                <VStack align="stretch" gap={2}>
+                  <Box>
+                    <Text fontSize="xs" fontWeight="600" color={textColor} mb={1}>
+                      Select PDF files to merge:
+                    </Text>
+                    <Box
+                      h="260px"
+                      overflowY="auto"
+                      overflowX="hidden"
+                      borderWidth="1px"
+                      borderColor={borderColor}
+                      borderRadius={0}
+                      w="100%"
+                    >
+                      <Flex
+                        position="sticky"
+                        top={0}
+                        bg={bgColor}
+                        zIndex={1}
+                        justify="space-between"
+                        align="center"
+                        px={2}
+                        py={1}
+                        borderBottomWidth="1px"
+                        borderColor={borderColor}
+                      >
+                        <Text fontSize="xs" color={secondaryTextColor}>
+                          {selectedFiles.length} of {pdfFiles.length} files selected
+                        </Text>
+                        <Button size="2xs" variant="ghost" onClick={handleSelectAll} flexShrink={0}>
+                          {selectedFiles.length === pdfFiles.length ? 'Deselect All' : 'Select All'}
+                        </Button>
+                      </Flex>
+                      <VStack align="stretch" gap={0} px={2} py={1}>
+                        {pdfFiles.map((file) => (
+                          <Checkbox.Root
+                            key={file.name}
+                            checked={selectedFiles.includes(file.name)}
+                            onCheckedChange={() => handleFileToggle(file.name)}
+                            py={0.5}
+                          >
+                            <Checkbox.HiddenInput />
+                            <Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>
+                            <Checkbox.Label>
+                              <Flex align="center" gap={1}>
+                                <Icon color="red.400" boxSize={3} asChild><FileText /></Icon>
+                                <Text fontSize="xs">{file.name}</Text>
+                              </Flex>
+                            </Checkbox.Label>
+                          </Checkbox.Root>
+                        ))}
+                      </VStack>
+                    </Box>
+                  </Box>
+
+                  <Box>
+                    <Text fontSize="xs" fontWeight="600" color={textColor} mb={1}>
+                      Output filename:
+                    </Text>
+                    <Input
+                      size="xs"
+                      value={outputFilename}
+                      onChange={(e) => setOutputFilename(e.target.value)}
+                      placeholder="Enter filename (e.g., merged-document)"
+                      autoFocus
+                      bg={inputBg}
+                      borderColor={borderColor}
+                      borderRadius="md"
+                    />
+                    <Text fontSize="xs" color={secondaryTextColor} mt={1}>
+                      .pdf extension will be added automatically if not present
+                    </Text>
+                  </Box>
+                </VStack>
+              )}
+            </Dialog.Body>
+            <Dialog.Footer px={3} py={2} borderTopWidth="1px" borderColor={borderColor}>
+              <Button size="xs" variant="outline" borderRadius="md" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button
+                size="xs"
+                borderRadius="md"
+                colorPalette="blue"
+                onClick={handleMerge}
+                disabled={isLoading || selectedFiles.length < 2 || !outputFilename.trim()}
+              >
+                Merge PDFs
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Portal>
+    </Dialog.Root>
   );
 }; 

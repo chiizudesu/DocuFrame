@@ -1,23 +1,18 @@
 import React, { useState, useCallback, memo, useEffect } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  ModalCloseButton,
   Button,
   VStack,
   Box,
   Text,
-  useColorModeValue,
   Textarea,
   HStack,
   Spinner,
   Alert,
-  AlertIcon,
   IconButton,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
 import { RefreshCw } from 'lucide-react';
 import { rewriteEmailBlurbStream } from '../services/claude';
@@ -43,10 +38,8 @@ const SmartRenameDialogInner: React.FC<SmartRenameDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
   
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const { surfaceBg: bgColor, titleBarBg, borderColor, inputBg } = useDialogChrome();
   const textColor = useColorModeValue('gray.800', 'gray.100');
-  const inputBg = useColorModeValue('gray.50', 'gray.700');
   const inputTextColor = useColorModeValue('gray.800', 'gray.100');
   const currentFileBg = useColorModeValue('gray.50', 'gray.700');
   const currentFileTextColor = useColorModeValue('gray.600', 'gray.400');
@@ -140,8 +133,8 @@ IMPORTANT: Only return the suggested filename itself, nothing else. No explanati
     
     // Check for duplicate filenames (excluding the current file being renamed)
     // Use case-insensitive comparison but exclude the current file by path
-    const duplicateExists = existingFilesRef.current.some(
-      f => f.path !== file.path && f.name.toLowerCase() === trimmedName.toLowerCase()
+    const duplicateExists = existingFiles.some(
+      (f) => f.path !== file.path && f.name.toLowerCase() === trimmedName.toLowerCase()
     );
     
     if (duplicateExists) {
@@ -159,85 +152,93 @@ IMPORTANT: Only return the suggested filename itself, nothing else. No explanati
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="md" isCentered>
-      <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor}>
-        <ModalHeader>Smart Rename</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <VStack spacing={4} align="stretch">
-            <Box>
-              <Text fontSize="sm" fontWeight="medium" mb={2} color={textColor}>
-                Current filename:
-              </Text>
-              <Text fontSize="sm" color={currentFileTextColor} fontFamily="mono" p={2} bg={currentFileBg} borderRadius="md">
-                {file.name}
-              </Text>
-            </Box>
+    <Dialog.Root open={isOpen} size='md' placement='center' onOpenChange={e => {
+      if (!e.open) {
+        onClose();
+      }
+    }}>
+      <Portal>
 
-            <Box>
-              <Text fontSize="sm" fontWeight="medium" mb={2} color={textColor}>
-                Suggested filename:
-              </Text>
-              {isGenerating ? (
-                <Box p={4} textAlign="center">
-                  <Spinner size="md" />
-                  <Text mt={2} fontSize="sm" color="gray.500">
-                    Analyzing filename...
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content bg={bgColor}>
+            <Dialog.Header>Smart Rename</Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body>
+              <VStack gap={4} align="stretch">
+                <Box>
+                  <Text fontSize="sm" fontWeight="medium" mb={2} color={textColor}>
+                    Current filename:
                   </Text>
-                  {streamingText && (
-                    <Text mt={2} fontSize="sm" fontFamily="mono" color={inputTextColor}>
-                      {streamingText}
-                    </Text>
+                  <Text fontSize="sm" color={currentFileTextColor} fontFamily="mono" p={2} bg={currentFileBg} borderRadius="md">
+                    {file.name}
+                  </Text>
+                </Box>
+
+                <Box>
+                  <Text fontSize="sm" fontWeight="medium" mb={2} color={textColor}>
+                    Suggested filename:
+                  </Text>
+                  {isGenerating ? (
+                    <Box p={4} textAlign="center">
+                      <Spinner size="md" />
+                      <Text mt={2} fontSize="sm" color="gray.500">
+                        Analyzing filename...
+                      </Text>
+                      {streamingText && (
+                        <Text mt={2} fontSize="sm" fontFamily="mono" color={inputTextColor}>
+                          {streamingText}
+                        </Text>
+                      )}
+                    </Box>
+                  ) : (
+                    <Textarea
+                      value={suggestedName}
+                      onChange={(e) => setSuggestedName(e.target.value)}
+                      placeholder="AI suggestion will appear here..."
+                      fontFamily="mono"
+                      fontSize="sm"
+                      minH="80px"
+                      bg="white"
+                      _dark={{ bg: inputBg }}
+                      color={inputTextColor}
+                      borderColor={borderColor}
+                      _placeholder={{ color: placeholderColor }}
+                    />
                   )}
                 </Box>
-              ) : (
-                <Textarea
-                  value={suggestedName}
-                  onChange={(e) => setSuggestedName(e.target.value)}
-                  placeholder="AI suggestion will appear here..."
-                  fontFamily="mono"
-                  fontSize="sm"
-                  minH="80px"
-                  bg={inputBg}
-                  color={inputTextColor}
-                  borderColor={borderColor}
-                  _placeholder={{ color: placeholderColor }}
-                />
-              )}
-            </Box>
 
-            {error && (
-              <Alert status="error" borderRadius="md">
-                <AlertIcon />
-                <Text fontSize="sm">{error}</Text>
-              </Alert>
-            )}
-          </VStack>
-        </ModalBody>
-        <ModalFooter>
-          <IconButton
-            aria-label="Regenerate suggestion"
-            icon={<RefreshCw size={16} />}
-            variant="ghost"
-            mr={3}
-            onClick={generateSuggestion}
-            isDisabled={isGenerating}
-            isLoading={isGenerating}
-          />
-          <Button variant="ghost" mr={3} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button 
-            colorScheme="blue" 
-            onClick={handleConfirm} 
-            isDisabled={!suggestedName.trim() || isGenerating}
-          >
-            Confirm Rename
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+                {error && (
+                  <Alert.Root status="error" borderRadius="md">
+                    <Alert.Indicator />
+                    <Text fontSize="sm">{error}</Text>
+                  </Alert.Root>
+                )}
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <IconButton
+                aria-label="Regenerate suggestion"
+                variant="ghost"
+                mr={3}
+                onClick={generateSuggestion}
+                disabled={isGenerating}><RefreshCw size={16} /></IconButton>
+              <Button variant="ghost" mr={3} onClick={onClose}>
+                Cancel
+              </Button>
+              <Button 
+                colorPalette="blue" 
+                onClick={handleConfirm} 
+                disabled={!suggestedName.trim() || isGenerating}
+              >
+                Confirm Rename
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 };
 

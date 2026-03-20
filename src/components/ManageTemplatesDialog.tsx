@@ -1,40 +1,30 @@
 import React, { useState, useEffect } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Button,
   VStack,
   Text,
   Box,
   Flex,
-  useColorModeValue,
   Textarea,
-  FormControl,
-  FormLabel,
   Input,
   Alert,
-  AlertIcon,
   Code,
   IconButton,
   Badge,
   HStack,
   useDisclosure,
-  AlertDialog,
-  AlertDialogBody,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogContent,
-  AlertDialogOverlay
+  Dialog,
+  Portal,
+  Field,
 } from '@chakra-ui/react';
 import { FileText, Plus, Edit2, Trash2, Save, X, Minus, Check, ChevronDown, ChevronRight, Clipboard } from 'lucide-react';
 import * as yaml from 'js-yaml';
 import { settingsService } from '../services/settings';
 import { parseTemplate, extractPlaceholderNames, extractConditionNames, loadTemplates as loadTemplatesFromService, type TemplateBlock } from '../services/templateService';
 import { AIEditBar } from './AIEditBar';
+import { docuFramePalette as P } from '../docuFrameColors';
 
 interface TemplateFile {
   name: string;
@@ -82,33 +72,47 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
   const [collapsedConditionalBlocks, setCollapsedConditionalBlocks] = useState<Set<string>>(new Set());
   
   // Delete confirmation
-  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
+  const { open: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
   const [templateToDelete, setTemplateToDelete] = useState<TemplateFile | null>(null);
   const cancelRef = React.useRef<HTMLButtonElement>(null);
 
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    borderColor,
+    inputBg,
+    textColor,
+    secondaryTextColor,
+    selectedBg: templateListSelectedBg,
+  } = useDialogChrome();
   const itemBgColor = useColorModeValue('gray.50', 'gray.700');
-  const selectedBgColor = useColorModeValue('blue.50', 'blue.900');
-  const textColor = useColorModeValue('gray.800', 'white');
-  const mutedTextColor = useColorModeValue('gray.600', 'gray.300');
+  const mutedTextColor = secondaryTextColor;
   const labelColor = useColorModeValue('gray.700', 'gray.300');
-  const inputBg = useColorModeValue('white', 'gray.700');
   const inputBorderColor = useColorModeValue('gray.300', 'gray.600');
-  const sidebarBg = useColorModeValue('gray.50', 'gray.750');
-  const subtleBg = useColorModeValue('gray.100', 'gray.700');
-  const contentBg = useColorModeValue('gray.50', 'gray.900');
   const scrollbarColor = useColorModeValue('#CBD5E0', '#4A5568');
-  const editHeaderBg = useColorModeValue('gray.50', 'gray.800');
-  const editLeftPanelBg = useColorModeValue('amber.50', 'gray.600');
   const rowHoverBg = useColorModeValue('gray.100', 'gray.600');
-  const editRightPanelBg = useColorModeValue('gray.50', 'gray.900');
-  const editContentBoxBg = useColorModeValue('white', 'gray.600');
-  const editContentBoxBorder = useColorModeValue('gray.300', 'gray.500');
+  /** FolderInfoBar address bar — current path segment pill */
+  const addressPillBg = useColorModeValue('#f8fafc', '#2D3748');
+  const addressPillFg = useColorModeValue('#334155', '#69c3f4');
+  /** Edit tab: placeholders column — darker than tab strip (canvas) */
+  const placeholdersColumnBg = useColorModeValue(P.light.tableHeader, P.dark.canvas);
+  /** Address-well style surfaces + cool accent border (dark) */
+  const editContentAccentBorder = useColorModeValue('gray.300', 'rgba(105, 195, 244, 0.32)');
+  const editHeaderBottomAccent = useColorModeValue('gray.200', 'rgba(105, 195, 244, 0.38)');
+  const editHeaderGlow = useColorModeValue('none', 'inset 0 1px 0 0 rgba(105, 195, 244, 0.16)');
+  const editContentWellInsetGlow = useColorModeValue('none', 'inset 0 0 0 1px rgba(105, 195, 244, 0.08)');
+  const templateEditFocusRing = useColorModeValue(
+    '0 0 0 1px #3182ce',
+    '0 0 0 1px rgba(105, 195, 244, 0.95)',
+  );
   const conditionalBlockBg = useColorModeValue('blue.50', 'blue.900');
   const conditionalBlockHoverBg = useColorModeValue('blue.100', 'blue.800');
-  const placeholderItemBg = useColorModeValue('white', 'gray.700');
-  const placeholderItemBorder = useColorModeValue('gray.300', 'gray.500');
+  const placeholderListItemBorder = useColorModeValue('gray.200', 'rgba(105, 195, 244, 0.22)');
+  /** Edit header — template name field: visible blue border on address-well input */
+  const templateNameInputBorder = useColorModeValue('gray.400', 'rgba(72, 149, 210, 0.72)');
+  /** Empty-state panels — dark: same cool well as dialog input (#4A5568), not gray.700 */
+  const editEmptyStatePanelBg = useColorModeValue(P.light.tableHeader, '#4A5568');
+  const editEmptyStatePanelBorder = useColorModeValue('gray.300', 'rgba(105, 195, 244, 0.28)');
 
   // Load template folder path from settings
   useEffect(() => {
@@ -247,7 +251,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
       
       try {
         const { analyzeTemplateForPlaceholders } = await import('../services/aiService');
-        const aiDetections = await analyzeTemplateForPlaceholders(rawText, newTemplateName, 'claude');
+        const aiDetections = await analyzeTemplateForPlaceholders(rawText, newTemplateName);
         detections = aiDetections;
         console.log('[Template Analysis] AI detected placeholders:', aiDetections);
       } catch (aiError) {
@@ -455,17 +459,16 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
     setEditedTemplate({ ...editedTemplate, template: newTemplate });
   };
 
-  const renderTextAsWords = (text: string, baseCharIndex: number) => {
+  const renderTextAsWords = (text: string, keyPrefix: string) => {
     const tokens = text.split(/(\s+)/);
-    let offset = 0;
-    return tokens.map((token) => {
-      const charIdx = baseCharIndex + offset;
-      offset += token.length;
-      return <Text as="span" key={`t-${charIdx}`} whiteSpace="pre-wrap">{token}</Text>;
-    });
+    return tokens.map((token, wi) => (
+      <Text as="span" key={`${keyPrefix}-w-${wi}`} whiteSpace="pre-wrap">
+        {token}
+      </Text>
+    ));
   };
 
-  const renderTextWithPlaceholderPills = (text: string, baseCharIndex: number) => {
+  const renderTextWithPlaceholderPills = (text: string, keyPrefix: string) => {
     if (!text) return null;
     const parts: React.ReactNode[] = [];
     let lastIndex = 0;
@@ -476,25 +479,34 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
       const matchStart = match.index;
       const matchEnd = match.index + match[0].length;
       if (matchStart > lastIndex) {
-        parts.push(...renderTextAsWords(text.substring(lastIndex, matchStart), baseCharIndex + lastIndex));
+        parts.push(
+          ...renderTextAsWords(text.substring(lastIndex, matchStart), `${keyPrefix}-txt-${lastIndex}`)
+        );
       }
       parts.push(
-        <Badge
-          key={`ph-${baseCharIndex}-${matchStart}`}
-          colorScheme="yellow"
-          fontSize="xs"
+        <Box
+          key={`${keyPrefix}-ph-${matchStart}`}
+          as="span"
+          display="inline-flex"
+          alignItems="center"
           px={2}
-          py={1}
-          borderRadius="md"
+          py="2px"
+          borderRadius="lg"
+          bg={addressPillBg}
+          color={addressPillFg}
+          fontSize="xs"
           fontFamily="mono"
+          fontWeight="medium"
+          verticalAlign="middle"
+          mx="3px"
         >
           {`{{${placeholderName}}}`}
-        </Badge>
+        </Box>
       );
       lastIndex = matchEnd;
     }
     if (lastIndex < text.length) {
-      parts.push(...renderTextAsWords(text.substring(lastIndex), baseCharIndex + lastIndex));
+      parts.push(...renderTextAsWords(text.substring(lastIndex), `${keyPrefix}-txt-${lastIndex}`));
     }
     return <Box as="span" display="inline">{parts}</Box>;
   };
@@ -508,7 +520,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
       if (block.type === 'text') {
         return (
           <Box key={key} as="span" display="inline">
-            {renderTextWithPlaceholderPills(block.content, 0)}
+            {renderTextWithPlaceholderPills(block.content, key)}
           </Box>
         );
       }
@@ -547,7 +559,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
             ) : (
               <ChevronDown size={14} style={{ marginRight: 4 }} />
             )}
-            <Badge colorScheme="purple" fontSize="xs" fontFamily="mono">
+            <Badge colorPalette="purple" fontSize="xs" fontFamily="mono">
               IF {block.condition}
             </Badge>
           </Flex>
@@ -558,7 +570,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
               </Box>
               {block.elseBlocks.length > 0 && (
                 <>
-                  <Badge colorScheme="gray" fontSize="xs" mb={2}>ELSE</Badge>
+                  <Badge colorPalette="gray" fontSize="xs" mb={2}>ELSE</Badge>
                   <Box pl={2} borderLeft="2px solid" borderColor="gray.300">
                     {renderBlocksWithConditionals(block.elseBlocks, `${key}-else`)}
                   </Box>
@@ -619,601 +631,663 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={handleClose} size="6xl" isCentered>
-        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-        <ModalContent 
-          maxH="95vh"
-          maxW="90vw"
-          w="950px"
-          bg={bgColor}
-          borderRadius={0}
-          boxShadow="xl"
-        >
-          <ModalHeader 
-            bg={itemBgColor} 
-            borderBottom="1px solid" 
-            borderColor={borderColor}
-            borderRadius={0}
-            py={3}
-          >
-            <Flex align="center">
-              <FileText size={20} style={{ marginRight: '8px' }} />
-              <Text fontSize="lg" fontWeight="semibold">Template Manager</Text>
-            </Flex>
-          </ModalHeader>
-          {onMinimize && (
-            <IconButton
-              aria-label="Minimize"
-              icon={<Minus size={16} />}
-              size="sm"
-              variant="ghost"
-              position="absolute"
-              top={4}
-              right={12}
-              onClick={onMinimize}
-            />
-          )}
-          <ModalCloseButton top={4} right={4} />
-          
-          <ModalBody p={0}>
-            <Flex h="650px">
-              {/* Vertical Sidebar Navigation */}
-              <VStack
-                w="160px"
-                minW="160px"
-                bg={sidebarBg}
-                borderRight="1px solid"
+      <Dialog.Root open={isOpen} size='xl' placement='center' onOpenChange={e => {
+        if (!e.open) {
+          handleClose();
+        }
+      }}>
+        <Portal>
+
+          <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+          <Dialog.Positioner>
+            <Dialog.Content
+              maxH="95vh"
+              maxW="90vw"
+              w="950px"
+              bg={bgColor}
+              borderRadius={0}
+              boxShadow="xl">
+              <Dialog.Header 
+                bg={titleBarBg} 
+                borderBottom="1px solid" 
                 borderColor={borderColor}
-                py={4}
-                px={2}
-                spacing={1}
-                align="stretch"
+                borderRadius={0}
+                py={1.5}
+                minH="31px"
               >
-                {navItems.map(item => (
-                  <Button
-                    key={item.idx}
-                    variant="ghost"
-                    size="sm"
-                    justifyContent="flex-start"
-                    leftIcon={item.icon}
-                    isDisabled={item.disabled}
-                    bg={activeTab === item.idx ? selectedBgColor : 'transparent'}
-                    borderLeft="3px solid"
-                    borderLeftColor={activeTab === item.idx ? 'blue.400' : 'transparent'}
-                    borderRadius={0}
-                    onClick={() => !item.disabled && setActiveTab(item.idx)}
-                    fontWeight={activeTab === item.idx ? 'semibold' : 'normal'}
-                    fontSize="sm"
-                    _hover={{ bg: activeTab === item.idx ? selectedBgColor : itemBgColor }}
+                <Flex align="center" justify="space-between" w="full">
+                  <Flex align="center" gap={2}>
+                    <FileText size={18} />
+                    <Text fontSize="sm" fontWeight="600" color={textColor}>Template Manager</Text>
+                  </Flex>
+                  <HStack gap={1}>
+                    {onMinimize && (
+                      <IconButton aria-label="Minimize" size="sm" variant="ghost" onClick={onMinimize}><Minus size={16} /></IconButton>
+                    )}
+                    <IconButton aria-label="Close" size="sm" variant="ghost" onClick={handleClose}><X size={16} /></IconButton>
+                  </HStack>
+                </Flex>
+              </Dialog.Header>
+              <Dialog.Body p={0}>
+                <Flex h="650px">
+                  {/* Vertical Sidebar Navigation */}
+                  <VStack
+                    w="160px"
+                    minW="160px"
+                    bg="df.toolbar"
+                    borderRight="1px solid"
+                    borderColor={borderColor}
+                    py={4}
+                    px={2}
+                    gap={1}
+                    align="stretch"
                   >
-                    {item.label}
-                  </Button>
-                ))}
-                <Box flex="1" />
-              </VStack>
+                    {navItems.map(item => (
+                      <Button
+                        key={item.idx}
+                        variant="ghost"
+                        size="sm"
+                        justifyContent="flex-start"
+                        disabled={item.disabled}
+                        bg={activeTab === item.idx ? 'df.tabActive' : 'transparent'}
+                        borderLeft="3px solid"
+                        borderLeftColor={activeTab === item.idx ? 'df.dialogAccent' : 'transparent'}
+                        borderRadius={0}
+                        onClick={() => !item.disabled && setActiveTab(item.idx)}
+                        fontWeight={activeTab === item.idx ? 'semibold' : 'normal'}
+                        fontSize="sm"
+                        color={activeTab === item.idx ? undefined : 'df.subtext'}
+                        _hover={{
+                          bg:
+                            activeTab === item.idx
+                              ? 'df.tabActive'
+                              : 'df.chromeHover',
+                        }}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </Button>
+                    ))}
+                    <Box flex="1" />
+                  </VStack>
 
-              {/* Content Area */}
-              <Box flex="1" overflow="hidden">
-                {/* ===== BROWSE TAB ===== */}
-                {activeTab === 0 && (
-                  <Box h="full" px={6} py={4} overflowY="auto">
-                    <VStack spacing={3} align="stretch" h="full">
-                      {error && (
-                        <Alert status="error" borderRadius="md" py={2}>
-                          <AlertIcon />
-                          <Text fontSize="sm">{error}</Text>
-                        </Alert>
-                      )}
-                      
-                      {isLoading ? (
-                        <Box textAlign="center" py={8}>
-                          <Text>Loading templates...</Text>
-                        </Box>
-                      ) : templates.length === 0 ? (
-                        <Box textAlign="center" py={8}>
-                          <Text color="gray.500">No template files found in template folder</Text>
-                          <Text fontSize="sm" color="gray.400" mt={2}>
-                            {templateFolderPath ? `Looking in: ${templateFolderPath}` : 'Template folder path not configured'}
-                          </Text>
-                          <Text fontSize="sm" color="gray.400" mt={1}>
-                            Template files should end with .yaml or .yml
-                          </Text>
-                        </Box>
-                      ) : (
-                        <Box flex="1" overflowY="auto">
-                          <VStack spacing={0} align="stretch">
-                            {templates.map((template, index) => (
-                              <Flex
-                                key={index}
-                                px={3}
-                                py={2}
-                                bg={selectedTemplate?.path === template.path ? selectedBgColor : itemBgColor}
-                                cursor="pointer"
-                                align="center"
-                                gap={3}
-                                _hover={{ bg: selectedTemplate?.path === template.path ? selectedBgColor : rowHoverBg }}
-                                onClick={() => handleSelectTemplate(template)}
-                                borderBottom="1px solid"
-                                borderColor={borderColor}
-                              >
-                                <Text fontWeight="medium" fontSize="sm" flex="1" noOfLines={1}>
-                                  {template.parsed?.name || template.name}
-                                </Text>
-                                <Text fontSize="xs" color="gray.500" flexShrink={0}>
-                                  {new Date(template.lastModified).toLocaleDateString()}
-                                </Text>
-                                <HStack spacing={0} flexShrink={0}>
-                                  <IconButton
-                                    aria-label="Edit template"
-                                    icon={<Edit2 size={14} />}
-                                    size="xs"
-                                    variant="ghost"
-                                    colorScheme="blue"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleSelectTemplate(template);
-                                    }}
-                                  />
-                                  <IconButton
-                                    aria-label="Delete template"
-                                    icon={<Trash2 size={14} />}
-                                    size="xs"
-                                    variant="ghost"
-                                    colorScheme="red"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteTemplate(template);
-                                    }}
-                                  />
-                                </HStack>
-                              </Flex>
-                            ))}
-                          </VStack>
-                        </Box>
-                      )}
-                    </VStack>
-                  </Box>
-                )}
-
-                {/* ===== EDIT TAB ===== */}
-                {activeTab === 1 && (
-                  <Box h="full" p={4}>
-                    {selectedTemplate ? (
-                      <Flex direction="column" h="full">
-                        {/* Header Bar */}
-                        <Box
-                          p={3}
-                          bg={editHeaderBg}
-                          mb={3}
-                        >
+                  {/* Content Area */}
+                  <Box flex="1" overflow="hidden">
+                    {/* ===== BROWSE TAB ===== */}
+                    {activeTab === 0 && (
+                      <Box h="full" px={6} py={4} overflowY="auto">
+                        <VStack gap={3} align="stretch" h="full">
                           {error && (
-                            <Box mb={3}>
-                              <Alert status="error" borderRadius="md" py={2}>
-                                <AlertIcon />
-                                <Text fontSize="sm">{error}</Text>
-                              </Alert>
-                            </Box>
+                            <Alert.Root status="error" borderRadius="md" py={2}>
+                              <Alert.Indicator />
+                              <Text fontSize="sm">{error}</Text>
+                            </Alert.Root>
                           )}
-                          <Flex justify="space-between" align="flex-start" gap={4}>
-                            <Box flex="1">
-                              {editingTemplateName ? (
-                                <HStack spacing={2} align="center">
-                                  <Input
-                                    value={editedTemplate?.name || ''}
-                                    onChange={(e) => updateTemplateField('name', e.target.value)}
-                                    placeholder="Enter template name..."
-                                    size="sm"
-                                    bg={inputBg}
-                                    borderColor={inputBorderColor}
-                                    _focus={{ borderColor: 'blue.400', boxShadow: '0 0 0 1px blue.400' }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') setEditingTemplateName(false);
-                                      if (e.key === 'Escape') setEditingTemplateName(false);
-                                    }}
-                                  />
-                                  <IconButton
-                                    aria-label="Done editing name"
-                                    icon={<Check size={14} />}
-                                    size="sm"
-                                    colorScheme="blue"
-                                    variant="ghost"
-                                    onClick={() => setEditingTemplateName(false)}
-                                  />
-                                </HStack>
-                              ) : (
-                                <HStack spacing={2} align="center">
-                                  <Text fontSize="md" fontWeight="bold" color={textColor}>
-                                    {editedTemplate?.name || selectedTemplate.name}
-                                    {selectedTemplate && editedTemplate && lastSavedTemplate && JSON.stringify(editedTemplate) !== JSON.stringify(lastSavedTemplate) && (
-                                      <Text as="span" color="orange.500" ml={0.5}>*</Text>
-                                    )}
-                                  </Text>
-                                  <IconButton
-                                    aria-label="Edit template name"
-                                    icon={<Edit2 size={14} />}
-                                    size="xs"
-                                    variant="ghost"
-                                    onClick={() => setEditingTemplateName(true)}
-                                  />
-                                </HStack>
-                              )}
-                              <Text fontSize="xs" color={mutedTextColor} fontWeight="normal" mt={1}>
-                                {selectedTemplate.name}
+                          
+                          {isLoading ? (
+                            <Box textAlign="center" py={8}>
+                              <Text>Loading templates...</Text>
+                            </Box>
+                          ) : templates.length === 0 ? (
+                            <Box textAlign="center" py={8}>
+                              <Text color="gray.500">No template files found in template folder</Text>
+                              <Text fontSize="sm" color="gray.400" mt={2}>
+                                {templateFolderPath ? `Looking in: ${templateFolderPath}` : 'Template folder path not configured'}
+                              </Text>
+                              <Text fontSize="sm" color="gray.400" mt={1}>
+                                Template files should end with .yaml or .yml
                               </Text>
                             </Box>
-                            <Button
-                              leftIcon={<Save size={14} />}
-                              colorScheme="blue"
-                              size="sm"
-                              onClick={handleSaveTemplate}
-                              isLoading={isLoading}
-                              loadingText="Saving..."
-                            >
-                              Save
-                            </Button>
-                          </Flex>
-                        </Box>
-                        
-                        {/* Editor Content */}
-                        <Box
-                          flex="1"
-                          bg={editRightPanelBg}
-                          overflow="hidden"
-                          display="flex"
-                          flexDirection="column"
-                        >
-                          <Flex h="full">
-                              {/* Left Panel - Template Name + Placeholders */}
-                              <Box
-                                w="260px"
-                                minW="260px"
-                                p={4}
-                                bg={editLeftPanelBg}
-                                borderRight="1px solid"
-                                borderColor={borderColor}
-                                overflowY="auto"
-                              >
-                                <VStack spacing={4} align="stretch">
-                                  <Box flex="1" minH={0}>
-                                    <Text fontSize="sm" fontWeight="semibold" mb={2} color={textColor}>
-                                      Placeholders
+                          ) : (
+                            <Box flex="1" overflowY="auto">
+                              <VStack gap={0} align="stretch">
+                                {templates.map((template, index) => (
+                                  <Flex
+                                    key={index}
+                                    px={3}
+                                    py={2}
+                                    bg={
+                                      selectedTemplate?.path === template.path
+                                        ? templateListSelectedBg
+                                        : 'transparent'
+                                    }
+                                    cursor="pointer"
+                                    align="center"
+                                    gap={3}
+                                    _hover={{
+                                      bg:
+                                        selectedTemplate?.path === template.path
+                                          ? templateListSelectedBg
+                                          : 'df.rowHover',
+                                    }}
+                                    onClick={() => handleSelectTemplate(template)}
+                                    borderBottom="1px solid"
+                                    borderColor={borderColor}
+                                  >
+                                    <Text fontWeight="medium" fontSize="sm" flex="1" lineClamp={1}>
+                                      {template.parsed?.name || template.name}
                                     </Text>
-                                    {(() => {
-                                      const templateContent = editedTemplate?.template || '';
-                                      const placeholders = extractPlaceholderNames(templateContent);
-                                      return placeholders.length > 0 ? (
-                                        <VStack spacing={1} align="stretch" mb={4}>
-                                          {placeholders.map((placeholder, index) => (
-                                            <Box
-                                              key={index}
-                                              px={2}
-                                              py={1.5}
-                                              bg={placeholderItemBg}
-                                              border="1px solid"
-                                              borderColor={placeholderItemBorder}
-                                              borderRadius="md"
-                                            >
-                                              <HStack spacing={2}>
-                                                <Box w={2} h={2} bg="blue.400" borderRadius="full" flexShrink={0} />
-                                                <Code fontSize="xs" bg="transparent" p={0} wordBreak="break-all" whiteSpace="pre-wrap">
-                                                  {placeholder}
-                                                </Code>
-                                              </HStack>
-                                            </Box>
-                                          ))}
-                                        </VStack>
-                                      ) : (
-                                        <Box p={3} bg={subtleBg} borderRadius="md" textAlign="center" mb={4}>
-                                          <Text fontSize="xs" color="gray.500">No placeholders found</Text>
-                                        </Box>
-                                      );
-                                    })()}
-                                    <Text fontSize="sm" fontWeight="semibold" mb={2} color={textColor}>
-                                      Conditions
+                                    <Text fontSize="xs" color="gray.500" flexShrink={0}>
+                                      {new Date(template.lastModified).toLocaleDateString()}
                                     </Text>
-                                    {(() => {
-                                      const templateContent = editedTemplate?.template || '';
-                                      const conditions = extractConditionNames(templateContent);
-                                      return conditions.length > 0 ? (
-                                        <VStack spacing={1} align="stretch">
-                                          {conditions.map((cond, index) => (
-                                            <Box
-                                              key={index}
-                                              px={2}
-                                              py={1.5}
-                                              bg={placeholderItemBg}
-                                              border="1px solid"
-                                              borderColor={placeholderItemBorder}
-                                              borderRadius="md"
-                                            >
-                                              <HStack spacing={2}>
-                                                <Box w={2} h={2} bg="purple.400" borderRadius="full" flexShrink={0} />
-                                                <Code fontSize="xs" bg="transparent" p={0} wordBreak="break-all" whiteSpace="pre-wrap">
-                                                  {cond}
-                                                </Code>
-                                              </HStack>
-                                            </Box>
-                                          ))}
-                                        </VStack>
-                                      ) : (
-                                        <Box p={3} bg={subtleBg} borderRadius="md" textAlign="center">
-                                          <Text fontSize="xs" color="gray.500">No conditions</Text>
-                                          <Text fontSize="xs" color="gray.400" mt={1}>Use {`{{#if name}}`} in template</Text>
-                                        </Box>
-                                      );
-                                    })()}
-                                  </Box>
-                                </VStack>
-                              </Box>
-                              
-                              {/* Right Panel - Template Content */}
-                              <Box flex="1" p={4} display="flex" flexDirection="column" bg={editRightPanelBg}>
-                                <HStack justify="space-between" mb={2}>
-                                  <Text fontSize="sm" fontWeight="semibold" color={textColor}>Template Content</Text>
-                                  <IconButton
-                                    aria-label={isEditingContent ? 'Done editing' : 'Edit as raw text'}
-                                    icon={isEditingContent ? <Check size={14} /> : <Edit2 size={14} />}
-                                    size="xs"
-                                    variant="ghost"
-                                    colorScheme={isEditingContent ? 'blue' : undefined}
-                                    onClick={() => setIsEditingContent(!isEditingContent)}
-                                  />
-                                </HStack>
-                                {isEditingContent ? (
-                                  <Textarea
-                                    value={editedTemplate?.template || ''}
-                                    onChange={(e) => updateTemplateField('template', e.target.value)}
-                                    fontFamily="mono"
-                                    fontSize="sm"
-                                    resize="none"
-                                    flex="1"
-                                    bg={editContentBoxBg}
-                                    border="2px solid"
-                                    borderColor={editContentBoxBorder}
-                                    _focus={{ borderColor: 'blue.400', boxShadow: '0 0 0 1px blue.400' }}
-                                    placeholder="Template content with {{placeholders}}..."
-                                  />
-                                ) : (
-                                <Box
-                                      flex="1"
-                                      p={4}
-                                      bg={editContentBoxBg}
-                                      border="2px solid"
-                                      borderColor={editContentBoxBorder}
-                                      borderRadius="md"
-                                      overflowY="auto"
-                                      minH="200px"
-                                      fontFamily="mono"
-                                      fontSize="sm"
-                                      lineHeight="tall"
-                                      whiteSpace="pre-wrap"
-                                      wordBreak="break-word"
-                                      css={{
-                                        '&::-webkit-scrollbar': { width: '8px' },
-                                        '&::-webkit-scrollbar-track': { background: 'transparent' },
-                                        '&::-webkit-scrollbar-thumb': { background: scrollbarColor, borderRadius: '4px' },
-                                      }}
-                                    >
-                                      {renderTemplateContentWithPills(editedTemplate?.template || '')}
-                                    </Box>
-
-                                )}
-                                <AIEditBar
-                                  currentTemplate={editedTemplate?.template || ''}
-                                  onTemplateUpdated={handleAiTemplateUpdated}
-                                  onError={setError}
-                                />
-                              </Box>
-                            </Flex>
-                        </Box>
-                      </Flex>
-                    ) : (
-                      <Flex direction="column" align="center" justify="center" h="full" textAlign="center">
-                        <Edit2 size={48} color={scrollbarColor} />
-                        <Text color="gray.500" fontSize="lg" mt={4} fontWeight="medium">No Template Selected</Text>
-                        <Text color="gray.400" fontSize="sm" mt={2}>Select a template from the Browse tab to edit it</Text>
-                      </Flex>
-                    )}
-                  </Box>
-                )}
-
-                {/* ===== CREATE NEW TAB ===== */}
-                {activeTab === 2 && (
-                  <Box h="full" px={6} py={4} overflowY="auto">
-                    <VStack spacing={4} align="stretch" h="full" minH="0">
-                      {error && (
-                        <Alert status="error" borderRadius="md" py={2}>
-                          <AlertIcon />
-                          <Text fontSize="sm">{error}</Text>
-                        </Alert>
-                      )}
-
-                      {/* Compact 2-row header - always visible */}
-                      <Box w="full">
-                        <Flex gap={4} wrap="wrap" align="flex-end" mb={3}>
-                          <FormControl flex="1" minW="200px">
-                            <FormLabel fontSize="sm">Template Name</FormLabel>
-                            <Input
-                              value={newTemplateName}
-                              onChange={(e) => setNewTemplateName(e.target.value)}
-                              placeholder="Enter template name..."
-                              size="sm"
-                            />
-                          </FormControl>
-                          <FormControl flex="1" minW="200px">
-                            <FormLabel fontSize="sm">
-                              File Name
-                              <Text as="span" fontSize="xs" color="gray.500" ml={1}>(optional)</Text>
-                            </FormLabel>
-                            <Input
-                              value={newTemplateFilename}
-                              onChange={(e) => setNewTemplateFilename(e.target.value)}
-                              placeholder="my_template.yaml"
-                              size="sm"
-                            />
-                          </FormControl>
-                        </Flex>
-                        <Flex gap={2} align="center" flexWrap="wrap">
-                          <FormControl flex="1" minW="200px">
-                            <FormLabel fontSize="sm">Template Content</FormLabel>
-                            <HStack>
-                              <Button
-                                leftIcon={<Clipboard size={14} />}
-                                size="sm"
-                                variant="outline"
-                                onClick={handlePasteFromClipboard}
-                              >
-                                Paste from Clipboard
-                              </Button>
-                              {clipboardPasteStatus === 'success' && (
-                                <HStack spacing={1} color="green.500">
-                                  <Check size={16} />
-                                  <Text fontSize="xs" noOfLines={1} maxW="120px">
-                                    {rawText.length} chars
-                                  </Text>
-                                </HStack>
-                              )}
-                              {clipboardPasteStatus === 'empty' && (
-                                <HStack spacing={1} color="red.500">
-                                  <X size={16} />
-                                  <Text fontSize="xs">Clipboard empty</Text>
-                                </HStack>
-                              )}
-                              {clipboardPasteStatus === 'error' && (
-                                <HStack spacing={1} color="red.500">
-                                  <X size={16} />
-                                  <Text fontSize="xs">Paste failed</Text>
-                                </HStack>
-                              )}
-                              {rawText && (
-                                <Button size="xs" variant="ghost" onClick={handleClearTemplateContent}>
-                                  Clear
-                                </Button>
-                              )}
-                            </HStack>
-                          </FormControl>
-                          <Button
-                            leftIcon={<Plus size={16} />}
-                            colorScheme="blue"
-                            size="sm"
-                            onClick={handleAnalyzeText}
-                            isLoading={isAnalyzing}
-                            isDisabled={!newTemplateName.trim() || !rawText.trim()}
-                            alignSelf="flex-end"
-                          >
-                            {isAnalyzing ? 'Analyzing...' : 'Analyze & Continue'}
-                          </Button>
-                        </Flex>
-                        {newTemplateName && (
-                          <Text fontSize="xs" color="gray.500" mt={1}>
-                            Auto-generated filename: {newTemplateName.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase()}_template.yaml
-                          </Text>
-                        )}
-                      </Box>
-                      
-                      {createStep === 'categories' && (
-                        <Flex gap={6} flex="1" minH="0" align="stretch">
-                          <VStack align="stretch" flex="1" spacing={3}>
-                            <Text fontWeight="bold" fontSize="sm">Define PDF Categories</Text>
-                            <HStack align="flex-end">
-                              <FormControl flex="1">
-                                <FormLabel fontSize="xs">Add category</FormLabel>
-                                <Input
-                                  value={newCategory}
-                                  onChange={(e) => setNewCategory(e.target.value)}
-                                  onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
-                                  placeholder="e.g., financial_statement, tax_return..."
-                                  size="sm"
-                                />
-                              </FormControl>
-                              <Button
-                                leftIcon={<Plus size={14} />}
-                                onClick={handleAddCategory}
-                                size="sm"
-                                colorScheme="blue"
-                                isDisabled={!newCategory.trim() || categories.includes(newCategory.trim())}
-                              >
-                                Add
-                              </Button>
-                            </HStack>
-                            <Box pt={2}>
-                              <HStack>
-                                <Button variant="ghost" onClick={() => setCreateStep('input')} size="sm">Back</Button>
-                                <Button colorScheme="blue" onClick={handleConfirmCategories} size="sm" isDisabled={categories.length === 0}>Generate YAML</Button>
-                              </HStack>
-                            </Box>
-                          </VStack>
-                          <VStack align="stretch" flex="1" spacing={2}>
-                            <Text fontSize="sm" fontWeight="semibold">Categories Added</Text>
-                            {categories.length === 0 ? (
-                              <Box p={4} bg={itemBgColor} borderRadius="md" textAlign="center" flex="1" minH="80px">
-                                <Text fontSize="xs" color="gray.500">No categories yet</Text>
-                              </Box>
-                            ) : (
-                              <VStack spacing={2} align="stretch" flex="1" overflowY="auto">
-                                {categories.map((cat, index) => (
-                                  <HStack key={index} p={2} bg={itemBgColor} borderRadius="md" border="1px solid" borderColor={borderColor}>
-                                    <FileText size={14} />
-                                    <Code fontSize="xs" flex="1">{cat}</Code>
-                                    <IconButton aria-label="Remove category" icon={<X size={14} />} size="xs" variant="ghost" colorScheme="red"
-                                      onClick={() => handleRemoveCategory(index)} />
-                                  </HStack>
+                                    <HStack gap={0} flexShrink={0}>
+                                      <IconButton
+                                        aria-label="Edit template"
+                                        size="xs"
+                                        variant="ghost"
+                                        colorPalette="blue"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSelectTemplate(template);
+                                        }}><Edit2 size={14} /></IconButton>
+                                      <IconButton
+                                        aria-label="Delete template"
+                                        size="xs"
+                                        variant="ghost"
+                                        colorPalette="red"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteTemplate(template);
+                                        }}><Trash2 size={14} /></IconButton>
+                                    </HStack>
+                                  </Flex>
                                 ))}
                               </VStack>
-                            )}
-                          </VStack>
-                        </Flex>
-                      )}
-                      
-                      {createStep === 'yaml' && (
-                        <>
-                          <Text fontWeight="bold" fontSize="sm">Generated Template YAML</Text>
-                          <Text fontSize="xs" color="gray.500">Review and edit the generated YAML before saving:</Text>
-                          
-                          <Textarea
-                            value={newTemplateContent}
-                            onChange={(e) => setNewTemplateContent(e.target.value)}
-                            fontFamily="mono" fontSize="sm" flex="1" resize="none" minH="150px"
-                          />
-                          
-                          <Box pt={2}>
-                            <HStack>
-                              <Button variant="ghost" onClick={() => setCreateStep('categories')} size="sm">Back</Button>
-                              <Button leftIcon={<Save size={16} />} colorScheme="green" onClick={handleCreateTemplate} isLoading={isLoading} size="sm">
-                                Save Template
-                              </Button>
-                            </HStack>
-                          </Box>
-                        </>
-                      )}
-                    </VStack>
-                  </Box>
-                )}
-              </Box>
-            </Flex>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+                            </Box>
+                          )}
+                        </VStack>
+                      </Box>
+                    )}
 
-      <AlertDialog
-        isOpen={isDeleteOpen}
-        leastDestructiveRef={cancelRef}
-        onClose={onDeleteClose}
-        isCentered
-      >
-        <AlertDialogOverlay>
-          <AlertDialogContent>
-            <AlertDialogHeader fontSize="lg" fontWeight="bold">Delete Template</AlertDialogHeader>
-            <AlertDialogBody>
-              Are you sure you want to delete &ldquo;{templateToDelete?.name}&rdquo;? This action cannot be undone.
-            </AlertDialogBody>
-            <AlertDialogFooter>
-              <Button ref={cancelRef} onClick={onDeleteClose}>Cancel</Button>
-              <Button colorScheme="red" onClick={confirmDeleteTemplate} ml={3}>Delete</Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialogOverlay>
-      </AlertDialog>
+                    {/* ===== EDIT TAB ===== */}
+                    {activeTab === 1 && (
+                      <Box h="full" p={4}>
+                        {selectedTemplate ? (
+                          <Flex direction="column" h="full">
+                            {/* Header Bar */}
+                            <Box
+                              p={3}
+                              bg={inputBg}
+                              mb={3}
+                              borderRadius="md"
+                              borderWidth="1px"
+                              borderColor={editContentAccentBorder}
+                              borderBottomWidth="2px"
+                              borderBottomColor={editHeaderBottomAccent}
+                              boxShadow={editHeaderGlow}
+                            >
+                              {error && (
+                                <Box mb={3}>
+                                  <Alert.Root status="error" borderRadius="md" py={2}>
+                                    <Alert.Indicator />
+                                    <Text fontSize="sm">{error}</Text>
+                                  </Alert.Root>
+                                </Box>
+                              )}
+                              <Flex justify="space-between" align="flex-start" gap={4}>
+                                <Box flex="1">
+                                  {editingTemplateName ? (
+                                    <HStack gap={2} align="center">
+                                      <Input
+                                        value={editedTemplate?.name || ''}
+                                        onChange={(e) => updateTemplateField('name', e.target.value)}
+                                        placeholder="Enter template name..."
+                                        size="sm"
+                                        bg={inputBg}
+                                        borderWidth="1px"
+                                        borderColor={templateNameInputBorder}
+                                        _focus={{
+                                          borderColor: 'df.dialogAccent',
+                                          boxShadow: templateEditFocusRing,
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') setEditingTemplateName(false);
+                                          if (e.key === 'Escape') setEditingTemplateName(false);
+                                        }}
+                                      />
+                                      <IconButton
+                                        aria-label="Done editing name"
+                                        size="sm"
+                                        colorPalette="blue"
+                                        variant="ghost"
+                                        onClick={() => setEditingTemplateName(false)}><Check size={14} /></IconButton>
+                                    </HStack>
+                                  ) : (
+                                    <HStack gap={2} align="center">
+                                      <Text fontSize="md" fontWeight="bold" color={textColor}>
+                                        {editedTemplate?.name || selectedTemplate.name}
+                                        {selectedTemplate && editedTemplate && lastSavedTemplate && JSON.stringify(editedTemplate) !== JSON.stringify(lastSavedTemplate) && (
+                                          <Text as="span" color="orange.500" ml={0.5}>*</Text>
+                                        )}
+                                      </Text>
+                                      <IconButton
+                                        aria-label="Edit template name"
+                                        size="xs"
+                                        variant="ghost"
+                                        onClick={() => setEditingTemplateName(true)}><Edit2 size={14} /></IconButton>
+                                    </HStack>
+                                  )}
+                                  <Text fontSize="xs" color={mutedTextColor} fontWeight="normal" mt={1}>
+                                    {selectedTemplate.name}
+                                  </Text>
+                                </Box>
+                                <Button
+                                  colorPalette="blue"
+                                  size="sm"
+                                  onClick={handleSaveTemplate}
+                                  disabled={isLoading}><Save size={14} />Save
+                                                              </Button>
+                              </Flex>
+                            </Box>
+                            
+                            {/* Editor Content */}
+                            <Box
+                              flex="1"
+                              bg={bgColor}
+                              overflow="hidden"
+                              display="flex"
+                              flexDirection="column"
+                            >
+                              <Flex h="full">
+                                  {/* Left Panel - Template Name + Placeholders */}
+                                  <Box
+                                    w="260px"
+                                    minW="260px"
+                                    p={4}
+                                    bg={placeholdersColumnBg}
+                                    borderRight="1px solid"
+                                    borderColor={borderColor}
+                                    overflowY="auto"
+                                  >
+                                    <VStack gap={4} align="stretch">
+                                      <Box flex="1" minH={0}>
+                                        <Text fontSize="sm" fontWeight="semibold" mb={2} color={textColor}>
+                                          Placeholders
+                                        </Text>
+                                        {(() => {
+                                          const templateContent = editedTemplate?.template || '';
+                                          const placeholders = extractPlaceholderNames(templateContent);
+                                          return placeholders.length > 0 ? (
+                                            <VStack gap={1} align="stretch" mb={4}>
+                                              {placeholders.map((placeholder, index) => (
+                                                <Box
+                                                  key={index}
+                                                  px={2}
+                                                  py={1.5}
+                                                  bg={addressPillBg}
+                                                  border="1px solid"
+                                                  borderColor={placeholderListItemBorder}
+                                                  borderRadius="lg"
+                                                >
+                                                  <HStack gap={2}>
+                                                    <Box w={2} h={2} bg="df.dialogAccent" borderRadius="full" flexShrink={0} />
+                                                    <Code
+                                                      fontSize="xs"
+                                                      bg="transparent"
+                                                      p={0}
+                                                      wordBreak="break-all"
+                                                      whiteSpace="pre-wrap"
+                                                      color={addressPillFg}
+                                                    >
+                                                      {placeholder}
+                                                    </Code>
+                                                  </HStack>
+                                                </Box>
+                                              ))}
+                                            </VStack>
+                                          ) : (
+                                            <Box
+                                              p={3}
+                                              bg={editEmptyStatePanelBg}
+                                              borderRadius="md"
+                                              textAlign="center"
+                                              mb={4}
+                                              border="1px solid"
+                                              borderColor={editEmptyStatePanelBorder}
+                                              boxShadow={editContentWellInsetGlow}
+                                            >
+                                              <Text fontSize="xs" color={mutedTextColor}>No placeholders found</Text>
+                                            </Box>
+                                          );
+                                        })()}
+                                        <Text fontSize="sm" fontWeight="semibold" mb={2} color={textColor}>
+                                          Conditions
+                                        </Text>
+                                        {(() => {
+                                          const templateContent = editedTemplate?.template || '';
+                                          const conditions = extractConditionNames(templateContent);
+                                          return conditions.length > 0 ? (
+                                            <VStack gap={1} align="stretch">
+                                              {conditions.map((cond, index) => (
+                                                <Box
+                                                  key={index}
+                                                  px={2}
+                                                  py={1.5}
+                                                  bg={addressPillBg}
+                                                  border="1px solid"
+                                                  borderColor={placeholderListItemBorder}
+                                                  borderRadius="lg"
+                                                >
+                                                  <HStack gap={2}>
+                                                    <Box w={2} h={2} bg="purple.400" borderRadius="full" flexShrink={0} />
+                                                    <Code
+                                                      fontSize="xs"
+                                                      bg="transparent"
+                                                      p={0}
+                                                      wordBreak="break-all"
+                                                      whiteSpace="pre-wrap"
+                                                      color={addressPillFg}
+                                                    >
+                                                      {cond}
+                                                    </Code>
+                                                  </HStack>
+                                                </Box>
+                                              ))}
+                                            </VStack>
+                                          ) : (
+                                            <Box
+                                              p={3}
+                                              bg={editEmptyStatePanelBg}
+                                              borderRadius="md"
+                                              textAlign="center"
+                                              border="1px solid"
+                                              borderColor={editEmptyStatePanelBorder}
+                                              boxShadow={editContentWellInsetGlow}
+                                            >
+                                              <Text fontSize="xs" color={mutedTextColor}>No conditions</Text>
+                                              <Text fontSize="xs" color={mutedTextColor} opacity={0.85} mt={1}>
+                                                Use {`{{#if name}}`} in template
+                                              </Text>
+                                            </Box>
+                                          );
+                                        })()}
+                                      </Box>
+                                    </VStack>
+                                  </Box>
+                                  
+                                  {/* Right Panel - Template Content */}
+                                  <Box flex="1" p={4} display="flex" flexDirection="column" bg={bgColor}>
+                                    <HStack justify="space-between" mb={2}>
+                                      <Text fontSize="sm" fontWeight="semibold" color={textColor}>Template Content</Text>
+                                      <IconButton
+                                        aria-label={isEditingContent ? 'Done editing' : 'Edit as raw text'}
+                                        size="xs"
+                                        variant="ghost"
+                                        colorPalette={isEditingContent ? 'blue' : undefined}
+                                        onClick={() => setIsEditingContent(!isEditingContent)}>{isEditingContent ? <Check size={14} /> : <Edit2 size={14} />}</IconButton>
+                                    </HStack>
+                                    {isEditingContent ? (
+                                      <Textarea
+                                        value={editedTemplate?.template || ''}
+                                        onChange={(e) => updateTemplateField('template', e.target.value)}
+                                        fontFamily="mono"
+                                        fontSize="sm"
+                                        resize="none"
+                                        flex="1"
+                                        bg={inputBg}
+                                        color={textColor}
+                                        border="2px solid"
+                                        borderColor={editContentAccentBorder}
+                                        _focus={{
+                                          borderColor: 'df.dialogAccent',
+                                          boxShadow: templateEditFocusRing,
+                                        }}
+                                        placeholder="Template content with {{placeholders}}..."
+                                      />
+                                    ) : (
+                                    <Box
+                                          flex="1"
+                                          p={4}
+                                          bg={inputBg}
+                                          color={textColor}
+                                          border="2px solid"
+                                          borderColor={editContentAccentBorder}
+                                          borderRadius="md"
+                                          overflowY="auto"
+                                          minH="200px"
+                                          fontFamily="mono"
+                                          fontSize="sm"
+                                          lineHeight="tall"
+                                          whiteSpace="pre-wrap"
+                                          wordBreak="break-word"
+                                          boxShadow={editContentWellInsetGlow}
+                                          css={{
+                                            '&::-webkit-scrollbar': { width: '8px' },
+                                            '&::-webkit-scrollbar-track': { background: 'transparent' },
+                                            '&::-webkit-scrollbar-thumb': { background: scrollbarColor, borderRadius: '4px' },
+                                          }}
+                                        >
+                                          {renderTemplateContentWithPills(editedTemplate?.template || '')}
+                                        </Box>
+
+                                    )}
+                                    <AIEditBar
+                                      currentTemplate={editedTemplate?.template || ''}
+                                      onTemplateUpdated={handleAiTemplateUpdated}
+                                      onError={setError}
+                                    />
+                                  </Box>
+                                </Flex>
+                            </Box>
+                          </Flex>
+                        ) : (
+                          <Flex direction="column" align="center" justify="center" h="full" textAlign="center">
+                            <Edit2 size={48} color={scrollbarColor} />
+                            <Text color="gray.500" fontSize="lg" mt={4} fontWeight="medium">No Template Selected</Text>
+                            <Text color="gray.400" fontSize="sm" mt={2}>Select a template from the Browse tab to edit it</Text>
+                          </Flex>
+                        )}
+                      </Box>
+                    )}
+
+                    {/* ===== CREATE NEW TAB ===== */}
+                    {activeTab === 2 && (
+                      <Box h="full" px={6} py={4} overflowY="auto">
+                        <VStack gap={4} align="stretch" h="full" minH="0">
+                          {error && (
+                            <Alert.Root status="error" borderRadius="md" py={2}>
+                              <Alert.Indicator />
+                              <Text fontSize="sm">{error}</Text>
+                            </Alert.Root>
+                          )}
+
+                          {/* Compact 2-row header - always visible */}
+                          <Box w="full">
+                            <Flex gap={4} wrap="wrap" align="flex-end" mb={3}>
+                              <Field.Root flex="1" minW="200px">
+                                <Field.Label fontSize="sm">Template Name</Field.Label>
+                                <Input
+                                  value={newTemplateName}
+                                  onChange={(e) => setNewTemplateName(e.target.value)}
+                                  placeholder="Enter template name..."
+                                  size="sm"
+                                />
+                              </Field.Root>
+                              <Field.Root flex="1" minW="200px">
+                                <Field.Label fontSize="sm">
+                                  File Name
+                                  <Text as="span" fontSize="xs" color="gray.500" ml={1}>(optional)</Text>
+                                </Field.Label>
+                                <Input
+                                  value={newTemplateFilename}
+                                  onChange={(e) => setNewTemplateFilename(e.target.value)}
+                                  placeholder="my_template.yaml"
+                                  size="sm"
+                                />
+                              </Field.Root>
+                            </Flex>
+                            <Flex gap={2} align="center" flexWrap="wrap">
+                              <Field.Root flex="1" minW="200px">
+                                <Field.Label fontSize="sm">Template Content</Field.Label>
+                                <HStack>
+                                  <Button size="sm" variant="outline" onClick={handlePasteFromClipboard}><Clipboard size={14} />Paste from Clipboard
+                                                                  </Button>
+                                  {clipboardPasteStatus === 'success' && (
+                                    <HStack gap={1} color="green.500">
+                                      <Check size={16} />
+                                      <Text fontSize="xs" lineClamp={1} maxW="120px">
+                                        {rawText.length} chars
+                                      </Text>
+                                    </HStack>
+                                  )}
+                                  {clipboardPasteStatus === 'empty' && (
+                                    <HStack gap={1} color="red.500">
+                                      <X size={16} />
+                                      <Text fontSize="xs">Clipboard empty</Text>
+                                    </HStack>
+                                  )}
+                                  {clipboardPasteStatus === 'error' && (
+                                    <HStack gap={1} color="red.500">
+                                      <X size={16} />
+                                      <Text fontSize="xs">Paste failed</Text>
+                                    </HStack>
+                                  )}
+                                  {rawText && (
+                                    <Button size="xs" variant="ghost" onClick={handleClearTemplateContent}>
+                                      Clear
+                                    </Button>
+                                  )}
+                                </HStack>
+                              </Field.Root>
+                              <Button
+                                colorPalette="blue"
+                                size="sm"
+                                onClick={handleAnalyzeText}
+                                disabled={isAnalyzing || !newTemplateName.trim() || !rawText.trim()}
+                                alignSelf="flex-end"><Plus size={16} />{isAnalyzing ? 'Analyzing...' : 'Analyze & Continue'}</Button>
+                            </Flex>
+                            {newTemplateName && (
+                              <Text fontSize="xs" color="gray.500" mt={1}>
+                                Auto-generated filename: {newTemplateName.replace(/[^a-zA-Z0-9-_]/g, '_').toLowerCase()}_template.yaml
+                              </Text>
+                            )}
+                          </Box>
+                          
+                          {createStep === 'categories' && (
+                            <Flex gap={6} flex="1" minH="0" align="stretch">
+                              <VStack align="stretch" flex="1" gap={3}>
+                                <Text fontWeight="bold" fontSize="sm">Define PDF Categories</Text>
+                                <HStack align="flex-end">
+                                  <Field.Root flex="1">
+                                    <Field.Label fontSize="xs">Add category</Field.Label>
+                                    <Input
+                                      value={newCategory}
+                                      onChange={(e) => setNewCategory(e.target.value)}
+                                      onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
+                                      placeholder="e.g., financial_statement, tax_return..."
+                                      size="sm"
+                                    />
+                                  </Field.Root>
+                                  <Button
+                                    onClick={handleAddCategory}
+                                    size="sm"
+                                    colorPalette="blue"
+                                    disabled={!newCategory.trim() || categories.includes(newCategory.trim())}><Plus size={14} />Add
+                                                                  </Button>
+                                </HStack>
+                                <Box pt={2}>
+                                  <HStack>
+                                    <Button variant="ghost" onClick={() => setCreateStep('input')} size="sm">Back</Button>
+                                    <Button colorPalette="blue" onClick={handleConfirmCategories} size="sm" disabled={categories.length === 0}>Generate YAML</Button>
+                                  </HStack>
+                                </Box>
+                              </VStack>
+                              <VStack align="stretch" flex="1" gap={2}>
+                                <Text fontSize="sm" fontWeight="semibold">Categories Added</Text>
+                                {categories.length === 0 ? (
+                                  <Box p={4} bg={itemBgColor} borderRadius="md" textAlign="center" flex="1" minH="80px">
+                                    <Text fontSize="xs" color="gray.500">No categories yet</Text>
+                                  </Box>
+                                ) : (
+                                  <VStack gap={2} align="stretch" flex="1" overflowY="auto">
+                                    {categories.map((cat, index) => (
+                                      <HStack key={index} p={2} bg={itemBgColor} borderRadius="md" border="1px solid" borderColor={borderColor}>
+                                        <FileText size={14} />
+                                        <Code fontSize="xs" flex="1">{cat}</Code>
+                                        <IconButton
+                                          aria-label="Remove category"
+                                          size="xs"
+                                          variant="ghost"
+                                          colorPalette="red"
+                                          onClick={() => handleRemoveCategory(index)}><X size={14} /></IconButton>
+                                      </HStack>
+                                    ))}
+                                  </VStack>
+                                )}
+                              </VStack>
+                            </Flex>
+                          )}
+                          
+                          {createStep === 'yaml' && (
+                            <>
+                              <Text fontWeight="bold" fontSize="sm">Generated Template YAML</Text>
+                              <Text fontSize="xs" color="gray.500">Review and edit the generated YAML before saving:</Text>
+                              
+                              <Textarea
+                                value={newTemplateContent}
+                                onChange={(e) => setNewTemplateContent(e.target.value)}
+                                fontFamily="mono" fontSize="sm" flex="1" resize="none" minH="150px"
+                              />
+                              
+                              <Box pt={2}>
+                                <HStack>
+                                  <Button variant="ghost" onClick={() => setCreateStep('categories')} size="sm">Back</Button>
+                                  <Button
+                                    colorPalette="green"
+                                    onClick={handleCreateTemplate}
+                                    disabled={isLoading}
+                                    size="sm"><Save size={16} />Save Template
+                                                                  </Button>
+                                </HStack>
+                              </Box>
+                            </>
+                          )}
+                        </VStack>
+                      </Box>
+                    )}
+                  </Box>
+                </Flex>
+              </Dialog.Body>
+            </Dialog.Content>
+          </Dialog.Positioner>
+
+        </Portal>
+      </Dialog.Root>
+      <Dialog.Root
+        open={isDeleteOpen}
+        initialFocusEl={() => cancelRef.current}
+        placement='center'
+        role='alertdialog'
+        onOpenChange={e => {
+          if (!e.open) {
+            onDeleteClose();
+          }
+        }}>
+        <Portal>
+
+          <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+          <Dialog.Positioner>
+            <Dialog.Content bg={bgColor} borderRadius={0} boxShadow="xl">
+              <Dialog.Header
+                bg={titleBarBg}
+                borderBottom="1px solid"
+                borderColor={borderColor}
+                borderRadius={0}
+              >
+                <Text fontSize="sm" fontWeight="600" color={textColor}>Delete Template</Text>
+              </Dialog.Header>
+              <Dialog.Body>
+                Are you sure you want to delete &ldquo;{templateToDelete?.name}&rdquo;? This action cannot be undone.
+              </Dialog.Body>
+              <Dialog.Footer>
+                <Button ref={cancelRef} variant="outline" onClick={onDeleteClose}>Cancel</Button>
+                <Button colorPalette="red" onClick={confirmDeleteTemplate} ml={3}>Delete</Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+
+        </Portal>
+</Dialog.Root>
     </>
   );
 }; 

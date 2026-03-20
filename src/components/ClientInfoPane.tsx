@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, Flex, Divider, useColorModeValue, Icon, IconButton, HStack } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Text, Flex, Icon, IconButton, HStack, Separator } from '@chakra-ui/react';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
 import { Folder, Star, ChevronUp, ChevronDown } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { docuFramePalette as P } from '../docuFrameColors';
 
 export const ClientInfoPane: React.FC = () => {
   const {
@@ -14,13 +16,13 @@ export const ClientInfoPane: React.FC = () => {
     recentClientPaths,
   } = useAppContext();
 
-  const bgColor = useColorModeValue('white', 'gray.850'); // Light theme: bright sidebar; dark: unchanged
+  const bgColor = useColorModeValue(P.light.sidebar, P.dark.sidebar);
   const textColor = useColorModeValue('#334155', 'white');
-  const secondaryTextColor = useColorModeValue('#64748b', 'gray.300');
-  const dividerBorderColor = useColorModeValue('gray.300', 'gray.600');
+  const secondaryTextColor = useColorModeValue('#64748b', P.dark.subtext);
+  const dividerBorderColor = useColorModeValue('gray.300', P.dark.tableBorder);
   const transferBg = 'transparent';
-  const transferSectionBg = useColorModeValue('#f8fafc', 'gray.700');
-  const recentClientsSectionBg = useColorModeValue('#f1f5f9', 'gray.800');
+  const transferSectionBg = useColorModeValue('#f8fafc', '#182438');
+  const recentClientsSectionBg = useColorModeValue('#f1f5f9', '#1a202c');
 
   const [quickAccessOpen] = useState(true);
   const [rootFolders, setRootFolders] = useState<Array<{ name: string; path: string }>>([]);
@@ -63,6 +65,9 @@ export const ClientInfoPane: React.FC = () => {
     mb: 0,
   };
 
+  const hasRecentClients =
+    Array.isArray(recentClientPaths) && recentClientPaths.length > 0;
+
   return (
     <Box 
       h="100%" 
@@ -72,13 +77,19 @@ export const ClientInfoPane: React.FC = () => {
       overflow="hidden"
       minH={0}
     >
+      {/* Quick Access only: must not wrap Recent — ScrollArea content height follows children, so flex-grow inside it never fills the pane. */}
       <ScrollArea.Root
         type="always"
-        style={{ flex: 1, minHeight: 0, overflow: 'hidden', padding: 4 }}
+        style={{
+          flex: hasRecentClients ? '0 1 auto' : '1 1 0',
+          minHeight: 0,
+          overflow: 'hidden',
+          padding: 4,
+        }}
         className="sidebar-scroll-area"
       >
         <ScrollArea.Viewport style={{ height: '100%', width: '100%' }}>
-          <Box p={4}>
+          <Box p={4} pb={hasRecentClients ? 2 : 4}>
         {/* Quick Access Section */}
         <Box mb={1} flexShrink={0}>
           <Box {...sectionHeaderStyle} py={1} mb={0}>
@@ -103,8 +114,9 @@ export const ClientInfoPane: React.FC = () => {
                         key={pinnedPath}
                         align="center"
                         px={4}
-                        py={1.5}
-                        fontSize="sm"
+                        py="3px"
+                        mb="3px"
+                        fontSize="13px"
                         _hover={{
                           bg: transferSectionBg
                         }}
@@ -122,7 +134,6 @@ export const ClientInfoPane: React.FC = () => {
                       >
                         {/* Star icon for pinned items */}
                         <Icon
-                          as={Star}
                           boxSize={2.5}
                           color="yellow.400"
                           fill="yellow.400"
@@ -131,17 +142,10 @@ export const ClientInfoPane: React.FC = () => {
                           top="50%"
                           transform="translateY(-50%)"
                           flexShrink={0}
-                        />
-                        <Icon
-                          as={Folder}
-                          boxSize={4}
-                          mr={2}
-                          ml={2}
-                          color="blue.400"
-                          flexShrink={0}
-                        />
+                          asChild><Star /></Icon>
+                        <Icon boxSize={4} mr={2} ml={2} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
                         <Text
-                          noOfLines={1}
+                          lineClamp={1}
                           color="inherit"
                           fontWeight="normal"
                           flex={1}
@@ -149,27 +153,23 @@ export const ClientInfoPane: React.FC = () => {
                           {pinnedPath.split(/[/\\]/).filter(Boolean).pop()}
                         </Text>
                         {/* Move up/down buttons */}
-                        <HStack spacing={0} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.15s" onClick={(e) => e.stopPropagation()}>
+                        <HStack gap={0} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.15s" onClick={(e) => e.stopPropagation()}>
                           <IconButton
                             aria-label="Move up"
-                            icon={<ChevronUp size={14} />}
                             size="xs"
                             variant="ghost"
                             minW={6}
                             h={6}
-                            isDisabled={index === 0}
-                            onClick={() => moveQuickAccessPath(pinnedPath, 'up')}
-                          />
+                            disabled={index === 0}
+                            onClick={() => moveQuickAccessPath(pinnedPath, 'up')}><ChevronUp size={14} /></IconButton>
                           <IconButton
                             aria-label="Move down"
-                            icon={<ChevronDown size={14} />}
                             size="xs"
                             variant="ghost"
                             minW={6}
                             h={6}
-                            isDisabled={index === quickAccessPaths.length - 1}
-                            onClick={() => moveQuickAccessPath(pinnedPath, 'down')}
-                          />
+                            disabled={index === quickAccessPaths.length - 1}
+                            onClick={() => moveQuickAccessPath(pinnedPath, 'down')}><ChevronDown size={14} /></IconButton>
                         </HStack>
                       </Flex>
                     ))
@@ -177,7 +177,7 @@ export const ClientInfoPane: React.FC = () => {
 
                   {/* Separator between pinned and auto-populated when both exist */}
                   {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 && rootFolders.filter(f => !quickAccessPaths?.includes(f.path)).length > 0 && (
-                    <Divider
+                    <Separator
                       my={1}
                       borderColor={dividerBorderColor}
                       opacity={0.25}
@@ -195,8 +195,9 @@ export const ClientInfoPane: React.FC = () => {
                           key={folder.path}
                           align="center"
                           px={4}
-                          py={1.5}
-                          fontSize="sm"
+                          py="3px"
+                          mb="3px"
+                          fontSize="13px"
                           _hover={{ bg: transferSectionBg }}
                           color={textColor}
                           cursor="pointer"
@@ -214,8 +215,8 @@ export const ClientInfoPane: React.FC = () => {
                             transform="translateY(-50%)"
                             flexShrink={0}
                           />
-                          <Icon as={Folder} boxSize={4} mr={2} ml={2} color="blue.400" flexShrink={0} />
-                          <Text noOfLines={1} color="inherit" fontWeight="normal">
+                          <Icon boxSize={4} mr={2} ml={2} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
+                          <Text lineClamp={1} color="inherit" fontWeight="normal">
                             {folder.name}
                           </Text>
                         </Flex>
@@ -236,74 +237,66 @@ export const ClientInfoPane: React.FC = () => {
           )}
         </Box>
 
-        {/* Recent Clients Section */}
-      {Array.isArray(recentClientPaths) && recentClientPaths.length > 0 && (
-        <Box
-          mb={0}
-          flexShrink={0}
-          mt={3}
-          bg={recentClientsSectionBg}
-          borderRadius={0}
-          px={2}
-          py={2}
-        >
-          <Box {...sectionHeaderStyle} py={1} mb={0}>
-            <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
-              RECENT CLIENTS
-            </Text>
-          </Box>
-          <Box
-            position="relative"
-            display="flex"
-            flexDirection="column"
-          >
-              {recentClientPaths.map((clientPath) => (
-                <Flex
-                  key={clientPath}
-                  align="center"
-                  px={2}
-                  py={1.5}
-                  fontSize="sm"
-                  _hover={{ bg: transferSectionBg }}
-                  color={textColor}
-                  cursor="pointer"
-                  style={{ userSelect: 'none' }}
-                  onClick={() => setCurrentDirectory(clientPath)}
-                  borderRadius={0}
-                  position="relative"
-                >
-                  <Icon
-                    as={Folder}
-                    boxSize={4}
-                    mr={2}
-                    color="blue.400"
-                    flexShrink={0}
-                  />
-                  <Text noOfLines={1} color="inherit" fontWeight="normal" flex={1}>
-                    {clientPath.split(/[/\\]/).filter(Boolean).pop()}
-                  </Text>
-                </Flex>
-              ))}
-          </Box>
-        </Box>
-      )}
-
           </Box>
         </ScrollArea.Viewport>
         <ScrollArea.Scrollbar orientation="vertical">
           <ScrollArea.Thumb />
         </ScrollArea.Scrollbar>
       </ScrollArea.Root>
+
+      {hasRecentClients && (
+        <Box
+          flex={1}
+          minH={0}
+          mt={2}
+          mx={4}
+          mb={4}
+          bg={recentClientsSectionBg}
+          borderRadius="lg"
+          overflow="hidden"
+          px={2}
+          py={2}
+          display="flex"
+          flexDirection="column"
+        >
+          <Box {...sectionHeaderStyle} py={1} mb={0} flexShrink={0}>
+            <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
+              RECENT CLIENTS
+            </Text>
+          </Box>
+          <Box flex={1} minH={0} overflowY="auto" position="relative" display="flex" flexDirection="column">
+            {recentClientPaths.map((clientPath) => (
+              <Flex
+                key={clientPath}
+                align="center"
+                px={2}
+                py="3px"
+                mb="3px"
+                fontSize="13px"
+                _hover={{ bg: transferSectionBg }}
+                color={textColor}
+                cursor="pointer"
+                style={{ userSelect: 'none' }}
+                onClick={() => setCurrentDirectory(clientPath)}
+                borderRadius={0}
+                position="relative"
+                flexShrink={0}
+              >
+                <Icon boxSize={4} mr={2} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
+                <Text lineClamp={1} color="inherit" fontWeight="normal" flex={1}>
+                  {clientPath.split(/[/\\]/).filter(Boolean).pop()}
+                </Text>
+              </Flex>
+            ))}
+          </Box>
+        </Box>
+      )}
       {/* Transfer Files Section removed */}
-
       {/* Document Insights functionality moved to dedicated dialog */}
-
       {/* Downloads Section */}
       {/* Removed as per user request */}
-
       {/* Recent Activity */}
       {/* Removed as per user request */}
-
       {/* Document Insights Modal removed - functionality moved to dedicated dialog */}
     </Box>
   );

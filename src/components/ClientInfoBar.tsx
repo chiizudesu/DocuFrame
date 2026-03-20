@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Box, Flex, Text, Tooltip, useColorModeValue, useToast } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Flex, Text } from '@chakra-ui/react';
+import { Tooltip } from '@/components/ui/tooltip';
 import { useAppContext } from '../context/AppContext';
 import { useClientInfo } from '../hooks/useClientInfo';
+import { showToast } from "@/components/ui/toaster"
 
 const labelStyle = {
   fontSize: '10px',
@@ -46,7 +49,7 @@ const Block: React.FC<{
       fontWeight={fontWeight}
       color="white"
       userSelect="none"
-      noOfLines={truncate ? 1 : undefined}
+      lineClamp={truncate ? 1 : undefined}
       overflow={truncate ? 'hidden' : undefined}
       textOverflow={truncate ? 'ellipsis' : undefined}
       whiteSpace={truncate ? undefined : 'nowrap'}
@@ -80,7 +83,6 @@ const Section: React.FC<{
 
 export const ClientInfoBar: React.FC = () => {
   const { currentDirectory, rootDirectory } = useAppContext();
-  const toast = useToast();
   const {
     clientInfo,
     getClientName,
@@ -111,7 +113,7 @@ export const ClientInfoBar: React.FC = () => {
       setShowCopiedIrd(true);
       setTimeout(() => setShowCopiedIrd(false), 2000);
     } catch {
-      toast({
+      showToast({
         title: 'Failed to copy',
         status: 'error',
         duration: 2000,
@@ -128,7 +130,7 @@ export const ClientInfoBar: React.FC = () => {
       setShowCopiedAddress(true);
       setTimeout(() => setShowCopiedAddress(false), 2000);
     } catch {
-      toast({
+      showToast({
         title: 'Failed to copy',
         status: 'error',
         duration: 2000,
@@ -166,10 +168,12 @@ export const ClientInfoBar: React.FC = () => {
           <Section>
             <Text {...labelStyle}>IR #</Text>
             <Tooltip
-              label="Copied to clipboard"
-              placement="bottom"
-              hasArrow
-              isOpen={showCopiedIrd}
+              content="Copied to clipboard"
+              showArrow
+              open={showCopiedIrd}
+              positioning={{
+                placement: "bottom"
+              }}
             >
               <Box as="span" display="inline-block">
                 <Block onClick={handleCopyIrd} cursor="pointer">
@@ -197,10 +201,12 @@ export const ClientInfoBar: React.FC = () => {
           <Flex align="center" gap={1.5} px={3} py={1} flexShrink={1} minW={0} overflow="hidden" ml="auto" userSelect="none">
             <Text {...labelStyle}>ADDRESS</Text>
             <Tooltip
-              label="Copied to clipboard"
-              placement="bottom"
-              hasArrow
-              isOpen={showCopiedAddress}
+              content="Copied to clipboard"
+              showArrow
+              open={showCopiedAddress}
+              positioning={{
+                placement: "bottom"
+              }}
             >
               <Box as="span" display="inline-block">
                 <Block onClick={handleCopyAddress} cursor="pointer" truncate fontWeight="normal">

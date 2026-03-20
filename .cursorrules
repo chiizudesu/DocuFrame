@@ -1,0 +1,3 @@
+# DocuFrame — AI context
+
+- **Chakra UI v3:** Scoped rules live in `.cursor/rules/chakra-ui-v3.mdc` (applies when working on `**/*.tsx`). Migration checklist and links: `docs/c3-migration.md`.

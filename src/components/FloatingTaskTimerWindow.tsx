@@ -1,35 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
 import { keyframes } from '@emotion/react';
 import {
   Box,
   Flex,
+  Grid,
+  GridItem,
+  HStack,
+  VStack,
   Button,
   Icon,
   Text,
-  useColorModeValue,
   Progress,
-  Tooltip,
-  SimpleGrid,
   useDisclosure,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalCloseButton,
-  ModalBody,
-  FormControl,
-  FormLabel,
   Switch,
   IconButton,
   Badge,
   Slider,
-  SliderTrack,
-  SliderFilledTrack,
-  SliderThumb,
+  Field,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
+import { Tooltip } from '@/components/ui/tooltip';
 import { Play, Pause, Square, X, Settings, SkipForward, Minus, Plus, ChevronLeft, ChevronRight, Folder } from 'lucide-react';
 import { taskTimerService, Task } from '../services/taskTimer';
 import { settingsService } from '../services/settings';
+import { docuFramePalette as P } from '../docuFrameColors';
 
 interface FloatingTaskTimerWindowProps {
   onClose: () => void;
@@ -155,6 +151,15 @@ const WorkShiftInfographic: React.FC<{
   currentSessionIndex?: number; // 0-based; when in session phase, this box blinks blue
   isSessionActive?: boolean;
 }> = ({ tasks, sessionMinutes, pomodoroTargetHours, currentSessionIndex = -1, isSessionActive = false }) => {
+  /** Light: darker slate so the panel matches “non-dark but not washed out” timer chrome */
+  const panelChrome = useColorModeValue('#cfd8e3', P.dark.tabStrip);
+  const panelBorder = useColorModeValue('#94a3b8', P.dark.border);
+  const labelMuted = useColorModeValue('#475569', P.dark.subtext);
+  const behindBoxBg = useColorModeValue('#b8c4d4', P.dark.tabInactive);
+  const onMutedBadgeText = useColorModeValue('#0f172a', 'whiteAlpha.900');
+  const barLabelText = useColorModeValue('#0f172a', 'white');
+  const barLabelShadow = useColorModeValue('none', '0 1px 3px rgba(0,0,0,0.6)');
+
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [currentTimeGMT8, setCurrentTimeGMT8] = useState('');
@@ -242,14 +247,14 @@ const WorkShiftInfographic: React.FC<{
   };
 
   return (
-    <Flex direction="column" w="320px" px={3} py={2} bg="gray.800" borderLeft="1px solid" borderColor="whiteAlpha.100" gap={2} overflow="hidden">
+    <Flex direction="column" w="320px" px={3} py={2} bg={panelChrome} borderLeft="1px solid" borderColor={panelBorder} gap={2} overflow="hidden">
       {/* Current time + ahead/behind */}
       <Flex align="center" justify="space-between">
-        <Badge px={3} py={1} borderRadius="sm" bg="green.500" color="white" fontSize="13px" fontWeight="700" letterSpacing="0.05em" boxShadow="0 2px 8px rgba(72,187,120,0.4)">
+        <Badge px={3} py={1} borderRadius="sm" bg="green.500" color="white" fontSize="13px" fontWeight="700" letterSpacing="0.05em" boxShadow="none">
           {currentTimeGMT8}
         </Badge>
-        <Box bg={timeDifference >= 0 ? 'blue.500' : 'gray.600'} borderRadius="sm" px={3} py={1}>
-          <Text fontSize="12px" color="whiteAlpha.900" fontWeight="600" fontFamily="mono">
+        <Box bg={timeDifference >= 0 ? 'blue.500' : behindBoxBg} borderRadius="sm" px={3} py={1}>
+          <Text fontSize="12px" color={timeDifference >= 0 ? 'white' : onMutedBadgeText} fontWeight="600" fontFamily="mono">
             {timeDifference >= 0 ? 'Ahead' : 'Behind'} {formatTimeDiff(timeDifference)}
           </Text>
         </Box>
@@ -258,7 +263,7 @@ const WorkShiftInfographic: React.FC<{
       {/* Shift time bar */}
       <Box>
         <Flex justify="space-between" mb={1}>
-          <Text fontSize="11px" color="gray.500" fontWeight="500">Shift Time</Text>
+          <Text fontSize="11px" color={labelMuted} fontWeight="500">Shift Time</Text>
           <Text fontSize="11px" color={shiftProgress > 100 ? 'red.400' : 'cyan.400'} fontWeight="600">{formatTime(currentTimeInShift)}</Text>
         </Flex>
         <Box position="relative" h="22px" bg="whiteAlpha.100" borderRadius="sm" overflow="visible">
@@ -267,7 +272,7 @@ const WorkShiftInfographic: React.FC<{
             <Box position="absolute" left={`${Math.min(100, currentTimePosition)}%`} top="-3px" w="2px" h="28px" bg="green.400" borderRadius="full" zIndex={10} boxShadow="0 0 8px rgba(72,187,120,0.9)" transform="translateX(-50%)" />
           )}
           <Flex position="absolute" left="0" top="0" w="100%" h="100%" align="center" justify="center" zIndex={2} pointerEvents="none">
-            <Text fontSize="10px" fontWeight="700" color="white" textShadow="0 1px 3px rgba(0,0,0,0.6)">{shiftProgress.toFixed(0)}%</Text>
+            <Text fontSize="10px" fontWeight="700" color={barLabelText} textShadow={barLabelShadow}>{shiftProgress.toFixed(0)}%</Text>
           </Flex>
         </Box>
       </Box>
@@ -275,14 +280,14 @@ const WorkShiftInfographic: React.FC<{
       {/* Logged time bar */}
       <Box>
         <Flex justify="space-between" mb={1}>
-          <Text fontSize="11px" color="gray.500" fontWeight="500">Logged Time</Text>
+          <Text fontSize="11px" color={labelMuted} fontWeight="500">Logged Time</Text>
           <Text fontSize="11px" color="blue.400" fontWeight="600">{formatTime(todayTimeWorked)}</Text>
         </Flex>
         <Box position="relative" h="22px" bg="whiteAlpha.100" borderRadius="sm" overflow="hidden">
           <Box position="absolute" left="0" top="0" h="100%" w={`${Math.min(100, loggedTimeProgress)}%`} bg="green.500" borderRadius="sm" transition="width 0.3s ease" />
           {loggedTimeProgress > 0 && (
             <Flex position="absolute" left="0" top="0" w="100%" h="100%" align="center" justify="center" zIndex={2} pointerEvents="none">
-              <Text fontSize="10px" fontWeight="700" color="white" textShadow="0 1px 3px rgba(0,0,0,0.8)">{loggedTimeProgress.toFixed(0)}%</Text>
+              <Text fontSize="10px" fontWeight="700" color={barLabelText} textShadow={barLabelShadow}>{loggedTimeProgress.toFixed(0)}%</Text>
             </Flex>
           )}
         </Box>
@@ -291,7 +296,7 @@ const WorkShiftInfographic: React.FC<{
       {/* Sessions — box grid, directly below Logged Time */}
       <Box>
         <Flex justify="space-between" align="center" mb={1}>
-          <Text fontSize="11px" color="gray.500" fontWeight="500">Sessions</Text>
+          <Text fontSize="11px" color={labelMuted} fontWeight="500">Sessions</Text>
           <Text fontSize="11px" color="green.400" fontWeight="600">{completedSessions} / {totalSlots}</Text>
         </Flex>
         <Flex align="center" gap="3px" wrap="wrap">
@@ -346,7 +351,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [soundFileIndex, setSoundFileIndex] = useState(0);
   const [snapIndicator, setSnapIndicator] = useState<string | null>(null);
   const [isDraggingToPanel, setIsDraggingToPanel] = useState(false);
-  const { isOpen: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
+  const { open: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
   const soundEnabledRef = useRef(true);
   const customSoundPathRef = useRef('');
   const soundVolumeRef = useRef(100);
@@ -605,9 +610,43 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, path, soundFolder);
   };
 
+  const handleSettingsSaveAndClose = async () => {
+    await saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, customSoundPath, soundFolder, soundVolume);
+    onSettingsClose();
+  };
+
   const targetSeconds = pomodoroState.phase === 'session' ? pomodoroState.sessionTargetSeconds : pomodoroState.breakTargetSeconds;
   const progressPercent = pomodoroState.phase === 'idle' ? 0 : targetSeconds > 0 ? ((targetSeconds - pomodoroState.currentTime) / targetSeconds) * 100 : 0;
-  const bgColor = useColorModeValue('#1a1a1a', '#1a1a1a');
+  const canvasBg = useColorModeValue('#dfe6ee', P.dark.canvas);
+  const chromeBg = useColorModeValue('#cfd8e3', P.dark.tabStrip);
+  const shellBorder = useColorModeValue('#94a3b8', P.dark.border);
+  const labelSubtext = useColorModeValue('#475569', P.dark.subtext);
+  const soundRowBg = useColorModeValue('#b8c6d4', P.dark.rowHover);
+  const onCanvasText = useColorModeValue('#0f172a', 'white');
+  /** Settings modal only — slightly darker than surrounding chrome in light mode */
+  const settingsSurface = useColorModeValue('#c5ced9', P.dark.tabStrip);
+  const settingsTitleColor = useColorModeValue('#0f172a', 'white');
+  const settingsValueColor = useColorModeValue('#0f172a', 'white');
+  const sessionsHintColor = useColorModeValue('green.800', 'green.400');
+  const stepperBorder = useColorModeValue('gray.600', 'whiteAlpha.300');
+  const stepperFg = useColorModeValue('gray.900', 'white');
+  const stepperHoverBg = useColorModeValue('blackAlpha.150', 'whiteAlpha.150');
+  const soundGhostIconColor = useColorModeValue('gray.800', 'white');
+  const folderPathColor = useColorModeValue('blue.800', 'blue.300');
+
+  const progressTrackBg = useColorModeValue('blackAlpha.200', 'whiteAlpha.200');
+
+  const compactStepperBtn = {
+    variant: 'outline' as const,
+    size: 'xs' as const,
+    minW: '22px',
+    h: '22px',
+    p: 0,
+    borderWidth: '1px',
+    borderColor: stepperBorder,
+    color: stepperFg,
+    _hover: { bg: stepperHoverBg },
+  };
 
   // Load tasks for infographic
   const [infographicTasks, setInfographicTasks] = useState<Array<{ name: string; duration: number; completed?: boolean }>>([]);
@@ -634,9 +673,9 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   return (
     <>
       <Box w="100%" h="300px" bg="transparent" overflow="hidden" position="relative">
-        <Box bg={bgColor} boxShadow="0 4px 16px rgba(0,0,0,0.4)" border="1px solid" borderColor="whiteAlpha.200" overflow="hidden" w="100%" h="300px">
+        <Box bg={canvasBg} boxShadow="0 4px 16px rgba(0,0,0,0.4)" border="1px solid" borderColor={shellBorder} overflow="hidden" w="100%" h="300px">
           {/* Title bar */}
-          <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg="gray.800" borderBottom="1px solid" borderColor="whiteAlpha.100" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg={chromeBg} borderBottom="1px solid" borderColor={shellBorder} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
             <Flex align="center" gap={2}>
               <Box px={3} py={1} borderRadius="md" bg={phaseBg} color="white" fontSize="12px" fontWeight="600">
                 {pomodoroState.phase === 'idle' ? 'Ready' : pomodoroState.phase === 'session' ? 'Session' : 'Break'}
@@ -648,14 +687,14 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               )}
             </Flex>
             <Flex gap={1}>
-              <Tooltip label="Settings">
-                <Button size="xs" variant="ghost" onClick={onSettingsOpen} p={0.5} minW="auto" h="auto" _hover={{ bg: 'whiteAlpha.200' }} color="gray.400" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                  <Icon as={Settings} boxSize={3.5} />
+              <Tooltip content="Settings">
+                <Button size="xs" variant="ghost" onClick={onSettingsOpen} p={0.5} minW="auto" h="auto" _hover={{ bg: 'whiteAlpha.200' }} color={labelSubtext} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                  <Icon boxSize={3.5} asChild><Settings /></Icon>
                 </Button>
               </Tooltip>
-              <Tooltip label="Close">
-                <Button size="xs" variant="ghost" onClick={handleClose} p={0.5} minW="auto" h="auto" _hover={{ bg: 'whiteAlpha.200' }} color="gray.400" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-                  <Icon as={X} boxSize={3.5} />
+              <Tooltip content="Close">
+                <Button size="xs" variant="ghost" onClick={handleClose} p={0.5} minW="auto" h="auto" _hover={{ bg: 'whiteAlpha.200' }} color={labelSubtext} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+                  <Icon boxSize={3.5} asChild><X /></Icon>
                 </Button>
               </Tooltip>
             </Flex>
@@ -664,38 +703,46 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           {/* Body */}
           <Flex direction="row" h="calc(100% - 32px)" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             {/* Left sidebar: controls */}
-            <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg="gray.800" borderRight="1px solid" borderColor="whiteAlpha.100" minW="60px">
-              <Tooltip label="Start" placement="right">
-                <Button size="md" onClick={handleStartTimer} isDisabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.500"} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon as={Play} boxSize={5} color="white" />
+            <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg={chromeBg} borderRight="1px solid" borderColor={shellBorder} minW="60px">
+              <Tooltip content="Start" positioning={{
+                placement: "right"
+              }}>
+                <Button size="md" onClick={handleStartTimer} disabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.500"} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                  <Icon boxSize={5} color="white" asChild><Play /></Icon>
                 </Button>
               </Tooltip>
-              <Tooltip label="Pause" placement="right">
-                <Button size="md" onClick={handlePauseTimer} isDisabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg={pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon as={Pause} boxSize={5} color="white" />
+              <Tooltip content="Pause" positioning={{
+                placement: "right"
+              }}>
+                <Button size="md" onClick={handlePauseTimer} disabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg={pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                  <Icon boxSize={5} color="white" asChild><Pause /></Icon>
                 </Button>
               </Tooltip>
-              <Tooltip label="Stop" placement="right">
-                <Button size="md" onClick={handleStopTimer} isDisabled={pomodoroState.phase === 'idle'} bg={pomodoroState.phase === 'idle' ? "gray.600" : "red.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' ? "gray.600" : "red.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon as={Square} boxSize={5} color="white" />
+              <Tooltip content="Stop" positioning={{
+                placement: "right"
+              }}>
+                <Button size="md" onClick={handleStopTimer} disabled={pomodoroState.phase === 'idle'} bg={pomodoroState.phase === 'idle' ? "gray.600" : "red.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' ? "gray.600" : "red.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                  <Icon boxSize={5} color="white" asChild><Square /></Icon>
                 </Button>
               </Tooltip>
               {pomodoroState.phase === 'break' && (
-                <Tooltip label="Skip break" placement="right">
+                <Tooltip content="Skip break" positioning={{
+                  placement: "right"
+                }}>
                   <Button size="md" variant="ghost" onClick={handleSkipBreak} color="blue.400" _hover={{ bg: 'whiteAlpha.100' }} w="44px" h="44px" p={0} borderRadius="md">
-                    <Icon as={SkipForward} boxSize={5} />
+                    <Icon boxSize={5} asChild><SkipForward /></Icon>
                   </Button>
                 </Tooltip>
               )}
             </Flex>
 
             {/* Center + right */}
-            <Flex direction="row" flex={1} bg="gray.900">
+            <Flex direction="row" flex={1} bg={canvasBg}>
               {/* Center: timer */}
               <Flex direction="column" flex={1} px={6} py={3}>
                 {/* Timer: MM | : | SS — fixed widths so no shifting; colon blinks per second */}
                 <Flex flex={1} align="center" justify="center" direction="column" gap={3}>
-                  <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize="129px" fontWeight="700" color="white" lineHeight="1">
+                  <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize="129px" fontWeight="700" color={onCanvasText} lineHeight="1">
                     <Text as="span" w="1.2em" textAlign="right" fontVariantNumeric="tabular-nums" display="block">
                       {String(Math.floor(pomodoroState.currentTime / 60)).padStart(2, '0')}
                     </Text>
@@ -707,15 +754,18 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                     </Text>
                   </Flex>
                   <Box w="100%" maxW="420px">
-                    <Progress
+                    <Progress.Root
                       value={progressPercent}
                       size="sm"
-                      colorScheme={pomodoroState.phase === 'idle' ? 'gray' : pomodoroState.isPaused ? 'yellow' : phaseColor}
+                      colorPalette={pomodoroState.phase === 'idle' ? 'gray' : pomodoroState.isPaused ? 'yellow' : phaseColor}
                       borderRadius="full"
-                      bg="whiteAlpha.200"
-                      hasStripe={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}
-                      isAnimated={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}
-                    />
+                      bg={progressTrackBg}
+                      striped={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}
+                      animated={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}>
+                      <Progress.Track>
+                        <Progress.Range />
+                      </Progress.Track>
+                    </Progress.Root>
                   </Box>
                 </Flex>
               </Flex>
@@ -732,166 +782,306 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           </Flex>
         </Box>
       </Box>
+      <Dialog.Root open={isSettingsOpen} placement="center" onOpenChange={e => {
+        if (!e.open) {
+          onSettingsClose();
+        }
+      }}>
+        <Portal>
 
-      <Modal isOpen={isSettingsOpen} onClose={onSettingsClose} size="sm" isCentered>
-        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-        <ModalContent bg="gray.800" maxH="90vh" maxW="600px">
-          <ModalHeader fontSize="md" pb={2}>Pomodoro Settings</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody pb={5} overflowY="auto">
-            <Flex gap={6}>
-              {/* Column 1: Session, Break, Daily target, Sound */}
-              <Box flex={1}>
-            {/* Row 1: Session, Break, Daily target — 3 columns */}
-            <SimpleGrid columns={3} spacing={4} mb={4}>
-              <FormControl>
-                <FormLabel fontSize="sm" mb={2} color="gray.300">Session (min)</FormLabel>
-                <Flex align="center" gap={2}>
-                  <IconButton aria-label="Decrease session" icon={<Icon as={Minus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.max(5, sessionMinutes - 5); saveSettings(v, breakMinutes, soundEnabled, targetHours); }} />
-                  <Text fontSize="lg" fontWeight="bold" minW="40px" textAlign="center">{sessionMinutes}</Text>
-                  <IconButton aria-label="Increase session" icon={<Icon as={Plus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.min(60, sessionMinutes + 5); saveSettings(v, breakMinutes, soundEnabled, targetHours); }} />
-                </Flex>
-              </FormControl>
-              <FormControl>
-                <FormLabel fontSize="sm" mb={2} color="gray.300">Break (30s steps)</FormLabel>
-                <Flex align="center" gap={2}>
-                  <IconButton aria-label="Decrease break" icon={<Icon as={Minus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.max(0.5, Math.round((breakMinutes - 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }} />
-                  <Text fontSize="lg" fontWeight="bold" minW="44px" textAlign="center">
-                    {breakMinutes < 1 ? `${Math.round(breakMinutes * 60)}s` : breakMinutes % 1 === 0 ? `${breakMinutes}m` : `${Math.floor(breakMinutes)}:30`}
-                  </Text>
-                  <IconButton aria-label="Increase break" icon={<Icon as={Plus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.min(30, Math.round((breakMinutes + 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }} />
-                </Flex>
-              </FormControl>
-              <FormControl>
-                <Flex align="baseline" gap={2} mb={2}>
-                  <FormLabel fontSize="sm" color="gray.300" mb={0}>Daily target</FormLabel>
-                  <Text fontSize="xs" color="green.400" fontWeight="600">
-                    → {Math.round((targetHours * 60) / sessionMinutes)} sessions
-                  </Text>
-                </Flex>
-                <Flex align="center" gap={2}>
-                  <IconButton aria-label="Decrease target" icon={<Icon as={Minus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.max(1, targetHours - 0.5); saveSettings(sessionMinutes, breakMinutes, soundEnabled, v); }} />
-                  <Text fontSize="lg" fontWeight="bold" minW="64px" textAlign="center">
-                    {targetHours % 1 === 0 ? `${targetHours}h` : `${Math.floor(targetHours)}h 30m`}
-                  </Text>
-                  <IconButton aria-label="Increase target" icon={<Icon as={Plus} boxSize={3.5} />} size="xs" onClick={() => { const v = Math.min(16, targetHours + 0.5); saveSettings(sessionMinutes, breakMinutes, soundEnabled, v); }} />
-                </Flex>
-              </FormControl>
-            </SimpleGrid>
+          <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+          <Dialog.Positioner>
+            <Dialog.Content
+              bg={settingsSurface}
+              maxW="min(640px, calc(100vw - 32px))"
+              borderWidth="1px"
+              borderColor={shellBorder}
+              rounded="md"
+              overflow="hidden"
+            >
+              <Dialog.Header fontSize="sm" fontWeight="600" pb={1} pt={3} px={5} color={settingsTitleColor}>
+                Pomodoro Settings
+              </Dialog.Header>
+              <Dialog.CloseTrigger />
+              <Dialog.Body pb={4} pt={2} px={5} overflow="visible">
+                <Flex gap={5} align="stretch">
+                  <Box flex={1} minW={0}>
+                    <Grid templateColumns="minmax(0, 1fr) 7.75rem" columnGap={4} rowGap={2.5} w="full" alignItems="center">
+                      <GridItem minW={0}>
+                        <Text fontSize="xs" fontWeight="500" color={labelSubtext}>
+                          Session (min)
+                        </Text>
+                      </GridItem>
+                      <GridItem justifySelf="end">
+                        <HStack gap={1} w="7.75rem" justify="flex-end">
+                          <IconButton
+                            aria-label="Decrease session"
+                            onClick={() => { const v = Math.max(5, sessionMinutes - 5); saveSettings(v, breakMinutes, soundEnabled, targetHours); }}
+                            {...compactStepperBtn}
+                          >
+                            <Icon boxSize={3} asChild><Minus /></Icon>
+                          </IconButton>
+                          <Text fontSize="sm" fontWeight="semibold" w="3.25rem" textAlign="center" color={settingsValueColor} fontVariantNumeric="tabular-nums">
+                            {sessionMinutes}
+                          </Text>
+                          <IconButton
+                            aria-label="Increase session"
+                            onClick={() => { const v = Math.min(60, sessionMinutes + 5); saveSettings(v, breakMinutes, soundEnabled, targetHours); }}
+                            {...compactStepperBtn}
+                          >
+                            <Icon boxSize={3} asChild><Plus /></Icon>
+                          </IconButton>
+                        </HStack>
+                      </GridItem>
 
-            {/* Row 2: Sound notifications */}
-            <FormControl>
-              {/* Toggle row */}
-              <Flex align="center" justify="space-between" mb={3}>
-                <FormLabel fontSize="sm" color="gray.300" mb={0}>Sound notifications</FormLabel>
-                <Switch isChecked={soundEnabled} onChange={(e) => { const v = e.target.checked; soundEnabledRef.current = v; saveSettings(sessionMinutes, breakMinutes, v, targetHours); }} />
-              </Flex>
+                      <GridItem minW={0}>
+                        <Text fontSize="xs" fontWeight="500" color={labelSubtext} lineHeight="1.25">
+                          Break (30s steps)
+                        </Text>
+                      </GridItem>
+                      <GridItem justifySelf="end">
+                        <HStack gap={1} w="7.75rem" justify="flex-end">
+                          <IconButton
+                            aria-label="Decrease break"
+                            onClick={() => { const v = Math.max(0.5, Math.round((breakMinutes - 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }}
+                            {...compactStepperBtn}
+                          >
+                            <Icon boxSize={3} asChild><Minus /></Icon>
+                          </IconButton>
+                          <Text fontSize="sm" fontWeight="semibold" w="3.25rem" textAlign="center" color={settingsValueColor} fontVariantNumeric="tabular-nums">
+                            {breakMinutes < 1 ? `${Math.round(breakMinutes * 60)}s` : breakMinutes % 1 === 0 ? `${breakMinutes}m` : `${Math.floor(breakMinutes)}:30`}
+                          </Text>
+                          <IconButton
+                            aria-label="Increase break"
+                            onClick={() => { const v = Math.min(30, Math.round((breakMinutes + 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }}
+                            {...compactStepperBtn}
+                          >
+                            <Icon boxSize={3} asChild><Plus /></Icon>
+                          </IconButton>
+                        </HStack>
+                      </GridItem>
 
-              {/* Folder selector row */}
-              <Flex align="center" gap={2} mb={2}>
-                <Tooltip label="Select ringtones folder">
-                  <IconButton
-                    aria-label="Select folder"
-                    icon={<Icon as={Folder} boxSize={3.5} />}
-                    size="xs"
-                    variant="outline"
-                    colorScheme="blue"
-                    onClick={handleSelectSoundFolder}
-                  />
-                </Tooltip>
-                <Text fontSize="xs" color={soundFolder ? 'blue.300' : 'gray.600'} flex={1} isTruncated>
-                  {soundFolder || 'No folder selected'}
+                      <GridItem minW={0}>
+                        <VStack align="start" gap={0}>
+                          <Text fontSize="xs" fontWeight="500" color={labelSubtext}>
+                            Daily target
+                          </Text>
+                          <Text fontSize="10px" fontWeight="600" color={sessionsHintColor}>
+                            → {Math.round((targetHours * 60) / sessionMinutes)} sessions
+                          </Text>
+                        </VStack>
+                      </GridItem>
+                      <GridItem justifySelf="end">
+                        <HStack gap={1} w="7.75rem" justify="flex-end">
+                          <IconButton
+                            aria-label="Decrease target"
+                            onClick={() => { const v = Math.max(1, targetHours - 0.5); saveSettings(sessionMinutes, breakMinutes, soundEnabled, v); }}
+                            {...compactStepperBtn}
+                          >
+                            <Icon boxSize={3} asChild><Minus /></Icon>
+                          </IconButton>
+                          <Text fontSize="sm" fontWeight="semibold" w="3.25rem" textAlign="center" color={settingsValueColor} fontVariantNumeric="tabular-nums">
+                            {targetHours % 1 === 0 ? `${targetHours}h` : `${Math.floor(targetHours)}h 30m`}
+                          </Text>
+                          <IconButton
+                            aria-label="Increase target"
+                            onClick={() => { const v = Math.min(16, targetHours + 0.5); saveSettings(sessionMinutes, breakMinutes, soundEnabled, v); }}
+                            {...compactStepperBtn}
+                          >
+                            <Icon boxSize={3} asChild><Plus /></Icon>
+                          </IconButton>
+                        </HStack>
+                      </GridItem>
+
+                      <GridItem colSpan={2} borderTopWidth="1px" borderColor={shellBorder} pt={3} mt={1}>
+                        <Field.Root>
+                          <Grid templateColumns="minmax(0, 1fr) 7.75rem" columnGap={4} alignItems="center" w="full">
+                            <GridItem minW={0}>
+                              <Field.Label fontSize="xs" fontWeight="500" mb={0} color={labelSubtext}>
+                                Sound notifications
+                              </Field.Label>
+                            </GridItem>
+                            <GridItem justifySelf="end">
+                              <Flex justify="flex-end" w="7.75rem">
+                                <Switch.Root
+                                  size="sm"
+                                  checked={soundEnabled}
+                                  onCheckedChange={(d) => {
+                                    const v = d.checked === true;
+                                    soundEnabledRef.current = v;
+                                    saveSettings(sessionMinutes, breakMinutes, v, targetHours);
+                                  }}
+                                  colorPalette="green"
+                                >
+                                  <Switch.HiddenInput />
+                                  <Switch.Control>
+                                    <Switch.Thumb />
+                                  </Switch.Control>
+                                </Switch.Root>
+                              </Flex>
+                            </GridItem>
+                          </Grid>
+
+                          <Flex align="center" gap={1.5} mb={2} mt={3}>
+                            <Tooltip content="Select ringtones folder">
+                              <IconButton
+                                aria-label="Select folder"
+                                variant="outline"
+                                size="xs"
+                                minW="22px"
+                                h="22px"
+                                p={0}
+                                borderColor={stepperBorder}
+                                color={stepperFg}
+                                _hover={{ bg: stepperHoverBg }}
+                                onClick={handleSelectSoundFolder}
+                              >
+                                <Icon boxSize={3} asChild><Folder /></Icon>
+                              </IconButton>
+                            </Tooltip>
+                            <Text fontSize="xs" color={soundFolder ? folderPathColor : labelSubtext} flex={1} truncate>
+                              {soundFolder || 'No folder selected'}
+                            </Text>
+                            {soundFolder && (
+                              <Tooltip content="Clear folder">
+                                <IconButton
+                                  aria-label="Clear folder"
+                                  variant="ghost"
+                                  size="xs"
+                                  minW="22px"
+                                  h="22px"
+                                  p={0}
+                                  colorPalette="red"
+                                  onClick={() => {
+                                    stopCurrentSound();
+                                    setSoundFolder('');
+                                    setSoundFiles([]);
+                                    setSoundFileIndex(0);
+                                    saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, '', '');
+                                  }}
+                                >
+                                  <Icon boxSize={3} asChild><X /></Icon>
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Flex>
+
+                          <Flex align="center" gap={1} bg={soundRowBg} borderRadius="sm" px={2} py={1.5} borderWidth="1px" borderColor={shellBorder}>
+                            <Tooltip content="Test sound">
+                              <IconButton
+                                aria-label="Test sound"
+                                size="xs"
+                                minW="22px"
+                                h="22px"
+                                p={0}
+                                colorPalette="green"
+                                variant="solid"
+                                onClick={() => playPomodoroSound(customSoundPath || undefined, soundVolumeRef.current)}
+                              >
+                                <Icon boxSize={3} asChild><Play /></Icon>
+                              </IconButton>
+                            </Tooltip>
+                            <IconButton
+                              aria-label="Previous sound"
+                              variant="ghost"
+                              size="xs"
+                              minW="22px"
+                              h="22px"
+                              p={0}
+                              color={soundGhostIconColor}
+                              disabled={soundOptions.length < 2}
+                              onClick={handleCycleSoundPrev}
+                            >
+                              <Icon boxSize={3} asChild><ChevronLeft /></Icon>
+                            </IconButton>
+                            <Text fontSize="xs" color={settingsValueColor} flex={1} textAlign="center" truncate>
+                              {soundFileIndex === 0 ? 'Default bell' : customSoundPath.split(/[\\/]/).pop() || '—'}
+                            </Text>
+                            {soundOptions.length > 1 && (
+                              <Text fontSize="10px" color={labelSubtext} whiteSpace="nowrap">
+                                {soundFileIndex + 1}/{soundOptions.length}
+                              </Text>
+                            )}
+                            <IconButton
+                              aria-label="Next sound"
+                              variant="ghost"
+                              size="xs"
+                              minW="22px"
+                              h="22px"
+                              p={0}
+                              color={soundGhostIconColor}
+                              disabled={soundOptions.length < 2}
+                              onClick={handleCycleSoundNext}
+                            >
+                              <Icon boxSize={3} asChild><ChevronRight /></Icon>
+                            </IconButton>
+                          </Flex>
+                        </Field.Root>
+                      </GridItem>
+                    </Grid>
+                  </Box>
+
+                  <Flex
+                    direction="column"
+                    align="center"
+                    w="56px"
+                    flexShrink={0}
+                    borderLeftWidth="1px"
+                    borderColor={shellBorder}
+                    pl={4}
+                    alignSelf="stretch"
+                  >
+                    <Field.Root alignItems="center" gap={0.5} w="full" flex={1}>
+                      <Field.Label fontSize="10px" fontWeight="600" color={labelSubtext} mb={0} textTransform="uppercase" letterSpacing="0.04em">
+                        Vol.
+                      </Field.Label>
+                      <Text fontSize="xs" fontWeight="semibold" color={settingsValueColor} mb={1}>
+                        {soundVolume}%
+                      </Text>
+                      <Box flex={1} minH="120px" maxH="200px" w="full" display="flex" justifyContent="center" py={1}>
+                        <Slider.Root
+                          aria-label={['Sound volume']}
+                          value={[soundVolume]}
+                          min={50}
+                          max={200}
+                          step={5}
+                          orientation="vertical"
+                          h="100%"
+                          onValueChange={(e) => {
+                            const v = e.value[0];
+                            setSoundVolume(v);
+                            soundVolumeRef.current = v;
+                            saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, undefined, undefined, v);
+                          }}
+                        >
+                          <Slider.Control h="100%">
+                            <Slider.Track>
+                              <Slider.Range bg="green.500" />
+                            </Slider.Track>
+                            <Slider.Thumb index={0} boxSize={3} />
+                          </Slider.Control>
+                        </Slider.Root>
+                      </Box>
+                    </Field.Root>
+                  </Flex>
+                </Flex>
+              </Dialog.Body>
+              <Dialog.Footer px={5} py={3} borderTopWidth="1px" borderColor={shellBorder} display="flex" flexWrap="wrap" alignItems="center" gap={3}>
+                <Text fontSize="xs" color={labelSubtext} flex="1" minW="160px">
+                  Values save as you change them.
                 </Text>
-                {soundFolder && (
-                  <Tooltip label="Clear folder">
-                    <IconButton
-                      aria-label="Clear folder"
-                      icon={<Icon as={X} boxSize={3} />}
-                      size="xs"
-                      variant="ghost"
-                      colorScheme="red"
-                      onClick={() => {
-                        stopCurrentSound();
-                        setSoundFolder('');
-                        setSoundFiles([]);
-                        setSoundFileIndex(0);
-                        saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, '', '');
-                      }}
-                    />
-                  </Tooltip>
-                )}
-              </Flex>
+                <Button variant="ghost" size="sm" onClick={onSettingsClose}>
+                  Cancel
+                </Button>
+                <Button colorPalette="green" size="sm" onClick={handleSettingsSaveAndClose}>
+                  Save &amp; close
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
 
-              {/* Sound cycle row — play + prev/next arrows + filename */}
-              <Flex align="center" gap={2} bg="whiteAlpha.50" borderRadius="md" px={2} py={1.5}>
-                <Tooltip label="Test sound">
-                  <IconButton
-                    aria-label="Test sound"
-                    icon={<Icon as={Play} boxSize={3} />}
-                    size="xs"
-                    colorScheme="green"
-                    variant="solid"
-                    onClick={() => playPomodoroSound(customSoundPath || undefined, soundVolumeRef.current)}
-                  />
-                </Tooltip>
-                <IconButton
-                  aria-label="Previous sound"
-                  icon={<Icon as={ChevronLeft} boxSize={3.5} />}
-                  size="xs"
-                  variant="ghost"
-                  isDisabled={soundOptions.length < 2}
-                  onClick={handleCycleSoundPrev}
-                />
-                <Text fontSize="xs" color="white" flex={1} textAlign="center" isTruncated>
-                  {soundFileIndex === 0 ? 'Default bell' : customSoundPath.split(/[\\/]/).pop() || '—'}
-                </Text>
-                {soundOptions.length > 1 && (
-                  <Text fontSize="10px" color="gray.600" whiteSpace="nowrap">
-                    {soundFileIndex + 1}/{soundOptions.length}
-                  </Text>
-                )}
-                <IconButton
-                  aria-label="Next sound"
-                  icon={<Icon as={ChevronRight} boxSize={3.5} />}
-                  size="xs"
-                  variant="ghost"
-                  isDisabled={soundOptions.length < 2}
-                  onClick={handleCycleSoundNext}
-                />
-              </Flex>
-            </FormControl>
-              </Box>
-
-              {/* Column 2: Sound amplifier vertical slider */}
-              <Flex direction="column" align="center" w="80px" borderLeft="1px solid" borderColor="whiteAlpha.200" pl={4}>
-                <FormLabel fontSize="xs" color="gray.400" mb={2} whiteSpace="nowrap">Volume</FormLabel>
-                <Text fontSize="xs" color="gray.500" mb={1}>{soundVolume}%</Text>
-                <Box h="120px">
-                <Slider
-                  aria-label="Sound volume"
-                  value={soundVolume}
-                  min={50}
-                  max={200}
-                  step={5}
-                  orientation="vertical"
-                  h="100%"
-                  onChange={(v) => {
-                    setSoundVolume(v);
-                    soundVolumeRef.current = v;
-                    saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, undefined, undefined, v);
-                  }}
-                >
-                  <SliderTrack>
-                    <SliderFilledTrack bg="green.500" />
-                  </SliderTrack>
-                  <SliderThumb boxSize={4} />
-                </Slider>
-                </Box>
-              </Flex>
-            </Flex>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+        </Portal>
+      </Dialog.Root>
     </>
   );
 };

@@ -45,15 +45,13 @@ interface AppContextType {
   setFileSearchFilter: (filter: string) => void;
   // Content search results (files that match content search)
   contentSearchResults: FileItem[];
-  setContentSearchResults: (files: FileItem[]) => void;
+  setContentSearchResults: React.Dispatch<React.SetStateAction<FileItem[]>>;
   // File search system - replaced allFiles mock data
   searchResults: FileItem[];
   setSearchResults: (files: FileItem[]) => void;
   // Settings
   rootDirectory: string;
   setRootDirectory: (path: string) => void;
-  apiKey: string;
-  setApiKey: (key: string) => void;
   isSettingsOpen: boolean;
   setIsSettingsOpen: (isOpen: boolean) => void;
   hideTemporaryFiles: boolean;
@@ -62,8 +60,6 @@ interface AppContextType {
   setHideDotFiles: (hide: boolean) => void;
   aiEditorInstructions: string;             // NEW
   setAiEditorInstructions: (instructions: string) => void; // NEW
-  aiEditorAgent: 'openai' | 'claude';
-  setAiEditorAgent: (agent: 'openai' | 'claude') => void;
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
@@ -79,7 +75,7 @@ interface AppContextType {
   setFolderItems: (items: FileItem[]) => void;
   setDisplayedDirectory: (path: string) => void;
   selectedFiles: string[];
-  setSelectedFiles: (files: string[]) => void;
+  setSelectedFiles: React.Dispatch<React.SetStateAction<string[]>>;
   // Document insights functionality removed - now available as dedicated dialog
   // Clipboard for cut/copy/paste operations - persists across navigation
   clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
@@ -159,12 +155,10 @@ export const AppProvider: React.FC<{
   const [searchResults, setSearchResults] = useState<FileItem[]>([]);
   // Settings state
   const [rootDirectory, setRootDirectoryState] = useState<string>('');
-  const [apiKey, setApiKey] = useState<string>('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
   const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
-  const [aiEditorAgent, setAiEditorAgent] = useState<'openai' | 'claude'>('openai');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
@@ -216,9 +210,6 @@ export const AppProvider: React.FC<{
   const loadSettings = useCallback(async () => {
     try {
       const settings = await settingsService.getSettings();
-      if (settings.apiKey) {
-        setApiKey(settings.apiKey);
-      }
       if (settings.rootPath) {
         setRootDirectoryState(settings.rootPath);
         setCurrentDirectory(settings.rootPath);
@@ -231,11 +222,6 @@ export const AppProvider: React.FC<{
       if (settings.aiEditorInstructions !== undefined) {
         setAiEditorInstructions(settings.aiEditorInstructions);
       }
-      // Load AI editor agent preference (default to 'openai' if unset)
-      if (settings.aiEditorAgent) {
-        setAiEditorAgent(settings.aiEditorAgent);
-      }
-      
       // Load all shortcut settings
       if (settings.newTabShortcut) {
         setNewTabShortcut(settings.newTabShortcut);
@@ -535,8 +521,6 @@ export const AppProvider: React.FC<{
       setSearchResults,
       rootDirectory,
       setRootDirectory,
-      apiKey,
-      setApiKey,
       isSettingsOpen,
       setIsSettingsOpen: setIsSettingsOpenWithStatus,
       hideTemporaryFiles,
@@ -545,8 +529,6 @@ export const AppProvider: React.FC<{
       setHideDotFiles,
       aiEditorInstructions,                 // NEW
       setAiEditorInstructions,              // NEW
-      aiEditorAgent,
-      setAiEditorAgent,
       previewFiles,
       setPreviewFiles,
       isPreviewPaneOpen,

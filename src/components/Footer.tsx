@@ -1,6 +1,8 @@
 import React from 'react';
-import { Flex, Text, Box, useColorModeValue } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Flex, Text, Box } from '@chakra-ui/react';
 import { useAppContext } from '../context/AppContext';
+import { docuFramePalette as P } from '../docuFrameColors';
 
 export const Footer: React.FC = () => {
   const {
@@ -9,9 +11,8 @@ export const Footer: React.FC = () => {
   } = useAppContext();
   
   // Match file grid row styling
-  const bgColor = useColorModeValue('#f8fafc', '#181b20');
-  const borderColor = useColorModeValue('#e2e8f0', '#181b20');
-  const textColor = useColorModeValue('#64748b', 'gray.400');
+  const bgColor = useColorModeValue(P.light.footer, P.dark.footer);
+  const textColor = useColorModeValue('#64748b', P.dark.subtext);
   
   // Format file size function
   const formatFileSize = (size: string | undefined) => {
@@ -58,15 +59,13 @@ export const Footer: React.FC = () => {
       p={1} 
       px={3}
       minH="28px"
-      bg={bgColor} 
-      borderTop="1px" 
-      borderColor={borderColor} 
+      bg={bgColor}
       h="100%"
     >
       <Text 
         fontSize="xs" 
         color={textColor} 
-        isTruncated 
+        truncate 
         maxW="70%" 
         userSelect="none"
       >

@@ -1,11 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Box, Input, Text, Flex, Icon, useColorModeValue, Divider, IconButton, Switch, FormControl, FormLabel } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Input, Text, Flex, IconButton, Switch, Separator } from '@chakra-ui/react';
+import { docuFramePalette, dfHomeIconColor } from '../docuFrameColors';
 import { keyframes } from '@emotion/react';
 import { ChevronRight, Search, FileText } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { FileItem, TransferOptions } from '../types';
-import { joinPath, isAbsolutePath } from '../utils/path'
-import { fileSearchService } from '../services/fileSearch';
 
 // Simple debounce utility function
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): T {
@@ -61,12 +61,9 @@ export const QuickNavigateOverlay: React.FC = () => {
     setStatus,
     setFolderItems,
     folderItems,
-    searchResults,
-    setSearchResults,
     logFileOperation,
     fileSearchFilter,
     setFileSearchFilter,
-    contentSearchResults,
     setContentSearchResults
   } = useAppContext();
 
@@ -89,7 +86,6 @@ export const QuickNavigateOverlay: React.FC = () => {
   const transferMappingsRef = useRef<{ [key: string]: string }>({});
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
   const [searchInDocuments, setSearchInDocuments] = useState(false);
   const [localSearchResults, setLocalSearchResults] = useState<FileItem[]>([]);
   const [isContentSearching, setIsContentSearching] = useState(false);
@@ -97,24 +93,13 @@ export const QuickNavigateOverlay: React.FC = () => {
   // All useRef hooks next
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // All useColorModeValue hooks next
-  const bgColor = useColorModeValue('#ffffff', 'gray.800');
-  const inputBgColor = useColorModeValue('#ffffff', 'gray.900');
   const shadowColor = useColorModeValue('rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)');
-  const commandBgColor = useColorModeValue('#f8fafc', 'gray.700');
   const highlightColor = useColorModeValue('blue.400', 'blue.500');
-  const fileTextIconColor = useColorModeValue('gray.500', 'gray.400');
-  const fileTextLabelColor = useColorModeValue('gray.600', 'gray.300');
-
-  // Colors used in command info + preview panels.
-  // Kept here (not inline in JSX) to preserve stable hook order.
-  const commandInfoRowBg = useColorModeValue('#f1f5f9', 'gray.900');
-  const commandInfoRowBorderColor = useColorModeValue('#d1d5db', 'gray.700');
-  const commandInfoChevronColor = useColorModeValue('#3b82f6', '#63B3ED');
-  const commandInfoUsageTextColor = useColorModeValue('#3b82f6', 'blue.300');
-  const previewItemBg = useColorModeValue('gray.100', 'gray.700');
-  const previewItemBorderColor = useColorModeValue('gray.200', 'gray.600');
-  const previewChevronColor = useColorModeValue('#64748b', '#718096');
+  const fileTextIconColor = useColorModeValue(docuFramePalette.light.subtext, docuFramePalette.dark.subtext);
+  const fileTextLabelColor = fileTextIconColor;
+  const commandInfoChevronColor = useColorModeValue(dfHomeIconColor.light, dfHomeIconColor.dark);
+  const commandInfoUsageTextColor = commandInfoChevronColor;
+  const previewChevronColor = fileTextIconColor;
   
   // Pulsing border animation for content search loading
   const pulseBorderAnimation = useColorModeValue(
@@ -129,59 +114,6 @@ export const QuickNavigateOverlay: React.FC = () => {
         numFiles: 1,
         command: command, // Pass the actual command for mapping lookup
         preview: true, // Enable preview mode - doesn't actually transfer files
-        currentDirectory: currentDirectory
-      };
-      const previewResult = await window.electronAPI.transfer(previewOptions);
-      
-      if (previewResult.success && previewResult.files) {
-        setPreviewFiles(previewResult.files);
-      } else {
-        setPreviewFiles([]);
-      }
-    } catch (error) {
-      setPreviewFiles([]);
-    }
-  }, [currentDirectory, setPreviewFiles]);
-
-  // Search functionality
-  const performSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setLocalSearchResults([]);
-      return;
-    }
-
-    setIsSearching(true);
-    try {
-      if (searchInDocuments) {
-        // Document search - search inside PDF files
-        const result = await window.electronAPI.searchInDocuments({
-          query,
-          currentDirectory,
-          maxResults: 20
-        });
-        setLocalSearchResults(result || []);
-      } else {
-        // File search - search file names
-        const result = await fileSearchService.search({
-          query,
-          currentDirectory,
-          maxResults: 20,
-          recursive: true
-        });
-        setLocalSearchResults(result.results);
-      }
-    } catch (error) {
-      setLocalSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  }, [currentDirectory, searchInDocuments]);
-
-  const handleTransferPreview = useCallback(async (numFiles: number) => {
-    try {
-      const previewOptions: TransferOptions = { 
-        numFiles,
-        command: 'preview',
         currentDirectory: currentDirectory
       };
       const previewResult = await window.electronAPI.transfer(previewOptions);
@@ -404,27 +336,33 @@ export const QuickNavigateOverlay: React.FC = () => {
     }
   }, []);
 
-  const debouncedCommandProcessing = useCallback(
+  /** Latest preview deps for debounced IPC — avoids recreating debounce + effect churn on directory change */
+  const overlayPreviewDepsRef = useRef({ currentDirectory, setPreviewFiles });
+  overlayPreviewDepsRef.current = { currentDirectory, setPreviewFiles };
+
+  const handleTransferMappingPreviewRef = useRef(handleTransferMappingPreview);
+  handleTransferMappingPreviewRef.current = handleTransferMappingPreview;
+
+  const debouncedCommandProcessingRef = useRef(
     debounce((commandText: string, inputValue: string) => {
+      const { currentDirectory: dir, setPreviewFiles: setPrev } = overlayPreviewDepsRef.current;
+      const runMappingPreview = handleTransferMappingPreviewRef.current;
+
       if (!commandText) {
-        setPreviewFiles([]);
+        setPrev([]);
         return;
       }
-      
-      // Get the latest mappings from ref to avoid stale closure
+
       const currentMappings = transferMappingsRef.current;
-      
-      // Note: handleCommandInfoUpdate is now called immediately, not here
-      
-      // Auto-preview for transfer commands (including mapping commands)
       const commandParts = commandText.split(' ');
       const command = commandParts[0];
-      const mappingKey = Object.keys(currentMappings).find(key => key.toLowerCase() === command.toLowerCase());
-      
+      const mappingKey = Object.keys(currentMappings).find(
+        (key) => key.toLowerCase() === command.toLowerCase(),
+      );
+
       if (commandText.startsWith('transfer ')) {
-        // Parse argument, supporting quoted strings
         const match = inputValue.trim().match(/^transfer\s+(?:"([^"]+)"|'([^']+)'|(\S+))?/i);
-        let arg = match && (match[1] || match[2] || match[3]);
+        const arg = match && (match[1] || match[2] || match[3]);
         let numFiles: number | undefined = 1;
         let newName: string | undefined = undefined;
         if (arg) {
@@ -434,76 +372,82 @@ export const QuickNavigateOverlay: React.FC = () => {
             newName = arg;
           }
         }
-        // Always call preview API for transfer command
-        window.electronAPI.transfer({
-          numFiles,
-          newName,
-          command: 'preview',
-          currentDirectory
-        }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
+        window.electronAPI
+          .transfer({
+            numFiles,
+            newName,
+            command: 'preview',
+            currentDirectory: dir,
+          })
+          .then((previewResult: any) => {
+            if (previewResult.success && previewResult.files) {
+              setPrev(previewResult.files);
+            } else {
+              setPrev([]);
+            }
+          })
+          .catch(() => setPrev([]));
       } else if (mappingKey) {
-        // Auto-preview for mapping commands
-        handleTransferMappingPreview(command);
+        void runMappingPreview(command);
       } else if (command === 'finals') {
-        // Auto-preview for finals command
-        window.electronAPI.executeCommand('finals_preview', currentDirectory).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
+        window.electronAPI
+          .executeCommand('finals_preview', dir)
+          .then((previewResult: any) => {
+            if (previewResult.success && previewResult.files) {
+              setPrev(previewResult.files);
+            } else {
+              setPrev([]);
+            }
+          })
+          .catch(() => setPrev([]));
       } else if (command === 'edsby') {
-        // Auto-preview for edsby command
         let period = commandParts.slice(1).join(' ').trim();
         if ((period.startsWith('"') && period.endsWith('"')) || (period.startsWith("'") && period.endsWith("'"))) {
           period = period.slice(1, -1);
         }
-        window.electronAPI.executeCommand('edsby_preview', currentDirectory, { period }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
+        window.electronAPI
+          .executeCommand('edsby_preview', dir, { period })
+          .then((previewResult: any) => {
+            if (previewResult.success && previewResult.files) {
+              setPrev(previewResult.files);
+            } else {
+              setPrev([]);
+            }
+          })
+          .catch(() => setPrev([]));
       } else if (command === 'pdfinc') {
-        // Auto-preview for pdfinc command
-        window.electronAPI.executeCommand('pdfinc_preview', currentDirectory).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
+        window.electronAPI
+          .executeCommand('pdfinc_preview', dir)
+          .then((previewResult: any) => {
+            if (previewResult.success && previewResult.files) {
+              setPrev(previewResult.files);
+            } else {
+              setPrev([]);
+            }
+          })
+          .catch(() => setPrev([]));
       } else if (command === 'sc') {
-        // Auto-preview for sc (screenshot) command
         let newName: string | undefined;
         if (commandParts.length > 1) {
           newName = commandParts.slice(1).join(' ').trim();
-          // Remove quotes if present
           if ((newName.startsWith('"') && newName.endsWith('"')) || (newName.startsWith("'") && newName.endsWith("'"))) {
             newName = newName.slice(1, -1);
           }
         }
-        
-        window.electronAPI.executeCommand('sc_preview', currentDirectory, { newName }).then((previewResult: any) => {
-          if (previewResult.success && previewResult.files) {
-            setPreviewFiles(previewResult.files);
-          } else {
-            setPreviewFiles([]);
-          }
-        }).catch(() => setPreviewFiles([]));
+        window.electronAPI
+          .executeCommand('sc_preview', dir, { newName })
+          .then((previewResult: any) => {
+            if (previewResult.success && previewResult.files) {
+              setPrev(previewResult.files);
+            } else {
+              setPrev([]);
+            }
+          })
+          .catch(() => setPrev([]));
       } else {
-        setPreviewFiles([]); // Clear preview for non-transfer commands
+        setPrev([]);
       }
-    }, 100), // 100ms debounce delay for snappier response
-    [handleTransferMappingPreview, currentDirectory, setPreviewFiles]
+    }, 100),
   );
 
   // Process input changes with debouncing
@@ -534,8 +478,7 @@ export const QuickNavigateOverlay: React.FC = () => {
           }
         })();
       } else {
-        // Clear content search results when content search is disabled or query is empty
-        setContentSearchResults([]);
+        setContentSearchResults((prev) => (prev.length > 0 ? [] : prev));
         setIsContentSearching(false);
       }
     } else {
@@ -545,19 +488,26 @@ export const QuickNavigateOverlay: React.FC = () => {
         setPreviewFiles([]); // Clear preview when input is empty
         return;
       }
-      
+
       const commandText = inputValue.trim().toLowerCase();
-      
-      // Update command info immediately (no debounce) for instant UI feedback
+
       handleCommandInfoUpdate(commandText);
-      
-      // Debounce API preview calls to prevent excessive requests
-      debouncedCommandProcessing(commandText, inputValue);
-      
-      // Clear content search results in command mode
-      setContentSearchResults([]);
+
+      debouncedCommandProcessingRef.current(commandText, inputValue);
+
+      setContentSearchResults((prev) => (prev.length > 0 ? [] : prev));
     }
-  }, [inputValue, searchQuery, isSearchMode, searchInDocuments, currentDirectory, debouncedCommandProcessing, handleCommandInfoUpdate, setContentSearchResults]);
+  }, [
+    inputValue,
+    searchQuery,
+    isSearchMode,
+    searchInDocuments,
+    currentDirectory,
+    handleCommandInfoUpdate,
+    setContentSearchResults,
+    setFileSearchFilter,
+    setPreviewFiles,
+  ]);
 
   // Sync search results to filtered results for display
   useEffect(() => {
@@ -875,7 +825,7 @@ export const QuickNavigateOverlay: React.FC = () => {
           borderRadius="lg" 
           border="5px solid"
           borderColor={highlightColor}
-          bg={bgColor}
+          bg="df.dialogSurface"
           position="relative"
           overflow="hidden"
           animation={isContentSearching ? pulseBorderAnimation : undefined}
@@ -883,38 +833,43 @@ export const QuickNavigateOverlay: React.FC = () => {
         >
           <Box 
             borderRadius="lg" 
-            bg={bgColor}
+            bg="df.dialogSurface"
             width="100%"
             height="100%"
             position="relative"
             zIndex={1}
           >
-            <Box borderRadius="md" overflow="hidden" position="relative" bg={inputBgColor}>
+            <Box borderRadius="md" overflow="hidden" position="relative" bg="df.canvas">
             <Flex align="center" p={3} minH="47px">
-              <IconButton 
-                icon={<Search size={25} strokeWidth={2} />} 
-                aria-label="Search mode" 
-                variant="ghost" 
-                size="sm" 
-                color="blue.400" 
+              <IconButton
+                aria-label="Search mode"
+                variant="ghost"
+                size="sm"
+                color="blue.400"
                 onClick={() => {
                   setIsQuickNavigating(false);
                   setFileSearchFilter('');
-                }} 
-              />
+                }}><Search size={25} strokeWidth={2} /></IconButton>
               <Input 
                 ref={inputRef} 
                 placeholder="Search files in current directory..." 
                 value={searchQuery} 
                 onChange={e => setSearchQuery(e.target.value)} 
                 onKeyDown={handleKeyDown} 
-                variant="unstyled" 
+                variant="outline"
+                borderWidth={0}
+                borderColor="transparent"
+                boxShadow="none"
+                outline="none"
+                _focus={{ outline: 'none', boxShadow: 'none', borderWidth: 0, borderColor: 'transparent' }}
+                _focusVisible={{ outline: 'none', boxShadow: 'none', borderWidth: 0, borderColor: 'transparent' }}
                 fontSize="md" 
                 ml={2} 
                 autoFocus 
                 pr={isSearchMode ? "120px" : "60px"} 
                 height="41px"
-                bg={inputBgColor}
+                bg="transparent"
+                _placeholder={{ color: 'df.subtext' }}
               />
               {/* Document search toggle - inline in search mode */}
               {isSearchMode && (
@@ -925,20 +880,25 @@ export const QuickNavigateOverlay: React.FC = () => {
                       Contents
                     </Text>
                   </Flex>
-                  <Switch 
-                    id="document-search" 
-                    isChecked={searchInDocuments}
-                    onChange={(e) => {
-                      setSearchInDocuments(e.target.checked);
-                      // Clear content search results when disabled
-                      if (!e.target.checked) {
+                  <Switch.Root
+                    id="document-search"
+                    checked={searchInDocuments}
+                    onCheckedChange={(d) => {
+                      const on = d.checked === true;
+                      setSearchInDocuments(on);
+                      if (!on) {
                         setContentSearchResults([]);
                         setIsContentSearching(false);
                       }
                     }}
                     size="sm"
-                    colorScheme="blue"
-                  />
+                    colorPalette="blue"
+                  >
+                    <Switch.HiddenInput />
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                  </Switch.Root>
                 </Flex>
               )}
             </Flex>
@@ -949,186 +909,247 @@ export const QuickNavigateOverlay: React.FC = () => {
     );
   }
   
-  // Command mode - show centered overlay with blur
-  return <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="blackAlpha.600" backdropFilter="blur(4px)" zIndex={1999} display="flex" alignItems="center" justifyContent="center" onClick={() => setIsQuickNavigating(false)}>
-      {/* Absolute centered input container */}
-      <Box position="absolute" top="44%" left="50%" transform="translate(-50%, -50%)" width="600px" maxWidth="90vw" borderRadius="lg" boxShadow="0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05)" bg={bgColor} onClick={e => e.stopPropagation()}>
-        {/* Input container */}
-        <Box borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" position="relative">
-          <Flex align="center" p={3} minH="47px">
-            <IconButton 
-              icon={isSearchMode ? <Search size={25} strokeWidth={2} /> : <ChevronRight size={25} strokeWidth={2} />} 
-              aria-label={isSearchMode ? "Search mode" : "Command mode"} 
-              variant="ghost" 
-              size="sm" 
-              color="blue.400" 
-              onClick={() => setIsQuickNavigating(false)} 
-            />
+  /**
+   * Stack around viewport center: input bar stays at 50%/50%.
+   * ~half row (minH 47 + p3×2) + small gap — tune if bar height changes.
+   */
+  const commandInputHalf = '2.25rem';
+  const commandStackGap = '0.35rem';
+  /** Bottom edge of guide: 50vh + half input + gap from viewport bottom */
+  const commandGuideBottom = `calc(50vh + ${commandInputHalf} + ${commandStackGap})`;
+  /** Top edge of live preview: below input bottom */
+  const commandPreviewTop = `calc(50% + ${commandInputHalf} + ${commandStackGap})`;
+
+  /** Optional subtle shadow on guide + live preview only (command input bar is flat) */
+  const commandPanelShadow = `0 4px 14px -2px rgba(0, 0, 0, 0.2), 0 2px 6px ${shadowColor}`;
+
+  /** Chakra outline Input: kill default ring/border that reads as a white line in dark mode */
+  const commandInputFocusProps = {
+    variant: 'outline' as const,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    boxShadow: 'none',
+    outline: 'none',
+    _focus: { outline: 'none', boxShadow: 'none', borderWidth: 0, borderColor: 'transparent' },
+    _focusVisible: {
+      outline: 'none',
+      boxShadow: 'none',
+      borderWidth: 0,
+      borderColor: 'transparent',
+    },
+  };
+
+  const commandStackW = { width: '600px', maxWidth: '90vw' as const };
+
+  /** Outer frame for guide / input / preview — thicker than inner 1px dividers */
+  const commandSectionBorderWidth = '3px';
+
+  // Command mode — 1) Command guide above center  2) Input dead-center  3) Live preview below
+  return (
+    <Box position="fixed" top="0" left="0" right="0" bottom="0" bg="blackAlpha.600" backdropFilter="blur(4px)" zIndex={1999} onClick={() => setIsQuickNavigating(false)}>
+      {/* 1 — Command guide (title, description, usage, static help preview) */}
+      {commandInfo && (
+        <Box
+          position="absolute"
+          left="50%"
+          bottom={commandGuideBottom}
+          transform="translateX(-50%)"
+          {...commandStackW}
+          zIndex={2000}
+          maxH="32vh"
+          overflowY="auto"
+          className="thin-scrollbar"
+          borderRadius="lg"
+          borderWidth={commandSectionBorderWidth}
+          borderStyle="solid"
+          borderColor="df.border"
+          boxShadow={commandPanelShadow}
+          bg="df.dialogSurface"
+          onClick={e => e.stopPropagation()}
+          css={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+        >
+          <Box p={4} bg="df.dialogCard">
+            <Text fontSize="sm" fontWeight="medium" mb={2}>
+              {commandInfo.title}
+            </Text>
+            <Text fontSize="xs" color="df.subtext" mb={1}>
+              {commandInfo.description}
+            </Text>
+            <Flex
+              align="center"
+              bg="df.tableHeader"
+              p={2}
+              borderRadius="md"
+              mt={2}
+              border="1px solid"
+              borderColor="df.border"
+            >
+              <Flex align="center">
+                <ChevronRight size={12} color={commandInfoChevronColor} strokeWidth={2} />
+                <Text fontSize="xs" fontFamily="monospace" color={commandInfoUsageTextColor} ml={1}>
+                  {commandInfo.usage.replace('> ', '')}
+                </Text>
+              </Flex>
+            </Flex>
+          </Box>
+          {commandInfo.preview && (
+            <Box p={4} pt={0} bg="df.dialogCard">
+              <Separator my={3} />
+              <Text fontSize="sm" fontWeight="medium" mb={2}>
+                {commandInfo.preview.title}
+              </Text>
+              <Box>
+                {commandInfo.preview.items.map((item, index) => (
+                  <Flex key={index} align="center" py={1}>
+                    <ChevronRight size={10} color={previewChevronColor} strokeWidth={2} />
+                    <Text fontSize="xs" ml={2}>
+                      {item.name} {item.size && `(${item.size})`}
+                    </Text>
+                  </Flex>
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* 2 — Input bar: viewport center (50%, 50%) */}
+      <Box
+        position="absolute"
+        left="50%"
+        top="50%"
+        transform="translate(-50%, -50%)"
+        {...commandStackW}
+        zIndex={2001}
+        borderRadius="lg"
+        borderWidth={commandSectionBorderWidth}
+        borderStyle="solid"
+        borderColor="df.border"
+        boxShadow="none"
+        bg="df.dialogSurface"
+        overflow="hidden"
+        onClick={e => e.stopPropagation()}
+        css={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+      >
+        <Box bg="df.canvas" css={{ outline: 'none' }}>
+          <Flex align="center" p={3} minH="47px" position="relative">
+            <IconButton
+              aria-label="Command mode"
+              variant="ghost"
+              size="sm"
+              color="blue.400"
+              outline="none"
+              _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+              onClick={() => setIsQuickNavigating(false)}><ChevronRight size={25} strokeWidth={2} /></IconButton>
             <Input 
               ref={inputRef} 
-              placeholder={isSearchMode ? "Search files..." : "Enter command... (Enter=Execute, Backspace=Up)"} 
-              value={isSearchMode ? searchQuery : inputValue} 
-              onChange={e => {
-                if (isSearchMode) {
-                  setSearchQuery(e.target.value);
-                } else {
-                  setInputValue(e.target.value);
-                }
-              }} 
+              placeholder="Enter command... (Enter=Execute, Backspace=Up)" 
+              value={inputValue} 
+              onChange={e => setInputValue(e.target.value)} 
               onKeyDown={handleKeyDown} 
-
-              variant="unstyled" 
+              {...commandInputFocusProps}
               fontSize="md" 
               ml={2} 
               autoFocus 
-              pr={isSearchMode ? "120px" : "60px"} 
-              height="41px" 
+              pr="60px" 
+              height="41px"
+              bg="transparent"
+              _placeholder={{ color: 'df.subtext' }}
             />
-            {/* Document search toggle - inline in search mode */}
-            {isSearchMode && (
-              <Flex align="center" position="absolute" right={3} gap={2}>
-                <Flex align="center" gap={1}>
-                  <FileText size={14} color={fileTextIconColor} />
-                  <Text fontSize="sm" color={fileTextLabelColor}>
-                    Contents
-                  </Text>
-                </Flex>
-                <Switch 
-                  id="document-search" 
-                  isChecked={searchInDocuments}
-                  onChange={(e) => {
-                    setSearchInDocuments(e.target.checked);
-                    // Clear content search results when disabled
-                    if (!e.target.checked) {
-                      setContentSearchResults([]);
-                      setIsContentSearching(false);
-                    }
-                  }}
-                  size="sm"
-                  colorScheme="blue"
-                />
-              </Flex>
-            )}
           </Flex>
         </Box>
-        {/* Search error indicator */}
-        {/* Removed as search functionality is removed */}
-        {/* Command info panel - separate from input container */}
-        {commandInfo && (
-          <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} className="thin-scrollbar" maxH="300px" overflowY="auto" onClick={e => e.stopPropagation()}>
-            <Box p={4} bg={commandBgColor}>
-              <Text fontSize="sm" fontWeight="medium" mb={2}>
-                {commandInfo.title}
-              </Text>
-              <Text fontSize="xs" color="gray.500" mb={1}>
-                {commandInfo.description}
-              </Text>
-              <Flex
-                align="center"
-                bg={commandInfoRowBg}
-                p={2}
-                borderRadius="md"
-                mt={2}
-                border="1px solid"
-                borderColor={commandInfoRowBorderColor}
-              >
-                <Flex align="center">
-                  <ChevronRight size={12} color={commandInfoChevronColor} strokeWidth={2} />
-                  <Text fontSize="xs" fontFamily="monospace" color={commandInfoUsageTextColor} ml={1}>
-                    {commandInfo.usage.replace('> ', '')}
+      </Box>
+
+      {/* 3 — Live preview (IPC result only) */}
+      {previewFiles.length > 0 && (
+        <Box
+          position="absolute"
+          left="50%"
+          top={commandPreviewTop}
+          transform="translateX(-50%)"
+          {...commandStackW}
+          zIndex={2000}
+          maxH="38vh"
+          overflowY="auto"
+          className="thin-scrollbar"
+          borderRadius="lg"
+          borderWidth={commandSectionBorderWidth}
+          borderStyle="solid"
+          borderColor="df.border"
+          boxShadow={commandPanelShadow}
+          bg="df.dialogSurface"
+          onClick={e => e.stopPropagation()}
+          css={{ outline: 'none', WebkitTapHighlightColor: 'transparent' }}
+        >
+          <Box p={4} bg="df.dialogCard">
+            <Text fontSize="sm" fontWeight="medium" mb={2}>
+              {(() => {
+                const cmdText = inputValue.trim().toLowerCase();
+                if (cmdText.startsWith('sc')) return `Screenshot to transfer:`;
+                if (cmdText === 'pdfinc') return `PDF merge operations:`;
+                if (cmdText.startsWith('finals')) return `Files to rename:`;
+                if (cmdText.startsWith('edsby')) return `Files to rename:`;
+                return `Preview of ${previewFiles.length} file${previewFiles.length > 1 ? 's' : ''} to transfer:`;
+              })()}
+            </Text>
+            <Box display="flex" flexDirection="column" gap={2}>
+              {previewFiles.map((file, index) => (
+                <Box
+                  key={index}
+                  fontSize="sm"
+                  borderRadius="md"
+                  bg="df.canvas"
+                  px={3}
+                  py={2}
+                  borderWidth="1px"
+                  borderStyle="solid"
+                  borderColor="df.border"
+                  w="100%"
+                  overflow="visible"
+                  display="flex"
+                  flexDirection="column"
+                  gap={1}
+                >
+                  <Text whiteSpace="normal" wordBreak="break-all" title={file.originalName || file.name} fontWeight="medium" overflow="visible">
+                    {file.originalName && file.originalName !== file.name ? file.originalName : file.name}
                   </Text>
-                </Flex>
-              </Flex>
-            </Box>
-            {commandInfo.preview && (
-              <Box p={4} pt={0}>
-                <Divider my={3} />
-                <Text fontSize="sm" fontWeight="medium" mb={2}>
-                  {commandInfo.preview.title}
-                </Text>
-                <Box>
-                  {commandInfo.preview.items.map((item, index) => (
-                    <Flex key={index} align="center" py={1}>
-                      <ChevronRight size={10} color={previewChevronColor} strokeWidth={2} />
-                      <Text fontSize="xs" ml={2}>
-                        {item.name} {item.size && `(${item.size})`}
-                      </Text>
-                    </Flex>
-                  ))}
-                </Box>
-              </Box>
-            )}
-          </Box>
-        )}
-        {/* Search results panel removed - filtering is now done in FileGrid */}
-        {/* Preview files panel - shows actual files to be transferred */}
-        {previewFiles.length > 0 && (
-          <Box position="absolute" top="calc(50% + 32px)" left="50%" transform="translate(-50%, 0)" width="600px" maxWidth="90vw" bg={bgColor} borderRadius="md" boxShadow={`0 4px 12px ${shadowColor}`} overflow="hidden" mt={1} onClick={e => e.stopPropagation()}>
-            <Box p={4} bg={commandBgColor}>
-              <Text fontSize="sm" fontWeight="medium" mb={2}>
-                {(() => {
-                  const cmdText = inputValue.trim().toLowerCase();
-                  if (cmdText.startsWith('sc')) return `Screenshot to transfer:`;
-                  if (cmdText === 'pdfinc') return `PDF merge operations:`;
-                  if (cmdText.startsWith('finals')) return `Files to rename:`;
-                  if (cmdText.startsWith('edsby')) return `Files to rename:`;
-                  return `Preview of ${previewFiles.length} file${previewFiles.length > 1 ? 's' : ''} to transfer:`;
-                })()}
-              </Text>
-              <Box maxH="320px" overflowY="auto" display="flex" flexDirection="column" gap={2}>
-                {previewFiles.map((file, index) => (
-                  <Box
-                    key={index}
-                    fontSize="sm"
-                    borderRadius="lg"
-                    bg={previewItemBg}
-                    px={3}
-                    py={2}
-                    boxShadow="sm"
-                    borderWidth="1px"
-                    borderColor={previewItemBorderColor}
-                    w="100%"
-                    overflow="visible"
-                    display="flex"
-                    flexDirection="column"
-                    gap={1}
-                  >
-                    <Text whiteSpace="normal" wordBreak="break-all" title={file.originalName || file.name} fontWeight="medium" overflow="visible">
-                      {file.originalName && file.originalName !== file.name ? file.originalName : file.name}
-                    </Text>
-                    <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={file.name} fontWeight="medium" overflow="visible">
-                      {file.originalName && file.originalName !== file.name ? file.name : ''}
-                    </Text>
-                    {/* Show image preview for image files */}
-                    {file.type === 'image' && (file as any).imageDataUrl && (
-                      <Box mt={2} display="flex" justifyContent="center">
-                        <img 
+                  <Text whiteSpace="normal" wordBreak="break-all" color="green.400" title={file.name} fontWeight="medium" overflow="visible">
+                    {file.originalName && file.originalName !== file.name ? file.name : ''}
+                  </Text>
+                  {file.type === 'image' && (file as any).imageDataUrl && (
+                    <Box mt={2} display="flex" justifyContent="center">
+                      <Box
+                        asChild
+                        borderWidth="1px"
+                        borderStyle="solid"
+                        borderColor="df.border"
+                        borderRadius="sm"
+                        overflow="hidden"
+                        display="inline-block"
+                        lineHeight={0}
+                      >
+                        <img
                           src={(file as any).imageDataUrl}
                           alt="Screenshot preview"
                           style={{
                             maxWidth: '200px',
                             maxHeight: '150px',
-                            borderRadius: '4px',
-                            border: '1px solid #e2e8f0',
-                            objectFit: 'contain'
+                            objectFit: 'contain',
+                            display: 'block',
                           }}
                           onError={(e) => {
-                            // Hide image if it fails to load
-                            (e.target as HTMLImageElement).style.display = 'none';
+                            e.currentTarget.style.display = 'none';
                           }}
                         />
                       </Box>
-                    )}
-                  </Box>
-                ))}
-              </Box>
+                    </Box>
+                  )}
+                </Box>
+              ))}
             </Box>
           </Box>
-        )}
-        {/* Search results - now always inside modal, below input */}
-        {/* Removed as search functionality is removed */}
-        {/* No results message */}
-        {/* Removed as search functionality is removed */}
-      </Box>
-    </Box>;
+        </Box>
+      )}
+    </Box>
+  );
 };

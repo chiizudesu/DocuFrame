@@ -1,15 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Box,
-  Grid,
-  Button,
-  Text,
-  VStack,
-  HStack,
-  IconButton,
-  useColorModeValue,
-  Flex,
-} from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Grid, Button, Text, VStack, HStack, IconButton, Flex } from '@chakra-ui/react';
 import { Delete, X } from 'lucide-react';
 
 interface HistoryEntry {
@@ -307,18 +298,15 @@ export const StandaloneCalculator: React.FC = () => {
         <Text fontSize="13px" fontWeight="400" color={textColor} userSelect="none">
           Calculator
         </Text>
-        <HStack spacing={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <HStack gap={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
             aria-label="Close"
-            icon={<X size={14} />}
             size="sm"
             variant="ghost"
             color={textColor}
-            onClick={closeCalculator}
-          />
+            onClick={closeCalculator}><X size={14} /></IconButton>
         </HStack>
       </Box>
-
       {/* Main Content - History Panel + Calculator */}
       <Flex flex={1} overflow="hidden">
         {/* History Panel - Always visible on the left */}
@@ -338,12 +326,10 @@ export const StandaloneCalculator: React.FC = () => {
               </Text>
               <IconButton
                 aria-label="Clear history"
-              icon={<Delete size={10} />}
                 size="xs"
                 variant="ghost"
                 color={textColor}
-                onClick={clearHistory}
-              />
+                onClick={clearHistory}><Delete size={10} /></IconButton>
             </HStack>
           
           {/* Scrollable History Content */}
@@ -353,7 +339,7 @@ export const StandaloneCalculator: React.FC = () => {
                   No history yet
                 </Text>
               ) : (
-                <VStack spacing={1} align="stretch">
+                <VStack gap={1} align="stretch">
                 {history.map((entry, index) => (
                     <Box
                       key={index}
@@ -388,7 +374,7 @@ export const StandaloneCalculator: React.FC = () => {
           </Box>
 
         {/* Calculator Panel */}
-        <VStack spacing={0} flex={1} minW={0}> {/* Calculator panel - fills remaining space */}
+        <VStack gap={0} flex={1} minW={0}> {/* Calculator panel - fills remaining space */}
         {/* Display */}
         <Box
           w="100%"
@@ -466,7 +452,6 @@ export const StandaloneCalculator: React.FC = () => {
         </Box>
       </VStack>
       </Flex>
-
       {/* Footer with Trailing Input Display */}
       <Box
         h="28px"

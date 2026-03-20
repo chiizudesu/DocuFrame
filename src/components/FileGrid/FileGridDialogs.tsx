@@ -21,8 +21,8 @@ export interface FileGridDialogsProps {
   selectedFilesSet: Set<string>;
   sortedFiles: FileItem[];
   contextMenu: { fileItem: FileItem | null };
-  addLog: (msg: string, type?: string) => void;
-  setStatus: (msg: string, type?: string) => void;
+  addLog: (msg: string, type?: 'error' | 'response' | 'command' | 'info') => void;
+  setStatus: (msg: string, type?: 'default' | 'error' | 'info' | 'success') => void;
   refreshDirectory: (path: string) => Promise<void>;
   setMergePDFOpen: (open: boolean) => void;
   setExtractedTextOpen: (open: boolean) => void;
@@ -85,6 +85,8 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
     isRenameIndexDialogOpen,
     smartRenameFile,
     isSmartRenameDialogOpen,
+    setIsSmartRenameDialogOpen,
+    setSmartRenameFile,
     closeIndexPrefixDialog,
     closeRenameIndexDialog,
     handleAssignPrefix,
@@ -168,7 +170,9 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
           }}
           refreshDirectory={refreshDirectory}
           setStatus={setStatus}
-          addLog={addLog}
+          addLog={(msg, type) =>
+            addLog(msg, (type as 'success' | undefined) === 'success' ? 'info' : type)
+          }
         />
       )}
       {isRenameIndexDialogOpen && (

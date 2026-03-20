@@ -3,7 +3,7 @@
 // but the major logic pieces are extracted here for better organization
 
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { useToast, useColorModeValue } from '@chakra-ui/react'
+import { useColorModeValue } from "../ui/color-mode";
 import type { FileItem } from '../../types'
 import { SortColumn, SortDirection } from './FileGridUtils'
 import { normalizePath, joinPath } from '../../utils/path'

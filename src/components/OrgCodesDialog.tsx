@@ -1,31 +1,18 @@
 import React, { useState, useCallback } from 'react';
+import { useColorModeValue } from "./ui/color-mode";
 import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
   Button,
   Text,
   VStack,
   HStack,
   Table,
-  Thead,
-  Tbody,
-  Tr,
-  Th,
-  Td,
-  TableContainer,
   Spinner,
   Alert,
-  AlertIcon,
-  AlertTitle,
-  AlertDescription,
   IconButton,
-  useColorModeValue,
   Box,
   Flex,
+  Dialog,
+  Portal,
 } from '@chakra-ui/react';
 import { Building2, Download, ExternalLink } from 'lucide-react';
 
@@ -220,154 +207,156 @@ export const OrgCodesDialog: React.FC<OrgCodesDialogProps> = ({ isOpen, onClose 
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="4xl" scrollBehavior="inside" isCentered>
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent>
-        <ModalHeader py={3}>
-          <HStack>
-            <Building2 size={18} />
-            <Text fontSize="lg" fontWeight="semibold">Xero Organization Codes</Text>
-          </HStack>
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody pb={6} pt={2}>
-          <VStack spacing={3} align="stretch" justify="center" minHeight="300px">
-            {error && (
-              <Alert status="error">
-                <AlertIcon />
-                <Box>
-                  <AlertTitle>Connection Error</AlertTitle>
-                  <AlertDescription>{error}</AlertDescription>
-                </Box>
-              </Alert>
-            )}
+    <Dialog.Root open={isOpen} size='xl' scrollBehavior="inside" placement='center' onOpenChange={e => {
+      if (!e.open) {
+        handleClose();
+      }
+    }}>
+      <Portal>
 
-            {!isConnected && !isConnecting && (
-              <VStack spacing={4} align="center" justify="center" flex="1">
-                <Text textAlign="center" color="gray.600" fontSize="sm" maxWidth="300px">
-                  Connect to Xero to retrieve your organization codes
-                </Text>
-                <Button
-                  leftIcon={<ExternalLink size={16} />}
-                  colorScheme="blue"
-                  onClick={handleConnect}
-                  size="md"
-                >
-                  Connect to Xero
-                </Button>
-              </VStack>
-            )}
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content>
+            <Dialog.Header py={3}>
+              <HStack>
+                <Building2 size={18} />
+                <Text fontSize="lg" fontWeight="semibold">Xero Organization Codes</Text>
+              </HStack>
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body pb={6} pt={2}>
+              <VStack gap={3} align="stretch" justify="center" minHeight="300px">
+                {error && (
+                  <Alert.Root status="error">
+                    <Alert.Indicator />
+                    <Box>
+                      <Alert.Title>Connection Error</Alert.Title>
+                      <Alert.Description>{error}</Alert.Description>
+                    </Box>
+                  </Alert.Root>
+                )}
 
-            {isConnecting && (
-              <VStack spacing={4} align="center" justify="center" flex="1">
-                <Spinner size="lg" color="blue.500" />
-                <Text textAlign="center" fontSize="sm" maxWidth="300px">
-                  Connecting to Xero... Please complete authentication in the popup window.
-                </Text>
-              </VStack>
-            )}
+                {!isConnected && !isConnecting && (
+                  <VStack gap={4} align="center" justify="center" flex="1">
+                    <Text textAlign="center" color="gray.600" fontSize="sm" maxWidth="300px">
+                      Connect to Xero to retrieve your organization codes
+                    </Text>
+                    <Button colorPalette="blue" onClick={handleConnect} size="md"><ExternalLink size={16} />Connect to Xero
+                                      </Button>
+                  </VStack>
+                )}
 
-            {isConnected && (
-              <VStack spacing={3} align="stretch">
-                <Flex justify="space-between" align="center">
-                  <Text fontWeight="medium" color="green.600" fontSize="sm">
-                    Connected to Xero ✓
-                  </Text>
-                  <IconButton
-                    aria-label="Export to CSV"
-                    icon={<Download size={14} />}
-                    onClick={handleExportCSV}
-                    colorScheme="green"
-                    size="sm"
-                    isDisabled={orgCodes.length === 0}
-                  />
-                </Flex>
+                {isConnecting && (
+                  <VStack gap={4} align="center" justify="center" flex="1">
+                    <Spinner size="lg" color="blue.500" />
+                    <Text textAlign="center" fontSize="sm" maxWidth="300px">
+                      Connecting to Xero... Please complete authentication in the popup window.
+                    </Text>
+                  </VStack>
+                )}
 
-                {orgCodes.length > 0 ? (
-                  <TableContainer maxHeight="400px" overflowY="auto">
-                    <Table variant="simple" size="sm">
-                      <Thead bg={headerBg} position="sticky" top={0} zIndex={1}>
-                        <Tr>
-                          <Th 
-                            borderColor={tableBorderColor} 
-                            borderWidth="1px"
-                            borderStyle="solid"
-                          >
-                            Organization Name
-                          </Th>
-                          <Th 
-                            borderColor={tableBorderColor} 
-                            borderWidth="1px"
-                            borderStyle="solid"
-                          >
-                            Tenant ID
-                          </Th>
-                          <Th 
-                            borderColor={tableBorderColor} 
-                            borderWidth="1px"
-                            borderStyle="solid"
-                          >
-                            Country
-                          </Th>
-                          <Th 
-                            borderColor={tableBorderColor} 
-                            borderWidth="1px"
-                            borderStyle="solid"
-                          >
-                            Currency
-                          </Th>
-                        </Tr>
-                      </Thead>
-                      <Tbody>
-                        {orgCodes.map((org, index) => (
-                          <Tr key={index} _hover={{ bg: rowHoverBg }}>
-                            <Td 
-                              borderColor={tableBorderColor} 
-                              borderWidth="1px"
-                              borderStyle="solid"
-                            >
-                              {org.xeroName}
-                            </Td>
-                            <Td 
-                              borderColor={tableBorderColor} 
-                              borderWidth="1px"
-                              borderStyle="solid"
-                              fontFamily="mono"
-                              fontSize="xs"
-                            >
-                              {org.tenantId || org.orgCode}
-                            </Td>
-                            <Td 
-                              borderColor={tableBorderColor} 
-                              borderWidth="1px"
-                              borderStyle="solid"
-                              textAlign="center"
-                            >
-                              {org.countryCode || 'N/A'}
-                            </Td>
-                            <Td 
-                              borderColor={tableBorderColor} 
-                              borderWidth="1px"
-                              borderStyle="solid"
-                              textAlign="center"
-                            >
-                              {org.baseCurrency || 'N/A'}
-                            </Td>
-                          </Tr>
-                        ))}
-                      </Tbody>
-                    </Table>
-                  </TableContainer>
-                ) : (
-                  <Text textAlign="center" color="gray.500" fontSize="sm">
-                    No organization codes found
-                  </Text>
+                {isConnected && (
+                  <VStack gap={3} align="stretch">
+                    <Flex justify="space-between" align="center">
+                      <Text fontWeight="medium" color="green.600" fontSize="sm">
+                        Connected to Xero ✓
+                      </Text>
+                      <IconButton
+                        aria-label="Export to CSV"
+                        onClick={handleExportCSV}
+                        colorPalette="green"
+                        size="sm"
+                        disabled={orgCodes.length === 0}><Download size={14} /></IconButton>
+                    </Flex>
+
+                    {orgCodes.length > 0 ? (
+                      <Table.ScrollArea maxHeight="400px" overflowY="auto">
+                        <Table.Root variant="line" size="sm">
+                          <Table.Header bg={headerBg} position="sticky" top={0} zIndex={1}>
+                            <Table.Row>
+                              <Table.ColumnHeader 
+                                borderColor={tableBorderColor} 
+                                borderWidth="1px"
+                                borderStyle="solid"
+                              >
+                                Organization Name
+                              </Table.ColumnHeader>
+                              <Table.ColumnHeader 
+                                borderColor={tableBorderColor} 
+                                borderWidth="1px"
+                                borderStyle="solid"
+                              >
+                                Tenant ID
+                              </Table.ColumnHeader>
+                              <Table.ColumnHeader 
+                                borderColor={tableBorderColor} 
+                                borderWidth="1px"
+                                borderStyle="solid"
+                              >
+                                Country
+                              </Table.ColumnHeader>
+                              <Table.ColumnHeader 
+                                borderColor={tableBorderColor} 
+                                borderWidth="1px"
+                                borderStyle="solid"
+                              >
+                                Currency
+                              </Table.ColumnHeader>
+                            </Table.Row>
+                          </Table.Header>
+                          <Table.Body>
+                            {orgCodes.map((org, index) => (
+                              <Table.Row key={index} _hover={{ bg: rowHoverBg }}>
+                                <Table.Cell 
+                                  borderColor={tableBorderColor} 
+                                  borderWidth="1px"
+                                  borderStyle="solid"
+                                >
+                                  {org.xeroName}
+                                </Table.Cell>
+                                <Table.Cell 
+                                  borderColor={tableBorderColor} 
+                                  borderWidth="1px"
+                                  borderStyle="solid"
+                                  fontFamily="mono"
+                                  fontSize="xs"
+                                >
+                                  {org.tenantId || org.orgCode}
+                                </Table.Cell>
+                                <Table.Cell 
+                                  borderColor={tableBorderColor} 
+                                  borderWidth="1px"
+                                  borderStyle="solid"
+                                  textAlign="center"
+                                >
+                                  {org.countryCode || 'N/A'}
+                                </Table.Cell>
+                                <Table.Cell 
+                                  borderColor={tableBorderColor} 
+                                  borderWidth="1px"
+                                  borderStyle="solid"
+                                  textAlign="center"
+                                >
+                                  {org.baseCurrency || 'N/A'}
+                                </Table.Cell>
+                              </Table.Row>
+                            ))}
+                          </Table.Body>
+                        </Table.Root>
+                      </Table.ScrollArea>
+                    ) : (
+                      <Text textAlign="center" color="gray.500" fontSize="sm">
+                        No organization codes found
+                      </Text>
+                    )}
+                  </VStack>
                 )}
               </VStack>
-            )}
-          </VStack>
-        </ModalBody>
-      </ModalContent>
-    </Modal>
+            </Dialog.Body>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 }; 

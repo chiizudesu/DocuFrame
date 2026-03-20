@@ -1,31 +1,19 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useColorModeValue } from "./ui/color-mode";
 import {
   Flex,
   Text,
   IconButton,
   Input,
-  InputGroup,
-  Tooltip,
   Box,
-  useColorModeValue,
   HStack,
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalCloseButton,
-  ModalFooter,
   Button,
-  FormControl,
-  FormLabel,
   Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
-  MenuDivider,
   Portal,
-} from '@chakra-ui/react'
+  Field,
+  Dialog,
+} from '@chakra-ui/react';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   Home,
   ArrowLeft,
@@ -46,6 +34,7 @@ import { useDirectorySearch } from '../hooks/useDirectorySearch'
 import { joinPath, getParentPath, normalizePath, isChildPath, getRelativePathSegments, pathsEqualForJump, resolveJumpTargetInBreadcrumbs } from '../utils/path'
 import { eventMatchesShortcut } from '../utils/shortcuts'
 import type { FileItem } from '../types'
+import { docuFramePalette as P, dfHomeIconColor } from '../docuFrameColors'
 
 /** Matches jump UI `fontSize="sm"` + `fontWeight="medium"` for width measurement */
 const MINI_JUMP_UI_FONT =
@@ -226,21 +215,6 @@ const MiniSearchDropdown: React.FC<{
   )
 }
 
-declare global {
-  interface Window {
-    electronAPI: {
-      minimize?: () => void;
-      maximize?: () => void;
-      unmaximize?: () => void;
-      close?: () => void;
-      isMaximized?: () => Promise<boolean>;
-      onWindowMaximize?: (cb: () => void) => void;
-      onWindowUnmaximize?: (cb: () => void) => void;
-      [key: string]: any;
-    };
-  }
-}
-
 export const FolderInfoBar: React.FC = () => {
   const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
@@ -328,22 +302,27 @@ export const FolderInfoBar: React.FC = () => {
     [hideTemporaryFiles, hideDotFiles]
   )
 
-  // Light theme: subtle off-white for toolbar contrast vs pure white file list (Windows 11 style)
-  const bgColor = useColorModeValue('#f8fafc', 'gray.700')
-  const hoverBgColor = useColorModeValue('gray.200', 'blue.700')
-  const activeButtonBg = bgColor // Use title bar background color for current path pill
-  const activeButtonColor = useColorModeValue('#334155', 'blue.200')
-  const breadcrumbHoverBg = useColorModeValue('gray.200', '#6b7280') // Hover color for parent paths
+  // Address row: v2 FolderInfoBar — gray.700 strip, gray.600 address well
+  const bgColor = useColorModeValue('#f8fafc', P.dark.tabStrip)
+  const homeIconColor = useColorModeValue(dfHomeIconColor.light, dfHomeIconColor.dark)
+  /** Ghost icons on folder bar strip — same cool-gray hue as strip, lighter/darker for contrast */
+  const folderBarStripHoverBg = useColorModeValue(P.light.chromeHover, P.dark.chromeHover)
+  const pinSolidHoverBg = useColorModeValue('yellow.400', 'yellow.500')
+  const inputBgColor = useColorModeValue('white', '#4A5568')
+  // Dark: gray.700 pill on gray.600 well; light: strip tint for current crumb
+  const activeButtonBg = useColorModeValue(bgColor, '#2D3748')
+  const activeButtonColor = useColorModeValue('#334155', '#69c3f4')
+  /** Breadcrumbs / chevrons inside address well — light: slate on white; dark: lighter than well (#4A5568) */
+  const addressBarItemHoverBg = useColorModeValue(P.light.chromeHover, P.dark.addressWellHover)
   const textColor = useColorModeValue('#334155', 'gray.100')
-  const iconColor = useColorModeValue('#64748b', 'gray.400')
-  const inputBgColor = useColorModeValue('white', 'gray.600')
-  const inputFocusBgColor = useColorModeValue('gray.200', 'gray.500')
+  const iconColor = useColorModeValue('#64748b', P.dark.subtext)
+  const inputFocusBgColor = useColorModeValue('gray.200', '#4A5568')
   const inputBorderColor = useColorModeValue('gray.300', 'transparent') // Light: thin border to separate inputs from white header
-  const separatorColor = useColorModeValue('gray.300', 'gray.400')
+  const separatorColor = useColorModeValue('gray.300', P.dark.border)
   const yearNavDisabledColor = useColorModeValue('gray.300', 'gray.600')
-  const dropdownBg = useColorModeValue('white', 'gray.800')
-  const dropdownHighlightBg = useColorModeValue('blue.50', 'blue.900')
-  const dropdownHoverBg = useColorModeValue('gray.100', 'gray.700')
+  const dropdownBg = useColorModeValue('white', P.dark.toolbar)
+  const dropdownHighlightBg = useColorModeValue('blue.50', P.dark.rowSelected)
+  const dropdownHoverBg = useColorModeValue('gray.100', P.dark.rowHover)
   const folderIconColor = useColorModeValue('#3b82f6', '#63B3ED')
   const fileIconColor = useColorModeValue('#64748b', '#718096')
   const placeholderColor = useColorModeValue('gray.500', 'gray.400')
@@ -1263,7 +1242,6 @@ export const FolderInfoBar: React.FC = () => {
         {/* Back/Forward to the left of Home */}
         <Box display="flex" style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
-            icon={<ArrowLeft size={18} />}
             aria-label="Back"
             variant="ghost"
             size="sm"
@@ -1271,12 +1249,11 @@ export const FolderInfoBar: React.FC = () => {
             h="33px"
             borderRadius={0}
             color={iconColor}
+            _hover={{ bg: folderBarStripHoverBg }}
             onClick={handleBackClick}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-          />
+            onMouseDown={(e) => e.preventDefault()}><ArrowLeft size={18} /></IconButton>
           <IconButton
-            icon={<ArrowRight size={18} />}
             aria-label="Forward"
             variant="ghost"
             size="sm"
@@ -1284,30 +1261,24 @@ export const FolderInfoBar: React.FC = () => {
             h="33px"
             borderRadius={0}
             color={iconColor}
+            _hover={{ bg: folderBarStripHoverBg }}
             onClick={handleForwardClick}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-          />
+            onMouseDown={(e) => e.preventDefault()}><ArrowRight size={18} /></IconButton>
           <IconButton
-            icon={<Home size={18} />}
             aria-label="Home folder"
             variant="ghost"
             size="sm"
             minW="44px"
             h="33px"
             borderRadius={0}
-            color={useColorModeValue('#3b82f6', 'blue.200')}
+            color={homeIconColor}
+            _hover={{ bg: folderBarStripHoverBg }}
             onClick={handleHomeClick}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-          />
-          <Tooltip label={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
+            onMouseDown={(e) => e.preventDefault()}><Home size={18} /></IconButton>
+          <Tooltip content={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
             <IconButton
-              icon={
-                quickAccessPaths.includes(currentDirectory)
-                  ? <Star size={18} fill="currentColor" strokeWidth={0} />
-                  : <Star size={18} />
-              }
               aria-label="Pin to quick access"
               variant={quickAccessPaths.includes(currentDirectory) ? 'solid' : 'ghost'}
               size="sm"
@@ -1315,10 +1286,16 @@ export const FolderInfoBar: React.FC = () => {
               h="33px"
               borderRadius={0}
               color={useColorModeValue('#f59e0b', 'yellow.300')}
+              _hover={
+                quickAccessPaths.includes(currentDirectory)
+                  ? { bg: pinSolidHoverBg }
+                  : { bg: folderBarStripHoverBg }
+              }
               onClick={() => addQuickAccessPath(currentDirectory)}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-            />
+              onMouseDown={(e) => e.preventDefault()}>{quickAccessPaths.includes(currentDirectory)
+                ? <Star size={18} fill="currentColor" strokeWidth={0} />
+                : <Star size={18} />}</IconButton>
           </Tooltip>
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
@@ -1352,25 +1329,26 @@ export const FolderInfoBar: React.FC = () => {
               position="absolute"
               top={0}
               left={0}
-              width="100%"
-              height="100%"
+              right={0}
+              bottom={0}
               borderRadius="md"
               pointerEvents="none"
               zIndex={1}
-              bg="rgba(59, 130, 246, 0.15)"
-              sx={{
-                transform: 'translateX(-100%)',
-                animation: 'slideRight 0.6s ease-out forwards',
-                '@keyframes slideRight': {
-                  '0%': {
-                    transform: 'translateX(-100%)',
-                  },
-                  '100%': {
-                    transform: 'translateX(100%)',
-                  },
-                },
-              }}
-            />
+              overflow="hidden"
+            >
+              <Box
+                position="absolute"
+                top={0}
+                left={0}
+                height="100%"
+                width="50%"
+                maxW="320px"
+                background="linear-gradient(100deg, transparent 0%, rgba(147,197,253,0.2) 35%, rgba(96,165,250,0.55) 50%, rgba(147,197,253,0.2) 65%, transparent 100%)"
+                style={{
+                  animation: 'docuframe-address-refresh-shimmer 0.75s ease-out forwards',
+                }}
+              />
+            </Box>
           )}
           <Box
             position="relative"
@@ -1392,7 +1370,8 @@ export const FolderInfoBar: React.FC = () => {
                 onBlur={handleBlur}
                 onKeyDown={handleKeyDown}
                 size="sm"
-                variant="unstyled"
+                variant="flushed"
+                borderBottomWidth={0}
                 bg={inputBgColor}
                 color={textColor}
                 px={0}
@@ -1411,7 +1390,9 @@ export const FolderInfoBar: React.FC = () => {
               ).map((crumb, idx) => (
                 <Flex key={crumb.path} align="center" flexShrink={crumb.isClientPill ? 1 : 0}>
                   {crumb.isClientPill ? (
-                    <Tooltip label={hasClientLink ? `${getClientName() || crumb.label} — Ctrl+click to open client page` : getClientName() || crumb.label} placement="bottom" hasArrow openDelay={400}>
+                    <Tooltip content={hasClientLink ? `${getClientName() || crumb.label} — Ctrl+click to open client page` : getClientName() || crumb.label} showArrow openDelay={400} positioning={{
+                      placement: "bottom"
+                    }}>
                       <Box
                         as="span"
                         px={3}
@@ -1453,7 +1434,7 @@ export const FolderInfoBar: React.FC = () => {
                       cursor={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'default' : 'pointer'}
                       bg={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonBg : 'transparent'}
                       borderRadius="lg"
-                      _hover={idx !== breadcrumbs.length - 1 || activeChevronIndex !== null ? { bg: breadcrumbHoverBg } : undefined}
+                      _hover={idx !== breadcrumbs.length - 1 || activeChevronIndex !== null ? { bg: addressBarItemHoverBg } : undefined}
                       transition="background 0.2s ease"
                       position="relative"
                       zIndex={1}
@@ -1490,7 +1471,9 @@ export const FolderInfoBar: React.FC = () => {
                   )}
                   {(activeChevronIndex !== null || idx < breadcrumbs.length - 1) && (
                     activeChevronIndex === null ? (
-                      <Tooltip label="Click to search at this level" placement="bottom" hasArrow>
+                      <Tooltip content="Click to search at this level" showArrow positioning={{
+                        placement: "bottom"
+                      }}>
                         <Box
                           as="span"
                           display="inline-flex"
@@ -1501,7 +1484,7 @@ export const FolderInfoBar: React.FC = () => {
                           cursor="pointer"
                           borderRadius="md"
                           p={0.5}
-                          _hover={{ bg: breadcrumbHoverBg }}
+                          _hover={{ bg: addressBarItemHoverBg }}
                           onClick={(e) => {
                             e.stopPropagation()
                             openMiniSearch(idx)
@@ -1547,9 +1530,9 @@ export const FolderInfoBar: React.FC = () => {
                 maxH="28px"
                 overflowX="auto"
                 overflowY="hidden"
-                sx={{
+                css={{
                   scrollbarWidth: 'none',
-                  '&::-webkit-scrollbar': { display: 'none' },
+                  '& &::-webkit-scrollbar': { display: 'none' }
                 }}
               >
                 {miniCommittedSegmentsDisplay}
@@ -1580,7 +1563,8 @@ export const FolderInfoBar: React.FC = () => {
                     value={miniSearchText}
                     onChange={(e) => setMiniSearchText(e.target.value)}
                     onKeyDown={handleMiniSearchKeyDown}
-                    variant="unstyled"
+                    variant="flushed"
+                    borderBottomWidth={0}
                     fontSize="sm"
                     fontWeight="medium"
                     fontFamily="inherit"
@@ -1605,7 +1589,10 @@ export const FolderInfoBar: React.FC = () => {
                     outline="none"
                     boxShadow="none"
                     whiteSpace="nowrap"
-                    sx={{ overflow: 'hidden', minWidth: 0 }}
+                    css={{
+                      overflow: 'hidden',
+                      minWidth: 0
+                    }}
                     _focusVisible={{ boxShadow: 'none', outline: 'none' }}
                   />
                 </Box>
@@ -1636,10 +1623,11 @@ export const FolderInfoBar: React.FC = () => {
             </Box>
           )}
           {!isEditing && breadcrumbs.length > 0 && activeChevronIndex === null && (
-            <Tooltip label="Search files and folders in this folder" placement="bottom" hasArrow openDelay={400}>
+            <Tooltip content="Search files and folders in this folder" showArrow openDelay={400} positioning={{
+              placement: "bottom"
+            }}>
               <IconButton
                 aria-label="Search in current folder"
-                icon={<ChevronRight size={18} />}
                 variant="ghost"
                 size="sm"
                 flexShrink={0}
@@ -1648,22 +1636,20 @@ export const FolderInfoBar: React.FC = () => {
                 borderRadius="md"
                 color={iconColor}
                 zIndex={2}
-                _hover={{ bg: breadcrumbHoverBg, color: textColor }}
+                _hover={{ bg: addressBarItemHoverBg, color: textColor }}
                 onClick={(e) => {
                   e.stopPropagation()
                   openMiniSearch(breadcrumbs.length - 1)
                 }}
                 tabIndex={-1}
-                onMouseDown={(ev) => ev.preventDefault()}
-              />
+                onMouseDown={(ev) => ev.preventDefault()}><ChevronRight size={18} /></IconButton>
             </Tooltip>
           )}
         </Flex>
         {/* Year navigation - when inside annual accounts\XX\202X folders */}
         {yearNav && (
-          <HStack ml={1} mr={1} spacing={0} style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <HStack ml={1} mr={1} gap={0} style={{ WebkitAppRegion: 'no-drag' } as any}>
             <IconButton
-              icon={<ChevronLeft size={18} />}
               aria-label="Previous year"
               variant="ghost"
               size="sm"
@@ -1673,16 +1659,14 @@ export const FolderInfoBar: React.FC = () => {
               color={yearNav.hasPrevYear ? iconColor : yearNavDisabledColor}
               cursor={yearNav.hasPrevYear ? 'pointer' : 'default'}
               opacity={yearNav.hasPrevYear ? 1 : 0.5}
-              _hover={yearNav.hasPrevYear ? { bg: hoverBgColor } : undefined}
+              _hover={yearNav.hasPrevYear ? { bg: folderBarStripHoverBg } : undefined}
               onClick={() => yearNav.hasPrevYear && yearNav.prevYearPath && setCurrentDirectory(yearNav.prevYearPath)}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-            />
+              onMouseDown={(e) => e.preventDefault()}><ChevronLeft size={18} /></IconButton>
             <Text fontSize="sm" fontWeight="medium" color={textColor} px={1} userSelect="none">
               {yearNav.currentYear}
             </Text>
             <IconButton
-              icon={<ChevronRight size={18} />}
               aria-label="Next year"
               variant="ghost"
               size="sm"
@@ -1692,64 +1676,61 @@ export const FolderInfoBar: React.FC = () => {
               color={yearNav.hasNextYear ? iconColor : yearNavDisabledColor}
               cursor={yearNav.hasNextYear ? 'pointer' : 'default'}
               opacity={yearNav.hasNextYear ? 1 : 0.5}
-              _hover={yearNav.hasNextYear ? { bg: hoverBgColor } : undefined}
+              _hover={yearNav.hasNextYear ? { bg: folderBarStripHoverBg } : undefined}
               onClick={() => yearNav.hasNextYear && yearNav.nextYearPath && setCurrentDirectory(yearNav.nextYearPath)}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-            />
+              onMouseDown={(e) => e.preventDefault()}><ChevronRight size={18} /></IconButton>
           </HStack>
         )}
         {/* Refresh - between address bar and search */}
         <Box ml={1} mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
-            icon={<RefreshCw size={18} />}
             aria-label="Refresh folder"
             variant="ghost"
             size="sm"
             borderRadius={0}
             onClick={handleRefresh}
             color={iconColor}
-            _hover={{ bg: hoverBgColor }}
+            _hover={{ bg: folderBarStripHoverBg }}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-          />
+            onMouseDown={(e) => e.preventDefault()}><RefreshCw size={18} /></IconButton>
         </Box>
         {/* Open CMD at current directory - between refresh and open in explorer */}
-        <Tooltip label="Open CMD at current directory" placement="bottom" hasArrow>
+        <Tooltip content="Open CMD at current directory" showArrow positioning={{
+          placement: "bottom"
+        }}>
           <Box mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
             <IconButton
-              icon={<SquareTerminal size={18} />}
               aria-label="Open CMD at current directory"
               variant="ghost"
               size="sm"
               borderRadius={0}
               onClick={handleOpenCmdClick}
               color={iconColor}
-              _hover={{ bg: hoverBgColor }}
+              _hover={{ bg: folderBarStripHoverBg }}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-            />
+              onMouseDown={(e) => e.preventDefault()}><SquareTerminal size={18} /></IconButton>
           </Box>
         </Tooltip>
         {/* Open in file explorer - right of CMD */}
-        <Tooltip label="Open in file explorer" placement="bottom" hasArrow>
+        <Tooltip content="Open in file explorer" showArrow positioning={{
+          placement: "bottom"
+        }}>
           <Box mr={2} style={{ WebkitAppRegion: 'no-drag' } as any}>
             <IconButton
-              icon={<ExternalLink size={18} />}
               aria-label="Open in explorer"
               variant="ghost"
               size="sm"
               borderRadius={0}
               onClick={handleOpenExplorer}
               color={iconColor}
-              _hover={{ bg: hoverBgColor }}
+              _hover={{ bg: folderBarStripHoverBg }}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-            />
+              onMouseDown={(e) => e.preventDefault()}><ExternalLink size={18} /></IconButton>
           </Box>
         </Tooltip>
         {/* Search Input Field - Same style as address bar, no border */}
-        <InputGroup ref={searchInputContainerRef} maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        <Box ref={searchInputContainerRef} maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <Input
             ref={searchInputRef}
             value={searchValue}
@@ -1786,87 +1767,105 @@ export const FolderInfoBar: React.FC = () => {
               }
             }}
           />
-        </InputGroup>
+        </Box>
       </Flex>
+      <Dialog.Root open={isCreateFolderOpen} placement='center' onOpenChange={e => {
+        if (!e.open) {
+          setIsCreateFolderOpen(false);
+        }
+      }}>
+        <Portal>
 
-      <Modal isOpen={isCreateFolderOpen} onClose={() => setIsCreateFolderOpen(false)} isCentered>
-        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-        <ModalContent>
-          <ModalHeader>Create New Folder</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <FormControl>
-              <FormLabel>Folder Name</FormLabel>
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newFolderName.trim()) {
-                    e.preventDefault();
-                    // Ctrl+Enter for regular create, Enter for create & enter
-                    if (e.ctrlKey) {
-                      handleCreateFolder();
-                    } else {
-                      handleCreateAndEnterFolder();
-                    }
-                  }
-                }}
-                placeholder="Enter folder name"
-                autoFocus
-              />
-            </FormControl>
-          </ModalBody>
-          <ModalFooter>
-            <Button colorScheme="blue" mr={3} onClick={handleCreateFolder}>
-              Create
-            </Button>
-            <Button colorScheme="green" mr={3} onClick={handleCreateAndEnterFolder}>
-              Create & Enter
-            </Button>
-            <Button variant="ghost" onClick={() => setIsCreateFolderOpen(false)}>
-              Cancel
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>Create New Folder</Dialog.Header>
+              <Dialog.CloseTrigger />
+              <Dialog.Body>
+                <Field.Root>
+                  <Field.Label>Folder Name</Field.Label>
+                  <Input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newFolderName.trim()) {
+                        e.preventDefault();
+                        // Ctrl+Enter for regular create, Enter for create & enter
+                        if (e.ctrlKey) {
+                          handleCreateFolder();
+                        } else {
+                          handleCreateAndEnterFolder();
+                        }
+                      }
+                    }}
+                    placeholder="Enter folder name"
+                    autoFocus
+                  />
+                </Field.Root>
+              </Dialog.Body>
+              <Dialog.Footer>
+                <Button colorPalette="blue" mr={3} onClick={handleCreateFolder}>
+                  Create
+                </Button>
+                <Button colorPalette="green" mr={3} onClick={handleCreateAndEnterFolder}>
+                  Create & Enter
+                </Button>
+                <Button variant="ghost" onClick={() => setIsCreateFolderOpen(false)}>
+                  Cancel
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
 
-      <Modal isOpen={isCreateSpreadsheetOpen} onClose={() => setIsCreateSpreadsheetOpen(false)} isCentered>
-        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-        <ModalContent>
-          <ModalHeader>Create New Spreadsheet</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <FormControl>
-              <FormLabel>File Name</FormLabel>
-              <Input
-                value={newSpreadsheetName}
-                onChange={(e) => setNewSpreadsheetName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newSpreadsheetName.trim()) {
-                    e.preventDefault();
-                    handleCreateBlankSpreadsheet();
-                  }
-                }}
-                placeholder="Enter file name (without .xlsx)"
-                autoFocus
-              />
-            </FormControl>
-          </ModalBody>
-          <ModalFooter>
-            <Button 
-              colorScheme="blue" 
-              mr={3} 
-              onClick={handleCreateBlankSpreadsheet}
-              isDisabled={!newSpreadsheetName.trim()}
-            >
-              Create
-            </Button>
-            <Button variant="ghost" onClick={() => setIsCreateSpreadsheetOpen(false)}>
-              Cancel
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+        </Portal>
+      </Dialog.Root>
+      <Dialog.Root open={isCreateSpreadsheetOpen} placement='center' onOpenChange={e => {
+        if (!e.open) {
+          setIsCreateSpreadsheetOpen(false);
+        }
+      }}>
+        <Portal>
+
+          <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+          <Dialog.Positioner>
+            <Dialog.Content>
+              <Dialog.Header>Create New Spreadsheet</Dialog.Header>
+              <Dialog.CloseTrigger />
+              <Dialog.Body>
+                <Field.Root>
+                  <Field.Label>File Name</Field.Label>
+                  <Input
+                    value={newSpreadsheetName}
+                    onChange={(e) => setNewSpreadsheetName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newSpreadsheetName.trim()) {
+                        e.preventDefault();
+                        handleCreateBlankSpreadsheet();
+                      }
+                    }}
+                    placeholder="Enter file name (without .xlsx)"
+                    autoFocus
+                  />
+                </Field.Root>
+              </Dialog.Body>
+              <Dialog.Footer>
+                <Button 
+                  colorPalette="blue" 
+                  mr={3} 
+                  onClick={handleCreateBlankSpreadsheet}
+                  disabled={!newSpreadsheetName.trim()}
+                >
+                  Create
+                </Button>
+                <Button variant="ghost" onClick={() => setIsCreateSpreadsheetOpen(false)}>
+                  Cancel
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+
+        </Portal>
+      </Dialog.Root>
     </>
-  )
+  );
 }

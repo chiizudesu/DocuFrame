@@ -22,20 +22,20 @@ export const CommandPanel: React.FC<CommandPanelProps> = ({ onFileOperation }) =
       </Box>
       {showInfo && (
         <Box p={4} pt={0}>
-          <Box mt={4} p={3} bg="gray.700" borderRadius="md">
+          <Box mt={4} p={3} bg="df.tabStrip" borderRadius="md">
             <Text fontSize="sm" fontWeight="medium" mb={2}>
               Command Info
             </Text>
-            <Text fontSize="xs" color="gray.400">
+            <Text fontSize="xs" color="df.subtext">
               Usage: transfer [number_of_files | new_filename]
             </Text>
           </Box>
           {previewFiles.length > 0 && (
-            <Box mt={4} p={3} bg="gray.700" borderRadius="md">
+            <Box mt={4} p={3} bg="df.tabStrip" borderRadius="md">
               <Text fontSize="sm" fontWeight="medium" mb={2}>
                 Preview
               </Text>
-              <Text fontSize="xs" color="gray.400">
+              <Text fontSize="xs" color="df.subtext">
                 Files to be transferred:
               </Text>
               <Box mt={2}>

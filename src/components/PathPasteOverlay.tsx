@@ -106,11 +106,8 @@ export const PathPasteOverlay: React.FC = () => {
             _active={{
               bg: 'rgba(99, 179, 237, 0.4)',
             }}
-            onClick={() => handleSelectValue(path)}
-            leftIcon={<FolderOpen size={14} />}
-          >
-            Path
-          </Button>
+            onClick={() => handleSelectValue(path)}><FolderOpen size={14} />Path
+                      </Button>
           {irdNumber && (
             <Button
               flex={1}
@@ -126,11 +123,8 @@ export const PathPasteOverlay: React.FC = () => {
               _active={{
                 bg: 'rgba(99, 179, 237, 0.4)',
               }}
-              onClick={() => handleSelectValue(irdNumber)}
-              leftIcon={<Hash size={14} />}
-            >
-              IRD: {irdNumber}
-            </Button>
+              onClick={() => handleSelectValue(irdNumber)}><Hash size={14} />
+              IRD: {irdNumber}</Button>
           )}
         </Flex>
       </Flex>

@@ -1,19 +1,19 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react'
+import { useColorModeValue } from "../ui/color-mode";
 import {
   Box,
   Text,
   Flex,
-  Divider,
   Portal,
   Button,
   IconButton,
   Spinner,
   Badge,
   Checkbox,
-  useColorModeValue,
   Icon,
-  Tooltip,
-} from '@chakra-ui/react'
+  Separator,
+} from '@chakra-ui/react';
+import { Tooltip } from '@/components/ui/tooltip';
 import {
   FolderOpen,
   FileText,
@@ -44,6 +44,7 @@ import {
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
 import { joinPath, normalizePath } from '../../utils/path'
+import { docuFramePalette } from '../../docuFrameColors'
 
 // FileContextMenu Component
 export interface FileContextMenuProps {
@@ -86,14 +87,15 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   setIsMoveToDialogOpen,
 }) => {
   const { addressBarJumpRef } = useFileGridNavigationRefs();
-  const boxBg = useColorModeValue('white', 'gray.800');
-  const borderCol = useColorModeValue('gray.200', 'gray.700');
-  const hoverBg = useColorModeValue('gray.100', 'gray.700');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
+  const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
+  const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
+  const separatorColor = useColorModeValue(docuFramePalette.light.tableBorder, docuFramePalette.dark.tableBorder);
   const tooltipBg = useColorModeValue('gray.800', 'gray.200');
   const tooltipColor = useColorModeValue('white', 'gray.800');
   const [latestFileName, setLatestFileName] = useState<string | null>(null);
 
-  // Fetch latest download file whenever context menu opens (for Replace with latest file tooltip)
   useEffect(() => {
     if (!contextMenu.isOpen || !contextMenu.fileItem || contextMenu.fileItem.type !== 'file') return;
     setLatestFileName(null);
@@ -113,7 +115,24 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
     })();
     return () => { cancelled = true; };
   }, [contextMenu.isOpen, contextMenu.fileItem?.path]);
-  
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!contextMenu.isOpen || !el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = contextMenu.position.x;
+    let y = contextMenu.position.y;
+    if (x + rect.width > vw - 4) x = contextMenu.position.x - rect.width;
+    if (y + rect.height > vh - 4) y = contextMenu.position.y - rect.height;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.opacity = '1';
+  });
+
   if (!contextMenu.isOpen || !contextMenu.fileItem) return null;
 
   const selectedPDFs = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'));
@@ -125,6 +144,10 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const selectedEmlFiles = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.eml'));
   const showExtractZips = selectedZipFiles.length > 1 || (isZipFile && selectedZipFiles.length >= 1);
   const showExtractEmls = selectedEmlFiles.length > 1 || (isEmlFile && selectedEmlFiles.length >= 1);
+  const isFile = contextMenu.fileItem.type === 'file';
+  const isFolder = contextMenu.fileItem.type === 'folder';
+  const isSingleFile = selectedFiles.length === 1;
+  const hasFileSpecific = fileName.endsWith('.pdf') || fileName.endsWith('.ahk') || showMergePDFs || showExtractZips || showExtractEmls;
 
   const getClipboardFiles = () => {
     if (
@@ -140,230 +163,202 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
     return [];
   };
 
+  const iconSz = 14;
+  const iconStyle = { marginRight: '6px', flexShrink: 0 } as const;
+  const rowProps = { align: 'center' as const, px: 2.5, py: '3px', cursor: 'pointer' as const, _hover: { bg: hoverBg } };
+
   return (
     <Box
+      ref={menuRef}
       position="fixed"
       top={contextMenu.position.y}
       left={contextMenu.position.x}
+      opacity={0}
       bg={boxBg}
       borderRadius="0"
-      boxShadow="lg"
       zIndex="modal"
-      minW="200px"
+      minW="170px"
+      maxW="260px"
       border="1px solid"
       borderColor={borderCol}
     >
-      <Box py={1}>
-        {/* Basic Actions */}
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('open')}>
-          <ExternalLink size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Open</Text>
+      <Box py={0.5}>
+        {/* ── Open ── */}
+        <Flex {...rowProps} onClick={() => handleMenuAction('open')}>
+          <ExternalLink size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Open</Text>
         </Flex>
 
-        {/* Rename Group */}
-        <Divider />
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('add_to_file_manager')}>
-          <FolderPlus size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Add selection to File Manager</Text>
+        {/* ── Edit / Rename Group ── */}
+        <Separator borderColor={separatorColor} my={0.5} />
+        <Flex {...rowProps} onClick={() => handleMenuAction('add_to_file_manager')}>
+          <FolderPlus size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Add selection to File Manager</Text>
         </Flex>
-        {selectedFiles.length === 1 && (
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('rename')}>
-          <Edit2 size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Rename</Text>
-        </Flex>
+        {isSingleFile && (
+          <Flex {...rowProps} onClick={() => handleMenuAction('rename')}>
+            <Edit2 size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Rename</Text>
+          </Flex>
         )}
-        {contextMenu.fileItem.type === 'file' && selectedFiles.length === 1 && (
+        {isFile && isSingleFile && (
           <>
-            <Flex
-              align="center"
-              px={3}
-              py={2}
-              cursor="pointer"
-              _hover={{ bg: hoverBg }}
-              onClick={() => handleMenuAction('smart_rename')}
-            >
-              <Sparkles size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Smart Rename</Text>
+            <Flex {...rowProps} onClick={() => handleMenuAction('smart_rename')}>
+              <Sparkles size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Smart Rename</Text>
             </Flex>
-            <Flex
-              align="center"
-              px={3}
-              py={2}
-              cursor="pointer"
-              _hover={{ bg: hoverBg }}
-              onClick={() => handleMenuAction('proper_case_rename')}
-            >
-              <Type size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Proper Case</Text>
+            <Flex {...rowProps} onClick={() => handleMenuAction('proper_case_rename')}>
+              <Type size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Proper Case</Text>
             </Flex>
             <Tooltip
-              label={latestFileName ? `${latestFileName}` : 'Loading...'}
-              placement="right"
-              hasArrow
-              bg={tooltipBg}
-              color={tooltipColor}
+              content={latestFileName ? `${latestFileName}` : 'Loading...'}
+              showArrow
               openDelay={300}
+              positioning={{ placement: "right" }}
+              contentProps={{ bg: tooltipBg, color: tooltipColor }}
             >
-              <Flex
-                align="center"
-                px={3}
-                py={2}
-                cursor="pointer"
-                _hover={{ bg: hoverBg }}
-                onClick={() => handleMenuAction('replace_with_latest')}
-              >
-                <ArrowRightLeft size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Replace with Latest File</Text>
+              <Flex {...rowProps} onClick={() => handleMenuAction('replace_with_latest')}>
+                <ArrowRightLeft size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Replace with Latest File</Text>
               </Flex>
             </Tooltip>
           </>
         )}
-        
-        {/* Index Prefix Group */}
-        {contextMenu.fileItem.type === 'file' && (
+
+        {/* ── Index Prefix Group (files only) ── */}
+        {isFile && (
           <>
-            <Divider />
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('assign_prefix')}>
-              <Layers size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Manage Index Prefix</Text>
+            <Separator borderColor={separatorColor} my={0.5} />
+            <Flex {...rowProps} onClick={() => handleMenuAction('assign_prefix')}>
+              <Layers size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Manage Index Prefix</Text>
             </Flex>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('remove_prefix')}>
-              <X size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Remove Prefix</Text>
+            <Flex {...rowProps} onClick={() => handleMenuAction('remove_prefix')}>
+              <X size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Remove Prefix</Text>
             </Flex>
           </>
         )}
-        <Divider />
-        {contextMenu.fileItem.type === 'folder' && (
-          quickAccessPaths.includes(contextMenu.fileItem.path) ? (
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('unpin_quick_access')}>
-              <Star size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Unpin from Quick Access</Text>
-            </Flex>
-          ) : (
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('pin_quick_access')}>
-              <Star size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Pin to Quick Access</Text>
-            </Flex>
-          )
-        )}
-        {contextMenu.fileItem.type === 'folder' && (
+
+        {/* ── Folder Actions (folders only) ── */}
+        {isFolder && (
           <>
-            <Flex 
-              align="center" 
-              px={3} 
-              py={2} 
-              cursor="pointer" 
-              _hover={{ bg: hoverBg }} 
+            <Separator borderColor={separatorColor} my={0.5} />
+            {quickAccessPaths.includes(contextMenu.fileItem.path) ? (
+              <Flex {...rowProps} onClick={() => handleMenuAction('unpin_quick_access')}>
+                <Star size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Unpin from Quick Access</Text>
+              </Flex>
+            ) : (
+              <Flex {...rowProps} onClick={() => handleMenuAction('pin_quick_access')}>
+                <Star size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Pin to Quick Access</Text>
+              </Flex>
+            )}
+            <Flex
+              {...rowProps}
               onClick={() => handleMenuAction('open_new_tab')}
             >
-              <ExternalLink size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Open folder in new tab</Text>
+              <ExternalLink size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Open folder in new tab</Text>
             </Flex>
-            <Flex 
-              align="center" 
-              px={3} 
-              py={2} 
-              cursor="pointer" 
-              _hover={{ bg: hoverBg }}
+            <Flex
+              {...rowProps}
               position="relative"
               onMouseEnter={async () => {
-                // Load templates when hovering
                 try {
                   const result = await (window.electronAPI as any).getWorkpaperTemplates();
                   if (result.success) {
                     setTemplates(result.templates || []);
-                    setTemplateSubmenuPosition({ x: contextMenu.position.x + 200, y: contextMenu.position.y });
+                    setTemplateSubmenuPosition({ x: contextMenu.position.x + 170, y: contextMenu.position.y });
                     setTemplateSubmenuOpen(true);
                   }
                 } catch (error) {
                   console.error('Error loading templates:', error);
                 }
               }}
-              onMouseLeave={() => {
-                // Don't close immediately, let submenu handle it
-              }}
             >
-              <FileSpreadsheet size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">New Template</Text>
-              <ChevronRight size={14} style={{ marginLeft: 'auto' }} />
+              <FileSpreadsheet size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">New Template</Text>
+              <ChevronRight size={12} style={{ marginLeft: 'auto' }} />
             </Flex>
           </>
         )}
 
-        {/* File-Specific Actions */}
-        {(contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') || contextMenu.fileItem.name.toLowerCase().endsWith('.ahk') || showMergePDFs || showExtractZips || showExtractEmls) && (
+        {/* ── File-Specific Actions ── */}
+        {hasFileSpecific && (
           <>
-            <Divider />
-            {contextMenu.fileItem.name.toLowerCase().endsWith('.pdf') && (
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_text')}>
-                <FileText size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Extract Text</Text>
+            <Separator borderColor={separatorColor} my={0.5} />
+            {fileName.endsWith('.pdf') && (
+              <Flex {...rowProps} onClick={() => handleMenuAction('extract_text')}>
+                <FileText size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Extract Text</Text>
               </Flex>
             )}
-            {contextMenu.fileItem.name.toLowerCase().endsWith('.ahk') && (
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('edit_in_notepad')}>
-                <Edit2 size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Edit in Notepad</Text>
+            {fileName.endsWith('.ahk') && (
+              <Flex {...rowProps} onClick={() => handleMenuAction('edit_in_notepad')}>
+                <Edit2 size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Edit in Notepad</Text>
               </Flex>
             )}
             {showMergePDFs && (
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('merge_pdfs')}>
-                <FilePlus2 size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Merge PDFs ({selectedPDFs.length})</Text>
+              <Flex {...rowProps} onClick={() => handleMenuAction('merge_pdfs')}>
+                <FilePlus2 size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Merge PDFs ({selectedPDFs.length})</Text>
               </Flex>
             )}
             {showExtractZips && (
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_zip')}>
-                <Archive size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
+              <Flex {...rowProps} onClick={() => handleMenuAction('extract_zip')}>
+                <Archive size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
               </Flex>
             )}
             {showExtractEmls && (
-              <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('extract_eml')}>
-                <Mail size={16} style={{ marginRight: '8px' }} />
-                <Text fontSize="sm">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
+              <Flex {...rowProps} onClick={() => handleMenuAction('extract_eml')}>
+                <Mail size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
               </Flex>
             )}
           </>
         )}
 
-        {/* Clipboard Actions */}
-        <Divider />
-        {contextMenu.fileItem.type === 'file' && (
-          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => {
+        {/* ── Clipboard ── */}
+        <Separator borderColor={separatorColor} my={0.5} />
+        {isFile && (
+          <Flex {...rowProps} onClick={() => {
             const filesToMove = getClipboardFiles();
             setMoveToFiles(filesToMove);
             addressBarJumpRef.current?.close();
             setIsMoveToDialogOpen(true);
             handleCloseContextMenu();
           }}>
-            <ArrowRightLeft size={16} style={{ marginRight: '8px' }} />
-            <Text fontSize="sm">Move to...</Text>
+            <ArrowRightLeft size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Move to...</Text>
           </Flex>
         )}
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }}>
-          <Scissors size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Cut</Text>
+        <Flex {...rowProps} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }}>
+          <Scissors size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Cut</Text>
         </Flex>
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }}>
-          <Copy size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Copy</Text>
+        <Flex {...rowProps} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }}>
+          <Copy size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Copy</Text>
         </Flex>
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); handleCloseContextMenu(); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
-          <FileSymlink size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Paste</Text>
+        <Flex {...rowProps} onClick={() => { handlePaste(); handleCloseContextMenu(); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
+          <FileSymlink size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Paste</Text>
         </Flex>
 
-        {/* Destructive & Info Actions */}
-        <Divider />
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('delete')}>
-          <Trash2 size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Delete</Text>
+        {/* ── Destructive & Info ── */}
+        <Separator borderColor={separatorColor} my={0.5} />
+        <Flex {...rowProps} onClick={() => handleMenuAction('delete')}>
+          <Trash2 size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Delete</Text>
         </Flex>
-        <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => handleMenuAction('properties')}>
-          <Info size={16} style={{ marginRight: '8px' }} />
-          <Text fontSize="sm">Properties</Text>
+        <Flex {...rowProps} onClick={() => handleMenuAction('properties')}>
+          <Info size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Properties</Text>
         </Flex>
       </Box>
     </Box>
@@ -401,17 +396,20 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   onCreateWordDoc,
   onCreateFromTemplate,
 }) => {
-  const boxBg = useColorModeValue('white', 'gray.800');
-  const borderCol = useColorModeValue('gray.200', 'gray.700');
-  const hoverBg = useColorModeValue('gray.100', 'gray.700');
+  const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
+  const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
+  const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
+  const separatorColor = useColorModeValue(docuFramePalette.light.tableBorder, docuFramePalette.dark.tableBorder);
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const [newSubmenuOpen, setNewSubmenuOpen] = useState(false);
   const [newSubmenuPos, setNewSubmenuPos] = useState<{ x: number; y?: number; bottom?: number; flowUp: boolean }>({ x: 0, flowUp: false });
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
 
-  // Estimated submenu height: 4 fixed items + divider + templates. ~36px per row, ~7 templates max = ~400px
   const SUBMENU_EST_HEIGHT = 420;
+  const iconSz = 14;
+  const iconStyle = { marginRight: '6px', flexShrink: 0 } as const;
+  const rowProps = { align: 'center' as const, px: 2.5, py: '3px', cursor: 'pointer' as const, _hover: { bg: hoverBg } };
 
   useEffect(() => {
     if (!blankContextMenu.isOpen) return;
@@ -431,25 +429,39 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
     if (!blankContextMenu.isOpen) setNewSubmenuOpen(false);
   }, [blankContextMenu.isOpen]);
 
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!blankContextMenu.isOpen || !el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = blankContextMenu.position.x;
+    let y = blankContextMenu.position.y;
+    if (x + rect.width > vw - 4) x = blankContextMenu.position.x - rect.width;
+    if (y + rect.height > vh - 4) y = blankContextMenu.position.y - rect.height;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.opacity = '1';
+  });
+
   if (!blankContextMenu.isOpen) return null;
   return (
     <>
-      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} bg={boxBg} borderRadius="0" boxShadow="lg" zIndex="modal" minW="200px" border="1px solid" borderColor={borderCol}>
-        <Box py={1}>
+      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} opacity={0} bg={boxBg} borderRadius="0" zIndex="modal" minW="170px" maxW="240px" border="1px solid" borderColor={borderCol}>
+        <Box py={0.5}>
           <Flex
-            align="center"
-            px={3}
-            py={2}
-            cursor="pointer"
-            _hover={{ bg: hoverBg }}
+            {...rowProps}
             onMouseEnter={async (e) => {
               const el = e.currentTarget as HTMLElement;
               const rect = el.getBoundingClientRect();
               const flowUp = rect.top + SUBMENU_EST_HEIGHT > window.innerHeight;
+              const flowLeft = rect.right + 180 > window.innerWidth;
               setNewSubmenuPos(
                 flowUp
-                  ? { x: rect.right + 2, bottom: window.innerHeight - rect.bottom + 3, flowUp: true }
-                  : { x: rect.right + 1, y: rect.top - 5, flowUp: false }
+                  ? { x: flowLeft ? rect.left - 180 : rect.right + 2, bottom: window.innerHeight - rect.bottom + 3, flowUp: true }
+                  : { x: flowLeft ? rect.left - 180 : rect.right + 1, y: rect.top - 5, flowUp: false }
               );
               setNewSubmenuOpen(true);
               try {
@@ -460,18 +472,18 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
               }
             }}
           >
-            <FolderPlus size={16} style={{ marginRight: '8px' }} />
-            <Text fontSize="sm">New</Text>
-            <ChevronRight size={14} style={{ marginLeft: 'auto' }} />
+            <FolderPlus size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">New</Text>
+            <ChevronRight size={12} style={{ marginLeft: 'auto' }} />
           </Flex>
-          <Divider my={1} />
-          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
-            <FileSymlink size={16} style={{ marginRight: '8px' }} />
-            <Text fontSize="sm">Paste</Text>
+          <Separator borderColor={separatorColor} my={0.5} />
+          <Flex {...rowProps} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
+            <FileSymlink size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Paste</Text>
           </Flex>
-          <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
-            <ImageIcon size={16} style={{ marginRight: '8px' }} />
-            <Text fontSize="sm">Paste Image</Text>
+          <Flex {...rowProps} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
+            <ImageIcon size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Paste Image</Text>
           </Flex>
         </Box>
       </Box>
@@ -484,49 +496,45 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
             : { top: newSubmenuPos.y, left: newSubmenuPos.x })}
           bg={boxBg}
           borderRadius="0"
-          boxShadow="lg"
           zIndex="modal"
-          minW="220px"
+          minW="170px"
+          maxW="240px"
           border="1px solid"
           borderColor={borderCol}
           onMouseLeave={() => setNewSubmenuOpen(false)}
         >
-          <Box py={1}>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateFolder(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <Folder size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Folder</Text>
+          <Box py={0.5}>
+            <Flex {...rowProps} onClick={() => { onCreateFolder(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <Folder size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Folder</Text>
             </Flex>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateTextFile(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <FileText size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Text File</Text>
+            <Flex {...rowProps} onClick={() => { onCreateTextFile(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <FileText size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Text File</Text>
             </Flex>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateSpreadsheet(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <FileSpreadsheet size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Excel File</Text>
+            <Flex {...rowProps} onClick={() => { onCreateSpreadsheet(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <FileSpreadsheet size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Excel File</Text>
             </Flex>
-            <Flex align="center" px={3} py={2} cursor="pointer" _hover={{ bg: hoverBg }} onClick={() => { onCreateWordDoc(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <FileEdit size={16} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">Word Document</Text>
+            <Flex {...rowProps} onClick={() => { onCreateWordDoc(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <FileEdit size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">Word Document</Text>
             </Flex>
             {templates.length > 0 && (
               <>
-                <Divider my={1} />
+                <Separator borderColor={separatorColor} my={0.5} />
                 {templates.map((template) => (
                   <Flex
                     key={template.path}
-                    align="center"
-                    px={3}
-                    py={2}
-                    cursor="pointer"
-                    _hover={{ bg: hoverBg }}
+                    {...rowProps}
                     onClick={() => {
                       onCreateFromTemplate(template.path, template.name);
                       setBlankContextMenu({ ...blankContextMenu, isOpen: false });
                       setNewSubmenuOpen(false);
                     }}
                   >
-                    <FileSpreadsheet size={14} style={{ marginRight: '8px' }} />
-                    <Text fontSize="sm">{template.name.replace(/\.xlsx$/i, '')}</Text>
+                    <FileSpreadsheet size={12} style={iconStyle} />
+                    <Text fontSize="xs">{template.name.replace(/\.xlsx$/i, '')}</Text>
                   </Flex>
                 ))}
               </>
@@ -556,38 +564,59 @@ export const TemplateSubmenu: React.FC<TemplateSubmenuProps> = ({
   onCreateFromTemplate,
   onClose,
 }) => {
-  const boxBg = useColorModeValue('white', 'gray.800');
-  const borderCol = useColorModeValue('gray.200', 'gray.700');
-  const hoverBg = useColorModeValue('gray.100', 'gray.700');
-  
+  const menuRef = useRef<HTMLDivElement>(null);
+  const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
+  const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
+  const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
+  const subtextColor = useColorModeValue(docuFramePalette.light.subtext, docuFramePalette.dark.subtext);
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!isOpen || !el || !position) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = position.x;
+    let y = position.y;
+    if (x + rect.width > vw - 4) x = position.x - rect.width - 170;
+    if (y + rect.height > vh - 4) y = vh - rect.height - 4;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.opacity = '1';
+  });
+
   if (!isOpen || !position) return null;
-  
+
   return (
     <Box
+      ref={menuRef}
       position="fixed"
       top={position.y}
       left={position.x}
+      opacity={0}
       bg={boxBg}
       borderRadius="0"
-      boxShadow="lg"
       zIndex="modal"
-      minW="200px"
+      minW="170px"
+      maxW="240px"
       border="1px solid"
       borderColor={borderCol}
       onMouseLeave={onClose}
     >
-      <Box py={1}>
+      <Box py={0.5}>
         {templates.length === 0 ? (
-          <Flex align="center" px={3} py={2}>
-            <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')}>No templates</Text>
+          <Flex align="center" px={2.5} py="3px">
+            <Text fontSize="xs" color={subtextColor}>No templates</Text>
           </Flex>
         ) : (
           templates.map((template) => (
             <Flex
               key={template.path}
               align="center"
-              px={3}
-              py={2}
+              px={2.5}
+              py="3px"
               cursor="pointer"
               _hover={{ bg: hoverBg }}
               onClick={() => {
@@ -595,8 +624,8 @@ export const TemplateSubmenu: React.FC<TemplateSubmenuProps> = ({
                 onClose();
               }}
             >
-              <FileSpreadsheet size={14} style={{ marginRight: '8px' }} />
-              <Text fontSize="sm">{template.name.replace('.xlsx', '')}</Text>
+              <FileSpreadsheet size={12} style={{ marginRight: '6px' }} />
+              <Text fontSize="xs">{template.name.replace('.xlsx', '')}</Text>
             </Flex>
           ))
         )}
@@ -606,6 +635,8 @@ export const TemplateSubmenu: React.FC<TemplateSubmenuProps> = ({
 };
 
 // MoveToNavigation Component (used by MoveToDialogWrapper)
+type MoveToFolderRow = FileItem & { id: string }
+
 interface MoveToNavigationProps {
   currentDirectory: string;
   onSelectFolder: (path: string) => Promise<void>;
@@ -615,7 +646,7 @@ interface MoveToNavigationProps {
 
 const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, onSelectFolder, onCancel, dialogRef }) => {
   const [currentPath, setCurrentPath] = useState<string>('');
-  const [items, setItems] = useState<Array<{ id: string; name: string; type: 'folder' | 'file'; path: string }>>([]);
+  const [items, setItems] = useState<MoveToFolderRow[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -637,8 +668,8 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
         throw new Error(`Path is not valid: ${dirPath}`);
       }
       const directoryItems = await window.electronAPI.getDirectoryContents(dirPath);
-      const foldersOnly = directoryItems.filter((item: any) => item.type === 'folder' && !item.isHidden);
-      setItems(foldersOnly);
+      const foldersOnly = directoryItems.filter((item: FileItem & { isHidden?: boolean }) => item.type === 'folder' && !item.isHidden);
+      setItems(foldersOnly.map((item) => ({ ...item, id: item.path })));
       const normalizedPath = normalizePath(dirPath);
       setCurrentPath(normalizedPath);
       setSelectedPath(normalizedPath);
@@ -780,16 +811,13 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
       >
         <IconButton
           aria-label="Parent directory"
-          icon={<ChevronUp size={16} />}
           size="xs"
           onClick={goToParentDirectory}
-          variant="ghost"
-        />
-        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} flex="1" noOfLines={1}>
+          variant="ghost"><ChevronUp size={16} /></IconButton>
+        <Text fontSize="xs" color={useColorModeValue('gray.600', 'gray.400')} flex="1" lineClamp={1}>
           {currentPath || 'Computer'}
         </Text>
       </Flex>
-
       <Box flex="1" overflowY="auto" p={2}>
         {loading && (
           <Flex justify="center" align="center" h="100px">
@@ -819,18 +847,17 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
             borderRadius="md"
             onClick={() => handleItemClick(item)}
           >
-            <Icon as={FolderOpen} boxSize={4} color="blue.500" mr={3} />
-            <Text fontSize="sm" flex="1" noOfLines={1}>
+            <Icon boxSize={4} color="blue.500" mr={3} asChild><FolderOpen /></Icon>
+            <Text fontSize="sm" flex="1" lineClamp={1}>
               {item.name}
             </Text>
           </Flex>
         ))}
       </Box>
-
       <Flex p={3} borderTop="1px solid" borderColor={borderColor} gap={2} align="center" justify="space-between">
         {filterKeyword.trim() && (
           <Badge
-            colorScheme="blue"
+            colorPalette="blue"
             bg={pillBg}
             color={pillColor}
             px={3}
@@ -845,15 +872,13 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
             {filterKeyword}
             <IconButton
               aria-label="Clear filter"
-              icon={<X size={12} />}
               size="xs"
               variant="ghost"
               h="auto"
               minW="auto"
               p={0}
               onClick={() => setFilterKeyword('')}
-              _hover={{ bg: 'transparent', opacity: 0.7 }}
-            />
+              _hover={{ bg: 'transparent', opacity: 0.7 }}><X size={12} /></IconButton>
           </Badge>
         )}
         {!filterKeyword.trim() && <Box />}
@@ -864,13 +889,13 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
           </Button>
           <Button
             size="sm"
-            colorScheme="blue"
+            colorPalette="blue"
             onClick={async () => {
               if (selectedPath) {
                 await onSelectFolder(selectedPath);
               }
             }}
-            isDisabled={!selectedPath}
+            disabled={!selectedPath}
           >
             Move Here
           </Button>
@@ -887,8 +912,8 @@ export interface MoveToDialogWrapperProps {
   currentDirectory: string;
   onSelectFolder: (destPath: string) => Promise<void>;
   refreshDirectory: (path: string) => Promise<void>;
-  setStatus: (message: string, type: 'info' | 'success' | 'error') => void;
-  addLog: (message: string, type?: 'info' | 'success' | 'error') => void;
+  setStatus: (message: string, type?: 'default' | 'info' | 'success' | 'error') => void;
+  addLog: (message: string, type?: 'error' | 'response' | 'command' | 'info') => void;
 }
 
 export const MoveToDialogWrapper: React.FC<MoveToDialogWrapperProps> = ({
@@ -1001,13 +1026,7 @@ export const MoveToDialogWrapper: React.FC<MoveToDialogWrapperProps> = ({
           <Text fontSize="lg" fontWeight="semibold">
             Move {moveToFiles.length} file{moveToFiles.length > 1 ? 's' : ''} to...
           </Text>
-          <IconButton
-            aria-label="Close"
-            icon={<X size={16} />}
-            size="sm"
-            variant="ghost"
-            onClick={onClose}
-          />
+          <IconButton aria-label="Close" size="sm" variant="ghost" onClick={onClose}><X size={16} /></IconButton>
         </Flex>
         <Box p={4} flex="1" minH="0">
           <MoveToNavigation
@@ -1044,9 +1063,9 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
   toggleColumnVisibility,
   closeHeaderContextMenu,
 }) => {
-  const menuBg = useColorModeValue('white', 'gray.800');
-  const menuBorderColor = useColorModeValue('gray.200', 'gray.700');
-  const menuHoverBg = useColorModeValue('gray.100', 'gray.700');
+  const menuBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
+  const menuBorderColor = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
+  const menuHoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1060,6 +1079,23 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [headerContextMenu.isOpen, closeHeaderContextMenu]);
 
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!headerContextMenu.isOpen || !el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let x = headerContextMenu.position.x;
+    let y = headerContextMenu.position.y;
+    if (x + rect.width > vw - 4) x = headerContextMenu.position.x - rect.width;
+    if (y + rect.height > vh - 4) y = headerContextMenu.position.y - rect.height;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.style.opacity = '1';
+  });
+
   if (!headerContextMenu.isOpen) return null;
 
   return (
@@ -1070,14 +1106,14 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
         position="fixed"
         left={headerContextMenu.position.x}
         top={headerContextMenu.position.y}
+        opacity={0}
         zIndex={10000}
         bg={menuBg}
         border="1px solid"
         borderColor={menuBorderColor}
         borderRadius="0"
-        boxShadow="lg"
-        minW="200px"
-        py={1}
+        minW="150px"
+        py={0.5}
       >
         {['name', 'size', 'modified', 'type'].map((column) => {
           const columnLabels: Record<string, string> = {
@@ -1091,8 +1127,8 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
             <Flex
               key={column}
               align="center"
-              px={3}
-              py={2}
+              px={2.5}
+              py="3px"
               cursor="pointer"
               _hover={{ bg: menuHoverBg }}
               onClick={(e) => {
@@ -1100,15 +1136,15 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
                 toggleColumnVisibility(column);
               }}
             >
-              <Checkbox
-                isChecked={isChecked}
-                onChange={() => toggleColumnVisibility(column)}
+              <Checkbox.Root
+                checked={isChecked}
+                onCheckedChange={() => toggleColumnVisibility(column)}
                 mr={2}
                 pointerEvents="none"
                 size="sm"
-              >
-                <Text fontSize="sm">{columnLabels[column]}</Text>
-              </Checkbox>
+              ><Checkbox.HiddenInput /><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control><Checkbox.Label>
+                <Text fontSize="xs">{columnLabels[column]}</Text>
+              </Checkbox.Label></Checkbox.Root>
             </Flex>
           );
         })}

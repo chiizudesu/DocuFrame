@@ -1,9 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
-import {
-  Box,
-  useToast,
-  useColorModeValue,
-} from '@chakra-ui/react'
+import { useColorModeValue } from "./ui/color-mode";
+import { Box } from '@chakra-ui/react';
+import { showToast } from "@/components/ui/toaster"
 import {
   useFileGridDirectoryState,
   useFileGridSelectionState,
@@ -21,6 +19,7 @@ import { SortColumn, SortDirection, formatPathForLog } from './FileGrid/FileGrid
 import { FileContextMenu, BlankContextMenu, TemplateSubmenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
 import { FileListView } from './FileGrid/FileListView';
+import { docuFramePalette as P } from '../docuFrameColors';
 
 // Icon functions removed - using native Windows icons instead
 
@@ -128,9 +127,6 @@ export const FileGrid: React.FC = () => {
       return dateString; // Fallback to original string if parsing fails
     }
   }, []);
-  
-  const toast = useToast()
-  
   // Per-directory sort preferences (remembered when navigating, persisted across restarts)
   const sortPrefsRef = useRef<Map<string, { sortColumn: SortColumn; sortDirection: SortDirection }>>(new Map())
   const [sortColumn, setSortColumn] = useState<SortColumn>('name')
@@ -315,6 +311,12 @@ export const FileGrid: React.FC = () => {
   const sortedFilesRef = useRef<FileItem[]>([]);
   const fileNameToPathMapRef = useRef<Map<string, string>>(new Map());
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSelectedIndexRef = useRef<number | null>(null);
+  type GroupedFilesShape = ReturnType<typeof groupFilesByIndex<FileItem>>;
+  const groupedFilesRef = useRef<GroupedFilesShape | null>(null);
+  const isGroupedByIndexRef = useRef(false);
+  const pendingSelectionChangeRef = useRef<{ fileName: string; index: number } | null>(null);
+  const isDragStartedRef = useRef(false);
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
@@ -376,30 +378,28 @@ export const FileGrid: React.FC = () => {
   }, [isRenaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // All useColorModeValue hooks next
-  const itemBgHover = useColorModeValue('#f0f9ff', 'blue.700') // Lighter than selection
+  const itemBgHover = useColorModeValue('#f0f9ff', '#2B6CB0') // v2 blue.700 hover accent
   const fileTextColor = useColorModeValue('#334155', 'white')
-  const fileSubTextColor = useColorModeValue('#64748b', 'gray.400')
-  const tableBgColor = useColorModeValue('#f8fafc', 'transparent')
-  const tableHeadBgColor = useColorModeValue('#f1f5f9', 'gray.800')
-  const tableHeadTextColor = useColorModeValue('#334155', 'gray.300')
-  const tableBorderColor = useColorModeValue('#d1d5db', 'gray.700')
+  const fileSubTextColor = useColorModeValue('#64748b', P.dark.subtext)
+  const tableBgColor = useColorModeValue(P.light.canvas, P.dark.canvas)
+  const tableHeadTextColor = useColorModeValue('#334155', P.dark.subtext)
 
   // Additional color tokens (hoisted) to avoid calling hooks inside loops/conditionals
-  const borderColorDefault = useColorModeValue('gray.200', 'gray.700')
-  const gridItemSelectedBg = useColorModeValue('blue.50', 'blue.900')
-  const gridItemDefaultBg = useColorModeValue('#f8f9fc', 'gray.800')
-  const hoverBorderColor = useColorModeValue('blue.200', 'blue.700')
-  const headerHoverBg = useColorModeValue('gray.200', 'gray.600')
-  const headerStickyBg = useColorModeValue('#f1f5f9', 'gray.900')
-  const headerDividerBg = useColorModeValue('gray.300', 'gray.700')
-  const rowSelectedBg = useColorModeValue('#cce4f7', 'blue.900')
-  const rowHoverBg = useColorModeValue('gray.100', 'gray.700')
-  const rowDefaultBg = useColorModeValue('white', 'transparent') // Light: opaque for readability; dark: transparent
-  const newFileHighlightBg = useColorModeValue('green.100', 'green.900')
+  const borderColorDefault = useColorModeValue('gray.200', P.dark.border)
+  const gridItemSelectedBg = useColorModeValue('blue.50', P.dark.rowSelected)
+  const gridItemDefaultBg = useColorModeValue('#f8f9fc', P.dark.canvas)
+  const hoverBorderColor = useColorModeValue('blue.200', 'blue.500')
+  const headerHoverBg = useColorModeValue('gray.200', P.dark.rowHover)
+  const headerStickyBg = useColorModeValue(P.light.listRow, P.dark.canvas)
+  const headerDividerBg = useColorModeValue(P.light.headerDivider, P.dark.headerDivider)
+  const rowSelectedBg = useColorModeValue(P.light.rowSelected, P.dark.rowSelected)
+  const rowHoverBg = useColorModeValue(P.light.rowHover, P.dark.rowHover)
+  const rowDefaultBg = useColorModeValue(P.light.listRow, P.dark.canvas)
+  const newFileHighlightBg = useColorModeValue('green.100', 'rgba(74, 222, 128, 0.13)')
   const folderDropBgColor = useColorModeValue('blue.100', 'blue.700')
   const searchHighlightBg = useColorModeValue('blue.50', 'blue.900')
-  const dragGhostBg = useColorModeValue('gray.50', 'gray.900')
-  const dragGhostBorder = useColorModeValue('gray.300', 'gray.700')
+  const dragGhostBg = useColorModeValue('gray.50', '#171923')
+  const dragGhostBorder = useColorModeValue('gray.300', P.dark.border)
   const dragGhostAccent = useColorModeValue('blue.400', 'blue.300')
 
   // Memoize content search result paths for O(1) lookup
@@ -521,7 +521,23 @@ export const FileGrid: React.FC = () => {
     sortedFilesRef.current = sortedFiles;
     fileNameToPathMapRef.current = fileNameToPathMap;
     clickTimerRef.current = clickTimer;
-  }, [selectedFiles, selectedFilesSet, sortedFiles, fileNameToPathMap, clickTimer]);
+    lastSelectedIndexRef.current = lastSelectedIndex;
+    groupedFilesRef.current = groupedFiles;
+    isGroupedByIndexRef.current = isGroupedByIndex;
+    pendingSelectionChangeRef.current = pendingSelectionChange;
+    isDragStartedRef.current = isDragStarted;
+  }, [
+    selectedFiles,
+    selectedFilesSet,
+    sortedFiles,
+    fileNameToPathMap,
+    clickTimer,
+    lastSelectedIndex,
+    groupedFiles,
+    isGroupedByIndex,
+    pendingSelectionChange,
+    isDragStarted,
+  ]);
 
   // Debounced directory loading to prevent rapid reloads
   const debouncedLoadDirectory = useCallback(
@@ -674,32 +690,8 @@ export const FileGrid: React.FC = () => {
   }, [setCurrentDirectory, addLog, setStatus]);
 
   // Helper function for smart context menu positioning - OPTIMIZED with useCallback
-  const getSmartMenuPosition = useCallback((clientX: number, clientY: number, menuHeight = 300) => {
-    const viewport = {
-      width: window.innerWidth,
-      height: window.innerHeight
-    };
-    
-    const menuWidth = 200; // minW="200px" from the menu
-    
-    let x = clientX;
-    let y = clientY;
-    
-    // Adjust horizontal position if menu would be clipped on the right
-    if (x + menuWidth > viewport.width) {
-      x = viewport.width - menuWidth - 10; // 10px margin from edge
-    }
-    
-    // Adjust vertical position if menu would be clipped on the bottom
-    if (y + menuHeight > viewport.height) {
-      y = clientY - menuHeight; // Position above cursor
-      // If still clipped at top, position at top with margin
-      if (y < 10) {
-        y = 10;
-      }
-    }
-    
-    return { x, y };
+  const getSmartMenuPosition = useCallback((clientX: number, clientY: number, _menuHeight = 300) => {
+    return { x: clientX, y: clientY };
   }, []);
 
   const handleContextMenu = useCallback((
@@ -710,7 +702,7 @@ export const FileGrid: React.FC = () => {
     
     // If the right-clicked file is not part of the current selection,
     // clear selection and select only this file
-    if (!selectedFilesSet.has(file.name)) {
+    if (!selectedFilesSetRef.current.has(file.name)) {
       setSelectedFiles([file.name]);
       setSelectedFile(file.name);
     }
@@ -722,7 +714,7 @@ export const FileGrid: React.FC = () => {
       position,
       fileItem: file,
     })
-  }, [selectedFilesSet]);
+  }, [getSmartMenuPosition]);
 
   const handleCloseContextMenu = useCallback(() => {
     setContextMenu({
@@ -792,7 +784,7 @@ export const FileGrid: React.FC = () => {
         setStatus(`Failed to delete: ${failedFileNames}`, 'error');
         
         // Show toast notification for failed delete operations
-        toast({
+        showToast({
           title: 'Delete Failed',
           description: `Failed to delete ${failedFiles.length} file(s): ${failedFileNames}`,
           status: 'error',
@@ -811,7 +803,7 @@ export const FileGrid: React.FC = () => {
       addLog(`Delete operation failed: ${errorMessage}`, 'error');
       setStatus('Delete operation failed', 'error');
     }
-  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, setFolderItems, filterFiles, toast])
+  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, setFolderItems, filterFiles])
 
   // In context menu, pass array for multi-select delete - OPTIMIZED with useCallback
   const handleMenuAction = useCallback(async (action: string) => {
@@ -1099,7 +1091,7 @@ export const FileGrid: React.FC = () => {
           const filesWithPrefix = filesToUpdate.filter(f => extractIndexPrefix(f.name) !== null);
           
           if (filesWithPrefix.length === 0) {
-            toast({
+            showToast({
               title: 'No Prefix to Remove',
               description: 'Selected file(s) do not have an index prefix.',
               status: 'info',
@@ -1168,7 +1160,7 @@ export const FileGrid: React.FC = () => {
                 const message = result?.message || 'Replace with latest file failed';
                 addLog(message, 'error');
                 setStatus('Replace with latest file failed', 'error');
-                toast({
+                showToast({
                   title: 'Replace Failed',
                   description: message,
                   status: 'error',
@@ -1181,7 +1173,7 @@ export const FileGrid: React.FC = () => {
               const errorMessage = error instanceof Error ? error.message : 'Unknown error';
               addLog(`Replace with latest file failed: ${errorMessage}`, 'error');
               setStatus('Replace with latest file failed', 'error');
-              toast({
+              showToast({
                 title: 'Replace Failed',
                 description: errorMessage,
                 status: 'error',
@@ -1268,7 +1260,7 @@ export const FileGrid: React.FC = () => {
       } else {
         addLog(result.message, 'error');
         setStatus('Transfer failed', 'error');
-        toast({
+        showToast({
           title: 'Transfer Failed',
           description: result.message,
           status: 'error',
@@ -1281,7 +1273,7 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Transfer failed: ${errorMessage}`, 'error');
       setStatus('Transfer failed', 'error');
-      toast({
+      showToast({
         title: 'Transfer Failed',
         description: errorMessage,
         status: 'error',
@@ -1290,7 +1282,7 @@ export const FileGrid: React.FC = () => {
         position: 'top',
       });
     }
-  }, [currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+  }, [currentDirectory, addLog, setStatus, refreshDirectory]);
 
   // Handler for assigning/changing index prefix (or copying if isCopy is true)
   const handleAssignPrefix = useCallback(async (indexKey: string | null, isCopy?: boolean) => {
@@ -1306,7 +1298,7 @@ export const FileGrid: React.FC = () => {
     // Validate: if copying, indexKey must be provided (but allow removing prefix without copy)
     if (isCopy && !indexKey) {
       console.error('[FileGrid] Copy operation requires an index key');
-      toast({
+      showToast({
         title: 'Invalid Operation',
         description: 'Cannot copy file without selecting an index prefix.',
         status: 'error',
@@ -1557,7 +1549,7 @@ export const FileGrid: React.FC = () => {
           return String(r.reason);
         }).join('; ');
         
-        toast({
+        showToast({
           title: isCopy ? 'Copy Failed' : 'Prefix Assignment Failed',
           description: `${failed} file(s) failed: ${errorMessages}`,
           status: 'error',
@@ -1582,7 +1574,7 @@ export const FileGrid: React.FC = () => {
       console.error('[FileGrid] Unexpected error in handleAssignPrefix:', error);
       addLog(`Failed to ${actionText}: ${errorMessage}`, 'error');
       setStatus(`Failed to ${actionText}`, 'error');
-      toast({
+      showToast({
         title: isCopy ? 'Copy Failed' : 'Prefix Assignment Failed',
         description: errorMessage,
         status: 'error',
@@ -1591,7 +1583,7 @@ export const FileGrid: React.FC = () => {
         position: 'top',
       });
     }
-  }, [prefixDialogFiles, currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+  }, [prefixDialogFiles, currentDirectory, addLog, setStatus, refreshDirectory]);
 
   // Handler for copying files to another index
   const handleCopyToIndex = useCallback(async (targetIndex: string) => {
@@ -1648,7 +1640,7 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Copy to index failed: ${errorMessage}`, 'error');
       setStatus('Copy to index failed', 'error');
-      toast({
+      showToast({
         title: 'Copy Failed',
         description: errorMessage,
         status: 'error',
@@ -1657,7 +1649,7 @@ export const FileGrid: React.FC = () => {
         position: 'top',
       });
     }
-  }, [selectedFiles, sortedFiles, contextMenu.fileItem, selectedFilesSet, currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+  }, [selectedFiles, sortedFiles, contextMenu.fileItem, selectedFilesSet, currentDirectory, addLog, setStatus, refreshDirectory]);
 
   // Handler for renaming files between indexes
   const handleRenameIndex = useCallback(async (sourceIndex: string, targetIndex: string) => {
@@ -1733,7 +1725,7 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to proper case filename: ${errorMessage}`, 'error');
       setStatus('Failed to proper case filename', 'error');
-      toast({
+      showToast({
         title: 'Rename Failed',
         description: errorMessage,
         status: 'error',
@@ -1742,7 +1734,7 @@ export const FileGrid: React.FC = () => {
         position: 'top',
       });
     }
-  }, [currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+  }, [currentDirectory, addLog, setStatus, refreshDirectory]);
 
   // Handler for smart rename confirmation
   const handleSmartRenameConfirm = useCallback(async (newName: string) => {
@@ -1761,7 +1753,7 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to rename: ${errorMessage}`, 'error');
       setStatus('Failed to rename file', 'error');
-      toast({
+      showToast({
         title: 'Rename Failed',
         description: errorMessage,
         status: 'error',
@@ -1771,10 +1763,10 @@ export const FileGrid: React.FC = () => {
       });
       throw error; // Re-throw so dialog can handle it
     }
-  }, [smartRenameFile, currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+  }, [smartRenameFile, currentDirectory, addLog, setStatus, refreshDirectory]);
 
-  const handleRenameSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleRenameSubmit = useCallback(async (e?: React.FormEvent) => {
+    e?.preventDefault()
     if (!isRenaming) return
     const trimmedName = renameValue?.trim();
     if (!trimmedName) {
@@ -1818,7 +1810,7 @@ export const FileGrid: React.FC = () => {
         
         if (existingFile) {
           // File with same name exists - show error
-          toast({
+          showToast({
             title: 'Rename Failed',
             description: `A file named "${trimmedName}" already exists.`,
             status: 'error',
@@ -1844,7 +1836,7 @@ export const FileGrid: React.FC = () => {
       addLog(`Failed to rename: ${errorMessage}`, 'error')
       setStatus(`Failed to rename "${isRenaming}": ${errorMessage}`, 'error')
       
-      toast({
+      showToast({
           title: 'Rename Failed',
           description: `Failed to rename "${isRenaming}": ${errorMessage}`,
           status: 'error',
@@ -1973,6 +1965,13 @@ export const FileGrid: React.FC = () => {
 
   // Add this function for selection on mouse down - OPTIMIZED with useCallback
   const handleFileItemMouseDown = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
+    const sortedFiles = sortedFilesRef.current;
+    const selectedFiles = selectedFilesRef.current;
+    const selectedFilesSet = selectedFilesSetRef.current;
+    const lastSelectedIndex = lastSelectedIndexRef.current;
+    const isGroupedByIndex = isGroupedByIndexRef.current;
+    const groupedFiles = groupedFilesRef.current;
+
     if (!event) {
       // Fallback for no event - simple selection
       setSelectedFiles([file.name]);
@@ -2062,12 +2061,15 @@ export const FileGrid: React.FC = () => {
       setLastSelectedIndex(index);
       setSelectedFile(file.name);
     }
-  }, [lastSelectedIndex, selectedFiles, sortedFiles, isGroupedByIndex, groupedFiles]);
+  }, []);
 
   // Add this function for handling mouse up - completes smart selection logic - OPTIMIZED with useCallback
   const handleFileItemMouseUp = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
     // Ignore right-click (button 2) - prevents clearing multi-selection when releasing right button after context menu
     if (event && event.button !== 0) return;
+
+    const pendingSelectionChange = pendingSelectionChangeRef.current;
+    const isDragStarted = isDragStartedRef.current;
 
     // If we have a pending selection change and no drag started, complete the selection
     if (pendingSelectionChange && !isDragStarted && pendingSelectionChange.fileName === file.name) {
@@ -2077,11 +2079,15 @@ export const FileGrid: React.FC = () => {
     }
     // Clear pending state
     setPendingSelectionChange(null);
-  }, [pendingSelectionChange, isDragStarted]);
+  }, []);
 
   // Add this function for handling drag start - prevents selection change on drag - OPTIMIZED with useCallback
   const handleFileItemDragStart = useCallback((file: FileItem, index: number, event?: React.DragEvent) => {
     if (!event) return;
+
+    const selectedFiles = selectedFilesRef.current;
+    const selectedFilesSet = selectedFilesSetRef.current;
+    const fileNameToPathMap = fileNameToPathMapRef.current;
     
     setIsDragStarted(true);
     setPendingSelectionChange(null);
@@ -2117,7 +2123,7 @@ export const FileGrid: React.FC = () => {
       : [file.name];
     
     setDraggedFiles(new Set(filesToHide));
-  }, [selectedFiles, selectedFilesSet, fileNameToPathMap, addLog]);
+  }, [addLog]);
 
   // Add this function for selection on click - OPTIMIZED with useCallback
   const handleFileItemClick = useCallback((file: FileItem, index: number, event?: React.MouseEvent) => {
@@ -3043,7 +3049,7 @@ export const FileGrid: React.FC = () => {
           return String(r.reason);
         }).join('; ');
         
-        toast({
+        showToast({
           title: isCopyOperation ? 'Copy Failed' : 'Prefix Assignment Failed',
           description: `${failed} file(s) failed: ${errorMessages}`,
           status: 'error',
@@ -3058,7 +3064,7 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to assign prefix: ${errorMessage}`, 'error');
       setStatus('Failed to assign prefix', 'error');
-      toast({
+      showToast({
         title: 'Prefix Assignment Failed',
         description: errorMessage,
         status: 'error',
@@ -3069,7 +3075,7 @@ export const FileGrid: React.FC = () => {
     } finally {
       try { (window as any).__docuframeInternalDrag = null; } catch {}
     }
-  }, [sortedFiles, currentDirectory, addLog, setStatus, refreshDirectory, toast]);
+  }, [sortedFiles, currentDirectory, addLog, setStatus, refreshDirectory]);
 
 
   const [isPropertiesOpen, setPropertiesOpen] = useState(false);
@@ -3088,7 +3094,7 @@ export const FileGrid: React.FC = () => {
     setStatus(`Image saved: ${filename}`, 'success');
     
     // Show toast notification on the main app
-    toast({
+    showToast({
       title: 'Image Saved',
       description: `Successfully saved ${filename}`,
       status: 'success',
@@ -3096,7 +3102,7 @@ export const FileGrid: React.FC = () => {
       isClosable: true,
       position: 'top',
     });
-  }, [refreshDirectory, currentDirectory, addLog, setStatus, toast]);
+  }, [refreshDirectory, currentDirectory, addLog, setStatus]);
 
   // Column management state - load from config (persisted) or localStorage fallback
   const [columnWidths, setColumnWidths] = useState<{ name: number; size: number; modified: number; type: number }>({
@@ -3199,7 +3205,7 @@ export const FileGrid: React.FC = () => {
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragThresholdMet, setIsDragThresholdMet] = useState(false);
   const [hasDraggedColumn, setHasDraggedColumn] = useState(false);
-  const gridContainerRef = useRef<HTMLDivElement | null>(null);
+  const gridContainerRef = useRef<HTMLTableElement | null>(null);
 
   // Clear folder hover state when selection changes
   useEffect(() => {
@@ -4036,17 +4042,20 @@ export const FileGrid: React.FC = () => {
   }, [sortedFiles]);
 
   // Memoized cell styles (bg overridden per row)
-  const cellStyles = useMemo(() => ({
-    bg: "transparent",
-    transition: "background 0.1s",
-    cursor: "default",
-    px: 2,
-    py: "5px",
-    position: "relative" as const,
-    verticalAlign: "middle" as const,
-    pointerEvents: 'auto' as const,
-    boxSizing: "border-box" as const,
-  }), []);
+  const cellStyles = useMemo(
+    () => ({
+      bg: 'transparent',
+      transition: 'background 0.1s',
+      cursor: 'default',
+      px: 2,
+      py: 1,
+      position: 'relative' as const,
+      verticalAlign: 'middle' as const,
+      pointerEvents: 'auto' as const,
+      boxSizing: 'border-box' as const,
+    }),
+    [],
+  );
 
   // Signature for O(1) fileListViewPropsEqual when selection/hover/cut unchanged
   const memoizedArraySignature = useMemo(() => {
@@ -4296,6 +4305,7 @@ export const FileGrid: React.FC = () => {
         tableHeadTextColor={tableHeadTextColor}
         headerHoverBg={headerHoverBg}
         headerStickyBg={headerStickyBg}
+        tableSurfaceBg={tableBgColor}
         rowHoverBg={rowHoverBg}
         folderHoverState={folderHoverState}
         headerDividerBg={headerDividerBg}
@@ -4517,7 +4527,6 @@ export const FileGrid: React.FC = () => {
         handleUnblockFile={handleUnblockFile}
         handleImageSaved={handleImageSaved}
       />
-
     </Box>
-  )
+  );
 }

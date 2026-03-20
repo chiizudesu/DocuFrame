@@ -1,21 +1,7 @@
 import React from 'react';
-import {
-  Modal,
-  ModalOverlay,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  ModalCloseButton,
-  Button,
-  Text,
-  VStack,
-  Box,
-  Flex,
-  Icon,
-  useColorModeValue,
-  Badge,
-} from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { Button, Text, VStack, Box, Flex, Icon, Badge, Dialog, Portal } from '@chakra-ui/react';
 import { CheckCircle, FileText, Archive, Mail } from 'lucide-react';
 
 interface ExtractionResultDialogProps {
@@ -33,8 +19,7 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
   extractedFiles,
   sourceFiles = []
 }) => {
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const { surfaceBg: bgColor, titleBarBg, borderColor, inputBg } = useDialogChrome();
   const successColor = useColorModeValue('green.500', 'green.400');
   
   const getIcon = () => {
@@ -71,98 +56,107 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
-              <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(4px)" />
-      <ModalContent bg={bgColor}>
-        <ModalHeader>
-          <Flex align="center">
-            <Icon as={CheckCircle} color={successColor} mr={3} boxSize={6} />
-            {getTitle()}
-          </Flex>
-        </ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          <VStack align="stretch" spacing={4}>
-            {/* Summary */}
-            <Box
-              p={4}
-              borderRadius="md"
-              border="1px"
-              borderColor={borderColor}
-              bg={useColorModeValue('green.50', 'green.900')}
-            >
-              <Flex align="center" mb={2}>
-                <Icon as={getIcon()} color={getColor()} mr={2} boxSize={5} />
-                <Text fontWeight="bold">
-                  Successfully extracted {extractedFiles.length} file{extractedFiles.length !== 1 ? 's' : ''}
-                </Text>
-              </Flex>
-              {sourceFiles.length > 0 && (
-                <Text fontSize="sm" color="gray.600">
-                  From {sourceFiles.length} {type.toUpperCase()} file{sourceFiles.length !== 1 ? 's' : ''}
-                </Text>
-              )}
-            </Box>
+    <Dialog.Root open={isOpen} size='lg' placement='center' onOpenChange={e => {
+      if (!e.open) {
+        onClose();
+      }
+    }}>
+      <Portal>
 
-            {/* Extracted Files List */}
-            {extractedFiles.length > 0 && (
-              <Box>
-                <Text fontWeight="semibold" mb={3}>
-                  Extracted Files:
-                </Text>
+        <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
+        <Dialog.Positioner>
+          <Dialog.Content bg={bgColor}>
+            <Dialog.Header>
+              <Flex align="center">
+                <Icon as={CheckCircle} color={successColor} mr={3} boxSize={6} />
+                {getTitle()}
+              </Flex>
+            </Dialog.Header>
+            <Dialog.CloseTrigger />
+            <Dialog.Body>
+              <VStack align="stretch" gap={4}>
+                {/* Summary */}
                 <Box
-                  maxH="300px"
-                  overflowY="auto"
+                  p={4}
+                  borderRadius="md"
                   border="1px"
                   borderColor={borderColor}
-                  borderRadius="md"
-                  p={3}
+                  bg={useColorModeValue('green.50', 'green.900')}
                 >
-                  <VStack align="stretch" spacing={2}>
-                    {extractedFiles.map((file, index) => (
-                      <Flex
-                        key={index}
-                        align="center"
-                        p={2}
-                        borderRadius="md"
-                        bg={useColorModeValue('gray.50', 'gray.700')}
-                      >
-                        <Icon as={FileText} mr={2} color="blue.400" boxSize={4} />
-                        <Text fontSize="sm" flex="1">
-                          {file}
-                        </Text>
-                        <Badge colorScheme="green" size="sm">
-                          New
-                        </Badge>
-                      </Flex>
-                    ))}
-                  </VStack>
+                  <Flex align="center" mb={2}>
+                    <Icon as={getIcon()} color={getColor()} mr={2} boxSize={5} />
+                    <Text fontWeight="bold">
+                      Successfully extracted {extractedFiles.length} file{extractedFiles.length !== 1 ? 's' : ''}
+                    </Text>
+                  </Flex>
+                  {sourceFiles.length > 0 && (
+                    <Text fontSize="sm" color="gray.600">
+                      From {sourceFiles.length} {type.toUpperCase()} file{sourceFiles.length !== 1 ? 's' : ''}
+                    </Text>
+                  )}
                 </Box>
-              </Box>
-            )}
 
-            {extractedFiles.length === 0 && (
-              <Box
-                p={4}
-                borderRadius="md"
-                border="1px"
-                borderColor={borderColor}
-                bg={useColorModeValue('yellow.50', 'yellow.900')}
-              >
-                <Text color={useColorModeValue('yellow.700', 'yellow.300')}>
-                  No files were extracted. The {type.toUpperCase()} file{sourceFiles.length !== 1 ? 's' : ''} may be empty or contain no {type === 'zip' ? 'files' : 'attachments'}.
-                </Text>
-              </Box>
-            )}
-          </VStack>
-        </ModalBody>
+                {/* Extracted Files List */}
+                {extractedFiles.length > 0 && (
+                  <Box>
+                    <Text fontWeight="semibold" mb={3}>
+                      Extracted Files:
+                    </Text>
+                    <Box
+                      maxH="300px"
+                      overflowY="auto"
+                      border="1px"
+                      borderColor={borderColor}
+                      borderRadius="md"
+                      p={3}
+                    >
+                      <VStack align="stretch" gap={2}>
+                        {extractedFiles.map((file, index) => (
+                          <Flex
+                            key={index}
+                            align="center"
+                            p={2}
+                            borderRadius="md"
+                            bg={useColorModeValue('gray.50', 'gray.700')}
+                          >
+                            <Icon as={FileText} mr={2} color="blue.400" boxSize={4} />
+                            <Text fontSize="sm" flex="1">
+                              {file}
+                            </Text>
+                            <Badge colorPalette="green" size="sm">
+                              New
+                            </Badge>
+                          </Flex>
+                        ))}
+                      </VStack>
+                    </Box>
+                  </Box>
+                )}
 
-        <ModalFooter>
-          <Button colorScheme="blue" onClick={onClose}>
-            Close
-          </Button>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+                {extractedFiles.length === 0 && (
+                  <Box
+                    p={4}
+                    borderRadius="md"
+                    border="1px"
+                    borderColor={borderColor}
+                    bg={useColorModeValue('yellow.50', 'yellow.900')}
+                  >
+                    <Text color={useColorModeValue('yellow.700', 'yellow.300')}>
+                      No files were extracted. The {type.toUpperCase()} file{sourceFiles.length !== 1 ? 's' : ''} may be empty or contain no {type === 'zip' ? 'files' : 'attachments'}.
+                    </Text>
+                  </Box>
+                )}
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <Button colorPalette="blue" onClick={onClose}>
+                Close
+              </Button>
+            </Dialog.Footer>
+          </Dialog.Content>
+        </Dialog.Positioner>
+
+      </Portal>
+    </Dialog.Root>
   );
 }; 

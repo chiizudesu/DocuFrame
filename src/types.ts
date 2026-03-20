@@ -16,7 +16,6 @@ export interface LogEntry {
 
 export interface AppSettings {
   rootPath?: string;
-  apiKey?: string;
   transferCommandMappings?: Record<string, string>;
   clientbasePath?: string;
   quickAccessPaths?: string[];
@@ -123,6 +122,11 @@ declare global {
       openNewWindow: (path: string) => Promise<void>;
       // PDF file serving
       convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+      readImageAsDataUrl: (filePath: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>;
+      getHomeDirectory: () => Promise<string>;
+      getRootDirectories: () => Promise<FileItem[]>;
+      checkPath: (path: string) => Promise<{ exists: boolean; isDirectory: boolean; isFile?: boolean }>;
+      readDirectory: (path: string) => Promise<Array<FileItem & { isHidden?: boolean }>>;
       // Replace selected file with latest Downloads file
       replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
     };

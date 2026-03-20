@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Box, Image, useColorModeValue, Tr } from '@chakra-ui/react';
+import { useColorModeValue } from "./ui/color-mode";
+import { Box, Image, Table } from '@chakra-ui/react';
 import { FileItem } from '../types';
 import { useAppContext } from '../context/AppContext';
 
@@ -12,6 +13,8 @@ interface DraggableFileItemProps {
   index: number;
   selectedFiles?: string[];
   sortedFiles?: FileItem[];
+  asChild?: boolean;
+  /** Render as table row (list view) or box (grid). */
   as?: 'box' | 'tr';
   onDragStateReset?: () => void;
   isCut?: boolean;
@@ -416,7 +419,7 @@ export const DraggableFileItem = React.forwardRef<HTMLElement, DraggableFileItem
 
   if (as === 'tr') {
     return (
-      <Tr
+      <Table.Row
         ref={ref as React.Ref<HTMLTableRowElement>}
         {...commonProps}
         bg={getContainerBackground()}
@@ -425,7 +428,7 @@ export const DraggableFileItem = React.forwardRef<HTMLElement, DraggableFileItem
         data-file-index={dataFileIndex}
       >
         {children}
-      </Tr>
+      </Table.Row>
     );
   }
 

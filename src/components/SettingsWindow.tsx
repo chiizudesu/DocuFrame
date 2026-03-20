@@ -1,39 +1,27 @@
 import React, { useEffect, useState } from 'react';
+import { useColorModeValue, useColorMode } from "./ui/color-mode";
+import { useDialogChrome } from './ui/dialog-chrome';
+import { showToast } from "@/components/ui/toaster"
 import {
   Button,
-  FormControl,
-  FormLabel,
   Input,
-  useToast,
-  InputGroup,
-  InputRightElement,
   Switch,
   Box,
   Text,
   Tabs,
-  TabList,
-  TabPanels,
-  Tab,
-  TabPanel,
   VStack,
   HStack,
   Icon,
-  useColorModeValue,
-  useColorMode,
   Alert,
-  AlertIcon,
-  AlertTitle,
-  AlertDescription,
-  Divider,
-  Select,
+  NativeSelect,
   Kbd,
   Flex,
-  Heading,
   Spacer,
   IconButton,
   Textarea,
   SimpleGrid,
   Image,
+  Field,
 } from '@chakra-ui/react';
 import { 
   Folder, 
@@ -62,6 +50,15 @@ import {
 } from '../constants/shortcutDefaults';
 import { useAppContext } from '../context/AppContext';
 import { normalizePath } from '../utils/path';
+import {
+  AffixedInputRow,
+  PathInputRow,
+  SettingsGroup,
+  SettingsScrollPanel,
+  SettingsSection,
+  SettingsToggleRow,
+  SETTINGS_CONTROL_H,
+} from './settings-window/SettingsWindowPrimitives';
 
 interface SettingsWindowProps {
   isOpen: boolean;
@@ -78,7 +75,7 @@ interface BackgroundThumbnailProps {
 
 const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelected, borderColor, onSelect, onDelete }) => {
   const [thumbnailUrl, setThumbnailUrl] = useState<string>('');
-  const bgColor = useColorModeValue('white', 'gray.700');
+  const thumbSurface = useColorModeValue('white', '#4A5568');
   const overlayBg = useColorModeValue('blackAlpha.600', 'blackAlpha.800');
 
   useEffect(() => {
@@ -109,7 +106,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
       borderRadius={0}
       overflow="hidden"
       cursor="pointer"
-      bg={bgColor}
+      bg={thumbSurface}
       _hover={{
         borderColor: 'blue.400',
         '& .delete-button': {
@@ -118,8 +115,8 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
       }}
       onClick={onSelect}
       width="150px"
-      sx={{
-        aspectRatio: '16 / 9',
+      css={{
+        aspectRatio: '16 / 9'
       }}
     >
       {thumbnailUrl && (
@@ -149,14 +146,13 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
           alignItems="center"
           justifyContent="center"
         >
-          <Icon as={Save} boxSize={3} />
+          <Icon boxSize={3} asChild><Save /></Icon>
         </Box>
       )}
       <IconButton
         aria-label="Delete background"
-        icon={<Icon as={Trash2} boxSize={3.5} />}
         size="xs"
-        colorScheme="red"
+        colorPalette="red"
         position="absolute"
         top={1}
         left={1}
@@ -166,8 +162,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
         onClick={(e) => {
           e.stopPropagation();
           onDelete();
-        }}
-      />
+        }}><Icon boxSize={3.5} asChild><Trash2 /></Icon></IconButton>
       <Box
         p={1}
         bg={overlayBg}
@@ -179,7 +174,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
         <Text
           fontSize="xs"
           color="white"
-          isTruncated
+          truncate
           title={img.filename}
         >
           {img.filename}
@@ -191,7 +186,6 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
 
 interface Settings {
   rootPath: string;
-  apiKey?: string;
   claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
@@ -231,7 +225,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const { colorMode, toggleColorMode, setColorMode } = useColorMode();
   const [rootPath, setRootPath] = useState('');
   const [originalRootPath, setOriginalRootPath] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [claudeApiKey, setClaudeApiKey] = useState('');
   const [gstTemplatePath, setGstTemplatePath] = useState('');
   const [clientbasePath, setClientbasePath] = useState('');
@@ -253,7 +246,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   );
   const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState(true);
   const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
-  const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
@@ -276,20 +268,21 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [isKeyRecorderOpen, setIsKeyRecorderOpen] = useState(false);
   const [recordingKeys, setRecordingKeys] = useState<string[]>([]);
   const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
-  
-  const toast = useToast();
   const { setRootDirectory, showClientInfoBar, setShowClientInfoBar, reloadSettings } = useAppContext();
 
-  // Theme colors
-  const bgColor = useColorModeValue('white', 'gray.800');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const textColor = useColorModeValue('gray.800', 'white');
-  const secondaryTextColor = useColorModeValue('gray.600', 'gray.300');
-  // Tab navigation bar - more contrast (inverse: light sidebar in dark mode, darker sidebar in light mode)
-  const tabBarBg = useColorModeValue('gray.200', 'gray.700');
+  const {
+    surfaceBg: bgColor,
+    titleBarBg,
+    cardBg,
+    inputBg,
+    borderColor,
+    textColor,
+    secondaryTextColor,
+  } = useDialogChrome();
+  const tabBarBg = cardBg;
   const tabInactiveColor = useColorModeValue('gray.600', 'gray.400');
-  const tabHoverBg = useColorModeValue('gray.300', 'gray.600');
-  const tabSelectedBg = useColorModeValue('white', 'gray.800');
+  const tabHoverBg = useColorModeValue('gray.300', 'df.chromeHover');
+  const tabSelectedBg = bgColor;
   const tabSelectedColor = useColorModeValue('gray.800', 'white');
 
   useEffect(() => {
@@ -298,7 +291,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         const loadedSettings = await settingsService.getSettings() as Settings;
         setRootPath(loadedSettings.rootPath);
         setOriginalRootPath(loadedSettings.rootPath);
-        setApiKey(loadedSettings.apiKey || '');
         setClaudeApiKey(loadedSettings.claudeApiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
         setClientbasePath(loadedSettings.clientbasePath || '');
@@ -354,7 +346,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
       } catch (error) {
         console.error('Error loading settings:', error);
-        toast({
+        showToast({
           title: 'Error',
           description: 'Failed to load settings',
           status: 'error',
@@ -367,7 +359,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     if (isOpen) {
       loadSettings();
     }
-  }, [isOpen, toast]);
+  }, [isOpen]);
 
   // Load background images when background type changes
   useEffect(() => {
@@ -413,7 +405,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     try {
       const newSettings: Settings = {
         rootPath,
-        apiKey: apiKey || undefined,
         claudeApiKey: claudeApiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
@@ -487,7 +478,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       // Dispatch event to notify other components of settings change
       window.dispatchEvent(new CustomEvent('settings-updated', { detail: newSettings }));
       
-      toast({
+      showToast({
         title: 'Settings saved',
         description: 'All settings have been updated and applied immediately.',
         status: 'success',
@@ -497,7 +488,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       onClose();
     } catch (error) {
       console.error('Error saving settings:', error);
-      toast({
+      showToast({
         title: 'Error saving settings',
         status: 'error',
         duration: 3000,
@@ -514,7 +505,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting directory:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select directory',
         status: 'error',
@@ -536,7 +527,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       const filePath = `${base}${sep}docuframe-settings-${stamp}.json`;
       const content = JSON.stringify(config, null, 2);
       await window.electronAPI.writeTextFile(filePath, content);
-      toast({
+      showToast({
         title: 'Settings exported',
         description: filePath,
         status: 'success',
@@ -545,7 +536,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       });
     } catch (error) {
       console.error('Error exporting settings:', error);
-      toast({
+      showToast({
         title: 'Export failed',
         description: error instanceof Error ? error.message : 'Could not write settings file',
         status: 'error',
@@ -568,7 +559,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting jump folder:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select directory',
         status: 'error',
@@ -592,7 +583,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting GST template:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select GST template file',
         status: 'error',
@@ -616,7 +607,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting clientbase CSV:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select clientbase CSV file',
         status: 'error',
@@ -635,7 +626,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting template folder:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select template folder',
         status: 'error',
@@ -654,7 +645,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting workpaper template folder:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select workpaper template folder',
         status: 'error',
@@ -678,7 +669,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting background image:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to select background image',
         status: 'error',
@@ -727,7 +718,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             (settingsService as any).clearCache();
             window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
           }
-          toast({
+          showToast({
             title: 'Success',
             description: 'Background image added and applied successfully',
             status: 'success',
@@ -740,7 +731,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error adding background image:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to add background image',
         status: 'error',
@@ -789,7 +780,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       console.log('Dispatching settings-updated event');
       window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
       
-      toast({
+      showToast({
         title: 'Background applied',
         description: `${backgroundType === 'watermark' ? 'Corner mascot' : 'Background fill'} has been set successfully.`,
         status: 'success',
@@ -797,7 +788,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       });
     } catch (error) {
       console.error('Failed to save background selection:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: 'Failed to save background selection.',
         status: 'error',
@@ -839,7 +830,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             (settingsService as any).clearCache();
             window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
           }
-          toast({
+          showToast({
             title: 'Success',
             description: 'Background image deleted',
             status: 'success',
@@ -852,7 +843,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error deleting background image:', error);
-      toast({
+      showToast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to delete background image',
         status: 'error',
@@ -920,7 +911,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     }
     
     closeKeyRecorder();
-    toast({
+    showToast({
       title: 'Shortcut updated',
       description: `New shortcut: ${newShortcut}`,
       status: 'success',
@@ -981,7 +972,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       <Flex
         align="center"
         width="100%"
-        bg={useColorModeValue('#f8fafc', 'gray.800')}
+        bg={titleBarBg}
         h="31px"
         style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}
         px={0}
@@ -990,7 +981,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         flexShrink={0}
       >
         <Box display="flex" alignItems="center" gap={2} pl={3}>
-          <Icon as={SettingsIcon} boxSize={3.5} color="blue.500" />
+          <Icon boxSize={3.5} color="blue.500" asChild><SettingsIcon /></Icon>
           <Text fontWeight="600" fontSize="sm" color={textColor} userSelect="none">
             Settings
           </Text>
@@ -1014,27 +1005,26 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             justifyContent="center"
             cursor="default"
           >
-            <Icon as={X} boxSize={3.5} />
+            <Icon boxSize={3.5} asChild><X /></Icon>
           </Button>
         </Flex>
       </Flex>
-
       {/* Main Content */}
       <Box flex="1" display="flex" overflow="hidden">
-        <Tabs variant="line" colorScheme="blue" orientation="vertical" h="full" display="flex" w="full">
-          <Box w="176px" minH="100%" bg={tabBarBg} borderRight="1px solid" borderColor={borderColor} flexShrink={0}>
-          <TabList 
+        <Tabs.Root defaultValue="paths" variant='line' colorPalette="blue" orientation="vertical" h="full" display="flex" w="full">
+          <Box w="160px" minH="100%" bg={tabBarBg} borderRight="1px solid" borderColor={borderColor} flexShrink={0}>
+          <Tabs.List 
             w="full"
-            p={4}
-            gap={1}
+            p={3}
+            gap={0.5}
             bg="transparent"
             flexDirection="column"
             alignItems="stretch"
           >
-            <Tab 
+            <Tabs.Trigger value="paths"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1049,11 +1039,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Paths</Text>
-            </Tab>
-            <Tab 
+            </Tabs.Trigger>
+            <Tabs.Trigger value="api"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1068,11 +1058,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>API & Data</Text>
-            </Tab>
-            <Tab 
+            </Tabs.Trigger>
+            <Tabs.Trigger value="shortcuts"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1087,11 +1077,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Shortcuts</Text>
-            </Tab>
-            <Tab 
+            </Tabs.Trigger>
+            <Tabs.Trigger value="interface"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1106,11 +1096,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Interface</Text>
-            </Tab>
-            <Tab 
+            </Tabs.Trigger>
+            <Tabs.Trigger value="display"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1125,11 +1115,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Display</Text>
-            </Tab>
-            <Tab 
+            </Tabs.Trigger>
+            <Tabs.Trigger value="filegrid"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1144,11 +1134,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>File Grid</Text>
-            </Tab>
-            <Tab 
+            </Tabs.Trigger>
+            <Tabs.Trigger value="groupview"
               justifyContent="flex-start" 
-              px={2.5} 
-              py={2}
+              px={2} 
+              py={1.5}
               borderRadius={0}
               fontSize="sm"
               fontWeight="500"
@@ -1163,346 +1153,228 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Group View</Text>
-            </Tab>
-          </TabList>
+            </Tabs.Trigger>
+          </Tabs.List>
           </Box>
 
-          <TabPanels flex="1" p={0} overflow="hidden">
+          <Box flex="1" p={0} overflow="hidden">
             {/* Paths Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack align="stretch" spacing={0}>
-                <Box pb={3.5}>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Root Directory
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Default directory for file operations
-                  </Text>
-                  <InputGroup size="sm">
-                    <Input
+            <Tabs.Content value="paths" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack align="stretch" gap={8}>
+                  <SettingsSection
+                    title="Root directory"
+                    description="Default directory for file operations"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  >
+                    <PathInputRow
                       value={rootPath}
                       onChange={(e) => setRootPath(e.target.value)}
                       placeholder="Enter root path"
-                      bg="white"
-                      _dark={{ bg: 'gray.600' }}
-                      borderRadius={0}
-                      fontSize="xs"
-                      h="31px"
+                      onBrowse={handleBrowseFolder}
+                      inputBg={inputBg}
+                      borderColor={borderColor}
+                      browseAriaLabel="Browse root folder"
                     />
-                    <InputRightElement width="3.5rem" h="31px">
-                      <Button h="22px" size="xs" onClick={handleBrowseFolder} borderRadius={0}>
-                        <Icon as={FolderOpen} boxSize={3.5} />
-                      </Button>
-                    </InputRightElement>
-                  </InputGroup>
-                </Box>
-                
-                <Divider mb={3.5} />
-                
-                <Box>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Template Files
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    GST template and template folder paths
-                  </Text>
-                  <VStack spacing={2.5}>
-                    <FormControl>
-                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>GST Template Path</FormLabel>
-                      <InputGroup size="sm">
-                        <Input
+                  </SettingsSection>
+
+                  <SettingsSection
+                    title="Template files"
+                    description="GST template and AI / workpaper template folders"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  >
+                    <VStack gap={2.5} align="stretch">
+                      <Field.Root>
+                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                          GST template path
+                        </Field.Label>
+                        <PathInputRow
                           value={gstTemplatePath}
                           onChange={(e) => setGstTemplatePath(e.target.value)}
                           placeholder="Enter GST template file path"
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
+                          onBrowse={handleBrowseGstTemplate}
+                          inputBg={inputBg}
+                          borderColor={borderColor}
+                          browseAriaLabel="Browse GST template file"
                         />
-                        <InputRightElement width="3.5rem" h="31px">
-                          <Button h="22px" size="xs" onClick={handleBrowseGstTemplate} borderRadius={0}>
-                            <Icon as={FolderOpen} boxSize={3.5} />
-                          </Button>
-                        </InputRightElement>
-                      </InputGroup>
-                    </FormControl>
-                    
-                    <FormControl>
-                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>AI Email Template Folder</FormLabel>
-                      <Text fontSize="xs" color={secondaryTextColor} mb={1}>
-                        Folder containing YAML email templates for AI Templater
-                      </Text>
-                      <InputGroup size="sm">
-                        <Input
-                          value={templateFolderPath} 
-                          isReadOnly 
-                          placeholder="Select AI email template folder..." 
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
+                      </Field.Root>
+                      <Field.Root>
+                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                          AI email template folder
+                        </Field.Label>
+                        <Text fontSize="xs" color={secondaryTextColor} mb={1} lineHeight="short">
+                          YAML templates for AI Templater
+                        </Text>
+                        <PathInputRow
+                          value={templateFolderPath}
+                          readOnly
+                          placeholder="Select AI email template folder…"
+                          onBrowse={handleTemplateFolderChange}
+                          inputBg={inputBg}
+                          borderColor={borderColor}
                         />
-                        <InputRightElement width="3.5rem" h="31px">
-                          <Button h="22px" size="xs" onClick={handleTemplateFolderChange} borderRadius={0}>
-                            <Icon as={FolderOpen} boxSize={3.5} />
-                          </Button>
-                        </InputRightElement>
-                      </InputGroup>
-                    </FormControl>
-
-                    <FormControl>
-                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Workpaper Template Folder</FormLabel>
-                      <Text fontSize="xs" color={secondaryTextColor} mb={1}>
-                        Folder containing Excel templates for workpaper creation
-                      </Text>
-                      <InputGroup size="sm">
-                        <Input
-                          value={workpaperTemplateFolderPath} 
-                          isReadOnly 
-                          placeholder="Select workpaper template folder..." 
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
+                      </Field.Root>
+                      <Field.Root>
+                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                          Workpaper template folder
+                        </Field.Label>
+                        <Text fontSize="xs" color={secondaryTextColor} mb={1} lineHeight="short">
+                          Excel templates for workpaper creation
+                        </Text>
+                        <PathInputRow
+                          value={workpaperTemplateFolderPath}
+                          readOnly
+                          placeholder="Select workpaper template folder…"
+                          onBrowse={handleWorkpaperTemplateFolderChange}
+                          inputBg={inputBg}
+                          borderColor={borderColor}
                         />
-                        <InputRightElement width="3.5rem" h="31px">
-                          <Button h="22px" size="xs" onClick={handleWorkpaperTemplateFolderChange} borderRadius={0}>
-                            <Icon as={FolderOpen} boxSize={3.5} />
-                          </Button>
-                        </InputRightElement>
-                      </InputGroup>
-                    </FormControl>
-                  </VStack>
-                </Box>
+                      </Field.Root>
+                    </VStack>
+                  </SettingsSection>
 
-                <Divider my={3.5} />
-
-                <Flex pb={1} align="center" justify="space-between" gap={3} wrap="wrap">
-                  <Heading size="sm" mb={0} color={textColor}>
-                    Export Settings
-                  </Heading>
-                  <Button
-                    size="sm"
-                    leftIcon={<Icon as={Download} boxSize={4} />}
-                    onClick={handleExportSettings}
-                    borderRadius={0}
-                    flexShrink={0}
-                  >
-                    Export to folder…
-                  </Button>
-                </Flex>
-              </VStack>
-            </TabPanel>
+                  <Flex align="center" justify="space-between" gap={3} wrap="wrap" pt={1}>
+                    <Text fontSize="xs" fontWeight="semibold" color={textColor}>
+                      Export settings
+                    </Text>
+                    <Button size="xs" h={SETTINGS_CONTROL_H} px={2} fontSize="xs" onClick={handleExportSettings} borderRadius="md" flexShrink={0}>
+                      <Icon boxSize={3.5} asChild>
+                        <Download />
+                      </Icon>
+                      Export…
+                    </Button>
+                  </Flex>
+                </VStack>
+              </SettingsScrollPanel>
+            </Tabs.Content>
 
             {/* API & Data Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack align="stretch" spacing={0}>
-                <Box pb={3.5}>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    API Configuration
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    API keys for AI features
-                  </Text>
-                  <VStack spacing={2.5} align="stretch">
-                    <FormControl>
-                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>OpenAI API Key</FormLabel>
-                      <InputGroup size="sm">
-                        <Input
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          type={showOpenAIKey ? "text" : "password"}
-                          placeholder="Enter your OpenAI API key"
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
-                        />
-                        <InputRightElement width="3rem" h="31px">
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            icon={showOpenAIKey ? <Icon as={EyeOff} boxSize={3.5} /> : <Icon as={Eye} boxSize={3.5} />}
-                            onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                            aria-label={showOpenAIKey ? "Hide API key" : "Show API key"}
-                            h="22px"
+            <Tabs.Content value="api" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack align="stretch" gap={8}>
+                  <SettingsSection
+                    title="API keys"
+                    description="Anthropic API key for AI features in DocuFrame"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  >
+                    <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                      <Box px={2.5} py={1.5}>
+                        <Field.Root>
+                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                            Claude (Anthropic)
+                          </Field.Label>
+                          <AffixedInputRow
+                            borderColor={borderColor}
+                            inputProps={{
+                              value: claudeApiKey,
+                              onChange: (e) => setClaudeApiKey(e.target.value),
+                              type: showClaudeKey ? 'text' : 'password',
+                              placeholder: 'Anthropic API key',
+                              bg: 'white',
+                              _dark: { bg: inputBg },
+                            }}
+                            suffix={
+                              <IconButton
+                                variant="ghost"
+                                borderRadius={0}
+                                h="full"
+                                minW="28px"
+                                w="28px"
+                                size="xs"
+                                onClick={() => setShowClaudeKey(!showClaudeKey)}
+                                aria-label={showClaudeKey ? 'Hide API key' : 'Show API key'}
+                              >
+                                {showClaudeKey ? (
+                                  <Icon boxSize={3.5} asChild>
+                                    <EyeOff />
+                                  </Icon>
+                                ) : (
+                                  <Icon boxSize={3.5} asChild>
+                                    <Eye />
+                                  </Icon>
+                                )}
+                              </IconButton>
+                            }
                           />
-                        </InputRightElement>
-                      </InputGroup>
-                    </FormControl>
-                    
-                    <FormControl>
-                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Claude API Key</FormLabel>
-                      <InputGroup size="sm">
-                        <Input
-                          value={claudeApiKey}
-                          onChange={(e) => setClaudeApiKey(e.target.value)}
-                          type={showClaudeKey ? "text" : "password"}
-                          placeholder="Enter your Claude (Anthropic) API key"
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
-                        />
-                        <InputRightElement width="3rem" h="31px">
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            icon={showClaudeKey ? <Icon as={EyeOff} boxSize={3.5} /> : <Icon as={Eye} boxSize={3.5} />}
-                            onClick={() => setShowClaudeKey(!showClaudeKey)}
-                            aria-label={showClaudeKey ? "Hide API key" : "Show API key"}
-                            h="22px"
-                          />
-                        </InputRightElement>
-                      </InputGroup>
-                    </FormControl>
-                  </VStack>
-                </Box>
-                
-                <Divider mb={3.5} />
-                
-                <Box>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Data Sources
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Client database and reference files
-                  </Text>
-                  <FormControl>
-                    <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Clientbase CSV Path</FormLabel>
-                    <InputGroup size="sm">
-                      <Input
+                        </Field.Root>
+                      </Box>
+                    </SettingsGroup>
+                  </SettingsSection>
+
+                  <SettingsSection
+                    title="Data sources"
+                    description="Client database CSV"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  >
+                    <Field.Root>
+                      <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                        Clientbase CSV path
+                      </Field.Label>
+                      <PathInputRow
                         value={clientbasePath}
                         onChange={(e) => setClientbasePath(e.target.value)}
                         placeholder="Enter clientbase CSV file path"
-                        bg="white"
-                        _dark={{ bg: 'gray.600' }}
-                        borderRadius={0}
-                        fontSize="xs"
-                        h="31px"
+                        onBrowse={handleBrowseClientbase}
+                        inputBg={inputBg}
+                        borderColor={borderColor}
+                        browseAriaLabel="Browse clientbase CSV"
                       />
-                      <InputRightElement width="3.5rem" h="31px">
-                        <Button h="22px" size="xs" onClick={handleBrowseClientbase} borderRadius={0}>
-                          <Icon as={FolderOpen} boxSize={3.5} />
-                        </Button>
-                      </InputRightElement>
-                    </InputGroup>
-                  </FormControl>
-                </Box>
-              </VStack>
-            </TabPanel>
+                    </Field.Root>
+                  </SettingsSection>
+                </VStack>
+              </SettingsScrollPanel>
+            </Tabs.Content>
 
             {/* Shortcuts Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack spacing={0} align="stretch">
-                <Box pb={3.5}>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Keyboard Shortcuts
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Configure keyboard shortcuts for quick access
-                  </Text>
-                </Box>
-                
-                {/* Shortcuts Table - VS Code Style */}
+            <Tabs.Content value="shortcuts" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack gap={8} align="stretch">
+                  <SettingsSection
+                    title="Keyboard shortcuts"
+                    description="Click edit to record a new binding"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
+
+                {/* Shortcuts table — full gridlines */}
                 <Box
-                  border="1px solid"
-                  borderColor={borderColor}
-                  borderRadius={0}
+                  border={`1px solid ${borderColor}`}
+                  borderRadius="md"
                   overflow="hidden"
-                  bg={useColorModeValue('white', 'gray.700')}
-                  sx={{
+                  bg={bgColor}
+                  css={{
                     '& table': {
                       width: '100%',
                       borderCollapse: 'collapse',
                       borderSpacing: 0,
+                      tableLayout: 'fixed',
                     },
-                    '& th, & td': {
-                      border: 'none',
-                      padding: '4px 12px',
+
+                    '& table th, & table td': {
+                      border: `1px solid ${borderColor}`,
+                      padding: '2px 6px',
                       fontSize: '11px',
                       textAlign: 'left',
                       verticalAlign: 'middle',
                     },
-                    '& th': {
-                      backgroundColor: useColorModeValue('gray.50', 'gray.800'),
-                      borderBottom: `1px solid ${useColorModeValue('gray.200', 'gray.600')}`,
+
+                    '& table thead th': {
+                      backgroundColor: useColorModeValue('gray.100', '#2d3748'),
                       fontWeight: '600',
                       color: textColor,
                     },
-                    '& tr:nth-of-type(even)': {
-                      backgroundColor: useColorModeValue('gray.50', 'gray.700') + ' !important',
-                    },
-                    '& tr:nth-of-type(odd)': {
-                      backgroundColor: useColorModeValue('gray.100', 'gray.750') + ' !important',
-                    },
-                    '& tr:hover': {
-                      backgroundColor: useColorModeValue('gray.150', 'gray.600') + ' !important',
-                    },
-                    '& tr': {
-                      borderBottom: `1px solid ${useColorModeValue('gray.200', 'gray.600')} !important`,
-                    },
-                    '& td:not(:last-child)': {
-                      borderRight: `1px solid ${useColorModeValue('gray.200', 'gray.600')} !important`,
+
+                    '& table tbody tr:hover td': {
+                      backgroundColor: useColorModeValue('gray.50', '#2a3142'),
                     },
                   }}
                 >
@@ -1511,7 +1383,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     <thead>
                       <tr>
                         <th style={{ width: '40px', textAlign: 'center' }}>
-                          <Icon as={Edit} boxSize={3} color={useColorModeValue('gray.400', 'gray.500')} />
+                          <Icon boxSize={3} color={useColorModeValue('gray.400', 'gray.500')} asChild><Edit /></Icon>
                         </th>
                         <th>Command</th>
                         <th>Keybinding</th>
@@ -1525,12 +1397,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           <IconButton
                             size="xs"
                             variant="ghost"
-                            icon={<Icon as={Edit} boxSize={2.5} />}
                             onClick={() => openKeyRecorder('activationShortcut')}
                             aria-label="Change shortcut"
                             color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
-                          />
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
                           Global Activation
@@ -1551,12 +1421,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           <IconButton
                             size="xs"
                             variant="ghost"
-                            icon={<Icon as={Edit} boxSize={2.5} />}
                             onClick={() => openKeyRecorder('calculatorShortcut')}
                             aria-label="Change shortcut"
                             color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
-                          />
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
                           Open Calculator
@@ -1577,12 +1445,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           <IconButton
                             size="xs"
                             variant="ghost"
-                            icon={<Icon as={Edit} boxSize={2.5} />}
                             onClick={() => openKeyRecorder('newTabShortcut')}
                             aria-label="Change shortcut"
                             color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
-                          />
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
                           New Tab
@@ -1603,12 +1469,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           <IconButton
                             size="xs"
                             variant="ghost"
-                            icon={<Icon as={Edit} boxSize={2.5} />}
                             onClick={() => openKeyRecorder('closeTabShortcut')}
                             aria-label="Change shortcut"
                             color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
-                          />
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
                           Close Tab
@@ -1629,12 +1493,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           <IconButton
                             size="xs"
                             variant="ghost"
-                            icon={<Icon as={Edit} boxSize={2.5} />}
                             onClick={() => openKeyRecorder('clientSearchShortcut')}
                             aria-label="Change shortcut"
                             color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
-                          />
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
                           Search Clients
@@ -1655,12 +1517,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           <IconButton
                             size="xs"
                             variant="ghost"
-                            icon={<Icon as={Edit} boxSize={2.5} />}
                             onClick={() => openKeyRecorder('jumpModeOnParentShortcut')}
                             aria-label="Change shortcut"
                             color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}
-                          />
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
                           Address bar at parent
@@ -1680,77 +1540,90 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </table>
                 </Box>
 
-                <Divider my={4} />
-                <Heading size="sm" mb={2} color={textColor}>
-                  Jump mode quick folders
-                </Heading>
-                <Text fontSize="xs" color={secondaryTextColor} mb={3}>
-                  <strong>F1</strong> opens jump at the workspace root. <strong>F2–F4</strong> open jump at the folders you set here (when the path is under your current breadcrumb trail). <strong>F5</strong> is left for refresh. Save settings to apply.
-                </Text>
-                <VStack align="stretch" spacing={2} mb={2}>
-                  <HStack align="center" spacing={2}>
-                    <Text fontSize="sm" fontWeight="semibold" w="40px" flexShrink={0}>
-                      F1
-                    </Text>
-                    <Input
-                      size="sm"
-                      isReadOnly
-                      value={rootPath ? normalizePath(rootPath) : ''}
-                      placeholder="Set workspace root in General"
-                      flex={1}
-                    />
-                  </HStack>
-                  {([0, 1, 2] as const).map((slot) => (
-                    <HStack key={slot} align="center" spacing={2}>
-                      <Text fontSize="sm" fontWeight="semibold" w="40px" flexShrink={0}>
-                        F{slot + 2}
+                <SettingsSection
+                  title="Jump mode quick folders"
+                  description="F1 uses workspace root. F2–F4 use paths below when under your breadcrumb trail. F5 stays free for refresh. Save to apply."
+                  textColor={textColor}
+                  secondaryTextColor={secondaryTextColor}
+                  mb={0}
+                >
+                  <VStack align="stretch" gap={1.5}>
+                    <HStack align="center" gap={2}>
+                      <Text fontSize="xs" fontWeight="semibold" w="32px" flexShrink={0} color={textColor}>
+                        F1
                       </Text>
                       <Input
-                        size="sm"
-                        value={jumpModeQuickFolderPaths[slot] ?? ''}
-                        onChange={(e) => {
-                          setJumpModeQuickFolderPaths((prev) => {
-                            const n = [...prev];
-                            while (n.length < 3) n.push('');
-                            n[slot] = e.target.value;
-                            return n;
-                          });
-                        }}
-                        placeholder="Browse or paste folder path…"
+                        h={SETTINGS_CONTROL_H}
+                        fontSize="xs"
+                        readOnly
+                        value={rootPath ? normalizePath(rootPath) : ''}
+                        placeholder="Set workspace root in Paths"
                         flex={1}
+                        bg="white"
+                        _dark={{ bg: inputBg }}
+                        borderRadius="md"
                       />
-                      <Button size="sm" h="32px" onClick={() => pickJumpQuickFolder(slot)}>
-                        Browse
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        h="32px"
-                        onClick={() => {
-                          setJumpModeQuickFolderPaths((prev) => {
-                            const n = [...prev];
-                            while (n.length < 3) n.push('');
-                            n[slot] = '';
-                            return n;
-                          });
-                        }}
-                      >
-                        Clear
-                      </Button>
                     </HStack>
-                  ))}
-                </VStack>
+                    {([0, 1, 2] as const).map((slot) => (
+                      <HStack key={slot} align="center" gap={2}>
+                        <Text fontSize="xs" fontWeight="semibold" w="32px" flexShrink={0} color={textColor}>
+                          F{slot + 2}
+                        </Text>
+                        <Input
+                          h={SETTINGS_CONTROL_H}
+                          fontSize="xs"
+                          value={jumpModeQuickFolderPaths[slot] ?? ''}
+                          onChange={(e) => {
+                            setJumpModeQuickFolderPaths((prev) => {
+                              const n = [...prev];
+                              while (n.length < 3) n.push('');
+                              n[slot] = e.target.value;
+                              return n;
+                            });
+                          }}
+                          placeholder="Browse or paste folder path…"
+                          flex={1}
+                          bg="white"
+                          _dark={{ bg: inputBg }}
+                          borderRadius="md"
+                        />
+                        <Button h={SETTINGS_CONTROL_H} size="xs" px={2} fontSize="xs" borderRadius="md" onClick={() => pickJumpQuickFolder(slot)}>
+                          Browse
+                        </Button>
+                        <Button
+                          h={SETTINGS_CONTROL_H}
+                          size="xs"
+                          px={2}
+                          fontSize="xs"
+                          variant="ghost"
+                          borderRadius="md"
+                          onClick={() => {
+                            setJumpModeQuickFolderPaths((prev) => {
+                              const n = [...prev];
+                              while (n.length < 3) n.push('');
+                              n[slot] = '';
+                              return n;
+                            });
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      </HStack>
+                    ))}
+                  </VStack>
+                </SettingsSection>
 
-                <Alert status="info" size="sm" mt={3} borderRadius={0}>
-                  <AlertIcon />
-          <Box>
-                    <AlertTitle fontSize="xs">Shortcut Information</AlertTitle>
-                    <AlertDescription fontSize="xs">
-                      Global shortcuts work anywhere. Tab shortcuts work when the app is focused. App activation shortcuts work globally.
-                    </AlertDescription>
+                <Alert.Root status="info" size="sm" mt={0} borderRadius="md">
+                  <Alert.Indicator />
+                  <Box>
+                    <Alert.Title fontSize="xs">Shortcut information</Alert.Title>
+                    <Alert.Description fontSize="xs">
+                      Global shortcuts work anywhere. Tab shortcuts apply when the app is focused.
+                    </Alert.Description>
                   </Box>
-                </Alert>
+                </Alert.Root>
               </VStack>
+              </SettingsScrollPanel>
 
               {/* Keyboard Shortcut Recorder Modal */}
               {isKeyRecorderOpen && (
@@ -1759,7 +1632,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   top="50%"
                   left="50%"
                   transform="translate(-50%, -50%)"
-                  bg={useColorModeValue('white', 'gray.800')}
+                  bg={bgColor}
                   border="1px solid"
                   borderColor={borderColor}
                   borderRadius={0}
@@ -1769,7 +1642,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   minW="400px"
                   maxW="500px"
                 >
-                  <VStack spacing={4} align="stretch">
+                  <VStack gap={4} align="stretch">
                     <Text fontSize="lg" fontWeight="600" color={textColor} textAlign="center">
                       Press desired key combination and then press ENTER
                     </Text>
@@ -1779,7 +1652,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       borderColor={borderColor}
                       borderRadius={0}
                       p={4}
-                      bg={useColorModeValue('gray.50', 'gray.700')}
+                      bg={cardBg}
                       minH="60px"
                       display="flex"
                       alignItems="center"
@@ -1792,13 +1665,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
                     {/* Visual Key Representation */}
                     {recordingKeys.length > 0 && (
-                      <HStack spacing={2} justify="center">
+                      <HStack gap={2} justify="center">
                         {recordingKeys.map((key, index) => (
                           <React.Fragment key={index}>
                             <Box
                               px={3}
                               py={1.5}
-                              bg={useColorModeValue('gray.200', 'gray.600')}
+                              bg={useColorModeValue('gray.200', inputBg)}
                               borderRadius={0}
                               border="1px solid"
                               borderColor={borderColor}
@@ -1815,28 +1688,37 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       </HStack>
                     )}
 
-                    <HStack spacing={3} justify="center">
+                    <HStack gap={2} justify="center">
                       <Button
-                        size="sm"
+                        size="xs"
+                        h={SETTINGS_CONTROL_H}
+                        px={2}
+                        fontSize="xs"
                         variant="outline"
                         onClick={clearRecording}
-                        colorScheme="gray"
+                        colorPalette="gray"
                       >
                         Clear
                       </Button>
                       <Button
-                        size="sm"
+                        size="xs"
+                        h={SETTINGS_CONTROL_H}
+                        px={2}
+                        fontSize="xs"
                         variant="outline"
                         onClick={closeKeyRecorder}
-                        colorScheme="gray"
+                        colorPalette="gray"
                       >
                         Cancel
                       </Button>
                       <Button
-                        size="sm"
-                        colorScheme="blue"
+                        size="xs"
+                        h={SETTINGS_CONTROL_H}
+                        px={2}
+                        fontSize="xs"
+                        colorPalette="blue"
                         onClick={saveRecording}
-                        isDisabled={recordingKeys.length === 0}
+                        disabled={recordingKeys.length === 0}
                       >
                         Save
                       </Button>
@@ -1844,285 +1726,275 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   </VStack>
                 </Box>
               )}
-            </TabPanel>
+            </Tabs.Content>
 
             {/* Interface Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack spacing={0} align="stretch">
-                <Box pb={3.5}>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Interface Options
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Control interface behavior and functionality
-                  </Text>
-                </Box>
-                
-                <VStack spacing={2.5} align="stretch">
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>File System Watching</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Automatically detect and refresh when files are added/changed externally
-                          </Text>
-                        </VStack>
-                        <Switch
-                          isChecked={enableFileWatching}
-                          onChange={(e) => setEnableFileWatching(e.target.checked)}
-                          colorScheme="blue"
+            <Tabs.Content value="interface" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack gap={8} align="stretch">
+                  <SettingsSection
+                    title="Behavior"
+                    description="Filesystem and productivity timer"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
+                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                    <SettingsToggleRow
+                      title="File system watching"
+                      description="Auto-refresh when files change outside the app"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={enableFileWatching}
+                          onCheckedChange={(d) => setEnableFileWatching(d.checked === true)}
+                          colorPalette="blue"
                           size="sm"
-                        />
-                      </HStack>
-                    </FormControl>
-                  </Box>
-
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Activity Tracking</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Track active window titles while timer is running (for productivity insights)
-                          </Text>
-                        </VStack>
-                        <Switch
-                          isChecked={enableActivityTracking}
-                          onChange={(e) => setEnableActivityTracking(e.target.checked)}
-                          colorScheme="blue"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <SettingsToggleRow
+                      title="Activity tracking"
+                      description="Record active window titles while the timer runs"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      control={
+                        <Switch.Root
+                          checked={enableActivityTracking}
+                          onCheckedChange={(d) => setEnableActivityTracking(d.checked === true)}
+                          colorPalette="blue"
                           size="sm"
-                        />
-                      </HStack>
-                    </FormControl>
-                  </Box>
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                  </SettingsGroup>
 
-                  <Divider my={3.5} />
-
-                  <Box pb={3.5}>
-                    <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                      Work Shift
-                    </Heading>
-                    <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                      Configure your work shift hours for the timer infographic
-                    </Text>
-                    <VStack spacing={2.5} align="stretch">
-                      <FormControl>
-                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Shift Start Time</FormLabel>
-                        <Input
-                          type="time"
-                          value={workShiftStart}
-                          onChange={(e) => setWorkShiftStart(e.target.value)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Shift End Time</FormLabel>
-                        <Input
-                          type="time"
-                          value={workShiftEnd}
-                          onChange={(e) => setWorkShiftEnd(e.target.value)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Productivity Target (hours)</FormLabel>
-                        <Text fontSize="xs" color={secondaryTextColor} mb={1}>
-                          Daily target for time worked (e.g., 7.5 for 7 hours 30 minutes)
-                        </Text>
-                        <Input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          max="24"
-                          value={productivityTargetHours}
-                          onChange={(e) => setProductivityTargetHours(parseFloat(e.target.value) || 0)}
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                          borderRadius={0}
-                          fontSize="xs"
-                          h="31px"
-                        />
-                      </FormControl>
-                    </VStack>
-                  </Box>
+                  <SettingsSection
+                    title="Work shift"
+                    description="Hours used for the timer infographic (e.g. 7.5 = 7h 30m target)"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  >
+                    <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                      <Box px={2.5} py={1.5} borderBottomWidth="1px" borderColor={borderColor}>
+                        <Field.Root>
+                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                            Shift start
+                          </Field.Label>
+                          <Input
+                            type="time"
+                            value={workShiftStart}
+                            onChange={(e) => setWorkShiftStart(e.target.value)}
+                            bg="white"
+                            _dark={{ bg: inputBg }}
+                            borderRadius="md"
+                            fontSize="xs"
+                            h={SETTINGS_CONTROL_H}
+                          />
+                        </Field.Root>
+                      </Box>
+                      <Box px={2.5} py={1.5} borderBottomWidth="1px" borderColor={borderColor}>
+                        <Field.Root>
+                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                            Shift end
+                          </Field.Label>
+                          <Input
+                            type="time"
+                            value={workShiftEnd}
+                            onChange={(e) => setWorkShiftEnd(e.target.value)}
+                            bg="white"
+                            _dark={{ bg: inputBg }}
+                            borderRadius="md"
+                            fontSize="xs"
+                            h={SETTINGS_CONTROL_H}
+                          />
+                        </Field.Root>
+                      </Box>
+                      <Box px={2.5} py={1.5}>
+                        <Field.Root>
+                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                            Productivity target (hours)
+                          </Field.Label>
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="24"
+                            value={productivityTargetHours}
+                            onChange={(e) => setProductivityTargetHours(parseFloat(e.target.value) || 0)}
+                            bg="white"
+                            _dark={{ bg: inputBg }}
+                            borderRadius="md"
+                            fontSize="xs"
+                            h={SETTINGS_CONTROL_H}
+                          />
+                        </Field.Root>
+                      </Box>
+                    </SettingsGroup>
+                  </SettingsSection>
                 </VStack>
-              </VStack>
-            </TabPanel>
+              </SettingsScrollPanel>
+            </Tabs.Content>
 
             {/* Display Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack spacing={0} align="stretch">
-                <Box pb={3.5}>
-                  <Heading size="sm" mb={1.5} color={textColor} display="flex" alignItems="center" gap={2}>
-                    Display Options
-                  </Heading>
-                  <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                    Control interface visibility and appearance
-                  </Text>
-                </Box>
-                
-                <VStack spacing={2.5} align="stretch">
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Show Client Info Bar</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Show the client info row (name, IRD, job links) below the file grid, above the footer
-                          </Text>
-                        </VStack>
-                        <Switch
-                          isChecked={showClientInfoBar}
-                          onChange={(e) => setShowClientInfoBar(e.target.checked)}
-                          colorScheme="blue"
+            <Tabs.Content value="display" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack gap={8} align="stretch">
+                  <SettingsSection
+                    title="Layout & theme"
+                    description="Client bar, sidebar, and color mode"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
+                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                    <SettingsToggleRow
+                      title="Client info bar"
+                      description="Name, IRD, and job links below the file grid"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={showClientInfoBar}
+                          onCheckedChange={(d) => setShowClientInfoBar(d.checked === true)}
+                          colorPalette="blue"
                           size="sm"
-                        />
-                      </HStack>
-                    </FormControl>
-                  </Box>
-
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Sidebar Collapsed by Default</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Start with the sidebar in collapsed state when opening the app
-                          </Text>
-                        </VStack>
-                        <Switch
-                          isChecked={sidebarCollapsedByDefault}
-                          onChange={(e) => setSidebarCollapsedByDefault(e.target.checked)}
-                          colorScheme="blue"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <SettingsToggleRow
+                      title="Sidebar collapsed by default"
+                      description="Start with the sidebar collapsed"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={sidebarCollapsedByDefault}
+                          onCheckedChange={(d) => setSidebarCollapsedByDefault(d.checked === true)}
+                          colorPalette="blue"
                           size="sm"
-                        />
-                      </HStack>
-                    </FormControl>
-                  </Box>
-
-                  <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
-                    <FormControl>
-                      <HStack justify="space-between">
-                        <VStack align="start" spacing={1}>
-                          <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Theme</FormLabel>
-                          <Text fontSize="xs" color={secondaryTextColor}>
-                            Switch between light and dark mode
-                          </Text>
-                        </VStack>
-                        <HStack spacing={2}>
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <SettingsToggleRow
+                      title="Theme"
+                      description="Light or dark UI"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      control={
+                        <HStack gap={1} flexShrink={0}>
                           <IconButton
                             aria-label="Light mode"
-                            icon={<Sun size={16} />}
-                            size="sm"
+                            size="xs"
+                            h={SETTINGS_CONTROL_H}
+                            minW={SETTINGS_CONTROL_H}
                             variant={colorMode === 'light' ? 'solid' : 'ghost'}
-                            colorScheme={colorMode === 'light' ? 'blue' : 'gray'}
+                            colorPalette={colorMode === 'light' ? 'blue' : 'gray'}
+                            borderRadius="md"
                             onClick={() => {
                               setColorMode('light');
                               localStorage.setItem('chakra-ui-color-mode', 'light');
                               if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
                                 (window.electronAPI as any).broadcastThemeChange('light');
                               }
-                              window.dispatchEvent(new StorageEvent('storage', {
-                                key: 'chakra-ui-color-mode',
-                                newValue: 'light',
-                                storageArea: localStorage
-                              }));
+                              window.dispatchEvent(
+                                new StorageEvent('storage', {
+                                  key: 'chakra-ui-color-mode',
+                                  newValue: 'light',
+                                  storageArea: localStorage,
+                                }),
+                              );
                             }}
-                          />
+                          >
+                            <Sun size={14} />
+                          </IconButton>
                           <IconButton
                             aria-label="Dark mode"
-                            icon={<Moon size={16} />}
-                            size="sm"
+                            size="xs"
+                            h={SETTINGS_CONTROL_H}
+                            minW={SETTINGS_CONTROL_H}
                             variant={colorMode === 'dark' ? 'solid' : 'ghost'}
-                            colorScheme={colorMode === 'dark' ? 'blue' : 'gray'}
+                            colorPalette={colorMode === 'dark' ? 'blue' : 'gray'}
+                            borderRadius="md"
                             onClick={() => {
                               setColorMode('dark');
                               localStorage.setItem('chakra-ui-color-mode', 'dark');
                               if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
                                 (window.electronAPI as any).broadcastThemeChange('dark');
                               }
-                              window.dispatchEvent(new StorageEvent('storage', {
-                                key: 'chakra-ui-color-mode',
-                                newValue: 'dark',
-                                storageArea: localStorage
-                              }));
+                              window.dispatchEvent(
+                                new StorageEvent('storage', {
+                                  key: 'chakra-ui-color-mode',
+                                  newValue: 'dark',
+                                  storageArea: localStorage,
+                                }),
+                              );
                             }}
-                          />
+                          >
+                            <Moon size={14} />
+                          </IconButton>
                         </HStack>
-                      </HStack>
-                    </FormControl>
-                  </Box>
+                      }
+                    />
+                  </SettingsGroup>
 
-                  <Divider my={3.5} />
-
-                  <Box>
-                    <Heading size="sm" mb={1.5} color={textColor}>Background Images</Heading>
-                    <Text fontSize="sm" color={secondaryTextColor} mb={2}>
-                      Customize background images for the file grid
-                    </Text>
-                    
-                    <FormControl mb={4}>
-                      <Flex justify="space-between" align="center">
-                        <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={0}>Enable Backgrounds</FormLabel>
-                        <Switch
-                          isChecked={enableBackgrounds}
-                          onChange={async (e) => {
-                            const newValue = e.target.checked;
+                  <SettingsSection
+                    title="File grid backgrounds"
+                    description="Corner mascot or full-grid fill (10% opacity)"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
+                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                    <SettingsToggleRow
+                      title="Enable backgrounds"
+                      description="Show images behind the file grid"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={enableBackgrounds}
+                          onCheckedChange={async (d) => {
+                            const newValue = d.checked === true;
                             setEnableBackgrounds(newValue);
-                            
-                            // Auto-save immediately
                             try {
                               const currentSettings = await settingsService.getSettings();
                               const updatedSettings = {
                                 ...currentSettings,
                                 enableBackgrounds: newValue,
                               };
-                              
                               await settingsService.setSettings(updatedSettings as any);
                               (settingsService as any).clearCache();
                               window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
@@ -2130,76 +2002,83 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                               console.error('Failed to save enableBackgrounds:', error);
                             }
                           }}
-                          colorScheme="blue"
-                        />
-                      </Flex>
-                    </FormControl>
-                    
-                    <FormControl mb={4} isDisabled={!enableBackgrounds}>
-                      <FormLabel fontSize="xs" fontWeight="500" color={textColor} mb={1}>Background Type</FormLabel>
-                      <Select
-                        value={backgroundType}
-                        onChange={(e) => setBackgroundType(e.target.value as 'watermark' | 'backgroundFill')}
-                        bg="white"
-                        color="black"
-                        _dark={{ bg: 'gray.600', color: 'white' }}
-                        borderRadius={0}
-                        fontSize="xs"
-                        h="46px"
-                        size="sm"
-                        sx={{
-                          '& option': {
-                            minHeight: '46px',
-                            lineHeight: '46px',
-                            paddingTop: '8px',
-                            paddingBottom: '8px',
-                          },
-                        }}
-                      >
-                        <option value="watermark" style={{ background: 'inherit', color: 'inherit' }}>Corner Mascot (Bottom-right corner, 100% opacity)</option>
-                        <option value="backgroundFill" style={{ background: 'inherit', color: 'inherit' }}>Background Fill (Fills filegrid, 10% opacity)</option>
-                      </Select>
-                    </FormControl>
-
-                    <Box mb={4} opacity={enableBackgrounds ? 1 : 0.5} pointerEvents={enableBackgrounds ? 'auto' : 'none'}>
-                      <HStack justify="space-between" mb={2}>
-                        <Text fontSize="xs" fontWeight="500" color={textColor}>
-                          Available {backgroundType === 'watermark' ? 'Corner Mascots' : 'Background Fills'}
+                          colorPalette="blue"
+                          size="sm"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <Box px={2.5} py={1.5} borderBottomWidth="1px" borderColor={borderColor} opacity={enableBackgrounds ? 1 : 0.5}>
+                      <Field.Root disabled={!enableBackgrounds}>
+                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                          Background type
+                        </Field.Label>
+                        <NativeSelect.Root size="sm">
+                          <NativeSelect.Field
+                            value={backgroundType}
+                            onChange={(e) => setBackgroundType(e.target.value as 'watermark' | 'backgroundFill')}
+                            bg="white"
+                            color="black"
+                            _dark={{ bg: inputBg, color: 'white' }}
+                            borderRadius="md"
+                            fontSize="xs"
+                            h={SETTINGS_CONTROL_H}
+                          >
+                            <option value="watermark" style={{ background: 'inherit', color: 'inherit' }}>
+                              Corner mascot (bottom-right, 100%)
+                            </option>
+                            <option value="backgroundFill" style={{ background: 'inherit', color: 'inherit' }}>
+                              Background fill (grid, 10% opacity)
+                            </option>
+                          </NativeSelect.Field>
+                          <NativeSelect.Indicator />
+                        </NativeSelect.Root>
+                      </Field.Root>
+                    </Box>
+                    <Box px={2.5} py={1.5} opacity={enableBackgrounds ? 1 : 0.5} pointerEvents={enableBackgrounds ? 'auto' : 'none'}>
+                      <Flex w="100%" minW={0} justify="space-between" align="center" gap={3} mb={2}>
+                        <Text fontSize="xs" fontWeight="500" color={textColor} flex="1" minW={0}>
+                          {backgroundType === 'watermark' ? 'Corner mascots' : 'Background fills'}
                         </Text>
                         <Button
+                          h={SETTINGS_CONTROL_H}
                           size="xs"
-                          leftIcon={<Icon as={Plus} boxSize={3.5} />}
+                          px={2}
+                          fontSize="xs"
+                          borderRadius="md"
                           onClick={handleAddBackground}
-                          colorScheme="blue"
-                          isDisabled={!enableBackgrounds}
+                          colorPalette="blue"
+                          disabled={!enableBackgrounds}
                         >
-                          Add Background
+                          <Icon boxSize={3} asChild>
+                            <Plus />
+                          </Icon>
+                          Add
                         </Button>
-                      </HStack>
-                      
+                      </Flex>
+
                       {backgroundImages.length === 0 ? (
                         <Box
-                          p={8}
-                          border="2px dashed"
+                          p={5}
+                          border="1px dashed"
                           borderColor={borderColor}
-                          borderRadius={0}
+                          borderRadius="md"
                           textAlign="center"
-                          bg={useColorModeValue('gray.50', 'gray.700')}
+                          bg={cardBg}
                         >
-                          <Icon as={ImageIcon} boxSize={8} color={secondaryTextColor} mb={2} />
-                          <Text fontSize="sm" color={secondaryTextColor}>
-                            No {backgroundType === 'watermark' ? 'corner mascots' : 'background fills'} available
-                          </Text>
-                          <Text fontSize="xs" color={secondaryTextColor} mt={1}>
-                            Click "Add Background" to add your first image
+                          <Icon boxSize={6} color={secondaryTextColor} mb={2} asChild>
+                            <ImageIcon />
+                          </Icon>
+                          <Text fontSize="xs" color={secondaryTextColor}>
+                            No images yet — add one to get started
                           </Text>
                         </Box>
                       ) : (
-                        <SimpleGrid 
-                          columns={{ base: 2, md: 3, lg: 4 }} 
-                          spacing={3}
-                          justifyItems="start"
-                        >
+                        <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} gap={2} justifyItems="start">
                           {backgroundImages.map((img) => {
                             const isSelected = selectedBackground === img.relativePath;
                             return (
@@ -2216,238 +2095,248 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         </SimpleGrid>
                       )}
                     </Box>
-                  </Box>
+                  </SettingsGroup>
                 </VStack>
-              </VStack>
-            </TabPanel>
+              </SettingsScrollPanel>
+            </Tabs.Content>
 
             {/* File Grid Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack spacing={2.5} align="stretch">
-                <Box pb={1.5}>
-                  <Heading size="sm" mb={1.5} color={textColor}>File Grid Options</Heading>
-                  <Text fontSize="sm" color={secondaryTextColor}>
-                    Control how files are displayed in the file grid
-                  </Text>
-                </Box>
-
-                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius={0}>
-                  <FormControl>
-                    <HStack justify="space-between">
-                      <VStack align="start" spacing={1}>
-                        <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Hide Temporary Files</FormLabel>
-                        <Text fontSize="xs" color={secondaryTextColor}>
-                          Hide Office lock files (~$*) and Word temp files (~*.tmp) created when documents are open
-                        </Text>
-                      </VStack>
-                      <Switch
-                        isChecked={hideTemporaryFiles}
-                        onChange={(e) => setHideTemporaryFiles(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                  </FormControl>
-                </Box>
-
-                <Box p={2.5} bg={useColorModeValue('gray.50', 'gray.700')} border="1px solid" borderColor={borderColor} borderRadius={0}>
-                  <FormControl>
-                    <HStack justify="space-between">
-                      <VStack align="start" spacing={1}>
-                        <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Hide Dot Files</FormLabel>
-                        <Text fontSize="xs" color={secondaryTextColor}>
-                          Hide files and folders that start with a dot (.), such as .git, .vscode, etc.
-                        </Text>
-                      </VStack>
-                      <Switch
-                        isChecked={hideDotFiles}
-                        onChange={(e) => setHideDotFiles(e.target.checked)}
-                        colorScheme="blue"
-                        size="sm"
-                      />
-                    </HStack>
-                  </FormControl>
-                </Box>
-
-              </VStack>
-            </TabPanel>
+            <Tabs.Content value="filegrid" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack gap={8} align="stretch">
+                  <SettingsSection
+                    title="File grid"
+                    description="Visibility of temp and hidden files"
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
+                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                    <SettingsToggleRow
+                      title="Hide temporary files"
+                      description="Office lock files (~$*) and Word ~*.tmp while documents are open"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={hideTemporaryFiles}
+                          onCheckedChange={(d) => setHideTemporaryFiles(d.checked === true)}
+                          colorPalette="blue"
+                          size="sm"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <SettingsToggleRow
+                      title="Hide dot files"
+                      description=".git, .vscode, and other names starting with “.”"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      control={
+                        <Switch.Root
+                          checked={hideDotFiles}
+                          onCheckedChange={(d) => setHideDotFiles(d.checked === true)}
+                          colorPalette="blue"
+                          size="sm"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                  </SettingsGroup>
+                </VStack>
+              </SettingsScrollPanel>
+            </Tabs.Content>
 
             {/* Group View Tab */}
-            <TabPanel 
-              h="full" 
-              overflowY="auto" 
-              overflowX="hidden"
-              px={6}
-              py={4}
-              sx={{
-                '&::-webkit-scrollbar': {
-                  width: '6px',
-                },
-                '&::-webkit-scrollbar-track': {
-                  background: 'transparent',
-                },
-                '&::-webkit-scrollbar-thumb': {
-                  background: useColorModeValue('gray.300', 'gray.600'),
-                  borderRadius: '2px',
-                },
-              }}
-            >
-              <VStack spacing={4} align="stretch">
-                <Box pb={3.5}>
-                  <Heading size="sm" mb={1.5} color={textColor}>Group View</Heading>
-                  <Text fontSize="sm" color={secondaryTextColor}>
-                    Control when files are grouped by index prefix in the file grid. Blacklist entries match{' '}
-                    <Text as="span" fontWeight="semibold">only that folder</Text> — subfolders still use group view.
-                  </Text>
-                </Box>
+            <Tabs.Content value="groupview" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack gap={8} align="stretch">
+                  <SettingsSection
+                    title="Group view"
+                    description='Index-prefix grouping in the file grid. Blacklist matches only that folder; subfolders still group.'
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
 
-                <FormControl>
-                  <HStack justify="space-between">
-                    <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={0}>Always enable group view</FormLabel>
-                    <Switch
-                      isChecked={groupViewAlwaysEnabled}
-                      onChange={(e) => setGroupViewAlwaysEnabled(e.target.checked)}
-                      colorScheme="blue"
-                      size="sm"
-                    />
-                  </HStack>
-                </FormControl>
-
-                <Box>
-                  <FormLabel fontSize="xs" fontWeight="600" color={textColor} mb={2}>Blacklisted Directories</FormLabel>
-                  <HStack mb={2} spacing={2}>
-                    <InputGroup size="sm">
-                      <Input
-                        value={groupViewBlacklistInput}
-                        onChange={(e) => setGroupViewBlacklistInput(e.target.value)}
-                        placeholder="Enter directory path..."
-                        bg={useColorModeValue('white', 'gray.600')}
-                        borderRadius={0}
-                        fontSize="xs"
-                        h="31px"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const path = normalizePath(groupViewBlacklistInput.trim());
-                            if (path && !groupViewBlacklist.includes(path)) {
-                              setGroupViewBlacklist([...groupViewBlacklist, path]);
-                              setGroupViewBlacklistInput('');
-                            }
-                          }
-                        }}
-                      />
-                      <InputRightElement width="3.5rem" h="31px">
-                        <Button
-                          h="22px"
-                          size="xs"
-                          onClick={async () => {
-                            try {
-                              const result = await (window.electronAPI as any).selectDirectory();
-                              if (result) {
-                                const path = normalizePath(result);
-                                if (path && !groupViewBlacklist.includes(path)) {
-                                  setGroupViewBlacklist([...groupViewBlacklist, path]);
-                                }
-                              }
-                            } catch (error) {
-                              console.error('Error selecting directory:', error);
-                            }
-                          }}
-                          borderRadius={0}
+                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                    <SettingsToggleRow
+                      title="Always enable group view"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={groupViewAlwaysEnabled}
+                          onCheckedChange={(d) => setGroupViewAlwaysEnabled(d.checked === true)}
+                          colorPalette="blue"
+                          size="sm"
                         >
-                          <Icon as={FolderOpen} boxSize={3.5} />
-                        </Button>
-                      </InputRightElement>
-                    </InputGroup>
-                    <IconButton
-                      aria-label="Add to blacklist"
-                      icon={<Icon as={Plus} boxSize={4} />}
-                      size="sm"
-                      colorScheme="blue"
-                      onClick={() => {
-                        const path = normalizePath(groupViewBlacklistInput.trim());
-                        if (path && !groupViewBlacklist.includes(path)) {
-                          setGroupViewBlacklist([...groupViewBlacklist, path]);
-                          setGroupViewBlacklistInput('');
-                        }
-                      }}
-                      isDisabled={!groupViewBlacklistInput.trim()}
-                      borderRadius={0}
-                      h="31px"
-                      w="31px"
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
                     />
-                  </HStack>
-                  {groupViewBlacklist.length > 0 && (
-                    <VStack align="stretch" spacing={1}>
-                      {groupViewBlacklist.map((path) => (
-                        <Flex key={path} align="center" justify="space-between" p={2} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius={0} border="1px solid" borderColor={borderColor}>
-                          <Text fontSize="xs" color={textColor} isTruncated flex={1} title={path}>{path}</Text>
+                    <Box px={2.5} py={1.5}>
+                      <Field.Root>
+                        <Field.Label fontSize="xs" fontWeight="600" color={textColor} mb={1.5}>
+                          Blacklisted directories
+                        </Field.Label>
+                        <HStack gap={2} align="stretch" mb={2}>
+                          <Box flex={1} minW={0}>
+                            <PathInputRow
+                              value={groupViewBlacklistInput}
+                              onChange={(e) => setGroupViewBlacklistInput(e.target.value)}
+                              placeholder="Path or browse…"
+                              inputBg={inputBg}
+                              borderColor={borderColor}
+                              browseAriaLabel="Browse folder to blacklist"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const path = normalizePath(groupViewBlacklistInput.trim());
+                                  if (path && !groupViewBlacklist.includes(path)) {
+                                    setGroupViewBlacklist([...groupViewBlacklist, path]);
+                                    setGroupViewBlacklistInput('');
+                                  }
+                                }
+                              }}
+                              onBrowse={async () => {
+                                try {
+                                  const result = await (window.electronAPI as any).selectDirectory();
+                                  if (result) {
+                                    const path = normalizePath(result);
+                                    if (path && !groupViewBlacklist.includes(path)) {
+                                      setGroupViewBlacklist([...groupViewBlacklist, path]);
+                                    }
+                                  }
+                                } catch (error) {
+                                  console.error('Error selecting directory:', error);
+                                }
+                              }}
+                            />
+                          </Box>
                           <IconButton
-                            aria-label="Remove from blacklist"
-                            icon={<Icon as={Trash2} boxSize={3} />}
+                            aria-label="Add to blacklist"
+                            colorPalette="blue"
                             size="xs"
-                            variant="ghost"
-                            colorScheme="red"
-                            onClick={() => setGroupViewBlacklist(groupViewBlacklist.filter((p) => p !== path))}
-                          />
-                        </Flex>
-                      ))}
-                    </VStack>
-                  )}
-                </Box>
-              </VStack>
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
+                            h={SETTINGS_CONTROL_H}
+                            minW={SETTINGS_CONTROL_H}
+                            w={SETTINGS_CONTROL_H}
+                            borderRadius="md"
+                            onClick={() => {
+                              const path = normalizePath(groupViewBlacklistInput.trim());
+                              if (path && !groupViewBlacklist.includes(path)) {
+                                setGroupViewBlacklist([...groupViewBlacklist, path]);
+                                setGroupViewBlacklistInput('');
+                              }
+                            }}
+                            disabled={!groupViewBlacklistInput.trim()}
+                          >
+                            <Icon boxSize={3.5} asChild>
+                              <Plus />
+                            </Icon>
+                          </IconButton>
+                        </HStack>
+                        {groupViewBlacklist.length > 0 && (
+                          <VStack align="stretch" gap={1}>
+                            {groupViewBlacklist.map((path) => (
+                              <Flex
+                                key={path}
+                                w="100%"
+                                minW={0}
+                                align="center"
+                                justify="space-between"
+                                gap={3}
+                                px={2}
+                                py={1.5}
+                                bg={cardBg}
+                                borderRadius="md"
+                                borderWidth="1px"
+                                borderColor={borderColor}
+                              >
+                                <Text fontSize="xs" color={textColor} truncate flex={1} title={path}>
+                                  {path}
+                                </Text>
+                                <IconButton
+                                  aria-label="Remove from blacklist"
+                                  size="xs"
+                                  variant="ghost"
+                                  colorPalette="red"
+                                  onClick={() =>
+                                    setGroupViewBlacklist(groupViewBlacklist.filter((p) => p !== path))
+                                  }
+                                >
+                                  <Icon boxSize={3} asChild>
+                                    <Trash2 />
+                                  </Icon>
+                                </IconButton>
+                              </Flex>
+                            ))}
+                          </VStack>
+                        )}
+                      </Field.Root>
+                    </Box>
+                  </SettingsGroup>
+                </VStack>
+              </SettingsScrollPanel>
+            </Tabs.Content>
+          </Box>
+        </Tabs.Root>
       </Box>
-
       {/* Footer */}
       <Box
         borderTop="1px solid"
         borderColor={borderColor}
         px={6}
         py={3}
-        bg={useColorModeValue('gray.50', 'gray.800')}
+        bg={bgColor}
         flexShrink={0}
       >
         <Flex gap={2.5} justify="flex-end">
           <Button
             variant="ghost"
             onClick={onClose}
-            leftIcon={<Icon as={X} boxSize={3.5} />}
             color={secondaryTextColor}
-            _hover={{ bg: useColorModeValue('gray.200', 'gray.600') }}
-            borderRadius={0}
-            size="sm"
+            _hover={{ bg: useColorModeValue('gray.200', 'df.rowHover') }}
+            borderRadius="md"
+            size="xs"
+            h={SETTINGS_CONTROL_H}
+            px={3}
+            fontSize="xs"
           >
+            <Icon boxSize={3} asChild>
+              <X />
+            </Icon>
             Cancel
           </Button>
           <Button
-            colorScheme="blue"
+            colorPalette="blue"
             onClick={handleSave}
-            leftIcon={<Icon as={Save} boxSize={3.5} />}
-            borderRadius={0}
+            borderRadius="md"
             fontWeight="500"
-            size="sm"
+            size="xs"
+            h={SETTINGS_CONTROL_H}
+            px={3}
+            fontSize="xs"
           >
-            Save Settings
+            <Icon boxSize={3} asChild>
+              <Save />
+            </Icon>
+            Save
           </Button>
         </Flex>
       </Box>

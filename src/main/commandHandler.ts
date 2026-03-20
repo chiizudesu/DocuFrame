@@ -15,6 +15,7 @@ interface CommandResult {
   success: boolean;
   message: string;
   files?: any[];
+  extractedFiles?: any[];
 }
 
 export async function handleCommand(command: string, args: string[], currentDirectory?: string, options?: any): Promise<CommandResult> {
