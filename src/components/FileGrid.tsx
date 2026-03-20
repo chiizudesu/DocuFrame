@@ -4,20 +4,22 @@ import {
   useToast,
   useColorModeValue,
 } from '@chakra-ui/react'
-import { useAppContext } from '../context/AppContext'
+import {
+  useFileGridDirectoryState,
+  useFileGridSelectionState,
+  useFileGridClipboardAndTransfers,
+  useFileGridFiltersAndVisibility,
+  useFileGridQuickAccessPaths,
+  useFileGridActions,
+} from '../context/AppContext'
 import { joinPath, isAbsolutePath, normalizePath } from '../utils/path'
 import { settingsService } from '../services/settings'
-import { MergePDFDialog } from './MergePDFDialog'
-import { ExtractedTextDialog } from './ExtractedTextDialog'
 import type { FileItem } from '../types'
-import { CustomPropertiesDialog, FileProperties } from './CustomPropertiesDialog';
-import { ImagePasteDialog } from './ImagePasteDialog';
-import { IndexPrefixDialog } from './IndexPrefixDialog';
-import { RenameIndexDialog } from './RenameIndexDialog';
-import { SmartRenameDialog } from './SmartRenameDialog';
+import { FileProperties } from './CustomPropertiesDialog';
 import { extractIndexPrefix, setIndexPrefix, removeIndexPrefix, groupFilesByIndex, getIndexInfo, getAllIndexKeys, toProperCase, getMaxIndexPillWidth } from '../utils/indexPrefix';
 import { SortColumn, SortDirection, formatPathForLog } from './FileGrid/FileGridUtils';
 import { FileContextMenu, BlankContextMenu, TemplateSubmenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
+import { FileGridDialogs } from './FileGrid/FileGridDialogs';
 import { FileListView } from './FileGrid/FileListView';
 
 // Icon functions removed - using native Windows icons instead
@@ -31,41 +33,44 @@ import { FileListView } from './FileGrid/FileListView';
 const EMPTY_FOLDER_HANDLERS = Object.freeze({});
 
 export const FileGrid: React.FC = () => {
-  // All useContext hooks first
-  const { 
-    currentDirectory, 
-    setCurrentDirectory, 
-    addLog, 
-    setStatus,
+  // Selective context: avoid re-rendering FileGrid on unrelated app updates (status, settings, etc.)
+  const {
+    currentDirectory,
+    setCurrentDirectory,
     rootDirectory,
-    setSelectAllFiles,
     folderItems,
     setFolderItems,
-    setDisplayedDirectory, 
-    selectedFiles, 
-    setSelectedFiles, 
-    clipboard, 
-    setClipboard, 
-    addRecentlyTransferredFiles, 
-    clearRecentlyTransferredFiles, 
-    recentlyTransferredFiles, 
+    setDisplayedDirectory,
+  } = useFileGridDirectoryState()
+  const { selectedFiles, setSelectedFiles, setSelectAllFiles } = useFileGridSelectionState()
+  const {
+    clipboard,
+    setClipboard,
+    recentlyTransferredFiles,
+    addRecentlyTransferredFiles,
+    clearRecentlyTransferredFiles,
     removeRecentlyTransferredFile,
+  } = useFileGridClipboardAndTransfers()
+  const {
+    fileSearchFilter,
+    setFileSearchFilter,
+    contentSearchResults,
+    hideTemporaryFiles,
+    hideDotFiles,
+    isGroupedByIndex,
+  } = useFileGridFiltersAndVisibility()
+  const { quickAccessPaths } = useFileGridQuickAccessPaths()
+  const {
+    addLog,
+    setStatus,
     addTabToCurrentWindow,
-    isQuickNavigating,
-    hideTemporaryFiles, // NEW
-    hideDotFiles, // NEW
     addQuickAccessPath,
     removeQuickAccessPath,
-    quickAccessPaths,
-    logFileOperation, // Task Timer integration
-    fileSearchFilter, // File search filter for current directory
-    setFileSearchFilter,
-    contentSearchResults, // Content search results (files matching content search)
-    isGroupedByIndex, // Group files by index prefix
+    logFileOperation,
     setIsCreateFolderOpen,
     setIsAIFileManagerOpen,
     setFileManagerInitialSelection,
-  } = useAppContext()
+  } = useFileGridActions()
 
   // Memoize selectedFiles as Set for O(1) lookup performance (moved early to avoid initialization errors)
   const selectedFilesSet = useMemo(() => {
@@ -4472,108 +4477,46 @@ export const FileGrid: React.FC = () => {
         toggleColumnVisibility={toggleColumnVisibility}
         closeHeaderContextMenu={closeHeaderContextMenu}
       />
-      {isMergePDFOpen && (
-        <MergePDFDialog
-          isOpen
-          onClose={() => setMergePDFOpen(false)}
-          currentDirectory={currentDirectory}
-          preselectedFiles={selectedFiles.filter(filename => filename.toLowerCase().endsWith('.pdf'))}
-        />
-      )}
-      {isExtractedTextOpen && (
-        <ExtractedTextDialog
-          isOpen
-          onClose={() => setExtractedTextOpen(false)}
-          fileName={extractedTextData.fileName}
-          extractedText={extractedTextData.text}
-        />
-      )}
-      {isPropertiesOpen && propertiesFile && (
-        <CustomPropertiesDialog
-          isOpen
-          onClose={() => setPropertiesOpen(false)}
-          file={propertiesFile}
-          onUnblock={handleUnblockFile}
-        />
-      )}
-      {isImagePasteOpen && (
-        <ImagePasteDialog
-          isOpen
-          onClose={() => setImagePasteOpen(false)}
-          currentDirectory={currentDirectory}
-          onImageSaved={handleImageSaved}
-        />
-      )}
-      
-      {/* Index prefix: mount only when open so folder navigation does not keep re-rendering the modal tree */}
-      {isIndexPrefixDialogOpen && (
-        <IndexPrefixDialog
-          isOpen
-          onClose={closeIndexPrefixDialog}
-          onSelect={handleAssignPrefix}
-          currentPrefix={prefixDialogFiles.length > 0 ? extractIndexPrefix(prefixDialogFiles[0].name) : null}
-          files={prefixDialogFiles}
-          title="Manage Index Prefix"
-          allowCopy={true}
-        />
-      )}
-      {/* Move To Dialog with FolderNavigation */}
-      {isMoveToDialogOpen && moveToFiles.length > 0 && (
-        <MoveToDialogWrapper
-          onClose={() => {
-            setIsMoveToDialogOpen(false);
-            setMoveToFiles([]);
-          }}
-          moveToFiles={moveToFiles}
-          currentDirectory={currentDirectory}
-          onSelectFolder={async (destPath: string) => {
-            try {
-              setStatus(`Moving ${moveToFiles.length} file(s)...`, 'info');
-              const results = await window.electronAPI.moveFilesWithConflictResolution(
-                moveToFiles.map(f => f.path),
-                destPath
-              );
-              const successful = results.filter(r => r.status === 'success').length;
-              if (successful > 0) {
-                setStatus(`Moved ${successful} file(s)`, 'success');
-                await refreshDirectory(currentDirectory);
-              }
-              setIsMoveToDialogOpen(false);
-              setMoveToFiles([]);
-            } catch (error) {
-              addLog(`Failed to move files: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-              setStatus('Failed to move files', 'error');
-            }
-          }}
-          refreshDirectory={refreshDirectory}
-          setStatus={setStatus}
-          addLog={addLog}
-        />
-      )}
-      {isRenameIndexDialogOpen && (
-        <RenameIndexDialog
-          isOpen
-          onClose={closeRenameIndexDialog}
-          onConfirm={handleRenameIndex}
-          files={selectedFiles.length > 1 && contextMenu.fileItem && selectedFilesSet.has(contextMenu.fileItem.name)
-            ? sortedFiles.filter(f => selectedFilesSet.has(f.name) && f.type === 'file')
-            : contextMenu.fileItem && contextMenu.fileItem.type === 'file'
-              ? [contextMenu.fileItem]
-              : []}
-        />
-      )}
-      {smartRenameFile && (
-        <SmartRenameDialog
-          isOpen={isSmartRenameDialogOpen}
-          onClose={() => {
-            setIsSmartRenameDialogOpen(false);
-            setSmartRenameFile(null);
-          }}
-          onConfirm={handleSmartRenameConfirm}
-          file={smartRenameFile}
-          existingFiles={sortedFiles}
-        />
-      )}
+      <FileGridDialogs
+        currentDirectory={currentDirectory}
+        selectedFiles={selectedFiles}
+        selectedFilesSet={selectedFilesSet}
+        sortedFiles={sortedFiles}
+        contextMenu={contextMenu}
+        addLog={addLog}
+        setStatus={setStatus}
+        refreshDirectory={refreshDirectory}
+        setMergePDFOpen={setMergePDFOpen}
+        setExtractedTextOpen={setExtractedTextOpen}
+        setPropertiesOpen={setPropertiesOpen}
+        setImagePasteOpen={setImagePasteOpen}
+        setIsMoveToDialogOpen={setIsMoveToDialogOpen}
+        setMoveToFiles={setMoveToFiles}
+        setIsIndexPrefixDialogOpen={setIsIndexPrefixDialogOpen}
+        setIsRenameIndexDialogOpen={setIsRenameIndexDialogOpen}
+        setIsSmartRenameDialogOpen={setIsSmartRenameDialogOpen}
+        setSmartRenameFile={setSmartRenameFile}
+        isMergePDFOpen={isMergePDFOpen}
+        isExtractedTextOpen={isExtractedTextOpen}
+        extractedTextData={extractedTextData}
+        isPropertiesOpen={isPropertiesOpen}
+        propertiesFile={propertiesFile}
+        isImagePasteOpen={isImagePasteOpen}
+        isIndexPrefixDialogOpen={isIndexPrefixDialogOpen}
+        prefixDialogFiles={prefixDialogFiles}
+        isMoveToDialogOpen={isMoveToDialogOpen}
+        moveToFiles={moveToFiles}
+        isRenameIndexDialogOpen={isRenameIndexDialogOpen}
+        smartRenameFile={smartRenameFile}
+        isSmartRenameDialogOpen={isSmartRenameDialogOpen}
+        closeIndexPrefixDialog={closeIndexPrefixDialog}
+        closeRenameIndexDialog={closeRenameIndexDialog}
+        handleAssignPrefix={handleAssignPrefix}
+        handleRenameIndex={handleRenameIndex}
+        handleSmartRenameConfirm={handleSmartRenameConfirm}
+        handleUnblockFile={handleUnblockFile}
+        handleImageSaved={handleImageSaved}
+      />
 
     </Box>
   )

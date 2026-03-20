@@ -367,12 +367,12 @@ export const AppProvider: React.FC<{
 
   const isGroupedByIndex = sessionLayerViewEnabled && isGroupedByIndexFromSettings;
 
-  // Wrapper functions to save to localStorage when settings change
-  const setRootDirectory = (path: string) => {
+  // Wrapper functions to save to localStorage when settings change (stable ref for context consumers)
+  const setRootDirectory = useCallback((path: string) => {
     setRootDirectoryState(path);
     setCurrentDirectory(path);
-  };
-  
+  }, []);
+
   // Enhanced setCurrentDirectory with path normalization
   const setCurrentDirectoryWithValidation = useCallback((path: string) => {
     if (!path || path.trim() === '') {
@@ -388,14 +388,6 @@ export const AppProvider: React.FC<{
     }
   }, []);
 
-  // Wrapper for settings open/close with status updates
-  const setIsSettingsOpenWithStatus = (isOpen: boolean) => {
-    setIsSettingsOpen(isOpen);
-    if (!isOpen) {
-      setStatus('Settings closed', 'info');
-    }
-  };
-
   const addLog = useCallback((_message: string, _type?: LogEntry['type']) => {
     // Output log removed - no-op for backward compatibility
   }, []);
@@ -405,9 +397,17 @@ export const AppProvider: React.FC<{
     setStatusType(type);
   }, []);
 
-  const addCommand = (command: string) => {
-    setCommandHistory(prev => [...prev, command]);
-  };
+  // Wrapper for settings open/close with status updates
+  const setIsSettingsOpenWithStatus = useCallback((isOpen: boolean) => {
+    setIsSettingsOpen(isOpen);
+    if (!isOpen) {
+      setStatus('Settings closed', 'info');
+    }
+  }, [setStatus]);
+
+  const addCommand = useCallback((command: string) => {
+    setCommandHistory((prev) => [...prev, command]);
+  }, []);
 
   const selectAllFiles = useCallback(() => {
     selectAllFilesCallback();
@@ -644,3 +644,130 @@ export const useAIFileManagerContextSelection = () => {
     logFileOperation,
   };
 };
+
+// --- FileGrid: use useContextSelector so unrelated app state (status, settings flags, etc.)
+// does not re-render the large FileGrid tree. See docs/filegrid-vs-file-manager-performance.md
+
+export function useFileGridDirectoryState() {
+  const currentDirectory = useContextSelector(AppContext, (v) => v?.currentDirectory ?? '');
+  const setCurrentDirectory = useContextSelector(AppContext, (v) => v?.setCurrentDirectory);
+  const rootDirectory = useContextSelector(AppContext, (v) => v?.rootDirectory ?? '');
+  const folderItems = useContextSelector(AppContext, (v) => v?.folderItems ?? []);
+  const setFolderItems = useContextSelector(AppContext, (v) => v?.setFolderItems);
+  const setDisplayedDirectory = useContextSelector(AppContext, (v) => v?.setDisplayedDirectory);
+  if (!setCurrentDirectory || !setFolderItems || !setDisplayedDirectory) {
+    throw new Error('useFileGridDirectoryState must be used within an AppProvider');
+  }
+  return {
+    currentDirectory,
+    setCurrentDirectory,
+    rootDirectory,
+    folderItems,
+    setFolderItems,
+    setDisplayedDirectory,
+  };
+}
+
+export function useFileGridSelectionState() {
+  const selectedFiles = useContextSelector(AppContext, (v) => v?.selectedFiles ?? []);
+  const setSelectedFiles = useContextSelector(AppContext, (v) => v?.setSelectedFiles);
+  const setSelectAllFiles = useContextSelector(AppContext, (v) => v?.setSelectAllFiles);
+  if (!setSelectedFiles || !setSelectAllFiles) {
+    throw new Error('useFileGridSelectionState must be used within an AppProvider');
+  }
+  return { selectedFiles, setSelectedFiles, setSelectAllFiles };
+}
+
+export function useFileGridClipboardAndTransfers() {
+  const clipboard = useContextSelector(
+    AppContext,
+    (v) => v?.clipboard ?? { files: [] as FileItem[], operation: null as 'cut' | 'copy' | null },
+  );
+  const setClipboard = useContextSelector(AppContext, (v) => v?.setClipboard);
+  const recentlyTransferredFiles = useContextSelector(AppContext, (v) => v?.recentlyTransferredFiles ?? []);
+  const addRecentlyTransferredFiles = useContextSelector(AppContext, (v) => v?.addRecentlyTransferredFiles);
+  const clearRecentlyTransferredFiles = useContextSelector(AppContext, (v) => v?.clearRecentlyTransferredFiles);
+  const removeRecentlyTransferredFile = useContextSelector(AppContext, (v) => v?.removeRecentlyTransferredFile);
+  if (!setClipboard || !addRecentlyTransferredFiles || !clearRecentlyTransferredFiles || !removeRecentlyTransferredFile) {
+    throw new Error('useFileGridClipboardAndTransfers must be used within an AppProvider');
+  }
+  return {
+    clipboard,
+    setClipboard,
+    recentlyTransferredFiles,
+    addRecentlyTransferredFiles,
+    clearRecentlyTransferredFiles,
+    removeRecentlyTransferredFile,
+  };
+}
+
+export function useFileGridFiltersAndVisibility() {
+  const fileSearchFilter = useContextSelector(AppContext, (v) => v?.fileSearchFilter ?? '');
+  const setFileSearchFilter = useContextSelector(AppContext, (v) => v?.setFileSearchFilter);
+  const contentSearchResults = useContextSelector(AppContext, (v) => v?.contentSearchResults ?? []);
+  const hideTemporaryFiles = useContextSelector(AppContext, (v) => v?.hideTemporaryFiles ?? true);
+  const hideDotFiles = useContextSelector(AppContext, (v) => v?.hideDotFiles ?? true);
+  const isGroupedByIndex = useContextSelector(AppContext, (v) => v?.isGroupedByIndex ?? false);
+  if (!setFileSearchFilter) {
+    throw new Error('useFileGridFiltersAndVisibility must be used within an AppProvider');
+  }
+  return {
+    fileSearchFilter,
+    setFileSearchFilter,
+    contentSearchResults,
+    hideTemporaryFiles,
+    hideDotFiles,
+    isGroupedByIndex,
+  };
+}
+
+export function useFileGridQuickAccessPaths() {
+  const quickAccessPaths = useContextSelector(AppContext, (v) => v?.quickAccessPaths ?? []);
+  return { quickAccessPaths };
+}
+
+export function useFileGridActions() {
+  const addLog = useContextSelector(AppContext, (v) => v?.addLog);
+  const setStatus = useContextSelector(AppContext, (v) => v?.setStatus);
+  const addTabToCurrentWindow = useContextSelector(AppContext, (v) => v?.addTabToCurrentWindow);
+  const addQuickAccessPath = useContextSelector(AppContext, (v) => v?.addQuickAccessPath);
+  const removeQuickAccessPath = useContextSelector(AppContext, (v) => v?.removeQuickAccessPath);
+  const logFileOperation = useContextSelector(AppContext, (v) => v?.logFileOperation);
+  const setIsCreateFolderOpen = useContextSelector(AppContext, (v) => v?.setIsCreateFolderOpen);
+  const setIsAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.setIsAIFileManagerOpen);
+  const setFileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.setFileManagerInitialSelection);
+  if (
+    !addLog ||
+    !setStatus ||
+    !addTabToCurrentWindow ||
+    !addQuickAccessPath ||
+    !removeQuickAccessPath ||
+    !logFileOperation ||
+    !setIsCreateFolderOpen ||
+    !setIsAIFileManagerOpen ||
+    !setFileManagerInitialSelection
+  ) {
+    throw new Error('useFileGridActions must be used within an AppProvider');
+  }
+  return {
+    addLog,
+    setStatus,
+    addTabToCurrentWindow,
+    addQuickAccessPath,
+    removeQuickAccessPath,
+    logFileOperation,
+    setIsCreateFolderOpen,
+    setIsAIFileManagerOpen,
+    setFileManagerInitialSelection,
+  };
+}
+
+/** FileGridUI: address bar jump + quick-nav flag (avoid full useAppContext). */
+export function useFileGridNavigationRefs() {
+  const addressBarJumpRef = useContextSelector(AppContext, (v) => v?.addressBarJumpRef);
+  const isQuickNavigating = useContextSelector(AppContext, (v) => v?.isQuickNavigating ?? false);
+  if (!addressBarJumpRef) {
+    throw new Error('useFileGridNavigationRefs must be used within an AppProvider');
+  }
+  return { addressBarJumpRef, isQuickNavigating };
+}

@@ -42,7 +42,7 @@ import {
   FileEdit,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
-import { useAppContext } from '../../context/AppContext'
+import { useFileGridNavigationRefs } from '../../context/AppContext'
 import { joinPath, normalizePath } from '../../utils/path'
 
 // FileContextMenu Component
@@ -85,7 +85,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   setMoveToFiles,
   setIsMoveToDialogOpen,
 }) => {
-  const { addressBarJumpRef } = useAppContext();
+  const { addressBarJumpRef } = useFileGridNavigationRefs();
   const boxBg = useColorModeValue('white', 'gray.800');
   const borderCol = useColorModeValue('gray.200', 'gray.700');
   const hoverBg = useColorModeValue('gray.100', 'gray.700');
@@ -625,7 +625,7 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
   const [filterKeyword, setFilterKeyword] = useState<string>('');
   const pillBg = useColorModeValue('blue.100', 'blue.800');
   const pillColor = useColorModeValue('blue.800', 'blue.100');
-  const { isQuickNavigating, addressBarJumpRef } = useAppContext();
+  const { isQuickNavigating, addressBarJumpRef } = useFileGridNavigationRefs();
   const initializedRef = useRef(false);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
@@ -902,7 +902,7 @@ export const MoveToDialogWrapper: React.FC<MoveToDialogWrapperProps> = ({
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const overlayBg = useColorModeValue('blackAlpha.600', 'blackAlpha.800');
-  const { addressBarJumpRef } = useAppContext();
+  const { addressBarJumpRef } = useFileGridNavigationRefs();
 
   useEffect(() => {
     addressBarJumpRef.current?.close();

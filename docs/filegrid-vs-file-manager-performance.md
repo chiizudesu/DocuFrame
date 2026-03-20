@@ -66,6 +66,17 @@ The checklist feels snappier mainly because it **avoids whole-app context churn*
 
 ## Related code (for navigation)
 
-- `src/components/FileGrid.tsx` — `useAppContext()` usage at top of component.
+- `src/components/FileGrid.tsx` — uses selective hooks (`useFileGridDirectoryState`, `useFileGridSelectionState`, etc.) instead of full `useAppContext()` so unrelated app updates do not re-render the grid.
+- `src/components/FileGrid/FileGridDialogs.tsx` — extracted dialog orchestration; subscription boundary for dialogs vs list.
+- `src/components/FileGrid/FileGridUI.tsx` — `useFileGridNavigationRefs()` for `addressBarJumpRef` / `isQuickNavigating` only.
 - `src/components/AIFileManagerPane.tsx` — local selection; simple row render.
-- `src/context/AppContext.tsx` — `useAIFileManagerContextSelection` as a reference pattern for selective subscription.
+- `src/context/AppContext.tsx` — `useAIFileManagerContextSelection` and FileGrid hooks above; `useAppContext` remains for components that truly need the full bag.
+
+## Profiler verification
+
+To confirm fewer FileGrid re-renders after the selective-context changes:
+
+1. Run the app with React DevTools Profiler enabled (`npm run profiler` or `VITE_REACT_DEVTOOLS=true npm start`).
+2. Start a Profiler recording.
+3. Change footer status (e.g. open Settings, run a command) — FileGrid commit count should stay low.
+4. Change selection or filter — FileGrid should commit (expected).
