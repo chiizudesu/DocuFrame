@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { ListRowHoverProvider, useListRowIsHovered } from './ListRowHoverContext'
+import { FileListTheadRow } from './FileListThead'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   Box,
@@ -16,8 +18,6 @@ import {
 } from '@chakra-ui/react'
 import {
   FolderOpen,
-  ChevronUp,
-  ChevronDown,
   Upload,
   Plus,
 } from 'lucide-react'
@@ -32,6 +32,8 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   index,
   fileState,
   finalBg,
+  rowHoverBg,
+  isFolderDropHovered,
   columnOrder,
   columnVisibility,
   cellStyles,
@@ -45,6 +47,12 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   rowHandlers,
   folderDropHandlers,
 }) => {
+  const isListRowHovered = useListRowIsHovered(index);
+  const displayBg = isListRowHovered && !isFolderDropHovered ? rowHoverBg : finalBg;
+  const cellStylesDisplay = useMemo(
+    () => ({ ...cellStyles, bg: displayBg }),
+    [cellStyles, displayBg],
+  );
   // Store observed element ref for proper unobserve when virtualized row unmounts
   const observedElRef = useRef<HTMLElement | null>(null);
   // Windows 11-style: thin blue outline - box-shadow per cell, only outer edges (no vertical lines between columns)
@@ -69,13 +77,13 @@ const FileTableRow = React.memo<FileTableRowProps>(({
     <Box
       as="tr"
       onMouseEnter={() => rowHandlers.onMouseEnter(index)}
-      onMouseLeave={(e) => rowHandlers.onMouseLeave(index, e)}
-      onContextMenu={(e) => rowHandlers.onContextMenu(file, e)}
-      onClick={(e) => rowHandlers.onClick(file, index, e)}
-      onMouseDown={(e) => rowHandlers.onMouseDown(file, index, e)}
-      onMouseUp={(e) => rowHandlers.onMouseUp(file, index, e)}
+      onMouseLeave={(e: React.MouseEvent) => rowHandlers.onMouseLeave(index, e)}
+      onContextMenu={(e: React.MouseEvent) => rowHandlers.onContextMenu(file, e)}
+      onClick={(e: React.MouseEvent) => rowHandlers.onClick(file, index, e)}
+      onMouseDown={(e: React.MouseEvent) => rowHandlers.onMouseDown(file, index, e)}
+      onMouseUp={(e: React.MouseEvent) => rowHandlers.onMouseUp(file, index, e)}
       draggable={rowHandlers.draggable}
-      onDragStart={(e) => rowHandlers.onDragStart(file, index, e)}
+      onDragStart={(e: React.DragEvent) => rowHandlers.onDragStart(file, index, e)}
       onDragEnd={rowHandlers.onDragEnd}
       {...folderDropHandlers}
       data-row-index={index}
@@ -99,7 +107,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
             <Box
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
-              {...cellStyles}
+              {...cellStylesDisplay}
               boxShadow={selectionShadow}
               ref={(el: HTMLElement | null) => {
                 if (file.type === 'file') {
@@ -159,7 +167,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
             <Box
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
-              {...cellStyles}
+              {...cellStylesDisplay}
               boxShadow={selectionShadow}
             >
               <Text 
@@ -176,7 +184,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
             <Box
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
-              {...cellStyles}
+              {...cellStylesDisplay}
               boxShadow={selectionShadow}
             >
               <Text 
@@ -200,7 +208,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
             <Box
               as="td"
               key={`${file.path}-${column}-${colIndex}`}
-              {...cellStyles}
+              {...cellStylesDisplay}
               boxShadow={selectionShadow}
             >
               <Text 
@@ -228,11 +236,12 @@ const FileTableRow = React.memo<FileTableRowProps>(({
     prevProps.file.modified === nextProps.file.modified &&
     prevProps.index === nextProps.index &&
     prevProps.fileState.isFileSelected === nextProps.fileState.isFileSelected &&
-    prevProps.fileState.isRowHovered === nextProps.fileState.isRowHovered &&
     prevProps.fileState.isFileCut === nextProps.fileState.isFileCut &&
     prevProps.fileState.isFileNew === nextProps.fileState.isFileNew &&
     prevProps.fileState.isFileDragged === nextProps.fileState.isFileDragged &&
     prevProps.finalBg === nextProps.finalBg &&
+    prevProps.rowHoverBg === nextProps.rowHoverBg &&
+    prevProps.isFolderDropHovered === nextProps.isFolderDropHovered &&
     prevProps.cellStyles === nextProps.cellStyles &&
     prevProps.rowHandlers === nextProps.rowHandlers &&
     prevProps.folderDropHandlers === nextProps.folderDropHandlers &&
@@ -593,7 +602,6 @@ export interface FileListViewProps {
   nativeIcons: Map<string, string>;
   getFileStateForIndex: (file: FileItem, index: number) => {
     isFileSelected: boolean;
-    isRowHovered: boolean;
     isFileCut: boolean;
     isFileNew: boolean;
     isFileDragged: boolean;
@@ -611,7 +619,6 @@ export interface FileListViewProps {
   headerHoverBg: string;
   headerStickyBg: string;
   rowHoverBg: string;
-  hoveredRowIndex: number | null;
   folderHoverState: Set<string>;
   headerDividerBg: string;
   dragGhostBg: string;
@@ -676,7 +683,26 @@ export interface FileListViewProps {
   };
 }
 
-const FileListViewInner: React.FC<FileListViewProps> = ({
+function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps): boolean {
+  if (prev.sortedFiles !== next.sortedFiles) return false;
+  if (prev.isGroupedByIndex !== next.isGroupedByIndex) return false;
+  if (prev.groupedFiles !== next.groupedFiles) return false;
+  if (prev.newFileHighlightBg !== next.newFileHighlightBg) return false;
+  if (prev.memoizedArraySignature !== next.memoizedArraySignature) return false;
+  if (prev.isDragOver !== next.isDragOver || prev.isSelecting !== next.isSelecting) return false;
+  if (prev.selectionRect !== next.selectionRect) return false;
+  if (prev.isRenaming !== next.isRenaming || prev.renameValue !== next.renameValue) return false;
+  if (prev.nativeIcons !== next.nativeIcons) return false;
+  if (prev.columnOrder !== next.columnOrder || prev.columnVisibility !== next.columnVisibility) return false;
+  if (prev.columnWidths !== next.columnWidths) return false;
+  if (prev.draggingColumn !== next.draggingColumn || prev.dragTargetColumn !== next.dragTargetColumn) return false;
+  if (prev.dragMousePos !== next.dragMousePos || prev.dragOffset !== next.dragOffset) return false;
+  if (prev.rowHandlers !== next.rowHandlers) return false;
+  if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
+  return true;
+}
+
+const FileListViewBody = React.memo(function FileListViewBody({
   dropAreaRef,
   gridContainerRef,
   renameInputRef,
@@ -702,12 +728,12 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
   fileGridBackgroundUrl,
   fileGridBackgroundPath,
   backgroundFillUrl,
-  backgroundFillPath,
+  backgroundFillPath: _backgroundFillPath,
   backgroundType,
   enableBackgrounds,
   nativeIcons,
   getFileStateForIndex,
-  memoizedArraySignature,
+  memoizedArraySignature: _memoizedArraySignature,
   rowSelectedBg,
   rowDefaultBg,
   newFileHighlightBg,
@@ -718,7 +744,6 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
   headerHoverBg,
   headerStickyBg,
   rowHoverBg,
-  hoveredRowIndex,
   folderHoverState,
   headerDividerBg,
   dragGhostBg,
@@ -753,12 +778,12 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
   setIsRenaming,
   setRenameValue,
   setFileGridBackgroundUrl,
-  selectedFiles,
-  setSelectedFiles,
-  setSelectedFile,
+  selectedFiles: _selectedFiles,
+  setSelectedFiles: _setSelectedFiles,
+  setSelectedFile: _setSelectedFile,
   clearFolderHoverStates,
   cellStyles,
-}) => {
+}: FileListViewProps) {
   const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
   const pillBg = useColorModeValue('blue.100', 'blue.900'); // Light: more visible; dark: unchanged
   const pillText = useColorModeValue('blue.700', 'blue.200');
@@ -782,11 +807,21 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
+  const folderListLen = isGroupedByIndex && groupedFiles?.folders?.length ? groupedFiles.folders.length : 0;
+  const folderRowVirtualizer = useVirtualizer({
+    count: folderListLen,
+    getScrollElement: () => dropAreaRef.current,
+    estimateSize: () => ROW_HEIGHT_ESTIMATE,
+    overscan: 10,
+  });
+  const folderVirtualItems = folderListLen ? folderRowVirtualizer.getVirtualItems() : [];
+  const folderTotalSize = folderListLen ? folderRowVirtualizer.getTotalSize() : 0;
+
   const rowVirtualizerRef = useRef(rowVirtualizer);
   rowVirtualizerRef.current = rowVirtualizer;
 
   // Per-row caches for referential stability - only ~visible rows touched, so selection change re-renders only 2 rows
-  const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isRowHovered: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean }>>(new Map());
+  const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean }>>(new Map());
   const cellStylesCacheRef = useRef<Map<string, typeof cellStyles & { bg: string }>>(new Map());
   const hasActiveSearch = Boolean(fileSearchFilter && fileSearchFilter.trim());
 
@@ -805,17 +840,20 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
 
   const getRowProps = useCallback((file: FileItem, index: number) => {
     const baseState = getFileStateForIndex(file, index);
-    const fileState = { ...baseState, isRowHovered: hoveredRowIndex === index };
     const cachedState = fileStateCacheRef.current.get(file.path);
-    const stableFileState = (cachedState && cachedState.isFileSelected === fileState.isFileSelected && cachedState.isRowHovered === fileState.isRowHovered &&
-        cachedState.isFileCut === fileState.isFileCut && cachedState.isFileNew === fileState.isFileNew && cachedState.isFileDragged === fileState.isFileDragged)
-      ? cachedState
-      : (fileStateCacheRef.current.set(file.path, fileState), fileState);
+    const stableFileState =
+      cachedState &&
+      cachedState.isFileSelected === baseState.isFileSelected &&
+      cachedState.isFileCut === baseState.isFileCut &&
+      cachedState.isFileNew === baseState.isFileNew &&
+      cachedState.isFileDragged === baseState.isFileDragged
+        ? cachedState
+        : (fileStateCacheRef.current.set(file.path, baseState), baseState);
 
     const isSearchHighlight = hasActiveSearch && index === 0;
     const rowBg = stableFileState.isFileNew ? newFileHighlightBg : (stableFileState.isFileSelected ? rowSelectedBg : (isSearchHighlight ? searchHighlightBg : rowDefaultBg));
-    const baseBg = (file.type === 'folder' && folderHoverState.has(file.path)) ? folderDropBgColor : rowBg;
-    const finalBg = (hoveredRowIndex === index && !folderHoverState.has(file.path)) ? rowHoverBg : baseBg;
+    const isFolderDropHovered = file.type === 'folder' && folderHoverState.has(file.path);
+    const finalBg = isFolderDropHovered ? folderDropBgColor : rowBg;
 
     const cacheKey = `${file.path}\x01${finalBg}`;
     let finalCellStyles = cellStylesCacheRef.current.get(cacheKey);
@@ -823,8 +861,8 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
       finalCellStyles = { ...cellStyles, bg: finalBg };
       cellStylesCacheRef.current.set(cacheKey, finalCellStyles);
     }
-    return { fileState: stableFileState, finalBg, finalCellStyles };
-  }, [getFileStateForIndex, hoveredRowIndex, folderHoverState, hasActiveSearch, rowSelectedBg, rowDefaultBg, newFileHighlightBg, searchHighlightBg, rowHoverBg, folderDropBgColor, cellStyles]);
+    return { fileState: stableFileState, finalBg, finalCellStyles, isFolderDropHovered };
+  }, [getFileStateForIndex, folderHoverState, hasActiveSearch, rowSelectedBg, rowDefaultBg, newFileHighlightBg, searchHighlightBg, folderDropBgColor, cellStyles]);
 
   // Scroll rename row into view when isRenaming is set (ungrouped only)
   useEffect(() => {
@@ -965,7 +1003,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
             userSelect="none"
             draggable={false}
             style={{ WebkitUserSelect: 'none', userSelect: 'none', display: 'block' }}
-            onError={(e) => {
+            onError={() => {
               console.error('Failed to load watermark image:', fileGridBackgroundPath);
               setFileGridBackgroundUrl('');
             }}
@@ -994,7 +1032,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
             userSelect="none"
             draggable={false}
             style={{ WebkitUserSelect: 'none', userSelect: 'none', display: 'block' }}
-            onError={(e) => {
+            onError={() => {
               console.error('Failed to load background image:', fileGridBackgroundPath);
               setFileGridBackgroundUrl('');
             }}
@@ -1101,123 +1139,41 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
               })}
             </colgroup>
 
-            <Box as="thead">
-              <Box as="tr">
-                {columnOrder.map((column) => {
-                  const isName = column === 'name';
-                  const isSize = column === 'size';
-                  const isModified = column === 'modified';
-                  const isType = column === 'type';
-                  
-                  if (!columnVisibility[column as keyof typeof columnVisibility]) {
-                    return null;
-                  }
-                  
-                  return (
-                    <Box
-                      as="th"
-                      key={column}
-                      px={2}
-                      py={2}
-                      fontWeight="medium"
-                      fontSize="xs"
-                      color={tableHeadTextColor}
-                      cursor="pointer"
-                      _hover={{ bg: headerHoverBg }}
-                      role="group"
-                      verticalAlign="middle"
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setHeaderContextMenu({
-                          isOpen: true,
-                          position: { x: e.clientX, y: e.clientY }
-                        });
-                      }}
-                      onClick={(e) => {
-                        if (hasDraggedColumn) return;
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 4;
-                        if (!isInResizeArea) {
-                          handleSort(column as SortColumn);
-                        }
-                      }}
-                      onDoubleClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 4;
-                        if (!isInResizeArea) {
-                          autoFitColumn(column);
-                        }
-                      }}
-                      position="sticky"
-                      top={0}
-                      zIndex={100}
-                      bg={headerStickyBg}
-                      _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: headerDividerBg }}
-                      data-column={column}
-                      onMouseDown={(e) => handleColumnDragStart(column, e)}
-                      opacity={draggingColumn === column ? 0.5 : 1}
-                      borderLeft={draggingColumn && dragTargetColumn === column ? '2px solid #4F46E5' : undefined}
-                      transition="all 0.2s ease"
-                    >
-                      <Flex alignItems="center">
-                        {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isType ? 'Type' : ''}
-                        {sortColumn === column && (
-                          <Icon
-                            as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                            ml={1}
-                            boxSize={2.5}
-                            color="#4F46E5"
-                          />
-                        )}
-                      </Flex>
-
-                      <Box
-                        position="absolute"
-                        left={0}
-                        top={0}
-                        bottom={0}
-                        width="4px"
-                        cursor="grab"
-                        _hover={{ bg: dragGhostAccent }}
-                        _active={{ cursor: 'grabbing' }}
-                      />
-                      <Box
-                        position="absolute"
-                        right={0}
-                        top={0}
-                        bottom={0}
-                        width="4px"
-                        cursor="col-resize"
-                        _hover={{ bg: dragGhostAccent }}
-                        onMouseDown={(e) => handleResizeStart(column, e)}
-                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                        onDoubleClick={() => autoFitColumn(column)}
-                        zIndex={10}
-                        _after={{
-                          content: '""',
-                          position: 'absolute',
-                          right: '2px',
-                          top: '25%',
-                          bottom: '25%',
-                          width: '1px',
-                          bg: 'transparent',
-                          _hover: { bg: 'white' }
-                        }}
-                        title="Double-click to auto-fit column width"
-                      />
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Box>
+            <FileListTheadRow
+              columnOrder={columnOrder}
+              columnVisibility={columnVisibility}
+              sortColumn={sortColumn}
+              sortDirection={sortDirection}
+              tableHeadTextColor={tableHeadTextColor}
+              headerHoverBg={headerHoverBg}
+              headerStickyBg={headerStickyBg}
+              headerDividerBg={headerDividerBg}
+              dragGhostAccent={dragGhostAccent}
+              draggingColumn={draggingColumn}
+              dragTargetColumn={dragTargetColumn}
+              hasDraggedColumn={hasDraggedColumn}
+              setHeaderContextMenu={setHeaderContextMenu}
+              handleSort={handleSort}
+              autoFitColumn={autoFitColumn}
+              handleColumnDragStart={handleColumnDragStart}
+              handleResizeStart={handleResizeStart}
+            />
 
             <Box as="tbody">
               {groupedFiles.folders && groupedFiles.folders.length > 0 && (
                 <>
-                  {groupedFiles.folders.map((file, fileIndex) => {
+                  {folderVirtualItems.length > 0 && folderVirtualItems[0].start > 0 && (
+                    <Box as="tr">
+                      <Box
+                        as="td"
+                        colSpan={columnOrder.length}
+                        style={{ height: folderVirtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
+                      />
+                    </Box>
+                  )}
+                  {folderVirtualItems.map((virtualRow) => {
+                    const file = groupedFiles.folders![virtualRow.index];
+                    const fileIndex = virtualRow.index;
                     const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
                     const index = globalIndex >= 0 ? globalIndex : fileIndex;
 
@@ -1243,7 +1199,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                       )
                     }
 
-                    const { fileState, finalBg, finalCellStyles } = getRowProps(file, index);
+                    const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
                     const folderDropHandlers = createFolderDropHandlers(file, index);
 
                     return (
@@ -1253,6 +1209,8 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                         index={index}
                         fileState={fileState}
                         finalBg={finalBg}
+                        rowHoverBg={rowHoverBg}
+                        isFolderDropHovered={isFolderDropHovered}
                         columnOrder={columnOrder}
                         columnVisibility={columnVisibility}
                         cellStyles={finalCellStyles}
@@ -1268,6 +1226,19 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                       />
                     );
                   })}
+                  {folderVirtualItems.length > 0 && (() => {
+                    const last = folderVirtualItems[folderVirtualItems.length - 1];
+                    const offsetBottom = folderTotalSize - last.end;
+                    return offsetBottom > 0 ? (
+                      <Box as="tr">
+                        <Box
+                          as="td"
+                          colSpan={columnOrder.length}
+                          style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
+                        />
+                      </Box>
+                    ) : null;
+                  })()}
                 </>
               )}
               {Object.entries(groupedFiles)
@@ -1346,7 +1317,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                           )
                         }
 
-                        const { fileState, finalBg, finalCellStyles } = getRowProps(file, index);
+                        const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
                         const folderDropHandlers = createFolderDropHandlers(file, index);
 
                         return (
@@ -1356,6 +1327,8 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                             index={index}
                             fileState={fileState}
                             finalBg={finalBg}
+                            rowHoverBg={rowHoverBg}
+                            isFolderDropHovered={isFolderDropHovered}
                             columnOrder={columnOrder}
                             columnVisibility={columnVisibility}
                             cellStyles={finalCellStyles}
@@ -1405,123 +1378,25 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
               })}
             </colgroup>
 
-            <Box as="thead">
-              <Box as="tr">
-                {columnOrder.map((column) => {
-                  const isName = column === 'name';
-                  const isSize = column === 'size';
-                  const isModified = column === 'modified';
-                  const isType = column === 'type';
-                  
-                  if (!columnVisibility[column as keyof typeof columnVisibility]) {
-                    return null;
-                  }
-                  
-                  return (
-                    <Box
-                      as="th"
-                      key={column}
-                      px={2}
-                      py={2}
-                      fontWeight="medium"
-                      fontSize="xs"
-                      color={tableHeadTextColor}
-                      cursor="pointer"
-                      _hover={{ bg: headerHoverBg }}
-                      role="group"
-                      verticalAlign="middle"
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setHeaderContextMenu({
-                          isOpen: true,
-                          position: { x: e.clientX, y: e.clientY }
-                        });
-                      }}
-                      onClick={(e) => {
-                        if (hasDraggedColumn) {
-                          return;
-                        }
-                        
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 4;
-                        
-                        if (!isInResizeArea) {
-                          handleSort(column as SortColumn);
-                        }
-                      }}
-                      onDoubleClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const isInResizeArea = clickX > rect.width - 4;
-                        
-                        if (!isInResizeArea) {
-                          autoFitColumn(column);
-                        }
-                      }}
-                      position="sticky"
-                      top={0}
-                      zIndex={100}
-                      bg={headerStickyBg}
-                      _after={{ content: '""', position: 'absolute', right: 0, top: '25%', bottom: '25%', width: '1px', bg: headerDividerBg }}
-                      data-column={column}
-                      onMouseDown={(e) => handleColumnDragStart(column, e)}
-                      opacity={draggingColumn === column ? 0.5 : 1}
-                      borderLeft={draggingColumn && dragTargetColumn === column ? '2px solid #4F46E5' : undefined}
-                      transition="all 0.2s ease"
-                    >
-                      <Flex alignItems="center">
-                        {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isType ? 'Type' : ''}
-                        {sortColumn === column && (
-                          <Icon
-                            as={sortDirection === 'asc' ? ChevronUp : ChevronDown}
-                            ml={1}
-                            boxSize={2.5}
-                            color="#4F46E5"
-                          />
-                        )}
-                      </Flex>
-
-                      <Box
-                        position="absolute"
-                        left={0}
-                        top={0}
-                        bottom={0}
-                        width="4px"
-                        cursor="grab"
-                        _hover={{ bg: dragGhostAccent }}
-                        _active={{ cursor: 'grabbing' }}
-                      />
-                      <Box
-                        position="absolute"
-                        right={0}
-                        top={0}
-                        bottom={0}
-                        width="4px"
-                        cursor="col-resize"
-                        _hover={{ bg: dragGhostAccent }}
-                        onMouseDown={(e) => handleResizeStart(column, e)}
-                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                        onDoubleClick={() => autoFitColumn(column)}
-                        zIndex={10}
-                        _after={{
-                          content: '""',
-                          position: 'absolute',
-                          right: '2px',
-                          top: '25%',
-                          bottom: '25%',
-                          width: '1px',
-                          bg: 'transparent',
-                          _hover: { bg: 'white' }
-                        }}
-                        title="Double-click to auto-fit column width"
-                      />
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Box>
+            <FileListTheadRow
+              columnOrder={columnOrder}
+              columnVisibility={columnVisibility}
+              sortColumn={sortColumn}
+              sortDirection={sortDirection}
+              tableHeadTextColor={tableHeadTextColor}
+              headerHoverBg={headerHoverBg}
+              headerStickyBg={headerStickyBg}
+              headerDividerBg={headerDividerBg}
+              dragGhostAccent={dragGhostAccent}
+              draggingColumn={draggingColumn}
+              dragTargetColumn={dragTargetColumn}
+              hasDraggedColumn={hasDraggedColumn}
+              setHeaderContextMenu={setHeaderContextMenu}
+              handleSort={handleSort}
+              autoFitColumn={autoFitColumn}
+              handleColumnDragStart={handleColumnDragStart}
+              handleResizeStart={handleResizeStart}
+            />
 
             <Box as="tbody">
               {virtualItems.length > 0 && virtualItems[0].start > 0 && (
@@ -1565,7 +1440,7 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                   );
                 }
 
-                const { fileState, finalBg, finalCellStyles } = getRowProps(file, index);
+                const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
                 const folderDropHandlers = createFolderDropHandlers(file, index);
 
                 return (
@@ -1575,6 +1450,8 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
                     index={index}
                     fileState={fileState}
                     finalBg={finalBg}
+                    rowHoverBg={rowHoverBg}
+                    isFolderDropHovered={isFolderDropHovered}
                     columnOrder={columnOrder}
                     columnVisibility={columnVisibility}
                     cellStyles={finalCellStyles}
@@ -1647,26 +1524,15 @@ const FileListViewInner: React.FC<FileListViewProps> = ({
       </Box>
     </Box>
   );
-};
+}, fileListViewPropsEqual);
 
-function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps): boolean {
-  if (prev.sortedFiles !== next.sortedFiles) return false;
-  if (prev.isGroupedByIndex !== next.isGroupedByIndex) return false;
-  if (prev.groupedFiles !== next.groupedFiles) return false;
-  if (prev.newFileHighlightBg !== next.newFileHighlightBg) return false;
-  // O(1) skip: when signature equal, arrays are semantically equal
-  if (prev.memoizedArraySignature !== next.memoizedArraySignature) return false;
-  if (prev.isDragOver !== next.isDragOver || prev.isSelecting !== next.isSelecting) return false;
-  if (prev.selectionRect !== next.selectionRect) return false;
-  if (prev.isRenaming !== next.isRenaming || prev.renameValue !== next.renameValue) return false;
-  if (prev.nativeIcons !== next.nativeIcons) return false;
-  if (prev.columnOrder !== next.columnOrder || prev.columnVisibility !== next.columnVisibility) return false;
-  if (prev.columnWidths !== next.columnWidths) return false;
-  if (prev.draggingColumn !== next.draggingColumn || prev.dragTargetColumn !== next.dragTargetColumn) return false;
-  if (prev.dragMousePos !== next.dragMousePos || prev.dragOffset !== next.dragOffset) return false;
-  if (prev.rowHandlers !== next.rowHandlers) return false;
-  if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
-  return true;
+function FileListViewInner(props: FileListViewProps) {
+  const { rowHandlers: baseRowHandlers } = props;
+  return (
+    <ListRowHoverProvider baseRowHandlers={baseRowHandlers}>
+      {(merged) => <FileListViewBody {...props} rowHandlers={merged} />}
+    </ListRowHoverProvider>
+  );
 }
 
 export const FileListView = React.memo(FileListViewInner, fileListViewPropsEqual);

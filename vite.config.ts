@@ -8,13 +8,15 @@ import { readFileSync } from 'fs'
 // Read package.json to get version
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf-8'))
 
-// Inject React DevTools connection script when running with standalone profiler (npm run profiler)
+// Inject React DevTools bridge when running `npm run profiler`.
+// Retries loading http://localhost:8097 so we don't lose the connection if Electron loads before react-devtools binds the port (common with concurrently).
 const reactDevToolsPlugin = () => ({
   name: 'react-devtools-inject',
   transformIndexHtml(html: string) {
     if (process.env.VITE_REACT_DEVTOOLS !== 'true') return html
-    const script = '<script src="http://localhost:8097"></script>'
-    return html.replace('</head>', `  ${script}\n</head>`)
+    const port = process.env.REACT_DEVTOOLS_PORT || '8097'
+    const loader = `<script>(function(){var p="${port}",n=0,N=90;function c(){if(++n>N){console.warn("[profiler] React DevTools not reachable at http://localhost:"+p+" — start react-devtools first or run: npm run profiler");return;}var s=document.createElement("script");s.async=true;s.src="http://localhost:"+p;s.onerror=function(){s.remove();setTimeout(c,400)};document.head.appendChild(s)}c()})();</script>`
+    return html.replace('</head>', `  ${loader}\n</head>`)
   },
 })
 

@@ -304,71 +304,12 @@ export const FileGrid: React.FC = () => {
   const [isDragStarted, setIsDragStarted] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
 
-  // Track which row is hovered to highlight the entire row in list view
-  const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
-  const hoveredRowIndexRef = useRef<number | null>(null);
-
   // Refs for stable row handlers - handlers read from these to avoid closure churn
   const selectedFilesRef = useRef<string[]>([]);
   const selectedFilesSetRef = useRef<Set<string>>(new Set());
   const sortedFilesRef = useRef<FileItem[]>([]);
   const fileNameToPathMapRef = useRef<Map<string, string>>(new Map());
   const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Optimized hover handlers with throttling to prevent excessive state updates
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastHoverTimeRef = useRef<number>(0);
-  const HOVER_THROTTLE_MS = 16; // ~60fps
-  
-  const handleRowMouseEnter = useCallback((index: number) => {
-    // Clear any existing timeout
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    
-    // Throttle hover updates to ~60fps (read from ref for stable callback)
-    const now = Date.now();
-    if (now - lastHoverTimeRef.current >= HOVER_THROTTLE_MS) {
-      if (hoveredRowIndexRef.current !== index) {
-        setHoveredRowIndex(index);
-      }
-      lastHoverTimeRef.current = now;
-    } else {
-      // Schedule update if throttled
-      hoverTimeoutRef.current = setTimeout(() => {
-        if (hoveredRowIndexRef.current !== index) {
-          setHoveredRowIndex(index);
-        }
-        lastHoverTimeRef.current = Date.now();
-      }, HOVER_THROTTLE_MS - (now - lastHoverTimeRef.current));
-    }
-  }, []);
-  
-  const handleRowMouseLeave = useCallback((index: number, e: React.MouseEvent) => {
-    // Clear any existing timeout
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-    }
-    
-    // Debounce the hover clear to prevent flickering
-    hoverTimeoutRef.current = setTimeout(() => {
-      const related = e.relatedTarget;
-      // Check if relatedTarget is an Element with closest method
-      if (related && typeof (related as any).closest === 'function' && (related as Element).closest(`[data-row-index="${index}"]`)) return;
-      setHoveredRowIndex(prev => (prev === index ? null : prev));
-      lastHoverTimeRef.current = Date.now();
-    }, 50); // 50ms debounce
-  }, []);
-
-  // Cleanup hover timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
@@ -575,8 +516,7 @@ export const FileGrid: React.FC = () => {
     sortedFilesRef.current = sortedFiles;
     fileNameToPathMapRef.current = fileNameToPathMap;
     clickTimerRef.current = clickTimer;
-    hoveredRowIndexRef.current = hoveredRowIndex;
-  }, [selectedFiles, selectedFilesSet, sortedFiles, fileNameToPathMap, clickTimer, hoveredRowIndex]);
+  }, [selectedFiles, selectedFilesSet, sortedFiles, fileNameToPathMap, clickTimer]);
 
   // Debounced directory loading to prevent rapid reloads
   const debouncedLoadDirectory = useCallback(
@@ -3891,7 +3831,6 @@ export const FileGrid: React.FC = () => {
   // Lazy per-row lookup: only called for visible rows (~30), not full list (1241). Selection change = O(visible) not O(n).
   const getFileStateForIndex = useCallback((file: FileItem, _index: number) => ({
     isFileSelected: selectedFilesSet.has(file.name),
-    isRowHovered: false as boolean, // Applied per visible row in FileListView
     isFileCut: clipboardFilePathsSet.has(file.path),
     isFileNew: recentlyTransferredFilesSet.set.has(file.path) || recentlyTransferredFilesSet.normalizedSet.has(file.path.replace(/\\/g, '/')),
     isFileDragged: draggedFiles.has(file.name)
@@ -3899,8 +3838,8 @@ export const FileGrid: React.FC = () => {
 
   // Stable row handlers object - same reference for all rows, handlers take (file, index, e) as args
   const rowHandlers = useMemo(() => ({
-    onMouseEnter: (index: number) => handleRowMouseEnter(index),
-    onMouseLeave: (index: number, e: React.MouseEvent) => handleRowMouseLeave(index, e),
+    onMouseEnter: (_index: number) => {},
+    onMouseLeave: (_index: number, _e: React.MouseEvent) => {},
     onContextMenu: (file: FileItem, e: React.MouseEvent) => handleContextMenu(e, file),
     onClick: (file: FileItem, index: number, e?: React.MouseEvent) => handleFileItemClick(file, index, e),
     onMouseDown: (file: FileItem, index: number, e: React.MouseEvent) => handleFileItemMouseDown?.(file, index, e),
@@ -3925,7 +3864,7 @@ export const FileGrid: React.FC = () => {
       clearFolderHoverStates();
       addLog('Drag operation ended');
     }
-  }), [handleRowMouseEnter, handleRowMouseLeave, handleContextMenu, handleFileItemClick, handleFileItemMouseDown, handleFileItemMouseUp, handleFileItemDragStart, setIsDragStarted, setDraggedFiles, clearFolderHoverStates, addLog]);
+  }), [handleContextMenu, handleFileItemClick, handleFileItemMouseDown, handleFileItemMouseUp, handleFileItemDragStart, setIsDragStarted, setDraggedFiles, clearFolderHoverStates, addLog]);
 
   // Cache for folder drop handlers - stable refs enable FileTableRow memo on selection change
   const folderDropHandlersCacheRef = useRef<Map<string, Record<string, any>>>(new Map());
@@ -4108,8 +4047,8 @@ export const FileGrid: React.FC = () => {
   const memoizedArraySignature = useMemo(() => {
     const cutPaths = clipboard.operation === 'cut' ? clipboard.files.map(f => f.path).join(',') : '';
     const folderPaths = [...folderHoverState].sort().join(',');
-    return `${selectedFiles.join(',')}|${hoveredRowIndex}|${cutPaths}|${folderPaths}|${fileSearchFilter ?? ''}`;
-  }, [selectedFiles, hoveredRowIndex, clipboard, folderHoverState, fileSearchFilter]);
+    return `${selectedFiles.join(',')}|${cutPaths}|${folderPaths}|${fileSearchFilter ?? ''}`;
+  }, [selectedFiles, clipboard, folderHoverState, fileSearchFilter]);
 
   // Drag selection handlers
   const handleSelectionMouseDown = useCallback((e: React.MouseEvent) => {
@@ -4353,7 +4292,6 @@ export const FileGrid: React.FC = () => {
         headerHoverBg={headerHoverBg}
         headerStickyBg={headerStickyBg}
         rowHoverBg={rowHoverBg}
-        hoveredRowIndex={hoveredRowIndex}
         folderHoverState={folderHoverState}
         headerDividerBg={headerDividerBg}
         dragGhostBg={dragGhostBg}

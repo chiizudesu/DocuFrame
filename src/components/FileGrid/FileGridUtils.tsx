@@ -16,12 +16,13 @@ export interface FileTableRowProps {
   index: number;
   fileState: {
     isFileSelected: boolean;
-    isRowHovered: boolean;
     isFileCut: boolean;
     isFileNew: boolean;
     isFileDragged: boolean;
   };
   finalBg: string;
+  rowHoverBg: string;
+  isFolderDropHovered: boolean;
   columnOrder: string[];
   columnVisibility: {
     name: boolean;

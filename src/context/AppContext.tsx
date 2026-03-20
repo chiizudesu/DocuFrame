@@ -133,6 +133,9 @@ interface AppContextType {
   recentClientPaths: string[];
   // File grouping by index prefix (computed from settings: always on except blacklist)
   isGroupedByIndex: boolean;
+  /** Session-only: when false, flat list regardless of group-view settings (not persisted). */
+  sessionLayerViewEnabled: boolean;
+  setSessionLayerViewEnabled: (value: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -199,6 +202,7 @@ export const AppProvider: React.FC<{
   // File grouping by index prefix - always on except blacklisted directories (from settings)
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
+  const [sessionLayerViewEnabled, setSessionLayerViewEnabled] = useState<boolean>(true);
   /** No-op: FileGrid still calls this after loads; group view uses currentDirectory only */
   const setDisplayedDirectory = useCallback((_path: string) => {}, []);
   
@@ -313,17 +317,6 @@ export const AppProvider: React.FC<{
     }
   }, [currentDirectory]);
 
-  // Log directory changes for troubleshooting
-  const prevDirectoryRef = useRef<string>('');
-  useEffect(() => {
-    if (prevDirectoryRef.current !== currentDirectory) {
-      console.log(
-        `[Directory] ${prevDirectoryRef.current || '(empty)'} → ${currentDirectory || '(empty)'}`,
-      );
-      prevDirectoryRef.current = currentDirectory;
-    }
-  }, [currentDirectory]);
-
   // Update recent client folders when navigating to a client folder
   useEffect(() => {
     if (!currentDirectory || !rootDirectory) return;
@@ -349,16 +342,12 @@ export const AppProvider: React.FC<{
 
   // Blacklist = disable group view only when the current folder path exactly matches an entry
   // (not for subfolders — e.g. Annual Accounts listed, but A & E Glass inside it still groups).
-  const isGroupedByIndex = useMemo(() => {
+  const isGroupedByIndexFromSettings = useMemo(() => {
     if (!groupViewAlwaysEnabled) {
-      console.log(
-        `[GroupView] grouped=OFF reason=setting_off rawDir="${currentDirectory || ''}"`,
-      );
       return false;
     }
     const dir = normalizePath(currentDirectory || '');
     if (!dir) {
-      console.log(`[GroupView] grouped=ON reason=no_path_yet rawDir="${currentDirectory || ''}"`);
       return true;
     }
     const blacklistHits: string[] = [];
@@ -373,11 +362,10 @@ export const AppProvider: React.FC<{
     });
     const result = !isBlacklisted;
     const hits = blacklistHits.length > 0 ? blacklistHits.join(' | ') : 'none';
-    console.log(
-      `[GroupView] grouped=${result} blacklisted=${isBlacklisted} normalized="${dir}" raw="${currentDirectory}" blacklistCount=${groupViewBlacklist.length} hits=${hits}`,
-    );
     return result;
   }, [currentDirectory, groupViewAlwaysEnabled, groupViewBlacklist]);
+
+  const isGroupedByIndex = sessionLayerViewEnabled && isGroupedByIndexFromSettings;
 
   // Wrapper functions to save to localStorage when settings change
   const setRootDirectory = (path: string) => {
@@ -613,6 +601,8 @@ export const AppProvider: React.FC<{
       logFileOperation,
       setLogFileOperation,
       isGroupedByIndex,
+      sessionLayerViewEnabled,
+      setSessionLayerViewEnabled,
       // Document insights properties removed
     }}>
       {children}

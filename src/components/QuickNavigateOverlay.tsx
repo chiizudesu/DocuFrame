@@ -105,6 +105,16 @@ export const QuickNavigateOverlay: React.FC = () => {
   const highlightColor = useColorModeValue('blue.400', 'blue.500');
   const fileTextIconColor = useColorModeValue('gray.500', 'gray.400');
   const fileTextLabelColor = useColorModeValue('gray.600', 'gray.300');
+
+  // Colors used in command info + preview panels.
+  // Kept here (not inline in JSX) to preserve stable hook order.
+  const commandInfoRowBg = useColorModeValue('#f1f5f9', 'gray.900');
+  const commandInfoRowBorderColor = useColorModeValue('#d1d5db', 'gray.700');
+  const commandInfoChevronColor = useColorModeValue('#3b82f6', '#63B3ED');
+  const commandInfoUsageTextColor = useColorModeValue('#3b82f6', 'blue.300');
+  const previewItemBg = useColorModeValue('gray.100', 'gray.700');
+  const previewItemBorderColor = useColorModeValue('gray.200', 'gray.600');
+  const previewChevronColor = useColorModeValue('#64748b', '#718096');
   
   // Pulsing border animation for content search loading
   const pulseBorderAnimation = useColorModeValue(
@@ -978,8 +988,8 @@ export const QuickNavigateOverlay: React.FC = () => {
             {isSearchMode && (
               <Flex align="center" position="absolute" right={3} gap={2}>
                 <Flex align="center" gap={1}>
-                  <FileText size={14} color={useColorModeValue('gray.500', 'gray.400')} />
-                  <Text fontSize="sm" color={useColorModeValue('gray.600', 'gray.300')}>
+                  <FileText size={14} color={fileTextIconColor} />
+                  <Text fontSize="sm" color={fileTextLabelColor}>
                     Contents
                   </Text>
                 </Flex>
@@ -1013,10 +1023,18 @@ export const QuickNavigateOverlay: React.FC = () => {
               <Text fontSize="xs" color="gray.500" mb={1}>
                 {commandInfo.description}
               </Text>
-                              <Flex align="center" bg={useColorModeValue('#f1f5f9', 'gray.900')} p={2} borderRadius="md" mt={2} border="1px solid" borderColor={useColorModeValue('#d1d5db', 'gray.700')}>
-                  <Flex align="center">
-                    <ChevronRight size={12} color={useColorModeValue('#3b82f6', '#63B3ED')} strokeWidth={2} />
-                    <Text fontSize="xs" fontFamily="monospace" color={useColorModeValue('#3b82f6', 'blue.300')} ml={1}>
+              <Flex
+                align="center"
+                bg={commandInfoRowBg}
+                p={2}
+                borderRadius="md"
+                mt={2}
+                border="1px solid"
+                borderColor={commandInfoRowBorderColor}
+              >
+                <Flex align="center">
+                  <ChevronRight size={12} color={commandInfoChevronColor} strokeWidth={2} />
+                  <Text fontSize="xs" fontFamily="monospace" color={commandInfoUsageTextColor} ml={1}>
                     {commandInfo.usage.replace('> ', '')}
                   </Text>
                 </Flex>
@@ -1031,7 +1049,7 @@ export const QuickNavigateOverlay: React.FC = () => {
                 <Box>
                   {commandInfo.preview.items.map((item, index) => (
                     <Flex key={index} align="center" py={1}>
-                      <ChevronRight size={10} color={useColorModeValue('#64748b', '#718096')} strokeWidth={2} />
+                      <ChevronRight size={10} color={previewChevronColor} strokeWidth={2} />
                       <Text fontSize="xs" ml={2}>
                         {item.name} {item.size && `(${item.size})`}
                       </Text>
@@ -1063,12 +1081,12 @@ export const QuickNavigateOverlay: React.FC = () => {
                     key={index}
                     fontSize="sm"
                     borderRadius="lg"
-                    bg={useColorModeValue('gray.100', 'gray.700')}
+                    bg={previewItemBg}
                     px={3}
                     py={2}
                     boxShadow="sm"
                     borderWidth="1px"
-                    borderColor={useColorModeValue('gray.200', 'gray.600')}
+                    borderColor={previewItemBorderColor}
                     w="100%"
                     overflow="visible"
                     display="flex"
