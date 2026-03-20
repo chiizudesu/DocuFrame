@@ -43,7 +43,7 @@ import { useAppContext } from '../context/AppContext'
 import { useClientInfo } from '../hooks/useClientInfo'
 import { useYearNavigation } from '../hooks/useYearNavigation'
 import { useDirectorySearch } from '../hooks/useDirectorySearch'
-import { joinPath, getParentPath, normalizePath, isChildPath, getRelativePathSegments, pathsEqualForJump } from '../utils/path'
+import { joinPath, getParentPath, normalizePath, isChildPath, getRelativePathSegments, pathsEqualForJump, resolveJumpTargetInBreadcrumbs } from '../utils/path'
 import { eventMatchesShortcut } from '../utils/shortcuts'
 import type { FileItem } from '../types'
 
@@ -932,6 +932,17 @@ export const FolderInfoBar: React.FC = () => {
         setMiniSearchText(initialText)
         requestAnimationFrame(() => miniSearchInputRef.current?.focus())
       },
+      openAtPath: (path: string, { initialText = '' } = {}) => {
+        const resolved = resolveJumpTargetInBreadcrumbs(breadcrumbs, path)
+        if (!resolved) return false
+        setActiveChevronIndex(resolved.anchorIndex)
+        setMiniAnchorPath(resolved.anchorPath)
+        setMiniSearchPath(resolved.targetNormalized)
+        setMiniJumpParentNavPreview(false)
+        setMiniSearchText(initialText)
+        requestAnimationFrame(() => miniSearchInputRef.current?.focus())
+        return true
+      },
       appendFilterText: (text: string) => {
         if (activeChevronIndex === null) return
         setMiniSearchText((prev) => prev + text)
@@ -1041,11 +1052,15 @@ export const FolderInfoBar: React.FC = () => {
                   display="inline-flex"
                   alignItems="center"
                   mr={1}
+                  whiteSpace="nowrap"
+                  flexShrink={0}
                 >
                   {segment}
                 </Box>
               ) : (
-                <Text as="span" display="inline-block" fontSize="sm" mr={1}>{segment}</Text>
+                <Text as="span" display="inline-block" fontSize="sm" mr={1} whiteSpace="nowrap" flexShrink={0}>
+                  {segment}
+                </Text>
               )}
               {index < segments.length - 1 && <Text as="span" mx={0.5} color={miniSeparatorColor} fontSize="xs">&gt;</Text>}
             </React.Fragment>
@@ -1054,6 +1069,26 @@ export const FolderInfoBar: React.FC = () => {
       </>
     )
   }, [miniAnchorPath, miniCommittedSegs, miniCurrentFolderBg, miniCurrentFolderColor, miniSeparatorColor])
+
+  /** Keep jump path + typing pill on one row; scroll so the right side (filter) stays visible */
+  useLayoutEffect(() => {
+    if (activeChevronIndex === null) return
+    const el = miniPathFlexRef.current
+    const scrollToEnd = () => {
+      if (!el) return
+      el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
+    }
+    scrollToEnd()
+    window.addEventListener('resize', scrollToEnd)
+    return () => window.removeEventListener('resize', scrollToEnd)
+  }, [
+    activeChevronIndex,
+    miniCommittedSegs,
+    miniSearchText,
+    jumpUiDisplayWidthPx,
+    miniTypingPillIsCurrentSegment,
+    miniSearchPath,
+  ])
 
   useEffect(() => {
     if (miniSearchText.trim()) setMiniJumpParentNavPreview(false)
@@ -1498,11 +1533,25 @@ export const FolderInfoBar: React.FC = () => {
               h="100%"
               py={0}
               px={1}
-              overflow="visible"
+              overflow="hidden"
               borderLeft="1px solid"
               borderLeftColor={miniDividerColor}
             >
-              <Flex ref={miniPathFlexRef} align="center" flexWrap="wrap" gap={1} flex={1} minW={0}>
+              <Flex
+                ref={miniPathFlexRef}
+                align="center"
+                flexWrap="nowrap"
+                gap={1}
+                flex={1}
+                minW={0}
+                maxH="28px"
+                overflowX="auto"
+                overflowY="hidden"
+                sx={{
+                  scrollbarWidth: 'none',
+                  '&::-webkit-scrollbar': { display: 'none' },
+                }}
+              >
                 {miniCommittedSegmentsDisplay}
                 {miniCommittedSegs.length > 0 && (
                   <Text as="span" mx={0.5} color={miniSeparatorColor} fontSize="xs">
@@ -1555,6 +1604,8 @@ export const FolderInfoBar: React.FC = () => {
                     border="none"
                     outline="none"
                     boxShadow="none"
+                    whiteSpace="nowrap"
+                    sx={{ overflow: 'hidden', minWidth: 0 }}
                     _focusVisible={{ boxShadow: 'none', outline: 'none' }}
                   />
                 </Box>

@@ -191,8 +191,13 @@ const MAIN_WINDOW_VITE_DEV_SERVER_URL = process.env.NODE_ENV === 'development'
   ? 'http://localhost:5173'
   : undefined;
 
-// Config file path
+// Config file path (backup used when primary is corrupt / to recover from bad saves)
 const configPath = path.join(app.getPath('userData'), 'config.json');
+const configBackupPath = path.join(app.getPath('userData'), 'config.json.bak');
+
+function isErrnoCode(err: unknown, code: string): boolean {
+  return (err as NodeJS.ErrnoException)?.code === code;
+}
 
 interface PDFText {
   R: Array<{
@@ -359,38 +364,88 @@ function getWatchedDirectories(): string[] {
   return Array.from(watchedDirectories.keys());
 }
 
-// Load or create config
-async function loadConfig(): Promise<Config> {
+function buildDefaultConfig(): Config {
+  return {
+    rootPath: app.getPath('documents'),
+    apiKey: undefined,
+    gstTemplatePath: undefined,
+    clientbasePath: undefined,
+    templateFolderPath: undefined,
+    workpaperTemplateFolderPath: undefined,
+    showOutputLog: true,
+    activationShortcut: '`',
+    enableActivationShortcut: true,
+    calculatorShortcut: 'Alt+Q',
+    enableCalculatorShortcut: true,
+    newTabShortcut: 'Ctrl+T',
+    enableNewTabShortcut: true,
+    closeTabShortcut: 'Ctrl+W',
+    enableCloseTabShortcut: true,
+    clientSearchShortcut: 'Alt+F',
+    enableClientSearchShortcut: true,
+    sidebarCollapsedByDefault: false,
+    hideTemporaryFiles: true,
+    aiEditorInstructions: '',
+  };
+}
+
+/** If primary config is missing or invalid, try backup; only write factory defaults when there is no backup. */
+async function restoreOrCreateConfigAfterPrimaryInvalid(reason: string): Promise<Config> {
+  const defaultConfig = buildDefaultConfig();
+
   try {
-    const data = await fsPromises.readFile(configPath, 'utf-8');
-    return JSON.parse(data);
+    const bakRaw = await fsPromises.readFile(configBackupPath, 'utf-8');
+    if (bakRaw.trim()) {
+      const restored = JSON.parse(bakRaw) as Config;
+      console.warn(`[Main] ${reason} — restored settings from config.json.bak`);
+      await fsPromises.writeFile(configPath, JSON.stringify(restored, null, 2));
+      return restored;
+    }
+  } catch (e) {
+    if (!isErrnoCode(e, 'ENOENT')) {
+      console.warn('[Main] Could not read config.json.bak:', e);
+    }
+  }
+
+  try {
+    if (fs.existsSync(configPath)) {
+      const dir = path.dirname(configPath);
+      const badName = `config.invalid.${Date.now()}.json`;
+      await fsPromises.rename(configPath, path.join(dir, badName));
+      console.error(
+        `[Main] ${reason} — renamed broken config to ${badName}. No usable backup; wrote default settings. Check that folder for recovery.`
+      );
+    }
+  } catch (e) {
+    console.error('[Main] Could not rename invalid config file:', e);
+  }
+
+  await fsPromises.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
+  return defaultConfig;
+}
+
+// Load or create config (never overwrite a broken file with defaults without trying .bak first)
+async function loadConfig(): Promise<Config> {
+  let raw: string;
+  try {
+    raw = await fsPromises.readFile(configPath, 'utf-8');
   } catch (error) {
-    // Create default config if it doesn't exist
-    const defaultConfig: Config = {
-      rootPath: app.getPath('documents'),
-      apiKey: undefined,
-      gstTemplatePath: undefined,
-      clientbasePath: undefined,
-      templateFolderPath: undefined,
-      workpaperTemplateFolderPath: undefined,
-      showOutputLog: true,
-      activationShortcut: '`',
-      enableActivationShortcut: true,
-      calculatorShortcut: 'Alt+Q',
-      enableCalculatorShortcut: true,
-      newTabShortcut: 'Ctrl+T',
-      enableNewTabShortcut: true,
-      closeTabShortcut: 'Ctrl+W',
-      enableCloseTabShortcut: true,
-      clientSearchShortcut: 'Alt+F',
-      enableClientSearchShortcut: true,
-      sidebarCollapsedByDefault: false,
-      hideTemporaryFiles: true,
-      aiEditorInstructions: '',
-      
-    };
-    await fsPromises.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
-    return defaultConfig;
+    if (isErrnoCode(error, 'ENOENT')) {
+      const defaultConfig = buildDefaultConfig();
+      await fsPromises.writeFile(configPath, JSON.stringify(defaultConfig, null, 2));
+      return defaultConfig;
+    }
+    throw error;
+  }
+
+  if (!raw.trim()) {
+    return restoreOrCreateConfigAfterPrimaryInvalid('Config file was empty');
+  }
+
+  try {
+    return JSON.parse(raw) as Config;
+  } catch {
+    return restoreOrCreateConfigAfterPrimaryInvalid('Config file JSON was invalid');
   }
 }
 
@@ -418,8 +473,14 @@ async function saveConfig(config: Config) {
     if (!configData) {
       throw new Error('Failed to serialize config to JSON');
     }
+    try {
+      if (fs.existsSync(configPath)) {
+        await fsPromises.copyFile(configPath, configBackupPath);
+      }
+    } catch (e) {
+      console.warn('[Main] Config pre-save backup (config.json.bak) failed:', e);
+    }
     await fsPromises.writeFile(configPath, configData);
-    console.log('[Main] Config saved successfully');
   } catch (error) {
     console.error('[Main] Error in saveConfig:', error);
     throw error;
@@ -625,8 +686,7 @@ const createWindow = () => {
 app.whenReady().then(async () => {
   // Load config before creating window
   const config = await loadConfig();
-  console.log('[Main] Loaded config on window start:', config);
-  
+
   // Initialize Express server for PDF file serving
   initializeExpressServer();
   
@@ -955,14 +1015,11 @@ ipcMain.handle('get-config', async () => {
 
 ipcMain.handle('set-config', async (_, config: Config) => {
   try {
-    console.log('[Main] Received set-config request:', config);
-    
     if (!config) {
       throw new Error('Config parameter is undefined or null');
     }
-    
+
     await saveConfig(config);
-    console.log('[Main] Config successfully saved and returned');
     return config;
   } catch (error) {
     console.error('Error occurred in handler for \'set-config\':', error);

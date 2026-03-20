@@ -22,6 +22,8 @@ export interface AppSettings {
   enableJumpModeShortcut?: boolean;
   jumpModeOnParentShortcut?: string;
   enableJumpModeOnParentShortcut?: boolean;
+  /** F2–F4 jump targets (folder paths); three entries, index 0 = F2 (F5 reserved for refresh) */
+  jumpModeQuickFolderPaths?: string[];
   backspaceNavigationShortcut?: string;
   enableBackspaceNavigationShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
@@ -86,9 +88,12 @@ class SettingsService {
 
   async setSettings(settings: AppSettings): Promise<void> {
     try {
-      // Always merge with existing config to avoid overwriting unrelated fields
+      // Merge with disk config; omit undefined so we never wipe keys from stale React state
       const currentConfig = await (window.electronAPI as any).getConfig();
-      const mergedConfig = { ...currentConfig, ...settings };
+      const definedOnly = Object.fromEntries(
+        Object.entries(settings as Record<string, unknown>).filter(([, v]) => v !== undefined)
+      ) as AppSettings;
+      const mergedConfig = { ...currentConfig, ...definedOnly };
       await (window.electronAPI as any).setConfig(mergedConfig);
       this.settings = mergedConfig;
     } catch (error) {

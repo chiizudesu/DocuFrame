@@ -52,7 +52,8 @@ import {
   Moon,
   Image as ImageIcon,
   Plus,
-  Trash2
+  Trash2,
+  Download,
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import {
@@ -208,6 +209,7 @@ interface Settings {
   enableClientSearchShortcut?: boolean;
   jumpModeOnParentShortcut?: string;
   enableJumpModeOnParentShortcut?: boolean;
+  jumpModeQuickFolderPaths?: string[];
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
@@ -250,6 +252,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
   );
   const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState(true);
+  const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
@@ -316,6 +319,16 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             : loadedSettings.jumpModeOnParentShortcut || DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
         );
         setEnableJumpModeOnParentShortcut(loadedSettings.enableJumpModeOnParentShortcut !== false);
+        {
+          const next = ['', '', ''];
+          const q = loadedSettings.jumpModeQuickFolderPaths;
+          if (Array.isArray(q)) {
+            for (let i = 0; i < 3; i++) {
+              next[i] = typeof q[i] === 'string' ? q[i].trim() : '';
+            }
+          }
+          setJumpModeQuickFolderPaths(next);
+        }
         setSidebarCollapsedByDefault(loadedSettings.sidebarCollapsedByDefault || false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
@@ -418,6 +431,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         enableClientSearchShortcut,
         jumpModeOnParentShortcut,
         enableJumpModeOnParentShortcut,
+        jumpModeQuickFolderPaths: jumpModeQuickFolderPaths.map((s) => (typeof s === 'string' ? s.trim() : '')),
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
         hideDotFiles,
@@ -500,6 +514,60 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       }
     } catch (error) {
       console.error('Error selecting directory:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to select directory',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleExportSettings = async () => {
+    try {
+      const dir = await window.electronAPI.selectDirectory();
+      if (!dir) return;
+      const config = await window.electronAPI.getConfig();
+      const date = new Date();
+      const stamp = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const sep = dir.includes('\\') ? '\\' : '/';
+      const base = dir.replace(/[/\\]+$/, '');
+      const filePath = `${base}${sep}docuframe-settings-${stamp}.json`;
+      const content = JSON.stringify(config, null, 2);
+      await window.electronAPI.writeTextFile(filePath, content);
+      toast({
+        title: 'Settings exported',
+        description: filePath,
+        status: 'success',
+        duration: 5000,
+        isClosable: true,
+      });
+    } catch (error) {
+      console.error('Error exporting settings:', error);
+      toast({
+        title: 'Export failed',
+        description: error instanceof Error ? error.message : 'Could not write settings file',
+        status: 'error',
+        duration: 4000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const pickJumpQuickFolder = async (slot: number) => {
+    try {
+      const result = await (window.electronAPI as any).selectDirectory();
+      if (result) {
+        setJumpModeQuickFolderPaths((prev) => {
+          const n = [...prev];
+          while (n.length < 3) n.push('');
+          n[slot] = result;
+          return n;
+        });
+      }
+    } catch (error) {
+      console.error('Error selecting jump folder:', error);
       toast({
         title: 'Error',
         description: 'Failed to select directory',
@@ -1227,6 +1295,23 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     </FormControl>
                   </VStack>
                 </Box>
+
+                <Divider my={3.5} />
+
+                <Flex pb={1} align="center" justify="space-between" gap={3} wrap="wrap">
+                  <Heading size="sm" mb={0} color={textColor}>
+                    Export Settings
+                  </Heading>
+                  <Button
+                    size="sm"
+                    leftIcon={<Icon as={Download} boxSize={4} />}
+                    onClick={handleExportSettings}
+                    borderRadius={0}
+                    flexShrink={0}
+                  >
+                    Export to folder…
+                  </Button>
+                </Flex>
               </VStack>
             </TabPanel>
 
@@ -1594,6 +1679,67 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     </tbody>
                   </table>
                 </Box>
+
+                <Divider my={4} />
+                <Heading size="sm" mb={2} color={textColor}>
+                  Jump mode quick folders
+                </Heading>
+                <Text fontSize="xs" color={secondaryTextColor} mb={3}>
+                  <strong>F1</strong> opens jump at the workspace root. <strong>F2–F4</strong> open jump at the folders you set here (when the path is under your current breadcrumb trail). <strong>F5</strong> is left for refresh. Save settings to apply.
+                </Text>
+                <VStack align="stretch" spacing={2} mb={2}>
+                  <HStack align="center" spacing={2}>
+                    <Text fontSize="sm" fontWeight="semibold" w="40px" flexShrink={0}>
+                      F1
+                    </Text>
+                    <Input
+                      size="sm"
+                      isReadOnly
+                      value={rootPath ? normalizePath(rootPath) : ''}
+                      placeholder="Set workspace root in General"
+                      flex={1}
+                    />
+                  </HStack>
+                  {([0, 1, 2] as const).map((slot) => (
+                    <HStack key={slot} align="center" spacing={2}>
+                      <Text fontSize="sm" fontWeight="semibold" w="40px" flexShrink={0}>
+                        F{slot + 2}
+                      </Text>
+                      <Input
+                        size="sm"
+                        value={jumpModeQuickFolderPaths[slot] ?? ''}
+                        onChange={(e) => {
+                          setJumpModeQuickFolderPaths((prev) => {
+                            const n = [...prev];
+                            while (n.length < 3) n.push('');
+                            n[slot] = e.target.value;
+                            return n;
+                          });
+                        }}
+                        placeholder="Browse or paste folder path…"
+                        flex={1}
+                      />
+                      <Button size="sm" h="32px" onClick={() => pickJumpQuickFolder(slot)}>
+                        Browse
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        h="32px"
+                        onClick={() => {
+                          setJumpModeQuickFolderPaths((prev) => {
+                            const n = [...prev];
+                            while (n.length < 3) n.push('');
+                            n[slot] = '';
+                            return n;
+                          });
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </HStack>
+                  ))}
+                </VStack>
 
                 <Alert status="info" size="sm" mt={3} borderRadius={0}>
                   <AlertIcon />

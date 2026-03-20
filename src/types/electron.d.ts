@@ -27,6 +27,8 @@ interface ElectronAPI {
   createDirectory: (path: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
+  readTextFile: (filePath: string) => Promise<string>;
+  writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
   selectDirectory: () => Promise<string>;
   selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
   openFile: (filePath: string) => Promise<void>;

@@ -27,8 +27,10 @@ const AppContent: React.FC = () => {
     jumpModeOnParentShortcut,
     enableJumpModeOnParentShortcut,
     addressBarJumpRef,
+    rootDirectory,
+    jumpModeQuickFolderPaths,
   } = useAppContext();
-
+  
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   const isSettingsWindow = window.location.hash === '#settings';
@@ -145,6 +147,42 @@ const AppContent: React.FC = () => {
         }
         return;
       }
+      
+      if (!isInputFocused && !isQuickNavigating && jump) {
+        const openJumpValidated = async (folderPath: string) => {
+          if (!folderPath?.trim()) return;
+          try {
+            const ok = await window.electronAPI.validatePath(folderPath);
+            if (!ok) {
+              setStatus('Jump folder path is not accessible', 'error');
+              return;
+            }
+            const api = addressBarJumpRef.current;
+            const opened = api?.openAtPath(folderPath, { initialText: '' });
+            if (opened === false) {
+              setStatus('Jump shortcut folder is outside the current workspace trail', 'error');
+            }
+          } catch {
+            setStatus('Jump folder path is not accessible', 'error');
+          }
+        };
+        if (e.key === 'F1') {
+          if (rootDirectory?.trim()) {
+            e.preventDefault();
+            void openJumpValidated(rootDirectory);
+          }
+          return;
+        }
+        const fn = ['F2', 'F3', 'F4'].indexOf(e.key);
+        if (fn >= 0) {
+          const p = jumpModeQuickFolderPaths[fn]?.trim();
+          if (p) {
+            e.preventDefault();
+            void openJumpValidated(p);
+            return;
+          }
+        }
+      }
 
       if (!isInputFocused && !isQuickNavigating && e.key === 'Enter') {
         if (jump?.isActive()) {
@@ -155,7 +193,7 @@ const AppContent: React.FC = () => {
         e.preventDefault();
         return;
       }
-
+      
       if (!isInputFocused && !isQuickNavigating && e.ctrlKey && e.code === 'Space') {
         setIsQuickNavigating(true);
         setInitialCommandMode(true);
@@ -168,7 +206,7 @@ const AppContent: React.FC = () => {
         e.preventDefault();
         return;
       }
-
+      
       if (
         !isInputFocused &&
         !isQuickNavigating &&
@@ -185,7 +223,7 @@ const AppContent: React.FC = () => {
         }
         return;
       }
-
+      
       const jumpActive = addressBarJumpRef.current?.isActive() ?? false;
       if (!jumpActive && e.key === 'Escape') {
         window.dispatchEvent(new CustomEvent('escape-key-pressed'));
@@ -205,6 +243,9 @@ const AppContent: React.FC = () => {
     jumpModeOnParentShortcut,
     enableJumpModeOnParentShortcut,
     addressBarJumpRef,
+    rootDirectory,
+    jumpModeQuickFolderPaths,
+    setStatus,
   ]);
 
   if (isSettingsWindow) {
@@ -221,7 +262,7 @@ const AppContent: React.FC = () => {
       </Box>
     );
   }
-
+  
   if (isFloatingTimerWindow) {
     return <FloatingTaskTimerWindow onClose={() => window.close()} />;
   }

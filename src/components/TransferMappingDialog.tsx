@@ -171,7 +171,6 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
       if (isOpen) {
         try {
           const config = await window.electronAPI.getConfig();
-          console.log('Loaded config:', config);
           if (config?.transferCommandMappings) {
             const mappingArray = Object.entries(config.transferCommandMappings).map(([command, filename]) => ({
               command,
@@ -202,14 +201,12 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
       }, {} as { [key: string]: string });
 
       const config = await window.electronAPI.getConfig();
-      console.log('Current config before update:', config);
-      
+
       const updatedConfig = {
         ...config,
         transferCommandMappings
       };
-      
-      console.log('Updated config to save:', updatedConfig);
+
       await window.electronAPI.setConfig(updatedConfig);
       
       toast({

@@ -42,7 +42,6 @@ class ConfigService {
     try {
       const config = await (window.electronAPI as any).getConfig();
       this.config = config;
-      console.log('Config loaded:', config);
     } catch (error) {
       console.error('Error loading config:', error);
     }

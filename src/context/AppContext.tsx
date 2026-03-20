@@ -109,6 +109,8 @@ interface AppContextType {
   setJumpModeOnParentShortcut: (shortcut: string) => void;
   enableJumpModeOnParentShortcut: boolean;
   setEnableJumpModeOnParentShortcut: (value: boolean) => void;
+  /** Three folder paths for F2–F4 jump mode (empty string = unset; F5 = refresh) */
+  jumpModeQuickFolderPaths: string[];
   addressBarJumpRef: React.MutableRefObject<AddressBarJumpApi | null>;
   showClientInfoBar: boolean;
   setShowClientInfoBar: (show: boolean) => void;
@@ -185,6 +187,7 @@ export const AppProvider: React.FC<{
     DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
   );
   const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState<boolean>(true);
+  const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
   const addressBarJumpRef = useRef<AddressBarJumpApi | null>(null);
   const [showClientInfoBar, setShowClientInfoBar] = useState<boolean>(true);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState<boolean>(false);
@@ -263,6 +266,16 @@ export const AppProvider: React.FC<{
         setJumpModeOnParentShortcut(jp);
       }
       setEnableJumpModeOnParentShortcut(settings.enableJumpModeOnParentShortcut !== false);
+      {
+        const next = ['', '', ''];
+        const q = settings.jumpModeQuickFolderPaths;
+        if (Array.isArray(q)) {
+          for (let i = 0; i < 3; i++) {
+            next[i] = typeof q[i] === 'string' ? q[i].trim() : '';
+          }
+        }
+        setJumpModeQuickFolderPaths(next);
+      }
       setShowClientInfoBar(settings.showClientInfoBar !== false);
       setGroupViewAlwaysEnabled(settings.groupViewAlwaysEnabled !== false);
       setGroupViewBlacklist(Array.isArray(settings.groupViewBlacklist) ? settings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
@@ -560,6 +573,7 @@ export const AppProvider: React.FC<{
       setJumpModeOnParentShortcut,
       enableJumpModeOnParentShortcut,
       setEnableJumpModeOnParentShortcut,
+      jumpModeQuickFolderPaths,
       addressBarJumpRef,
       showClientInfoBar,
       setShowClientInfoBar,

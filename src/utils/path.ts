@@ -123,11 +123,48 @@ export function pathsEqualForJump(pathA: string, pathB: string): boolean {
   return normalizePathJumpKey(pathA) === normalizePathJumpKey(pathB);
 }
 
+/**
+ * Pick breadcrumb anchor index and normalized target for jump mode at `targetPath`.
+ * Returns null if crumbs are empty or target is not under the first crumb (workspace root).
+ */
+export function resolveJumpTargetInBreadcrumbs(
+  crumbs: { path: string }[],
+  targetPath: string
+): { anchorIndex: number; anchorPath: string; targetNormalized: string } | null {
+  const np = normalizePath(targetPath);
+  if (!np || crumbs.length === 0) return null;
+
+  for (let i = 0; i < crumbs.length; i++) {
+    const cp = normalizePath(crumbs[i].path);
+    if (pathsEqualForJump(cp, np)) {
+      return { anchorIndex: i, anchorPath: cp, targetNormalized: np };
+    }
+  }
+
+  let bestIdx = 0;
+  let bestLen = -1;
+  for (let i = 0; i < crumbs.length; i++) {
+    const cp = normalizePath(crumbs[i].path);
+    if (isChildPath(cp, np) && cp.length > bestLen) {
+      bestLen = cp.length;
+      bestIdx = i;
+    }
+  }
+  if (bestLen >= 0) {
+    return { anchorIndex: bestIdx, anchorPath: normalizePath(crumbs[bestIdx].path), targetNormalized: np };
+  }
+
+  const rp = normalizePath(crumbs[0].path);
+  if (pathsEqualForJump(rp, np) || isChildPath(rp, np)) {
+    return { anchorIndex: 0, anchorPath: rp, targetNormalized: np };
+  }
+  return null;
+}
+
 // Get the relative path from a base directory to a target path
 export function getRelativePath(basePath: string, targetPath: string): string {
   const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
-  const separator = isWindows ? '\\' : '/';
-  
+
   const normalizedBase = normalizePath(basePath);
   const normalizedTarget = normalizePath(targetPath);
   
