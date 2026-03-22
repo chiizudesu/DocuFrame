@@ -3464,17 +3464,11 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       if (isPortrait) {
         floatingTimerWindow.setMaximumSize(FLOATING_TIMER_PORTRAIT_MAX_WIDTH, FLOATING_TIMER_MAX_OTHER_AXIS);
         if (windowWidth > FLOATING_TIMER_PORTRAIT_MAX_WIDTH) {
-          console.log(
-            `[FloatingTimer] ${reason} — clamping portrait width from ${windowWidth} to ${FLOATING_TIMER_PORTRAIT_MAX_WIDTH}`
-          );
           floatingTimerWindow.setSize(FLOATING_TIMER_PORTRAIT_MAX_WIDTH, windowHeight, true);
         }
       } else {
         floatingTimerWindow.setMaximumSize(FLOATING_TIMER_MAX_OTHER_AXIS, FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT);
         if (windowHeight > FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT) {
-          console.log(
-            `[FloatingTimer] ${reason} — clamping landscape height from ${windowHeight} to ${FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT}`
-          );
           floatingTimerWindow.setSize(windowWidth, FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT, true);
         }
       }
@@ -3492,43 +3486,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
     let lastSnapCorner: string | null = null;
     let boundsWatcher: NodeJS.Timeout | null = null;
 
-    const getFloatingTimerBoundsSnapshot = () => {
-      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return null;
-      const [x, y] = floatingTimerWindow.getPosition();
-      const [width, height] = floatingTimerWindow.getSize();
-      return { x, y, width, height };
-    };
-
-    const formatFloatingTimerBounds = (bounds: { x: number; y: number; width: number; height: number }) =>
-      `size: ${bounds.width}x${bounds.height}  pos: ${bounds.x},${bounds.y}`;
-
-    let lastObservedBounds = getFloatingTimerBoundsSnapshot();
-
-    const logFloatingTimerBounds = (
-      reason: string,
-      options: { force?: boolean; includeResizable?: boolean } = {}
-    ) => {
-      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
-      const currentBounds = getFloatingTimerBoundsSnapshot();
-      if (!currentBounds) return;
-
-      const changed =
-        !lastObservedBounds ||
-        currentBounds.x !== lastObservedBounds.x ||
-        currentBounds.y !== lastObservedBounds.y ||
-        currentBounds.width !== lastObservedBounds.width ||
-        currentBounds.height !== lastObservedBounds.height;
-
-      if (!options.force && !changed) return;
-
-      const resizableInfo = options.includeResizable
-        ? `  resizable: ${floatingTimerWindow.isResizable()}  maxSize: ${floatingTimerWindow.getMaximumSize()}`
-        : '';
-
-      console.log(`[FloatingTimer] ${reason} — ${formatFloatingTimerBounds(currentBounds)}${resizableInfo}`);
-      lastObservedBounds = currentBounds;
-    };
-    
     floatingTimerWindow.on('will-move', (event, newBounds) => {
       isMoving = true;
       
@@ -3583,7 +3540,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         
         // Send indicator during drag
         if (snappedCorner !== lastSnapCorner) {
-          console.log('[FloatingTimer] Near corner:', snappedCorner);
           floatingTimerWindow.webContents.send('corner-snapped', snappedCorner);
           
           // Clear panel indicator on main window when corner is detected
@@ -3622,7 +3578,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         if (isNearPanel) {
           snappedCorner = 'panel';
           if (snappedCorner !== lastSnapCorner) {
-            console.log('[FloatingTimer] Near function panel');
             floatingTimerWindow.webContents.send('corner-snapped', 'panel');
             // Also notify main window to show visual indicator
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3646,10 +3601,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         }
       }
     });
-    
-    floatingTimerWindow.on('move', () => {
-      logFloatingTimerBounds('move');
-    });
 
     floatingTimerWindow.on('moved', () => {
       if (!isMoving) return;
@@ -3659,7 +3610,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       
       const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
       const [windowX, windowY] = floatingTimerWindow.getPosition();
-      logFloatingTimerBounds('moved', { force: true, includeResizable: true });
       
       const isExpanded =
         (windowWidth >= 800 && windowHeight >= 240) ||
@@ -3716,8 +3666,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
           finalY = screenY + screenHeight - windowHeight - padding;
         }
         
-        console.log('[FloatingTimer] Window size:', windowWidth, 'x', windowHeight, 'minimized:', floatingTimerIsMinimized);
-        console.log('[FloatingTimer] Snapping to absolute position:', finalX, finalY, 'on screen', currentDisplay.id);
         floatingTimerWindow.setPosition(Math.round(finalX), Math.round(finalY));
       } else {
         // Only check panel proximity if NOT snapping to a corner
@@ -3740,7 +3688,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
                               (floatingCenterY >= panelAreaTop && floatingCenterY <= panelAreaBottom);
           
           if (isNearPanel) {
-            console.log('[FloatingTimer] Docking to function panel, closing window');
             // Signal to close the floating timer - it will dock back to function panel
             floatingTimerWindow.webContents.send('dock-to-panel');
             return;
@@ -3757,21 +3704,17 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       }, 500);
     });
 
-    // Log every resize and final resized event for FancyZones diagnostics
     floatingTimerWindow.on('resize', () => {
       applyFloatingTimerModeSizeLimits('resize');
-      logFloatingTimerBounds('resize');
     });
 
     floatingTimerWindow.on('resized', () => {
       applyFloatingTimerModeSizeLimits('resized');
-      logFloatingTimerBounds('resized (final)', { force: true, includeResizable: true });
     });
 
-    // Poll bounds so FancyZones / OS repositioning still gets logged even if Electron skips move/resize events.
+    // Poll so FancyZones / OS resize still hit size limits if Electron skips resize events.
     boundsWatcher = setInterval(() => {
       applyFloatingTimerModeSizeLimits('bounds watcher');
-      logFloatingTimerBounds('bounds changed (watcher)');
     }, 250);
 
     // Clean up reference when window is closed
@@ -3780,7 +3723,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         clearInterval(boundsWatcher);
         boundsWatcher = null;
       }
-      console.log('[FloatingTimer] Window closed, broadcasting to main window');
       // Broadcast to main window that floating timer is closed
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.executeJavaScript(`
@@ -3791,7 +3733,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       floatingTimerIsMinimized = false; // Reset minimized state
     });
 
-    console.log('[FloatingTimer] Window created successfully');
     return { success: true };
   } catch (error) {
     console.error('[Main] Error creating floating timer window:', error);
@@ -3812,10 +3753,7 @@ ipcMain.handle('open-floating-timer', async () => {
 
 // Handle window position updates with snapping
 ipcMain.handle('update-floating-timer-position', async (_, x: number, y: number) => {
-  console.log('[Main] update-floating-timer-position called with:', x, y);
-  
   if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) {
-    console.log('[Main] No floating timer window available');
     return { success: false, snappedCorner: null };
   }
 
@@ -3824,9 +3762,6 @@ ipcMain.handle('update-floating-timer-position', async (_, x: number, y: number)
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
     const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
-    
-    console.log('[Main] Screen size:', screenWidth, 'x', screenHeight);
-    console.log('[Main] Window size:', windowWidth, 'x', windowHeight);
     
     const SNAP_THRESHOLD = 80; // Increased threshold for easier snapping
     let snappedCorner: string | null = null;
@@ -3839,16 +3774,8 @@ ipcMain.handle('update-floating-timer-position', async (_, x: number, y: number)
     const distToBottomLeft = Math.sqrt(x * x + Math.pow(y + windowHeight - screenHeight, 2));
     const distToBottomRight = Math.sqrt(Math.pow(x + windowWidth - screenWidth, 2) + Math.pow(y + windowHeight - screenHeight, 2));
     
-    console.log('[Main] Distances to corners:', {
-      topLeft: distToTopLeft,
-      topRight: distToTopRight,
-      bottomLeft: distToBottomLeft,
-      bottomRight: distToBottomRight
-    });
-    
     // Find closest corner
     const minDist = Math.min(distToTopLeft, distToTopRight, distToBottomLeft, distToBottomRight);
-    console.log('[Main] Minimum distance:', minDist, 'threshold:', SNAP_THRESHOLD);
     
     if (minDist < SNAP_THRESHOLD) {
       if (minDist === distToTopLeft) {
@@ -3868,10 +3795,8 @@ ipcMain.handle('update-floating-timer-position', async (_, x: number, y: number)
         finalY = screenHeight - windowHeight;
         snappedCorner = 'bottom-right';
       }
-      console.log('[Main] SNAPPED to corner:', snappedCorner);
     }
     
-    console.log('[Main] Setting window position to:', finalX, finalY);
     floatingTimerWindow.setPosition(Math.round(finalX), Math.round(finalY));
     
     return { success: true, snappedCorner, x: finalX, y: finalY };
@@ -3900,15 +3825,12 @@ ipcMain.handle('get-screen-info', async () => {
 ipcMain.handle('resize-floating-timer', async (_, width: number, height: number) => {
   try {
     if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) {
-      console.log('[Main] No floating timer window to resize');
       return;
     }
     
     // Get current position and size
     const [currentX, currentY] = floatingTimerWindow.getPosition();
     const [currentWidth, currentHeight] = floatingTimerWindow.getSize();
-    
-    console.log('[Main] Resizing from', currentWidth, 'x', currentHeight, 'to', width, 'x', height);
     
     // Calculate offset to keep window centered when resizing
     const offsetX = Math.floor((currentWidth - width) / 2);
@@ -3934,12 +3856,9 @@ ipcMain.handle('resize-floating-timer', async (_, width: number, height: number)
       floatingTimerWindow.setMaximumSize(2160, 300);
     }
     
-    // Verify the size was actually set
     const [newWidth, newHeight] = floatingTimerWindow.getSize();
-    console.log('[Main] Resized floating timer. Requested:', width, 'x', height, '| Actual:', newWidth, 'x', newHeight, '| Minimized:', floatingTimerIsMinimized);
-    
     if (newWidth !== width || newHeight !== height) {
-      console.warn('[Main] WARNING: Window size does not match requested size!');
+      console.warn('[Main] Floating timer size mismatch after setSize. Requested:', width, 'x', height, 'actual:', newWidth, 'x', newHeight);
     }
   } catch (error) {
     console.error('[Main] Error resizing floating timer:', error);

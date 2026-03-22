@@ -22,7 +22,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { Play, Pause, Square, X, Settings, SkipForward, Minus, Plus, ChevronLeft, ChevronRight, Folder, LayoutTemplate, Smartphone, Monitor } from 'lucide-react';
+import { Play, Pause, Square, X, Settings, Minus, Plus, ChevronLeft, ChevronRight, Folder, LayoutTemplate, Smartphone, Monitor } from 'lucide-react';
 import { taskTimerService, Task } from '../services/taskTimer';
 import { settingsService } from '../services/settings';
 import { docuFramePalette as P } from '../docuFrameColors';
@@ -31,23 +31,21 @@ interface FloatingTaskTimerWindowProps {
   onClose: () => void;
 }
 
-type PomodoroPhase = 'idle' | 'session' | 'break';
+type TimerPhase = 'idle' | 'session';
 
 const POMODORO_STORAGE_KEY = 'docuframe_pomodoro_state';
 
 interface PomodoroState {
-  phase: PomodoroPhase;
+  phase: TimerPhase;
   currentTime: number;
   isPaused: boolean;
   pauseStartTime: number | null;
   currentTask: Task | null;
   sessionTargetSeconds: number;
-  breakTargetSeconds: number;
   sessionsCompletedToday: number;
 }
 
 const DEFAULT_SESSION_MIN = 25;
-const DEFAULT_BREAK_MIN = 5;
 const DEFAULT_TARGET_HOURS = 8;
 
 /** Default floating timer size on open (landscape bar). */
@@ -65,10 +63,9 @@ const LAYOUT_HYSTERESIS_PX = 20;
 /** Title bar approximate height for body `calc(100% - …)`. */
 const TITLE_BAR_PX = 32;
 
-// TODO: set to true for testing — 10s session/break
+// TODO: set to true for testing — short session
 const TEST_MODE = false;
 const TEST_SESSION_SEC = 10;
-const TEST_BREAK_SEC = 10;
 
 // Default: three ascending bell tones — C5, E5, G5; volume 50-200%
 const playDefaultBell = (volumePercent: number = 100) => {
@@ -191,7 +188,6 @@ const WorkShiftInfographic: React.FC<{
   const validTasks = tasks.filter((t) => (t.duration || 0) > 0);
   const todayTimeWorked = validTasks.reduce((s, t) => s + t.duration, 0);
   const completedSessions = validTasks.filter((t) => t.name === 'Session' && t.completed === true).length;
-  const breaksCount = validTasks.filter((t) => t.name === 'Break').length;
 
   // Total session slots from daily target (hours) and session length
   const totalSlots = Math.max(1, Math.floor((pomodoroTargetHours * 60) / sessionMinutes));
@@ -335,21 +331,17 @@ const WorkShiftInfographic: React.FC<{
           {Array.from({ length: totalSlots }, (_, i) => {
             const isCurrent = isSessionActive && i === currentSessionIndex;
             return (
-              <React.Fragment key={i}>
-                <Box
-                  w={totalSlots <= 16 ? "16px" : totalSlots <= 24 ? "14px" : "11px"}
-                  h="14px"
-                  borderRadius="3px"
-                  bg={isCurrent ? 'blue.500' : i < completedSessions ? 'green.500' : 'whiteAlpha.150'}
-                  border="1px solid"
-                  borderColor={isCurrent ? 'blue.400' : i < completedSessions ? 'green.400' : 'whiteAlpha.300'}
-                  flexShrink={0}
-                  animation={isCurrent ? `${sessionBlinkKeyframes} 1s ease-in-out infinite` : undefined}
-                />
-                {i < totalSlots - 1 && (
-                  <Box w="4px" h="4px" borderRadius="full" bg={i < breaksCount ? 'blue.400' : 'whiteAlpha.200'} flexShrink={0} />
-                )}
-              </React.Fragment>
+              <Box
+                key={i}
+                w={totalSlots <= 16 ? "16px" : totalSlots <= 24 ? "14px" : "11px"}
+                h="14px"
+                borderRadius="3px"
+                bg={isCurrent ? 'blue.500' : i < completedSessions ? 'green.500' : 'whiteAlpha.150'}
+                border="1px solid"
+                borderColor={isCurrent ? 'blue.400' : i < completedSessions ? 'green.400' : 'whiteAlpha.300'}
+                flexShrink={0}
+                animation={isCurrent ? `${sessionBlinkKeyframes} 1s ease-in-out infinite` : undefined}
+              />
             );
           })}
         </Flex>
@@ -369,11 +361,9 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     pauseStartTime: null,
     currentTask: null,
     sessionTargetSeconds: TEST_MODE ? TEST_SESSION_SEC : DEFAULT_SESSION_MIN * 60,
-    breakTargetSeconds: TEST_MODE ? TEST_BREAK_SEC : DEFAULT_BREAK_MIN * 60,
     sessionsCompletedToday: 0,
   });
   const [sessionMinutes, setSessionMinutes] = useState(DEFAULT_SESSION_MIN);
-  const [breakMinutes, setBreakMinutes] = useState(DEFAULT_BREAK_MIN);
   const [targetHours, setTargetHours] = useState(DEFAULT_TARGET_HOURS);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [soundVolume, setSoundVolume] = useState(100);
@@ -381,14 +371,13 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const [soundFolder, setSoundFolder] = useState('');
   const [soundFiles, setSoundFiles] = useState<string[]>([]);
   const [soundFileIndex, setSoundFileIndex] = useState(0);
-  const [snapIndicator, setSnapIndicator] = useState<string | null>(null);
-  const [isDraggingToPanel, setIsDraggingToPanel] = useState(false);
   const { open: isSettingsOpen, onOpen: onSettingsOpen, onClose: onSettingsClose } = useDisclosure();
   const soundEnabledRef = useRef(true);
   const customSoundPathRef = useRef('');
   const soundVolumeRef = useRef(100);
 
   const layoutModeRef = useRef<'stacked' | 'row' | null>(null);
+  const viewportRafRef = useRef<number | null>(null);
   const [viewport, setViewport] = useState(() => ({
     w: typeof window !== 'undefined' ? window.innerWidth : FLOATING_TIMER_OPEN_W,
     h: typeof window !== 'undefined' ? window.innerHeight : FLOATING_TIMER_OPEN_H,
@@ -424,30 +413,40 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     setLayoutFromSize(next === 'stacked');
   }, []);
 
+  const scheduleSyncViewportAndLayout = useCallback(() => {
+    if (viewportRafRef.current != null) return;
+    viewportRafRef.current = requestAnimationFrame(() => {
+      viewportRafRef.current = null;
+      syncViewportAndLayout();
+    });
+  }, [syncViewportAndLayout]);
+
   useEffect(() => {
     syncViewportAndLayout();
-    const ro = new ResizeObserver(() => syncViewportAndLayout());
+    const ro = new ResizeObserver(() => scheduleSyncViewportAndLayout());
     ro.observe(document.documentElement);
-    window.addEventListener('resize', syncViewportAndLayout);
+    window.addEventListener('resize', scheduleSyncViewportAndLayout);
     return () => {
+      if (viewportRafRef.current != null) {
+        cancelAnimationFrame(viewportRafRef.current);
+        viewportRafRef.current = null;
+      }
       ro.disconnect();
-      window.removeEventListener('resize', syncViewportAndLayout);
+      window.removeEventListener('resize', scheduleSyncViewportAndLayout);
     };
-  }, [syncViewportAndLayout]);
+  }, [syncViewportAndLayout, scheduleSyncViewportAndLayout]);
 
   useEffect(() => {
     const load = async () => {
       try {
         const s = await settingsService.getSettings() as any;
         const sessionMin = s.pomodoroSessionMinutes ?? DEFAULT_SESSION_MIN;
-        const breakMin = s.pomodoroBreakMinutes ?? DEFAULT_BREAK_MIN;
         const tgtHrs = s.pomodoroTargetHours ?? DEFAULT_TARGET_HOURS;
         const sound = s.pomodoroSoundEnabled !== false;
         const vol = s.pomodoroSoundVolume ?? 100;
         const customPath = s.pomodoroCustomSoundPath || '';
         const folder = s.pomodoroSoundFolder || '';
         setSessionMinutes(sessionMin);
-        setBreakMinutes(breakMin);
         setTargetHours(tgtHrs);
         setSoundEnabled(sound);
         setSoundVolume(vol);
@@ -456,7 +455,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         setSoundFolder(folder);
         soundEnabledRef.current = sound;
         customSoundPathRef.current = folder ? customPath : '';
-        setPomodoroState(prev => ({ ...prev, sessionTargetSeconds: TEST_MODE ? TEST_SESSION_SEC : sessionMin * 60, breakTargetSeconds: TEST_MODE ? TEST_BREAK_SEC : breakMin * 60 }));
+        setPomodoroState(prev => ({ ...prev, sessionTargetSeconds: TEST_MODE ? TEST_SESSION_SEC : sessionMin * 60 }));
         // Scan folder and restore index (soundOptions = [default, ...files])
         if (folder) {
           try {
@@ -485,11 +484,14 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             return;
           }
           setPomodoroState(prev => {
-            const merged = { ...prev, ...parsed };
-            if (TEST_MODE) {
-              merged.sessionTargetSeconds = TEST_SESSION_SEC;
-              merged.breakTargetSeconds = TEST_BREAK_SEC;
+            const merged = { ...prev, ...parsed } as PomodoroState;
+            if (TEST_MODE) merged.sessionTargetSeconds = TEST_SESSION_SEC;
+            if ((merged as { phase?: string }).phase === 'break') {
+              merged.phase = 'session';
+              merged.currentTime = merged.sessionTargetSeconds;
+              merged.currentTask = taskTimerService.startTask('Session');
             }
+            delete (merged as { breakTargetSeconds?: number }).breakTargetSeconds;
             return merged;
           });
         }
@@ -515,9 +517,9 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     return () => clearInterval(interval);
   }, [pomodoroState.phase, pomodoroState.isPaused]);
 
-  // Auto-transition at 0
+  // When a check-in session ends: log it, chime, start the next session immediately (no breaks).
   useEffect(() => {
-    if (pomodoroState.phase === 'idle' || pomodoroState.isPaused || pomodoroState.currentTime > 0) return;
+    if (pomodoroState.phase !== 'session' || pomodoroState.isPaused || pomodoroState.currentTime > 0) return;
     const doTransition = async () => {
       const today = taskTimerService.getTodayDateString();
       const task = pomodoroState.currentTask;
@@ -525,7 +527,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         const finalTask: Task & { completed?: boolean } = {
           ...task,
           endTime: new Date().toISOString(),
-          duration: pomodoroState.phase === 'session' ? pomodoroState.sessionTargetSeconds : pomodoroState.breakTargetSeconds,
+          duration: pomodoroState.sessionTargetSeconds,
           isPaused: false,
           completed: true,
         };
@@ -533,46 +535,25 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         window.dispatchEvent(new Event('task-updated'));
       }
       if (soundEnabledRef.current) playPomodoroSound(customSoundPathRef.current || undefined, soundVolumeRef.current);
-      if (pomodoroState.phase === 'session') {
-        setPomodoroState(prev => ({
-          ...prev,
-          phase: 'break',
-          currentTime: prev.breakTargetSeconds,
-          currentTask: taskTimerService.startTask('Break'),
-          sessionsCompletedToday: prev.sessionsCompletedToday + 1,
-        }));
-      } else {
-        setPomodoroState(prev => ({
-          ...prev,
-          phase: 'session',
-          currentTime: prev.sessionTargetSeconds,
-          currentTask: taskTimerService.startTask('Session'),
-        }));
-      }
+      setPomodoroState(prev => ({
+        ...prev,
+        phase: 'session',
+        currentTime: prev.sessionTargetSeconds,
+        currentTask: taskTimerService.startTask('Session'),
+        sessionsCompletedToday: prev.sessionsCompletedToday + 1,
+      }));
     };
     doTransition();
   }, [pomodoroState.phase, pomodoroState.isPaused, pomodoroState.currentTime]);
 
   useEffect(() => {
-    const handleCornerSnapped = (_event: any, corner: string | null) => {
-      if (corner === 'top') { setSnapIndicator(null); return; }
-      setSnapIndicator(corner);
-      setIsDraggingToPanel(corner === 'panel');
-    };
     const handleDockToPanel = () => onClose();
-    const handleSetExpandedState = (_expanded: boolean) => {
-      // Initial size is applied once in mount effect; avoid double resize with main process did-finish-load.
-    };
     if ((window.electronAPI as any).onMessage) {
-      (window.electronAPI as any).onMessage('corner-snapped', handleCornerSnapped);
       (window.electronAPI as any).onMessage('dock-to-panel', handleDockToPanel);
-      (window.electronAPI as any).onMessage('set-expanded-state', handleSetExpandedState);
     }
     return () => {
       if ((window.electronAPI as any).removeListener) {
-        (window.electronAPI as any).removeListener('corner-snapped', handleCornerSnapped);
         (window.electronAPI as any).removeListener('dock-to-panel', handleDockToPanel);
-        (window.electronAPI as any).removeListener('set-expanded-state', handleSetExpandedState);
       }
     };
   }, [onClose]);
@@ -630,7 +611,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const handleStopTimer = async () => {
     const task = pomodoroState.currentTask;
     if (task && pomodoroState.phase !== 'idle') {
-      const targetSec = pomodoroState.phase === 'session' ? pomodoroState.sessionTargetSeconds : pomodoroState.breakTargetSeconds;
+      const targetSec = pomodoroState.sessionTargetSeconds;
       const elapsed = Math.max(0, targetSec - pomodoroState.currentTime);
       const finalTask: Task & { completed?: boolean } = { ...task, endTime: new Date().toISOString(), duration: elapsed, isPaused: false };
       const today = taskTimerService.getTodayDateString();
@@ -641,25 +622,11 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     localStorage.removeItem(POMODORO_STORAGE_KEY);
   };
 
-  const handleSkipBreak = async () => {
-    if (pomodoroState.phase !== 'break') return;
-    const task = pomodoroState.currentTask;
-    if (task) {
-      const elapsed = Math.max(0, pomodoroState.breakTargetSeconds - pomodoroState.currentTime);
-      const finalTask: Task & { completed?: boolean } = { ...task, endTime: new Date().toISOString(), duration: elapsed, isPaused: false };
-      const today = taskTimerService.getTodayDateString();
-      await (window.electronAPI as any).saveTaskLog(today, finalTask);
-      window.dispatchEvent(new Event('task-updated'));
-    }
-    setPomodoroState(prev => ({ ...prev, phase: 'session', currentTime: prev.sessionTargetSeconds, currentTask: taskTimerService.startTask('Session') }));
-  };
-
-  const saveSettings = async (sessionMin: number, breakMin: number, sound: boolean, tgtHrs: number, customPath?: string, folder?: string, volume?: number) => {
+  const saveSettings = async (sessionMin: number, sound: boolean, tgtHrs: number, customPath?: string, folder?: string, volume?: number) => {
     const cp = customPath !== undefined ? customPath : customSoundPath;
     const sf = folder !== undefined ? folder : soundFolder;
     const vol = volume !== undefined ? volume : soundVolume;
     setSessionMinutes(sessionMin);
-    setBreakMinutes(breakMin);
     setSoundEnabled(sound);
     setTargetHours(tgtHrs);
     setSoundVolume(vol);
@@ -668,9 +635,9 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     soundEnabledRef.current = sound;
     customSoundPathRef.current = cp;
     soundVolumeRef.current = vol;
-    setPomodoroState(prev => ({ ...prev, sessionTargetSeconds: TEST_MODE ? TEST_SESSION_SEC : sessionMin * 60, breakTargetSeconds: TEST_MODE ? TEST_BREAK_SEC : breakMin * 60 }));
+    setPomodoroState(prev => ({ ...prev, sessionTargetSeconds: TEST_MODE ? TEST_SESSION_SEC : sessionMin * 60 }));
     const s = await settingsService.getSettings() as any;
-    await settingsService.setSettings({ ...s, pomodoroSessionMinutes: sessionMin, pomodoroBreakMinutes: breakMin, pomodoroSoundEnabled: sound, pomodoroTargetHours: tgtHrs, pomodoroCustomSoundPath: cp, pomodoroSoundFolder: sf, pomodoroSoundVolume: vol });
+    await settingsService.setSettings({ ...s, pomodoroSessionMinutes: sessionMin, pomodoroSoundEnabled: sound, pomodoroTargetHours: tgtHrs, pomodoroCustomSoundPath: cp, pomodoroSoundFolder: sf, pomodoroSoundVolume: vol });
   };
 
   // soundOptions = [default, ...custom files]; index 0 = default ('')
@@ -699,7 +666,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     setSoundFileIndex(idx);
     setCustomSoundPath(path);
     customSoundPathRef.current = path;
-    saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, path, soundFolder);
+    saveSettings(sessionMinutes, soundEnabled, targetHours, path, soundFolder);
   };
 
   const handleCycleSoundNext = () => {
@@ -710,16 +677,19 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     setSoundFileIndex(idx);
     setCustomSoundPath(path);
     customSoundPathRef.current = path;
-    saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, path, soundFolder);
+    saveSettings(sessionMinutes, soundEnabled, targetHours, path, soundFolder);
   };
 
   const handleSettingsSaveAndClose = async () => {
-    await saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, customSoundPath, soundFolder, soundVolume);
+    await saveSettings(sessionMinutes, soundEnabled, targetHours, customSoundPath, soundFolder, soundVolume);
     onSettingsClose();
   };
 
-  const targetSeconds = pomodoroState.phase === 'session' ? pomodoroState.sessionTargetSeconds : pomodoroState.breakTargetSeconds;
-  const progressPercent = pomodoroState.phase === 'idle' ? 0 : targetSeconds > 0 ? ((targetSeconds - pomodoroState.currentTime) / targetSeconds) * 100 : 0;
+  const targetSeconds = pomodoroState.sessionTargetSeconds;
+  const rawProgressPercent =
+    targetSeconds > 0 ? ((targetSeconds - pomodoroState.currentTime) / targetSeconds) * 100 : 0;
+  const progressPercent =
+    pomodoroState.phase === 'idle' ? 0 : Math.min(100, Math.max(0, rawProgressPercent));
   const canvasBg = useColorModeValue('#dfe6ee', P.dark.canvas);
   const chromeBg = useColorModeValue('#cfd8e3', P.dark.tabStrip);
   const shellBorder = useColorModeValue('#94a3b8', P.dark.border);
@@ -770,8 +740,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const completedSessionsCount = infographicTasks.filter((t) => t.name === 'Session' && t.completed === true).length;
   const sessionNumber = pomodoroState.phase === 'session' && pomodoroState.currentTask ? completedSessionsCount + 1 : completedSessionsCount;
 
-  const phaseColor = pomodoroState.phase === 'session' ? 'green' : pomodoroState.phase === 'break' ? 'blue' : 'gray';
-  const phaseBg = pomodoroState.phase === 'session' ? 'green.500' : pomodoroState.phase === 'break' ? 'blue.500' : 'gray.600';
+  const phaseColor = pomodoroState.phase === 'session' ? 'green' : 'gray';
+  const phaseBg = pomodoroState.phase === 'session' ? 'green.500' : 'gray.600';
 
   const timerFontPx = useStackedLayout
     ? Math.max(84, Math.min(
@@ -850,7 +820,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
           <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg={chromeBg} borderBottom="1px solid" borderColor={shellBorder} flexShrink={0} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
             <Flex align="center" gap={2}>
               <Box px={3} py={1} borderRadius="md" bg={phaseBg} color="white" fontSize="12px" fontWeight="600">
-                {pomodoroState.phase === 'idle' ? 'Ready' : pomodoroState.phase === 'session' ? 'Session' : 'Break'}
+                {pomodoroState.phase === 'idle' ? 'Ready' : 'Check-in'}
               </Box>
               {pomodoroState.phase === 'session' && (
                 <Box px={3} py={1} borderRadius="md" bg="green.500" color="white" fontSize="12px" fontWeight="600">
@@ -936,13 +906,6 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                     <Icon boxSize={5} color="white" asChild><Square /></Icon>
                   </Button>
                 </Tooltip>
-                {pomodoroState.phase === 'break' && (
-                  <Tooltip content="Skip break" positioning={{ placement: 'top' }}>
-                    <Button size="md" variant="ghost" onClick={handleSkipBreak} color="blue.400" _hover={{ bg: 'whiteAlpha.100' }} w="44px" h="44px" p={0} borderRadius="md">
-                      <Icon boxSize={5} asChild><SkipForward /></Icon>
-                    </Button>
-                  </Tooltip>
-                )}
               </HStack>
             </Flex>
           ) : (
@@ -963,13 +926,6 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                     <Icon boxSize={5} color="white" asChild><Square /></Icon>
                   </Button>
                 </Tooltip>
-                {pomodoroState.phase === 'break' && (
-                  <Tooltip content="Skip break" positioning={{ placement: 'right' }}>
-                    <Button size="md" variant="ghost" onClick={handleSkipBreak} color="blue.400" _hover={{ bg: 'whiteAlpha.100' }} w="44px" h="44px" p={0} borderRadius="md">
-                      <Icon boxSize={5} asChild><SkipForward /></Icon>
-                    </Button>
-                  </Tooltip>
-                )}
               </Flex>
               <Flex direction="row" flex={1} minW={0} bg={canvasBg}>
                 <Flex direction="column" flex={1} minW={0} minH={0} px={6} pt={3} pb={2}>
@@ -1010,7 +966,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               overflow="hidden"
             >
               <Dialog.Header fontSize="sm" fontWeight="600" pb={1} pt={3} px={5} color={settingsTitleColor}>
-                Pomodoro Settings
+                Focus timer settings
               </Dialog.Header>
               <Dialog.CloseTrigger />
               <Dialog.Body pb={4} pt={2} px={5} overflow="visible">
@@ -1019,14 +975,14 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                     <Grid templateColumns="minmax(0, 1fr) 7.75rem" columnGap={4} rowGap={2.5} w="full" alignItems="center">
                       <GridItem minW={0}>
                         <Text fontSize="xs" fontWeight="500" color={labelSubtext}>
-                          Session (min)
+                          Check-in interval (min)
                         </Text>
                       </GridItem>
                       <GridItem justifySelf="end">
                         <HStack gap={1} w="7.75rem" justify="flex-end">
                           <IconButton
-                            aria-label="Decrease session"
-                            onClick={() => { const v = Math.max(5, sessionMinutes - 5); saveSettings(v, breakMinutes, soundEnabled, targetHours); }}
+                            aria-label="Decrease check-in interval"
+                            onClick={() => { const v = Math.max(5, sessionMinutes - 5); saveSettings(v, soundEnabled, targetHours); }}
                             {...compactStepperBtn}
                           >
                             <Icon boxSize={3} asChild><Minus /></Icon>
@@ -1035,35 +991,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                             {sessionMinutes}
                           </Text>
                           <IconButton
-                            aria-label="Increase session"
-                            onClick={() => { const v = Math.min(60, sessionMinutes + 5); saveSettings(v, breakMinutes, soundEnabled, targetHours); }}
-                            {...compactStepperBtn}
-                          >
-                            <Icon boxSize={3} asChild><Plus /></Icon>
-                          </IconButton>
-                        </HStack>
-                      </GridItem>
-
-                      <GridItem minW={0}>
-                        <Text fontSize="xs" fontWeight="500" color={labelSubtext} lineHeight="1.25">
-                          Break (30s steps)
-                        </Text>
-                      </GridItem>
-                      <GridItem justifySelf="end">
-                        <HStack gap={1} w="7.75rem" justify="flex-end">
-                          <IconButton
-                            aria-label="Decrease break"
-                            onClick={() => { const v = Math.max(0.5, Math.round((breakMinutes - 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }}
-                            {...compactStepperBtn}
-                          >
-                            <Icon boxSize={3} asChild><Minus /></Icon>
-                          </IconButton>
-                          <Text fontSize="sm" fontWeight="semibold" w="3.25rem" textAlign="center" color={settingsValueColor} fontVariantNumeric="tabular-nums">
-                            {breakMinutes < 1 ? `${Math.round(breakMinutes * 60)}s` : breakMinutes % 1 === 0 ? `${breakMinutes}m` : `${Math.floor(breakMinutes)}:30`}
-                          </Text>
-                          <IconButton
-                            aria-label="Increase break"
-                            onClick={() => { const v = Math.min(30, Math.round((breakMinutes + 0.5) * 2) / 2); saveSettings(sessionMinutes, v, soundEnabled, targetHours); }}
+                            aria-label="Increase check-in interval"
+                            onClick={() => { const v = Math.min(60, sessionMinutes + 5); saveSettings(v, soundEnabled, targetHours); }}
                             {...compactStepperBtn}
                           >
                             <Icon boxSize={3} asChild><Plus /></Icon>
@@ -1085,7 +1014,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                         <HStack gap={1} w="7.75rem" justify="flex-end">
                           <IconButton
                             aria-label="Decrease target"
-                            onClick={() => { const v = Math.max(1, targetHours - 0.5); saveSettings(sessionMinutes, breakMinutes, soundEnabled, v); }}
+                            onClick={() => { const v = Math.max(1, targetHours - 0.5); saveSettings(sessionMinutes, soundEnabled, v); }}
                             {...compactStepperBtn}
                           >
                             <Icon boxSize={3} asChild><Minus /></Icon>
@@ -1095,7 +1024,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                           </Text>
                           <IconButton
                             aria-label="Increase target"
-                            onClick={() => { const v = Math.min(16, targetHours + 0.5); saveSettings(sessionMinutes, breakMinutes, soundEnabled, v); }}
+                            onClick={() => { const v = Math.min(16, targetHours + 0.5); saveSettings(sessionMinutes, soundEnabled, v); }}
                             {...compactStepperBtn}
                           >
                             <Icon boxSize={3} asChild><Plus /></Icon>
@@ -1119,7 +1048,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                                   onCheckedChange={(d) => {
                                     const v = d.checked === true;
                                     soundEnabledRef.current = v;
-                                    saveSettings(sessionMinutes, breakMinutes, v, targetHours);
+                                    saveSettings(sessionMinutes, v, targetHours);
                                   }}
                                   colorPalette="green"
                                 >
@@ -1167,7 +1096,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                                     setSoundFolder('');
                                     setSoundFiles([]);
                                     setSoundFileIndex(0);
-                                    saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, '', '');
+                                    saveSettings(sessionMinutes, soundEnabled, targetHours, '', '');
                                   }}
                                 >
                                   <Icon boxSize={3} asChild><X /></Icon>
@@ -1261,7 +1190,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                             const v = e.value[0];
                             setSoundVolume(v);
                             soundVolumeRef.current = v;
-                            saveSettings(sessionMinutes, breakMinutes, soundEnabled, targetHours, undefined, undefined, v);
+                            saveSettings(sessionMinutes, soundEnabled, targetHours, undefined, undefined, v);
                           }}
                         >
                           <Slider.Control h="100%">
