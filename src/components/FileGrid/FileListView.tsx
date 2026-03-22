@@ -30,6 +30,14 @@ const fileGridTableStyles = {
 /** List row index for inline “new folder” ghost row; must not overlap real file indices (0..n-1). */
 const NEW_FOLDER_GHOST_ROW_INDEX = -1
 
+/** Flat list for grouped-mode virtualization: folder rows + group headers + file rows. */
+type GroupedVirtualRowItem =
+  | { type: 'groupHeader'; groupKey: string; groupIndex: number }
+  | { type: 'fileRow'; file: FileItem; globalIndex: number }
+
+/** Estimated height for a group header row (drop zone + divider); real height can vary slightly. */
+const GROUP_HEADER_HEIGHT_ESTIMATE = 64
+
 // FileTableRow Component (extracted from FileGrid.tsx)
 const FileTableRow = React.memo<FileTableRowProps>(({
   file,
@@ -984,6 +992,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
                       const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
                       return (
                         <Box
+                          key={t.command}
                           w="100%"
                           textAlign="left"
                           py={2.5}
@@ -998,12 +1007,12 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
                           _focus={{ bg: menuHoverBg }}
                           _focusVisible={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
                           title={t.filename}
-                          asChild><button
-                            key={t.command}
-                            type="button"
-                            onClick={() => handleTransferTemplate(t.command)}>
+                          asChild
+                        >
+                          <button type="button" onClick={() => handleTransferTemplate(t.command)}>
                             {displayText}
-                          </button></Box>
+                          </button>
+                        </Box>
                       );
                     })
                   )}
@@ -1119,7 +1128,9 @@ export interface FileListViewProps {
   searchHighlightBg: string;
   folderDropBgColor: string;
   fileSearchFilter: string | undefined;
-  
+  /** Paths highlighted as “new” after transfer; used for glow lines without scanning full list on scroll */
+  recentlyTransferredFiles?: string[];
+
   // Color values
   tableHeadTextColor: string;
   headerHoverBg: string;
@@ -1210,6 +1221,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.isRenaming !== next.isRenaming || prev.renameValue !== next.renameValue) return false;
   if (prev.isInlineCreatingFolder !== next.isInlineCreatingFolder) return false;
   if (prev.newFolderDraftName !== next.newFolderDraftName) return false;
+  if (prev.recentlyTransferredFiles !== next.recentlyTransferredFiles) return false;
   if (prev.nativeIcons !== next.nativeIcons) return false;
   if (prev.columnOrder !== next.columnOrder || prev.columnVisibility !== next.columnVisibility) return false;
   if (prev.columnWidths !== next.columnWidths) return false;
@@ -1218,6 +1230,10 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.rowHandlers !== next.rowHandlers) return false;
   if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
   if (prev.tableSurfaceBg !== next.tableSurfaceBg) return false;
+  if (prev.enableBackgrounds !== next.enableBackgrounds) return false;
+  if (prev.backgroundType !== next.backgroundType) return false;
+  if (prev.backgroundFillUrl !== next.backgroundFillUrl) return false;
+  if (prev.fileGridBackgroundUrl !== next.fileGridBackgroundUrl) return false;
   return true;
 }
 
@@ -1230,7 +1246,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   selectionRect,
   isGroupedByIndex,
   groupedFiles,
-  sortedFiles,
+  sortedFiles = [],
   columnOrder,
   columnVisibility,
   columnWidths,
@@ -1259,6 +1275,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   searchHighlightBg,
   folderDropBgColor,
   fileSearchFilter,
+  recentlyTransferredFiles: recentlyTransferredFilesProp,
   tableHeadTextColor,
   headerHoverBg,
   headerStickyBg,
@@ -1317,8 +1334,84 @@ const FileListViewBody = React.memo(function FileListViewBody({
   const dividerColor = 'rgba(255,255,255,0.22)';
   const dropZoneBg = '#2C5282';
   const bgFillOpacity = useColorModeValue(0.05, 0.10); // Light: subtler; dark: unchanged
-  // Virtualizer for ungrouped list (flat sortedFiles). Disabled when grouped to avoid wasted work.
+  /** Scroll + table must not paint opaque over the absolute background layer (v3 forwards `bg` reliably). */
+  const showBackgroundFill =
+    enableBackgrounds && backgroundType === 'backgroundFill' && Boolean(backgroundFillUrl);
+  const tableChromeBg = showBackgroundFill ? 'transparent' : tableSurfaceBg;
+  /** Match file rows: don’t paint opaque list color over background fill */
+  const rowDefaultBgForFill = showBackgroundFill ? 'transparent' : rowDefaultBg;
   const ROW_HEIGHT_ESTIMATE = 33;
+  const recentlyTransferredFiles = recentlyTransferredFilesProp ?? [];
+
+  const pathToGlobalIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < sortedFiles.length; i++) {
+      map.set(sortedFiles[i].path, i);
+    }
+    return map;
+  }, [sortedFiles]);
+
+  const flatGroupedItems = useMemo((): GroupedVirtualRowItem[] => {
+    if (!isGroupedByIndex || !groupedFiles) return [];
+    const items: GroupedVirtualRowItem[] = [];
+    const folders = groupedFiles.folders;
+    if (folders?.length) {
+      for (const f of folders) {
+        const gi = pathToGlobalIndex.get(f.path);
+        items.push({ type: 'fileRow', file: f, globalIndex: gi !== undefined ? gi : 0 });
+      }
+    }
+    const entries = Object.entries(groupedFiles)
+      .filter(([k]) => k !== 'folders')
+      .sort(([a], [b]) => {
+        if (a === 'AA') return -1;
+        if (b === 'AA') return 1;
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+      });
+    entries.forEach(([groupKey, groupFiles], groupIndex) => {
+      items.push({ type: 'groupHeader', groupKey, groupIndex });
+      for (const f of groupFiles ?? []) {
+        const gi = pathToGlobalIndex.get(f.path);
+        items.push({ type: 'fileRow', file: f, globalIndex: gi !== undefined ? gi : 0 });
+      }
+    });
+    return items;
+  }, [isGroupedByIndex, groupedFiles, pathToGlobalIndex]);
+
+  const newFileIndices = useMemo(() => {
+    if (recentlyTransferredFiles.length === 0) return [] as number[];
+    const indices: number[] = [];
+    const seen = new Set<number>();
+    for (const path of recentlyTransferredFiles) {
+      let idx = pathToGlobalIndex.get(path);
+      if (idx === undefined) idx = pathToGlobalIndex.get(path.replace(/\\/g, '/'));
+      if (idx !== undefined && !seen.has(idx)) {
+        seen.add(idx);
+        indices.push(idx);
+      }
+    }
+    return indices;
+  }, [recentlyTransferredFiles, pathToGlobalIndex]);
+
+  const newFileGroupedVirtualIndices = useMemo(() => {
+    if (!isGroupedByIndex || recentlyTransferredFiles.length === 0 || flatGroupedItems.length === 0) {
+      return [] as number[];
+    }
+    const paths = new Set(recentlyTransferredFiles);
+    const norms = new Set(recentlyTransferredFiles.map((p) => p.replace(/\\/g, '/')));
+    const out: number[] = [];
+    for (let i = 0; i < flatGroupedItems.length; i++) {
+      const it = flatGroupedItems[i];
+      if (it.type !== 'fileRow') continue;
+      const p = it.file.path;
+      if (paths.has(p) || norms.has(p.replace(/\\/g, '/'))) out.push(i);
+    }
+    return out;
+  }, [isGroupedByIndex, flatGroupedItems, recentlyTransferredFiles]);
+
+  // Virtualizer for ungrouped list (flat sortedFiles). Disabled when grouped.
   const virtualizerCount = isGroupedByIndex ? 0 : sortedFiles.length;
   const rowVirtualizer = useVirtualizer({
     count: virtualizerCount,
@@ -1329,18 +1422,24 @@ const FileListViewBody = React.memo(function FileListViewBody({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
-  const folderListLen = isGroupedByIndex && groupedFiles?.folders?.length ? groupedFiles.folders.length : 0;
-  const folderRowVirtualizer = useVirtualizer({
-    count: folderListLen,
+  const groupedVirtualizerCount = isGroupedByIndex ? flatGroupedItems.length : 0;
+  const groupedRowVirtualizer = useVirtualizer({
+    count: groupedVirtualizerCount,
     getScrollElement: () => dropAreaRef.current,
-    estimateSize: () => ROW_HEIGHT_ESTIMATE,
-    overscan: 10,
+    estimateSize: (index) => {
+      const item = flatGroupedItems[index];
+      if (!item) return ROW_HEIGHT_ESTIMATE;
+      return item.type === 'groupHeader' ? GROUP_HEADER_HEIGHT_ESTIMATE : ROW_HEIGHT_ESTIMATE;
+    },
+    overscan: 8,
   });
-  const folderVirtualItems = folderListLen ? folderRowVirtualizer.getVirtualItems() : [];
-  const folderTotalSize = folderListLen ? folderRowVirtualizer.getTotalSize() : 0;
+  const groupedVirtualItems = groupedVirtualizerCount ? groupedRowVirtualizer.getVirtualItems() : [];
+  const groupedTotalSize = groupedVirtualizerCount ? groupedRowVirtualizer.getTotalSize() : 0;
 
   const rowVirtualizerRef = useRef(rowVirtualizer);
   rowVirtualizerRef.current = rowVirtualizer;
+  const groupedVirtualizerRef = useRef(groupedRowVirtualizer);
+  groupedVirtualizerRef.current = groupedRowVirtualizer;
 
   // Per-row caches for referential stability - only ~visible rows touched, so selection change re-renders only 2 rows
   const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean }>>(new Map());
@@ -1373,7 +1472,14 @@ const FileListViewBody = React.memo(function FileListViewBody({
         : (fileStateCacheRef.current.set(file.path, baseState), baseState);
 
     const isSearchHighlight = hasActiveSearch && index === 0;
-    const rowBg = stableFileState.isFileNew ? newFileHighlightBg : (stableFileState.isFileSelected ? rowSelectedBg : (isSearchHighlight ? searchHighlightBg : rowDefaultBg));
+    const defaultRowBg = rowDefaultBgForFill;
+    const rowBg = stableFileState.isFileNew
+      ? newFileHighlightBg
+      : stableFileState.isFileSelected
+        ? rowSelectedBg
+        : isSearchHighlight
+          ? searchHighlightBg
+          : defaultRowBg;
     const isFolderDropHovered = file.type === 'folder' && folderHoverState.has(file.path);
     const finalBg = isFolderDropHovered ? folderDropBgColor : rowBg;
 
@@ -1384,17 +1490,34 @@ const FileListViewBody = React.memo(function FileListViewBody({
       cellStylesCacheRef.current.set(cacheKey, finalCellStyles);
     }
     return { fileState: stableFileState, finalBg, finalCellStyles, isFolderDropHovered };
-  }, [getFileStateForIndex, folderHoverState, hasActiveSearch, rowSelectedBg, rowDefaultBg, newFileHighlightBg, searchHighlightBg, folderDropBgColor, cellStyles]);
+  }, [
+    getFileStateForIndex,
+    folderHoverState,
+    hasActiveSearch,
+    rowSelectedBg,
+    rowDefaultBgForFill,
+    newFileHighlightBg,
+    searchHighlightBg,
+    folderDropBgColor,
+    cellStyles,
+  ]);
 
-  // Scroll rename row into view when isRenaming is set (ungrouped only)
+  // Scroll rename row into view when isRenaming is set
   useEffect(() => {
-    if (isRenaming && sortedFiles.length > 0 && !isGroupedByIndex) {
-      const idx = sortedFiles.findIndex(f => f.name === isRenaming);
-      if (idx >= 0) {
-        rowVirtualizerRef.current.scrollToIndex(idx, { align: 'start' });
-      }
+    if (!isRenaming || sortedFiles.length === 0) return;
+    const idx = sortedFiles.findIndex((f) => f.name === isRenaming);
+    if (idx < 0) return;
+    if (!isGroupedByIndex) {
+      rowVirtualizerRef.current.scrollToIndex(idx, { align: 'start' });
+      return;
     }
-  }, [isRenaming, sortedFiles, isGroupedByIndex]);
+    const flatIdx = flatGroupedItems.findIndex(
+      (it) => it.type === 'fileRow' && it.file.name === isRenaming,
+    );
+    if (flatIdx >= 0) {
+      groupedVirtualizerRef.current.scrollToIndex(flatIdx, { align: 'start' });
+    }
+  }, [isRenaming, sortedFiles, isGroupedByIndex, flatGroupedItems]);
 
   useEffect(() => {
     if (!isInlineCreatingFolder) return;
@@ -1414,23 +1537,16 @@ const FileListViewBody = React.memo(function FileListViewBody({
 
     const checkVisibility = () => {
       if (isGroupedByIndex) {
-        // Grouped: all rows in DOM, check via getBoundingClientRect
-        const containerRect = container.getBoundingClientRect();
-        const rows = container.querySelectorAll('[data-new-file-row="true"]');
-        let above = false;
-        let below = false;
-        rows.forEach((row) => {
-          const r = row.getBoundingClientRect();
-          if (r.bottom < containerRect.top) above = true;
-          if (r.top > containerRect.bottom) below = true;
-        });
-        setNewFileAboveVisible(above);
-        setNewFileBelowVisible(below);
+        if (newFileGroupedVirtualIndices.length === 0) {
+          setNewFileAboveVisible(false);
+          setNewFileBelowVisible(false);
+          return;
+        }
+        const firstVisible = groupedVirtualItems[0]?.index ?? -1;
+        const lastVisible = groupedVirtualItems[groupedVirtualItems.length - 1]?.index ?? -1;
+        setNewFileAboveVisible(newFileGroupedVirtualIndices.some((i) => i < firstVisible));
+        setNewFileBelowVisible(newFileGroupedVirtualIndices.some((i) => i > lastVisible));
       } else {
-        // Virtualized: use virtualItems to know visible range
-        const newFileIndices = sortedFiles
-          .map((f, i) => (getFileStateForIndex(f, i).isFileNew ? i : -1))
-          .filter((i) => i >= 0);
         if (newFileIndices.length === 0) {
           setNewFileAboveVisible(false);
           setNewFileBelowVisible(false);
@@ -1438,10 +1554,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
         }
         const firstVisible = virtualItems[0]?.index ?? -1;
         const lastVisible = virtualItems[virtualItems.length - 1]?.index ?? -1;
-        const above = newFileIndices.some((i) => i < firstVisible);
-        const below = newFileIndices.some((i) => i > lastVisible);
-        setNewFileAboveVisible(above);
-        setNewFileBelowVisible(below);
+        setNewFileAboveVisible(newFileIndices.some((i) => i < firstVisible));
+        setNewFileBelowVisible(newFileIndices.some((i) => i > lastVisible));
       }
     };
 
@@ -1453,7 +1567,13 @@ const FileListViewBody = React.memo(function FileListViewBody({
       container.removeEventListener('scroll', checkVisibility);
       ro.disconnect();
     };
-  }, [isGroupedByIndex, sortedFiles, virtualItems, getFileStateForIndex]);
+  }, [
+    isGroupedByIndex,
+    newFileIndices,
+    newFileGroupedVirtualIndices,
+    virtualItems,
+    groupedVirtualItems,
+  ]);
   
   return (
     <Box 
@@ -1580,7 +1700,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
         overflowY="auto"
         overflowX="auto"
         pl={3}
-        bg={tableSurfaceBg}
+        bg={tableChromeBg}
         onMouseDown={handleSelectionMouseDown}
         style={{ userSelect: isSelecting ? 'none' : 'auto' }}
         onContextMenu={e => {
@@ -1641,7 +1761,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
       
       {isGroupedByIndex && groupedFiles && Object.keys(groupedFiles).length > 0 ? (
         <>
-          <chakra.table ref={gridContainerRef} {...fileGridTableStyles} bg={tableSurfaceBg}>
+          <chakra.table ref={gridContainerRef} {...fileGridTableStyles} bg={tableChromeBg}>
               <colgroup>
                 {columnOrder.map((column) => {
                   if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
@@ -1678,7 +1798,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                       columnOrder={columnOrder}
                       columnVisibility={columnVisibility}
                       cellStyles={cellStyles}
-                      rowDefaultBg={rowDefaultBg}
+                      rowDefaultBg={rowDefaultBgForFill}
                       rowHoverBg={rowHoverBg}
                       fileTextColor={fileTextColor}
                       fileSubTextColor={fileSubTextColor}
@@ -1690,203 +1810,128 @@ const FileListViewBody = React.memo(function FileListViewBody({
                       rowHandlers={rowHandlers}
                     />
                   )}
-                  {groupedFiles.folders && groupedFiles.folders.length > 0 && (
-                    <>
-                      {folderVirtualItems.length > 0 && folderVirtualItems[0].start > 0 && (
-                        <tr>
-                            <td
-                              colSpan={columnOrder.length}
-                              style={{ height: folderVirtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
-                            />
-                        </tr>
-                      )}
-                      {folderVirtualItems.map((virtualRow) => {
-                        const file = groupedFiles.folders![virtualRow.index];
-                        const fileIndex = virtualRow.index;
-                        const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
-                        const index = globalIndex >= 0 ? globalIndex : fileIndex;
-                        const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
-                        const folderDropHandlers = createFolderDropHandlers(file, index);
-
-                        if (isRenaming === file.name) {
-                          return (
-                            <FileRenameTableRow
-                              key={file.path}
-                              file={file}
-                              index={index}
-                              fileState={fileState}
-                              finalBg={finalBg}
-                              rowHoverBg={rowHoverBg}
-                              isFolderDropHovered={isFolderDropHovered}
-                              columnOrder={columnOrder}
-                              columnVisibility={columnVisibility}
-                              cellStyles={finalCellStyles}
-                              nativeIcons={nativeIcons}
-                              fileTextColor={fileTextColor}
-                              fileSubTextColor={fileSubTextColor}
-                              formatFileSize={formatFileSize}
-                              formatDate={formatDate}
-                              observeFileElement={observeFileElement}
-                              unobserveFileElement={unobserveFileElement}
-                              rowHandlers={rowHandlers}
-                              folderDropHandlers={folderDropHandlers}
-                              renameInputRef={renameInputRef}
-                              renameValue={renameValue}
-                              setRenameValue={setRenameValue}
-                              handleRenameSubmit={handleRenameSubmit}
-                              onRenameCancel={onRenameCancel}
-                            />
-                          );
-                        }
-
-                        return (
-                          <FileTableRow
-                            key={file.path}
-                            file={file}
-                            index={index}
-                            fileState={fileState}
-                            finalBg={finalBg}
-                            rowHoverBg={rowHoverBg}
-                            isFolderDropHovered={isFolderDropHovered}
-                            columnOrder={columnOrder}
-                            columnVisibility={columnVisibility}
-                            cellStyles={finalCellStyles}
-                            nativeIcons={nativeIcons}
-                            fileTextColor={fileTextColor}
-                            fileSubTextColor={fileSubTextColor}
-                            formatFileSize={formatFileSize}
-                            formatDate={formatDate}
-                            observeFileElement={observeFileElement}
-                            unobserveFileElement={unobserveFileElement}
-                            rowHandlers={rowHandlers}
-                            folderDropHandlers={folderDropHandlers}
-                          />
-                        );
-                      })}
-                      {folderVirtualItems.length > 0 && (() => {
-                        const last = folderVirtualItems[folderVirtualItems.length - 1];
-                        const offsetBottom = folderTotalSize - last.end;
-                        return offsetBottom > 0 ? (
-                          <tr>
-                              <td
-                                colSpan={columnOrder.length}
-                                style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
-                              />
-                            </tr>
-                        ) : null;
-                      })()}
-                    </>
+                  {groupedVirtualItems.length > 0 && groupedVirtualItems[0].start > 0 && (
+                    <tr>
+                      <td
+                        colSpan={columnOrder.length}
+                        style={{ height: groupedVirtualItems[0].start, padding: 0, border: 'none', lineHeight: 0 }}
+                      />
+                    </tr>
                   )}
-                  {Object.entries(groupedFiles)
-                    .filter(([key]) => key !== 'folders')
-                    .sort(([a], [b]) => {
-                      // AA always comes first
-                      if (a === 'AA') return -1;
-                      if (b === 'AA') return 1;
-                      // Other always comes last
-                      if (a === 'Other') return 1;
-                      if (b === 'Other') return -1;
-                      // Everything else sorted alphabetically
-                      return a.localeCompare(b);
-                    })
-                    .map(([groupKey, groupFiles], groupIndex) => {
-                      const indexInfo = getIndexInfo(groupKey);
+                  {groupedVirtualItems.map((virtualRow) => {
+                    const item = flatGroupedItems[virtualRow.index];
+                    if (!item) return null;
+                    if (item.type === 'groupHeader') {
+                      const indexInfo = getIndexInfo(item.groupKey);
                       const hasFolderSection = Boolean(groupedFiles.folders && groupedFiles.folders.length);
-                      const mtValue = groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 1.5;
-                      
+                      const groupFiles =
+                        groupedFiles[item.groupKey] ?? [];
+                      const mtValue =
+                        item.groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 1.5;
                       return (
-                        <React.Fragment key={groupKey}>
-                          <tr>
-                              <td
-                                colSpan={columnOrder.length}
-                                style={{ padding: '8px 0', background: 'transparent' }}
-                              >
-                                  <GroupHeaderDropZone
-                                    groupKey={groupKey}
-                                    indexInfo={indexInfo}
-                                    fileCount={groupFiles.length}
-                                    onDrop={(e) => handleGroupHeaderDrop(e, groupKey)}
-                                    transferTemplates={groupedTransferTemplates[groupKey] ?? []}
-                                    onTransfer={onTransferFromGroupHeader}
-                                    pillBg={pillBg}
-                                    pillText={pillText}
-                                    dividerColor={dividerColor}
-                                    dropZoneBg={dropZoneBg}
-                                    mt={mtValue}
-                                    clearFolderHoverStates={clearFolderHoverStates}
-                                  />
-                                </td>
-                            </tr>
-                          {groupFiles.map((file, fileIndex) => {
-                            const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
-                            const index = globalIndex >= 0 ? globalIndex : fileIndex;
-                            const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
-                            const folderDropHandlers = createFolderDropHandlers(file, index);
-
-                            if (isRenaming === file.name) {
-                              return (
-                                <FileRenameTableRow
-                                  key={file.path}
-                                  file={file}
-                                  index={index}
-                                  fileState={fileState}
-                                  finalBg={finalBg}
-                                  rowHoverBg={rowHoverBg}
-                                  isFolderDropHovered={isFolderDropHovered}
-                                  columnOrder={columnOrder}
-                                  columnVisibility={columnVisibility}
-                                  cellStyles={finalCellStyles}
-                                  nativeIcons={nativeIcons}
-                                  fileTextColor={fileTextColor}
-                                  fileSubTextColor={fileSubTextColor}
-                                  formatFileSize={formatFileSize}
-                                  formatDate={formatDate}
-                                  observeFileElement={observeFileElement}
-                                  unobserveFileElement={unobserveFileElement}
-                                  rowHandlers={rowHandlers}
-                                  folderDropHandlers={folderDropHandlers}
-                                  renameInputRef={renameInputRef}
-                                  renameValue={renameValue}
-                                  setRenameValue={setRenameValue}
-                                  handleRenameSubmit={handleRenameSubmit}
-                                  onRenameCancel={onRenameCancel}
-                                />
-                              );
-                            }
-
-                            return (
-                              <FileTableRow
-                                key={file.path}
-                                file={file}
-                                index={index}
-                                fileState={fileState}
-                                finalBg={finalBg}
-                                rowHoverBg={rowHoverBg}
-                                isFolderDropHovered={isFolderDropHovered}
-                                columnOrder={columnOrder}
-                                columnVisibility={columnVisibility}
-                                cellStyles={finalCellStyles}
-                                nativeIcons={nativeIcons}
-                                fileTextColor={fileTextColor}
-                                fileSubTextColor={fileSubTextColor}
-                                formatFileSize={formatFileSize}
-                                formatDate={formatDate}
-                                observeFileElement={observeFileElement}
-                                unobserveFileElement={unobserveFileElement}
-                                rowHandlers={rowHandlers}
-                                folderDropHandlers={folderDropHandlers}
-                              />
-                            )
-                          })}
-                        </React.Fragment>
+                        <tr key={`gh-${item.groupKey}-${virtualRow.index}`}>
+                          <td
+                            colSpan={columnOrder.length}
+                            style={{ padding: '8px 0', background: 'transparent' }}
+                          >
+                            <GroupHeaderDropZone
+                              groupKey={item.groupKey}
+                              indexInfo={indexInfo}
+                              fileCount={groupFiles.length}
+                              onDrop={(e) => handleGroupHeaderDrop(e, item.groupKey)}
+                              transferTemplates={groupedTransferTemplates[item.groupKey] ?? []}
+                              onTransfer={onTransferFromGroupHeader}
+                              pillBg={pillBg}
+                              pillText={pillText}
+                              dividerColor={dividerColor}
+                              dropZoneBg={dropZoneBg}
+                              mt={mtValue}
+                              clearFolderHoverStates={clearFolderHoverStates}
+                            />
+                          </td>
+                        </tr>
                       );
-                    })}
+                    }
+                    const file = item.file;
+                    const index = item.globalIndex;
+                    const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(
+                      file,
+                      index,
+                    );
+                    const folderDropHandlers = createFolderDropHandlers(file, index);
+                    if (isRenaming === file.name) {
+                      return (
+                        <FileRenameTableRow
+                          key={file.path}
+                          file={file}
+                          index={index}
+                          fileState={fileState}
+                          finalBg={finalBg}
+                          rowHoverBg={rowHoverBg}
+                          isFolderDropHovered={isFolderDropHovered}
+                          columnOrder={columnOrder}
+                          columnVisibility={columnVisibility}
+                          cellStyles={finalCellStyles}
+                          nativeIcons={nativeIcons}
+                          fileTextColor={fileTextColor}
+                          fileSubTextColor={fileSubTextColor}
+                          formatFileSize={formatFileSize}
+                          formatDate={formatDate}
+                          observeFileElement={observeFileElement}
+                          unobserveFileElement={unobserveFileElement}
+                          rowHandlers={rowHandlers}
+                          folderDropHandlers={folderDropHandlers}
+                          renameInputRef={renameInputRef}
+                          renameValue={renameValue}
+                          setRenameValue={setRenameValue}
+                          handleRenameSubmit={handleRenameSubmit}
+                          onRenameCancel={onRenameCancel}
+                        />
+                      );
+                    }
+                    return (
+                      <FileTableRow
+                        key={file.path}
+                        file={file}
+                        index={index}
+                        fileState={fileState}
+                        finalBg={finalBg}
+                        rowHoverBg={rowHoverBg}
+                        isFolderDropHovered={isFolderDropHovered}
+                        columnOrder={columnOrder}
+                        columnVisibility={columnVisibility}
+                        cellStyles={finalCellStyles}
+                        nativeIcons={nativeIcons}
+                        fileTextColor={fileTextColor}
+                        fileSubTextColor={fileSubTextColor}
+                        formatFileSize={formatFileSize}
+                        formatDate={formatDate}
+                        observeFileElement={observeFileElement}
+                        unobserveFileElement={unobserveFileElement}
+                        rowHandlers={rowHandlers}
+                        folderDropHandlers={folderDropHandlers}
+                      />
+                    );
+                  })}
+                  {groupedVirtualItems.length > 0 &&
+                    (() => {
+                      const last = groupedVirtualItems[groupedVirtualItems.length - 1];
+                      const offsetBottom = groupedTotalSize - last.end;
+                      return offsetBottom > 0 ? (
+                        <tr>
+                          <td
+                            colSpan={columnOrder.length}
+                            style={{ height: offsetBottom, padding: 0, border: 'none', lineHeight: 0 }}
+                          />
+                        </tr>
+                      ) : null;
+                    })()}
                 </tbody>
           </chakra.table>
         </>
       ) : (
         <>
-          <chakra.table ref={gridContainerRef} {...fileGridTableStyles} bg={tableSurfaceBg}>
+          <chakra.table ref={gridContainerRef} {...fileGridTableStyles} bg={tableChromeBg}>
               <colgroup>
                 {columnOrder.map((column) => {
                   if (!columnVisibility[column as keyof typeof columnVisibility]) return null;
@@ -1923,7 +1968,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                       columnOrder={columnOrder}
                       columnVisibility={columnVisibility}
                       cellStyles={cellStyles}
-                      rowDefaultBg={rowDefaultBg}
+                      rowDefaultBg={rowDefaultBgForFill}
                       rowHoverBg={rowHoverBg}
                       fileTextColor={fileTextColor}
                       fileSubTextColor={fileSubTextColor}

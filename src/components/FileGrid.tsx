@@ -4537,6 +4537,7 @@ export const FileGrid: React.FC = () => {
         searchHighlightBg={searchHighlightBg}
         folderDropBgColor={folderDropBgColor}
         fileSearchFilter={fileSearchFilter}
+        recentlyTransferredFiles={recentlyTransferredFiles}
         tableHeadTextColor={tableHeadTextColor}
         headerHoverBg={headerHoverBg}
         headerStickyBg={headerStickyBg}

@@ -76,7 +76,7 @@ The checklist feels snappier mainly because it **avoids whole-app context churn*
 
 To confirm fewer FileGrid re-renders after the selective-context changes:
 
-1. Run the app with React DevTools Profiler enabled (`npm run profiler` or `VITE_REACT_DEVTOOLS=true npm start`).
+1. Run the app with React DevTools Profiler enabled (`npm run profiler` or `VITE_REACT_DEVTOOLS=true npm run dev`).
 2. Start a Profiler recording.
 3. Change footer status (e.g. open Settings, run a command) — FileGrid commit count should stay low.
 4. Change selection or filter — FileGrid should commit (expected).

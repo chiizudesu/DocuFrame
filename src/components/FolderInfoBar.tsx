@@ -34,7 +34,12 @@ import { useDirectorySearch } from '../hooks/useDirectorySearch'
 import { joinPath, getParentPath, normalizePath, isChildPath, getRelativePathSegments, pathsEqualForJump, resolveJumpTargetInBreadcrumbs } from '../utils/path'
 import { eventMatchesShortcut } from '../utils/shortcuts'
 import type { FileItem } from '../types'
-import { docuFramePalette as P, dfHomeIconColor } from '../docuFrameColors'
+import {
+  docuFramePalette as P,
+  dfHomeIconColor,
+  DF_SESSION_RAIL_BG,
+  DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG,
+} from '../docuFrameColors'
 
 /** Matches jump UI `fontSize="sm"` + `fontWeight="medium"` for width measurement */
 const MINI_JUMP_UI_FONT =
@@ -306,7 +311,9 @@ export const FolderInfoBar: React.FC = () => {
   const homeIconColor = useColorModeValue(dfHomeIconColor.light, dfHomeIconColor.dark)
   /** Ghost icons on folder bar strip — same cool-gray hue as strip, lighter/darker for contrast */
   const folderBarStripHoverBg = useColorModeValue(P.light.chromeHover, P.dark.chromeHover)
-  const pinSolidHoverBg = useColorModeValue('yellow.400', 'yellow.500')
+  /** Pinned star: same active blue as function-row toggles (solid variant was defaulting to white). */
+  const pinActiveBg = useColorModeValue(P.light.rowSelected, DF_SESSION_RAIL_BG)
+  const pinActiveHoverBg = useColorModeValue('#b8d4f0', DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG)
   const inputBgColor = useColorModeValue('white', '#4A5568')
   // Dark: gray.700 pill on gray.600 well; light: strip tint for current crumb
   const activeButtonBg = useColorModeValue(bgColor, '#2D3748')
@@ -1243,17 +1250,16 @@ export const FolderInfoBar: React.FC = () => {
           <Tooltip content={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
             <IconButton
               aria-label="Pin to quick access"
-              variant={quickAccessPaths.includes(currentDirectory) ? 'solid' : 'ghost'}
+              variant="ghost"
               size="sm"
               minW="44px"
               h="33px"
               borderRadius={0}
               color={useColorModeValue('#f59e0b', 'yellow.300')}
-              _hover={
-                quickAccessPaths.includes(currentDirectory)
-                  ? { bg: pinSolidHoverBg }
-                  : { bg: folderBarStripHoverBg }
-              }
+              bg={quickAccessPaths.includes(currentDirectory) ? pinActiveBg : undefined}
+              _hover={{
+                bg: quickAccessPaths.includes(currentDirectory) ? pinActiveHoverBg : folderBarStripHoverBg,
+              }}
               onClick={() => addQuickAccessPath(currentDirectory)}
               tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()}>{quickAccessPaths.includes(currentDirectory)

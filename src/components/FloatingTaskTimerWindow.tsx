@@ -62,6 +62,8 @@ type FloatingTimerLayoutPreference = 'auto' | 'portrait' | 'landscape';
 const LAYOUT_HYSTERESIS_PX = 20;
 /** Title bar approximate height for body `calc(100% - …)`. */
 const TITLE_BAR_PX = 32;
+/** Optical nudge — timer digits sit slightly below strict vertical center. */
+const TIMER_DISPLAY_NUDGE_Y_PX = 15;
 
 // TODO: set to true for testing — short session
 const TEST_MODE = false;
@@ -164,10 +166,10 @@ const WorkShiftInfographic: React.FC<{
   isSessionActive?: boolean;
   /** `side`: right column in landscape. `stacked`: full-width top band in portrait. */
   variant?: 'side' | 'stacked';
-}> = ({ tasks, sessionMinutes, pomodoroTargetHours, currentSessionIndex = -1, isSessionActive = false, variant = 'side' }) => {
-  /** Light: darker slate so the panel matches “non-dark but not washed out” timer chrome */
-  const panelChrome = useColorModeValue('#cfd8e3', P.dark.tabStrip);
-  const panelBorder = useColorModeValue('#94a3b8', P.dark.border);
+  /** Matches floating timer title bar / control chrome. */
+  panelBg: string;
+  panelBorder: string;
+}> = ({ tasks, sessionMinutes, pomodoroTargetHours, currentSessionIndex = -1, isSessionActive = false, variant = 'side', panelBg, panelBorder }) => {
   const labelMuted = useColorModeValue('#475569', P.dark.subtext);
   const behindBoxBg = useColorModeValue('#b8c4d4', P.dark.tabInactive);
   const onMutedBadgeText = useColorModeValue('#0f172a', 'whiteAlpha.900');
@@ -269,7 +271,7 @@ const WorkShiftInfographic: React.FC<{
       flexShrink={0}
       px={isStacked ? 2 : 3}
       py={isStacked ? 1.5 : 2}
-      bg={panelChrome}
+      bg={panelBg}
       borderLeft={isStacked ? undefined : '1px solid'}
       borderBottom={isStacked ? '1px solid' : undefined}
       borderColor={panelBorder}
@@ -691,8 +693,10 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const progressPercent =
     pomodoroState.phase === 'idle' ? 0 : Math.min(100, Math.max(0, rawProgressPercent));
   const canvasBg = useColorModeValue('#dfe6ee', P.dark.canvas);
-  const chromeBg = useColorModeValue('#cfd8e3', P.dark.tabStrip);
-  const shellBorder = useColorModeValue('#94a3b8', P.dark.border);
+  /** Title bar, button strips, infographic panel — darker than main canvas. */
+  const titleBarBg = useColorModeValue('#a6b4c4', '#1e2533');
+  /** Darker than before — reads clearly on `titleBarBg` and main shell. */
+  const shellBorder = useColorModeValue('#5d6f82', '#2f3844');
   const labelSubtext = useColorModeValue('#475569', P.dark.subtext);
   const soundRowBg = useColorModeValue('#b8c6d4', P.dark.rowHover);
   const onCanvasText = useColorModeValue('#0f172a', 'white');
@@ -749,12 +753,13 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         Math.round(viewport.h * 0.18)
       ))
     : Math.max(
-        72,
+        144,
         Math.min(
-          258,
-          Math.min(Math.max(0, viewport.w - 400), Math.max(0, viewport.h - TITLE_BAR_PX - 72)) * 0.44
+          516,
+          Math.min(Math.max(0, viewport.w - 400), Math.max(0, viewport.h - TITLE_BAR_PX - 72)) * 0.88
         )
       );
+  const timerDisplayPx = Math.round(timerFontPx * 0.9);
 
   const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
 
@@ -778,17 +783,17 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
 
   const portraitTimerDigits = (
     <Flex align="center" justify="center" direction="column" gap={0} fontFamily="'Rajdhani', sans-serif" fontWeight="700" color={onCanvasText}>
-      <Text fontVariantNumeric="tabular-nums" fontSize={`${timerFontPx}px`} lineHeight="1">
+      <Text fontVariantNumeric="tabular-nums" fontSize={`${timerDisplayPx}px`} lineHeight="1">
         {String(Math.floor(pomodoroState.currentTime / 60)).padStart(2, '0')}
       </Text>
-      <Text fontVariantNumeric="tabular-nums" fontSize={`${timerFontPx}px`} lineHeight="1" opacity={0.75}>
+      <Text fontVariantNumeric="tabular-nums" fontSize={`${timerDisplayPx}px`} lineHeight="1" opacity={0.75}>
         {String(Math.floor(pomodoroState.currentTime) % 60).padStart(2, '0')}
       </Text>
     </Flex>
   );
 
   const landscapeTimerDigits = (
-    <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize={`${timerFontPx}px`} fontWeight="700" color={onCanvasText} lineHeight="1">
+    <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize={`${timerDisplayPx}px`} fontWeight="700" color={onCanvasText} lineHeight="1">
       <Text as="span" w="1.2em" textAlign="right" fontVariantNumeric="tabular-nums" display="block">
         {String(Math.floor(pomodoroState.currentTime / 60)).padStart(2, '0')}
       </Text>
@@ -817,7 +822,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
         flexDirection="column"
       >
           {/* Title bar */}
-          <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg={chromeBg} borderBottom="1px solid" borderColor={shellBorder} flexShrink={0} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg={titleBarBg} borderBottom="1px solid" borderColor={shellBorder} flexShrink={0} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
             <Flex align="center" gap={2}>
               <Box px={3} py={1} borderRadius="md" bg={phaseBg} color="white" fontSize="12px" fontWeight="600">
                 {pomodoroState.phase === 'idle' ? 'Ready' : 'Check-in'}
@@ -865,6 +870,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             <Flex direction="column" flex={1} minH={0} style={noDragStyle}>
               <WorkShiftInfographic
                 variant="stacked"
+                panelBg={titleBarBg}
+                panelBorder={shellBorder}
                 tasks={infographicTasks}
                 sessionMinutes={sessionMinutes}
                 pomodoroTargetHours={targetHours}
@@ -872,8 +879,14 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 isSessionActive={pomodoroState.phase === 'session' && !pomodoroState.isPaused}
               />
               <Flex direction="column" flex={1} minH={0} px={4} py={2} bg={canvasBg}>
-                <Flex flex={1} align="center" justify="center" minH={0}>
-                  {portraitTimerDigits}
+                <Flex flex={1} direction="column" minH={0} minW={0}>
+                  <Box flex={1} minH={0} minW={0} />
+                  <Flex align="center" justify="center" flexShrink={0} w="100%">
+                    <Box style={{ transform: `translateY(${TIMER_DISPLAY_NUDGE_Y_PX}px)` }}>
+                      {portraitTimerDigits}
+                    </Box>
+                  </Flex>
+                  <Box flex={1} minH={0} minW={0} />
                 </Flex>
               </Flex>
               <Box flexShrink={0} px={4} pt={4} pb={3} bg={canvasBg} borderTop="1px solid" borderColor={shellBorder}>
@@ -886,7 +899,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 gap={3}
                 py={3}
                 px={3}
-                bg={chromeBg}
+                bg={titleBarBg}
                 borderTop="1px solid"
                 borderColor={shellBorder}
                 wrap="wrap"
@@ -910,7 +923,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             </Flex>
           ) : (
             <Flex direction="row" flex={1} minH={0} style={noDragStyle}>
-              <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg={chromeBg} borderRight="1px solid" borderColor={shellBorder} minW="60px" flexShrink={0}>
+              <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg={titleBarBg} borderRight="1px solid" borderColor={shellBorder} minW="60px" flexShrink={0}>
                 <Tooltip content="Start" positioning={{ placement: 'right' }}>
                   <Button size="md" onClick={handleStartTimer} disabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? 'gray.600' : 'green.500'} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? 'gray.600' : 'green.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
                     <Icon boxSize={5} color="white" asChild><Play /></Icon>
@@ -929,8 +942,14 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
               </Flex>
               <Flex direction="row" flex={1} minW={0} bg={canvasBg}>
                 <Flex direction="column" flex={1} minW={0} minH={0} px={6} pt={3} pb={2}>
-                  <Flex flex={1} align="center" justify="center" minH={0}>
-                    {landscapeTimerDigits}
+                  <Flex flex={1} direction="column" minH={0} minW={0}>
+                    <Box flex={1} minH={0} minW={0} />
+                    <Flex align="center" justify="center" flexShrink={0} w="100%">
+                      <Box style={{ transform: `translateY(${TIMER_DISPLAY_NUDGE_Y_PX}px)` }}>
+                        {landscapeTimerDigits}
+                      </Box>
+                    </Flex>
+                    <Box flex={1} minH={0} minW={0} />
                   </Flex>
                   <Box flexShrink={0} w="100%" pt={5} pb={2}>
                     {timerProgressBar}
@@ -938,6 +957,8 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 </Flex>
                 <WorkShiftInfographic
                   variant="side"
+                  panelBg={titleBarBg}
+                  panelBorder={shellBorder}
                   tasks={infographicTasks}
                   sessionMinutes={sessionMinutes}
                   pomodoroTargetHours={targetHours}
