@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useColorModeValue } from "./ui/color-mode";
 import { Box } from '@chakra-ui/react';
-import { showToast } from "@/components/ui/toaster"
+import { showToast, getErrorMessageFromUnknown } from "@/components/ui/toaster"
 import {
   useFileGridDirectoryState,
   useFileGridSelectionState,
@@ -18,8 +18,36 @@ import { extractIndexPrefix, setIndexPrefix, removeIndexPrefix, groupFilesByInde
 import { SortColumn, SortDirection, formatPathForLog } from './FileGrid/FileGridUtils';
 import { FileContextMenu, BlankContextMenu, TemplateSubmenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
+import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog';
 import { FileListView } from './FileGrid/FileListView';
 import { docuFramePalette as P } from '../docuFrameColors';
+
+/** True when rename failed because the path is open, locked, or busy (EBUSY / EPERM / main-process message). */
+function isRenameResourceBusyError(error: unknown): boolean {
+  if (error == null) return false;
+  const err = error as NodeJS.ErrnoException;
+  if (err.code === 'EBUSY' || err.code === 'EPERM') return true;
+  const msg = getErrorMessageFromUnknown(error);
+  return (
+    msg.includes('Cannot rename: File is currently open') ||
+    /resource busy|EBUSY|in use by another application/i.test(msg)
+  );
+}
+
+function renameFailedToastContent(error: unknown, originalName: string): { title: string; description: string } {
+  if (isRenameResourceBusyError(error)) {
+    return {
+      title: 'Rename Failed',
+      description:
+        'This file is open in another program or locked by the system. Close the file and try again.',
+    };
+  }
+  const errorMessage = getErrorMessageFromUnknown(error);
+  return {
+    title: 'Rename Failed',
+    description: `Failed to rename "${originalName}": ${errorMessage}`,
+  };
+}
 
 // Icon functions removed - using native Windows icons instead
 
@@ -66,6 +94,7 @@ export const FileGrid: React.FC = () => {
     addQuickAccessPath,
     removeQuickAccessPath,
     logFileOperation,
+    isCreateFolderOpen,
     setIsCreateFolderOpen,
     setIsAIFileManagerOpen,
     setFileManagerInitialSelection,
@@ -189,6 +218,23 @@ export const FileGrid: React.FC = () => {
   const [isRenaming, setIsRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const [isInlineCreatingFolder, setIsInlineCreatingFolder] = useState(false)
+  const [newFolderDraftName, setNewFolderDraftName] = useState('')
+  const newFolderInputRef = useRef<HTMLInputElement>(null)
+  const isInlineCreatingFolderRef = useRef(false)
+  const showFileOperationFailureRef = useRef<
+    | ((opts: {
+        title: string
+        description: string
+        operationLabel: string
+        retry: () => Promise<boolean>
+        onCancel?: () => void
+      }) => void)
+    | null
+  >(null)
+  const fileOpRetryRef = useRef<(() => Promise<boolean>) | null>(null)
+  const fileOpCancelRef = useRef<(() => void) | null>(null)
+  const handleRenameSubmitRef = useRef<((e?: React.FormEvent) => Promise<boolean>) | null>(null)
   const isRenamingRef = useRef<string | null>(null)
   const hasPositionedCursor = useRef<boolean>(false)
   const isLoadingRef = useRef<boolean>(false)
@@ -211,6 +257,13 @@ export const FileGrid: React.FC = () => {
   const closeRenameIndexDialog = useCallback(() => setIsRenameIndexDialogOpen(false), [])
   const [isMoveToDialogOpen, setIsMoveToDialogOpen] = useState(false)
   const [moveToFiles, setMoveToFiles] = useState<FileItem[]>([])
+  const [fileOpFailureDialog, setFileOpFailureDialog] = useState<{
+    open: boolean
+    title: string
+    description: string
+    operationLabel: string
+  }>({ open: false, title: '', description: '', operationLabel: '' })
+  const [fileOpRetrying, setFileOpRetrying] = useState(false)
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
   const [templateSubmenuOpen, setTemplateSubmenuOpen] = useState(false)
   const [templateSubmenuPosition, setTemplateSubmenuPosition] = useState<{ x: number; y: number } | null>(null)
@@ -346,6 +399,10 @@ export const FileGrid: React.FC = () => {
   useEffect(() => {
     isRenamingRef.current = isRenaming;
   }, [isRenaming]);
+
+  useEffect(() => {
+    isInlineCreatingFolderRef.current = isInlineCreatingFolder;
+  }, [isInlineCreatingFolder]);
 
   // Collapsed caret when rename starts: before extension for files; end of name for folders / no extension (no full-name selection).
   useEffect(() => {
@@ -734,6 +791,132 @@ export const FileGrid: React.FC = () => {
     })
   }, []);
 
+  // Separate refresh function that doesn't show loading state (for background refreshes)
+  const refreshDirectory = useCallback(async (dirPath: string) => {
+    if (!dirPath || dirPath.trim() === '') return;
+
+    // Prevent concurrent refreshes but don't show loading
+    if (isLoadingRef.current) return;
+
+    try {
+      // Normalize the path before refreshing
+      const normalizedPath = normalizePath(dirPath);
+      if (!normalizedPath) {
+        addLog(`Invalid path: ${dirPath}`, 'error');
+        return;
+      }
+
+      // Validate path exists and is accessible
+      const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+      if (!isValid) {
+        addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error');
+        return;
+      }
+
+      const contents = await (window.electronAPI as any).getDirectoryContents(normalizedPath);
+      // Accept both array and { files: [] } shapes
+      const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
+      if (files) {
+        const filtered = filterFiles(files);
+        setFolderItems(filtered as any);
+        setDisplayedDirectory(normalizedPath);
+        addLog(`Refreshed directory: ${formatPathForLog(normalizedPath)}`);
+      } else {
+        addLog(`Warning: Directory refresh returned invalid data`, 'info');
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Failed to refresh directory: ${errorMessage}`, 'error');
+    }
+  }, [setFolderItems, setDisplayedDirectory, addLog, filterFiles]);
+
+  useEffect(() => {
+    if (!isCreateFolderOpen) return;
+    setIsInlineCreatingFolder(true);
+    setNewFolderDraftName('');
+    setIsRenaming(null);
+    setRenameValue('');
+    setIsCreateFolderOpen(false);
+  }, [isCreateFolderOpen, setIsCreateFolderOpen]);
+
+  const cancelInlineNewFolder = useCallback(() => {
+    setIsInlineCreatingFolder(false);
+    setNewFolderDraftName('');
+  }, []);
+
+  const submitInlineNewFolder = useCallback(
+    async (navigateInto: boolean) => {
+      const trimmedName = newFolderDraftName.trim();
+      if (!trimmedName) {
+        showToast({
+          title: 'Name required',
+          description: 'Enter a folder name before pressing Enter.',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
+        return;
+      }
+      const existingFile = folderItems.find((f) => f.name.toLowerCase() === trimmedName.toLowerCase());
+      if (existingFile) {
+        showToast({
+          title: 'Cannot create folder',
+          description: `A file or folder named "${trimmedName}" already exists.`,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
+        return;
+      }
+      const fullPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, trimmedName);
+      try {
+        await (window.electronAPI as any).createDirectory(fullPath);
+        if (navigateInto) {
+          addLog(`Created and entered folder: ${trimmedName}`);
+          setStatus(`Created and entered folder: ${trimmedName}`, 'success');
+          setIsInlineCreatingFolder(false);
+          setNewFolderDraftName('');
+          setCurrentDirectory(fullPath);
+        } else {
+          addLog(`Created folder: ${trimmedName}`);
+          setStatus(`Created folder: ${trimmedName}`, 'success');
+          setIsInlineCreatingFolder(false);
+          setNewFolderDraftName('');
+          await refreshDirectory(currentDirectory);
+          requestAnimationFrame(() => {
+            setSelectedFiles([trimmedName]);
+            setSelectedFile(trimmedName);
+          });
+        }
+      } catch (error) {
+        const errorMessage = getErrorMessageFromUnknown(error);
+        addLog(`Failed to create folder: ${errorMessage}`, 'error');
+        setStatus(`Failed to create folder: ${trimmedName}`, 'error');
+        showToast({
+          title: 'Create folder failed',
+          description: errorMessage,
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+          position: 'top',
+        });
+      }
+    },
+    [
+      newFolderDraftName,
+      folderItems,
+      currentDirectory,
+      addLog,
+      setStatus,
+      refreshDirectory,
+      setCurrentDirectory,
+      setSelectedFiles,
+      setSelectedFile,
+    ]
+  );
+
   // Delete file(s) with confirmation - OPTIMIZED with useCallback
   const handleDeleteFile = useCallback(async (fileOrFiles: FileItem | FileItem[]) => {
     const filesToDelete = Array.isArray(fileOrFiles)
@@ -771,46 +954,52 @@ export const FileGrid: React.FC = () => {
         }
       }
       
-      // Provide summary feedback
       if (deletedFiles.length > 0) {
         setStatus(`Successfully deleted ${deletedFiles.length} file(s)`, 'success');
-        
-        // Show toast notification for successful delete operations
-        
+        setSelectedFiles((prev) => prev.filter((n) => !deletedFiles.includes(n)));
       }
       
       if (failedFiles.length > 0) {
-        setStatus(`Failed to delete ${failedFiles.length} file(s). Check console for details.`, 'error');
-        
-        // Show detailed error message for failed files
-        const errorDetails = failedFiles.map(f => `• ${f.name}: ${f.error}`).join('\n');
-        addLog(`Delete operation completed with errors:\n${errorDetails}`, 'error');
-        
-        // Show a more user-friendly error message
-        const failedFileNames = failedFiles.map(f => f.name).join(', ');
+        const failedFileNames = failedFiles.map((f) => f.name).join(', ');
         setStatus(`Failed to delete: ${failedFileNames}`, 'error');
-        
-        // Show toast notification for failed delete operations
-        showToast({
+        const errorDetails = failedFiles.map((f) => `• ${f.name}: ${f.error}`).join('\n');
+        addLog(`Delete operation completed with errors:\n${errorDetails}`, 'error');
+        const failedItems = files.filter((f) => failedFiles.some((ff) => ff.name === f.name));
+        showFileOperationFailureRef.current?.({
           title: 'Delete Failed',
-          description: `Failed to delete ${failedFiles.length} file(s): ${failedFileNames}`,
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-          position: 'top',
+          description: errorDetails,
+          operationLabel: 'Delete',
+          retry: async () => {
+            let anyFailed = false;
+            for (const f of failedItems) {
+              try {
+                setStatus(`Deleting: ${f.name}...`, 'info');
+                await (window.electronAPI as any).deleteItem(f.path);
+                addLog(`Deleted: ${f.name}`, 'response');
+                setSelectedFiles((prev) => prev.filter((n) => n !== f.name));
+              } catch (err: any) {
+                anyFailed = true;
+                const em = err?.message || err;
+                addLog(`Failed to delete: ${f.name} - ${em}`, 'error');
+              }
+            }
+            await refreshDirectory(currentDirectory);
+            return !anyFailed;
+          },
         });
       }
-      
-      // Refresh the current directory regardless of errors
+
       await refreshDirectory(currentDirectory);
-      setSelectedFiles([])
+      if (failedFiles.length === 0) {
+        setSelectedFiles([]);
+      }
       
     } catch (error: any) {
       const errorMessage = error?.message || error;
       addLog(`Delete operation failed: ${errorMessage}`, 'error');
       setStatus('Delete operation failed', 'error');
     }
-  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, setFolderItems, filterFiles])
+  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, refreshDirectory])
 
   // In context menu, pass array for multi-select delete - OPTIMIZED with useCallback
   const handleMenuAction = useCallback(async (action: string) => {
@@ -1199,47 +1388,64 @@ export const FileGrid: React.FC = () => {
     }
 
   handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, setIsAIFileManagerOpen, setFileManagerInitialSelection])
+  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, setIsAIFileManagerOpen, setFileManagerInitialSelection, refreshDirectory])
 
-  // Separate refresh function that doesn't show loading state (for background refreshes)
-  // Defined early so it can be used by other callbacks
-  const refreshDirectory = useCallback(async (dirPath: string) => {
-    if (!dirPath || dirPath.trim() === '') return;
-    
-    // Prevent concurrent refreshes but don't show loading
-    if (isLoadingRef.current) return
-    
+  const closeFileOpFailure = useCallback(() => {
+    setFileOpFailureDialog((d) => ({ ...d, open: false }))
+    fileOpRetryRef.current = null
+    fileOpCancelRef.current = null
+  }, [])
+
+  const handleFileOpFailureRetry = useCallback(async () => {
+    const fn = fileOpRetryRef.current
+    if (!fn) return
+    setFileOpRetrying(true)
     try {
-      // Normalize the path before refreshing
-      const normalizedPath = normalizePath(dirPath);
-      if (!normalizedPath) {
-        addLog(`Invalid path: ${dirPath}`, 'error');
-        return;
-      }
-      
-      // Validate path exists and is accessible
-      const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
-      if (!isValid) {
-        addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error');
-        return;
-      }
-      
-      const contents = await (window.electronAPI as any).getDirectoryContents(normalizedPath);
-      // Accept both array and { files: [] } shapes
-      const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : null);
-      if (files) {
-        const filtered = filterFiles(files)
-        setFolderItems(filtered as any);
-        setDisplayedDirectory(normalizedPath);
-        addLog(`Refreshed directory: ${formatPathForLog(normalizedPath)}`);
-      } else {
-        addLog(`Warning: Directory refresh returned invalid data`, 'info');
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`Failed to refresh directory: ${errorMessage}`, 'error');
+      const ok = await fn()
+      if (ok) closeFileOpFailure()
+    } finally {
+      setFileOpRetrying(false)
     }
-  }, [setFolderItems, setDisplayedDirectory, addLog, filterFiles]);
+  }, [closeFileOpFailure])
+
+  const handleFileOpFailureCancel = useCallback(() => {
+    fileOpCancelRef.current?.()
+    closeFileOpFailure()
+  }, [closeFileOpFailure])
+
+  const showFileOperationFailure = useCallback(
+    (opts: {
+      title: string
+      description: string
+      operationLabel: string
+      retry: () => Promise<boolean>
+      onCancel?: () => void
+    }) => {
+      const toastDesc =
+        opts.description.length > 220 ? `${opts.description.slice(0, 220)}…` : opts.description
+      showToast({
+        title: opts.title,
+        description: toastDesc,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+        position: 'top',
+      })
+      fileOpRetryRef.current = opts.retry
+      fileOpCancelRef.current = opts.onCancel ?? null
+      setFileOpFailureDialog({
+        open: true,
+        title: opts.title,
+        description: opts.description,
+        operationLabel: opts.operationLabel,
+      })
+    },
+    []
+  )
+
+  useEffect(() => {
+    showFileOperationFailureRef.current = showFileOperationFailure
+  }, [showFileOperationFailure])
 
   // Handler for transfer from group header (plus button dropdown)
   const handleTransferFromGroupHeader = useCallback(async (opts: { command?: string; newName?: string }) => {
@@ -1732,9 +1938,10 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to proper case filename: ${errorMessage}`, 'error');
       setStatus('Failed to proper case filename', 'error');
+      const { title, description } = renameFailedToastContent(error, file.name);
       showToast({
-        title: 'Rename Failed',
-        description: errorMessage,
+        title,
+        description,
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -1760,9 +1967,10 @@ export const FileGrid: React.FC = () => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to rename: ${errorMessage}`, 'error');
       setStatus('Failed to rename file', 'error');
+      const { title, description } = renameFailedToastContent(error, smartRenameFile.name);
       showToast({
-        title: 'Rename Failed',
-        description: errorMessage,
+        title,
+        description,
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -1772,90 +1980,93 @@ export const FileGrid: React.FC = () => {
     }
   }, [smartRenameFile, currentDirectory, addLog, setStatus, refreshDirectory]);
 
-  const handleRenameSubmit = useCallback(async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    if (!isRenaming) return
-    const trimmedName = renameValue?.trim();
-    if (!trimmedName) {
-      setIsRenaming(null)
-      setRenameValue('')
-      return
-    }
-    // Use exactly what the user typed (no extension appending) - user can edit name and extension freely
-    if (trimmedName === isRenaming) {
-      setIsRenaming(null)
-      setRenameValue('')
-      return
-    }
-    console.log('[Rename] handleRenameSubmit started:', { oldName: isRenaming, newName: trimmedName, currentDirectory });
-    try {
-      // Find the actual file to get its full path (fallback for newly created items not yet in folderItems)
-      let fileToRename = folderItems.find(f => f.name === isRenaming);
-      if (!fileToRename) {
-        const fallbackPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, isRenaming);
-        fileToRename = { name: isRenaming, path: fallbackPath, type: 'file' };
+  const handleRenameSubmit = useCallback(
+    async (e?: React.FormEvent): Promise<boolean> => {
+      e?.preventDefault();
+      if (!isRenaming) return true;
+      const trimmedName = renameValue?.trim();
+      if (!trimmedName) {
+        setIsRenaming(null);
+        setRenameValue('');
+        return true;
       }
-
-      const oldPath = fileToRename.path;
-      const newPath = isAbsolutePath(trimmedName) ? trimmedName : joinPath(currentDirectory === '/' ? '' : currentDirectory, trimmedName)
-      
-      // Check if this is a case-only rename (same name, different case)
-      const isCaseOnlyRename = fileToRename.name.toLowerCase() === trimmedName.toLowerCase() && 
-                               fileToRename.name !== trimmedName;
-      
-      // Only check for conflicts if it's NOT a case-only rename
-      // Case-only renames should always be allowed (Windows handles them specially)
-      if (!isCaseOnlyRename) {
-        // Check if target file already exists (case-insensitive, excluding current file)
-        // Normalize paths for comparison to handle Windows path case differences
-        const normalizedOldPath = oldPath.replace(/\\/g, '/').toLowerCase();
-        const existingFile = folderItems.find(f => {
-          const normalizedPath = f.path.replace(/\\/g, '/').toLowerCase();
-          return normalizedPath !== normalizedOldPath &&
-                 f.name.toLowerCase() === trimmedName.toLowerCase();
-        });
-        
-        if (existingFile) {
-          // File with same name exists - show error
-          showToast({
-            title: 'Rename Failed',
-            description: `A file named "${trimmedName}" already exists.`,
-            status: 'error',
-            duration: 5000,
-            isClosable: true,
-            position: 'top',
-          });
-          return;
+      if (trimmedName === isRenaming) {
+        setIsRenaming(null);
+        setRenameValue('');
+        return true;
+      }
+      console.log('[Rename] handleRenameSubmit started:', { oldName: isRenaming, newName: trimmedName, currentDirectory });
+      try {
+        let fileToRename = folderItems.find((f) => f.name === isRenaming);
+        if (!fileToRename) {
+          const fallbackPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, isRenaming);
+          fileToRename = { name: isRenaming, path: fallbackPath, type: 'file' };
         }
-      }
-      
-      await (window.electronAPI as any).renameItem(oldPath, newPath)
-      console.log('[Rename] Success:', { oldPath, newPath });
-      addLog(`Renamed ${isRenaming} to ${trimmedName}`)
-      
-      setIsRenaming(null)
-      setRenameValue('')
-      // Refresh directory to show renamed file
-      await refreshDirectory(currentDirectory)
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.log('[Rename] Failed:', { oldName: isRenaming, newName: trimmedName, error: errorMessage });
-      addLog(`Failed to rename: ${errorMessage}`, 'error')
-      setStatus(`Failed to rename "${isRenaming}": ${errorMessage}`, 'error')
-      
-      showToast({
-          title: 'Rename Failed',
-          description: `Failed to rename "${isRenaming}": ${errorMessage}`,
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-          position: 'top',
+
+        const oldPath = fileToRename.path;
+        const newPath = isAbsolutePath(trimmedName)
+          ? trimmedName
+          : joinPath(currentDirectory === '/' ? '' : currentDirectory, trimmedName);
+
+        const isCaseOnlyRename =
+          fileToRename.name.toLowerCase() === trimmedName.toLowerCase() && fileToRename.name !== trimmedName;
+
+        if (!isCaseOnlyRename) {
+          const normalizedOldPath = oldPath.replace(/\\/g, '/').toLowerCase();
+          const existingFile = folderItems.find((f) => {
+            const normalizedPath = f.path.replace(/\\/g, '/').toLowerCase();
+            return normalizedPath !== normalizedOldPath && f.name.toLowerCase() === trimmedName.toLowerCase();
+          });
+
+          if (existingFile) {
+            showToast({
+              title: 'Rename Failed',
+              description: `A file named "${trimmedName}" already exists.`,
+              status: 'error',
+              duration: 5000,
+              isClosable: true,
+              position: 'top',
+            });
+            return false;
+          }
+        }
+
+        await (window.electronAPI as any).renameItem(oldPath, newPath);
+        console.log('[Rename] Success:', { oldPath, newPath });
+        addLog(`Renamed ${isRenaming} to ${trimmedName}`);
+
+        setIsRenaming(null);
+        setRenameValue('');
+        await refreshDirectory(currentDirectory);
+        return true;
+      } catch (error) {
+        const errorMessage = getErrorMessageFromUnknown(error);
+        console.log('[Rename] Failed:', { oldName: isRenaming, newName: trimmedName, error: errorMessage });
+        addLog(`Failed to rename: ${errorMessage}`, 'error');
+        const statusMsg = isRenameResourceBusyError(error)
+          ? `Cannot rename "${isRenaming}": file is open or in use`
+          : `Failed to rename "${isRenaming}": ${errorMessage}`;
+        setStatus(statusMsg, 'error');
+        const { title, description } = renameFailedToastContent(error, isRenaming);
+        showFileOperationFailure({
+          title,
+          description,
+          operationLabel: 'Rename',
+          retry: async () => (await handleRenameSubmitRef.current?.()) ?? false,
+          onCancel: () => {
+            setIsRenaming(null);
+            setRenameValue('');
+          },
         });
-      
-      setIsRenaming(null)
-      setRenameValue('')
-    }
-  }, [isRenaming, renameValue, currentDirectory, addLog, setStatus, refreshDirectory])
+        return false;
+      }
+    },
+    [isRenaming, renameValue, currentDirectory, folderItems, addLog, setStatus, refreshDirectory, showFileOperationFailure]
+  );
+
+  useEffect(() => {
+    handleRenameSubmitRef.current = handleRenameSubmit;
+  }, [handleRenameSubmit]);
 
   const handleRenameCancel = useCallback(() => {
     setIsRenaming(null);
@@ -2150,7 +2361,7 @@ export const FileGrid: React.FC = () => {
       setLastClickedFile(null);
       
       // Don't navigate/open if rename mode is active for this file (or any file)
-      if (isRenamingRef.current) {
+      if (isRenamingRef.current || isInlineCreatingFolderRef.current) {
         return;
       }
 
@@ -2210,6 +2421,10 @@ export const FileGrid: React.FC = () => {
         return;
       }
 
+      if (isInlineCreatingFolderRef.current) {
+        return;
+      }
+
       if (selectedFile && !isRenaming) {
         e.preventDefault();
         e.stopPropagation();
@@ -2231,7 +2446,7 @@ export const FileGrid: React.FC = () => {
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
-      if (isRenaming || isInputFocused) return;
+      if (isRenaming || isInlineCreatingFolderRef.current || isInputFocused) return;
 
       if (e.key === 'Enter' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFilesSet.has(f.name))
@@ -2524,7 +2739,7 @@ export const FileGrid: React.FC = () => {
       const hasTextSelection = selection && selection.toString().length > 0;
       
       // Don't interfere with copy/paste if user is in input fields, renaming, or has text selected
-      if (isRenaming || isInputFocused || hasTextSelection) return;
+      if (isRenaming || isInlineCreatingFolderRef.current || isInputFocused || hasTextSelection) return;
       
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         // Select all files
@@ -2622,7 +2837,7 @@ export const FileGrid: React.FC = () => {
       // Don't interfere if renaming or in input fields
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      if (isRenaming || isInputFocused) return;
+      if (isRenaming || isInlineCreatingFolderRef.current || isInputFocused) return;
       if (!sortedFiles.length) return;
 
       // Only handle arrow keys
@@ -3837,8 +4052,18 @@ export const FileGrid: React.FC = () => {
     }
     setIsRenaming(null);
     setRenameValue('');
+    setIsInlineCreatingFolder(false);
+    setNewFolderDraftName('');
     hasPositionedCursor.current = false;
   }, [currentDirectory]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!isInlineCreatingFolder) return;
+    const id = requestAnimationFrame(() => {
+      newFolderInputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isInlineCreatingFolder]);
 
   // O(1) lookup for clipboard cut paths - avoids creating Set on every getFileState call
   const clipboardFilePathsSet = useMemo(() =>
@@ -4084,6 +4309,9 @@ export const FileGrid: React.FC = () => {
       // (e.preventDefault below would otherwise block the browser's focus change)
       if (isRenamingRef.current && renameInputRef.current) {
         renameInputRef.current.blur();
+      }
+      if (isInlineCreatingFolderRef.current && newFolderInputRef.current) {
+        newFolderInputRef.current.blur();
       }
       e.preventDefault();
       const container = gridContainerRef.current || dropAreaRef.current;
@@ -4345,6 +4573,12 @@ export const FileGrid: React.FC = () => {
         formatDate={formatDate}
         handleRenameSubmit={handleRenameSubmit}
         handleRenameCancel={handleRenameCancel}
+        isInlineCreatingFolder={isInlineCreatingFolder}
+        newFolderDraftName={newFolderDraftName}
+        setNewFolderDraftName={setNewFolderDraftName}
+        newFolderInputRef={newFolderInputRef}
+        submitInlineNewFolder={submitInlineNewFolder}
+        cancelInlineNewFolder={cancelInlineNewFolder}
         setIsRenaming={setIsRenaming}
         setRenameValue={setRenameValue}
         setFileGridBackgroundUrl={setFileGridBackgroundUrl}
@@ -4533,6 +4767,16 @@ export const FileGrid: React.FC = () => {
         handleSmartRenameConfirm={handleSmartRenameConfirm}
         handleUnblockFile={handleUnblockFile}
         handleImageSaved={handleImageSaved}
+        showFileOperationFailure={showFileOperationFailure}
+      />
+      <FileOperationFailedDialog
+        open={fileOpFailureDialog.open}
+        title={fileOpFailureDialog.title}
+        description={fileOpFailureDialog.description}
+        operationLabel={fileOpFailureDialog.operationLabel}
+        isRetrying={fileOpRetrying}
+        onRetry={handleFileOpFailureRetry}
+        onCancel={handleFileOpFailureCancel}
       />
     </Box>
   );

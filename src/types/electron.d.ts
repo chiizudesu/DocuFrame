@@ -32,8 +32,8 @@ interface ElectronAPI {
   selectDirectory: () => Promise<string>;
   selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
   openFile: (filePath: string) => Promise<void>;
-  confirmDelete: (fileNames: string[]) => Promise<boolean>;
-  
+  openFileInNotepad: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+
   // Drag and drop operations
   uploadFiles: (files: { path: string; name: string }[], targetDirectory: string) => Promise<OperationResult[]>;
   moveFiles: (files: string[], targetDirectory: string) => Promise<OperationResult[]>;

@@ -83,16 +83,6 @@
   background: rgba(156, 163, 175, 0.5) !important;
 }
 
-/* Address bar refresh shimmer (plain CSS — Chakra v3 style resolver cannot merge @keyframes into the same object as transform) */
-@keyframes docuframe-address-refresh-shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
 /* AI File Manager — plain CSS keyframes (Chakra v3 style resolver cannot merge emotion keyframes with animation prop) */
 @keyframes docuframe-ai-fm-reading-progress {
   0% {
@@ -100,6 +90,16 @@
   }
   100% {
     transform: translateX(250%);
+  }
+}
+
+/* Address bar refresh — 50%-wide band; constant speed (linear) across full bar */
+@keyframes docuframe-address-refresh-blue-sweep {
+  0% {
+    transform: translate3d(-100%, 0, 0);
+  }
+  100% {
+    transform: translate3d(200%, 0, 0);
   }
 }
 

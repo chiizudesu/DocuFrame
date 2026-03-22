@@ -54,6 +54,13 @@ export interface FileGridDialogsProps {
   handleSmartRenameConfirm: (newName: string) => Promise<void>;
   handleUnblockFile: () => Promise<void>;
   handleImageSaved: (filename: string) => Promise<void>;
+  showFileOperationFailure: (opts: {
+    title: string;
+    description: string;
+    operationLabel: string;
+    retry: () => Promise<boolean>;
+    onCancel?: () => void;
+  }) => void;
 }
 
 export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
@@ -94,6 +101,7 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
     handleSmartRenameConfirm,
     handleUnblockFile,
     handleImageSaved,
+    showFileOperationFailure,
   } = props;
 
   return (
@@ -150,22 +158,83 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
           moveToFiles={moveToFiles}
           currentDirectory={currentDirectory}
           onSelectFolder={async (destPath: string) => {
+            const runMove = (paths: string[]) =>
+              window.electronAPI.moveFilesWithConflictResolution(paths, destPath);
             try {
               setStatus(`Moving ${moveToFiles.length} file(s)...`, 'info');
-              const results = await window.electronAPI.moveFilesWithConflictResolution(
-                moveToFiles.map((f) => f.path),
-                destPath
-              );
-              const successful = results.filter((r) => r.status === 'success').length;
-              if (successful > 0) {
-                setStatus(`Moved ${successful} file(s)`, 'success');
+              const results = await runMove(moveToFiles.map((f) => f.path));
+              const successful = results.filter((r) => r.status === 'success');
+              const failedResults = results.filter((r) => r.status === 'error');
+
+              if (successful.length > 0) {
+                setStatus(`Moved ${successful.length} file(s)`, 'success');
                 await refreshDirectory(currentDirectory);
               }
-              setIsMoveToDialogOpen(false);
-              setMoveToFiles([]);
+
+              if (failedResults.length > 0) {
+                const lines = failedResults.map((r) => {
+                  const base = r.file.split(/[/\\]/).pop() ?? r.file;
+                  return `• ${base}: ${r.error ?? r.reason ?? 'Unknown error'}`;
+                });
+                addLog(`Move failed for ${failedResults.length} item(s):\n${lines.join('\n')}`, 'error');
+                setStatus(
+                  failedResults.length === moveToFiles.length
+                    ? 'Failed to move files'
+                    : `Some files failed to move (${failedResults.length})`,
+                  'error'
+                );
+                showFileOperationFailure({
+                  title: 'Move Failed',
+                  description: lines.join('\n'),
+                  operationLabel: 'Move',
+                  retry: async () => {
+                    const pathsToRetry = failedResults
+                      .map((r) => moveToFiles.find((f) => f.name === r.file)?.path)
+                      .filter((p): p is string => Boolean(p));
+                    if (pathsToRetry.length === 0) return false;
+                    const results2 = await runMove(pathsToRetry);
+                    const failed2 = results2.filter((r) => r.status === 'error');
+                    if (results2.some((r) => r.status === 'success')) {
+                      await refreshDirectory(currentDirectory);
+                    }
+                    if (failed2.length === 0) {
+                      setIsMoveToDialogOpen(false);
+                      setMoveToFiles([]);
+                    }
+                    return failed2.length === 0;
+                  },
+                });
+              }
+
+              if (failedResults.length === 0) {
+                setIsMoveToDialogOpen(false);
+                setMoveToFiles([]);
+              }
             } catch (error) {
-              addLog(`Failed to move files: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+              const msg = error instanceof Error ? error.message : 'Unknown error';
+              addLog(`Failed to move files: ${msg}`, 'error');
               setStatus('Failed to move files', 'error');
+              showFileOperationFailure({
+                title: 'Move Failed',
+                description: msg,
+                operationLabel: 'Move',
+                retry: async () => {
+                  try {
+                    const results = await runMove(moveToFiles.map((f) => f.path));
+                    const failed = results.filter((r) => r.status === 'error');
+                    if (results.some((r) => r.status === 'success')) {
+                      await refreshDirectory(currentDirectory);
+                    }
+                    if (failed.length === 0) {
+                      setIsMoveToDialogOpen(false);
+                      setMoveToFiles([]);
+                    }
+                    return failed.length === 0;
+                  } catch {
+                    return false;
+                  }
+                },
+              });
             }
           }}
           refreshDirectory={refreshDirectory}

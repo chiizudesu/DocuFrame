@@ -1,6 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { FileItem, AppSettings, TransferOptions } from '../src/types';
 
+function getIpcErrorMessage(e: unknown): string {
+  if (e == null) return 'Unknown error';
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (typeof e === 'object' && 'message' in e && typeof (e as { message: unknown }).message === 'string') {
+    return (e as { message: string }).message;
+  }
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 // Define the API interface
 interface ElectronAPI {
   getConfig: () => Promise<AppSettings>;
@@ -160,7 +174,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // File operations
   renameItem: async (oldPath: string, newPath: string) => {
-    return await ipcRenderer.invoke('rename-item', oldPath, newPath);
+    try {
+      return await ipcRenderer.invoke('rename-item', oldPath, newPath);
+    } catch (e: unknown) {
+      // IPC often deserializes main-process throws as plain objects, not `instanceof Error`
+      const msg = getIpcErrorMessage(e);
+      const err = new Error(msg);
+      if (typeof e === 'object' && e !== null && 'code' in e) {
+        const c = (e as { code: unknown }).code;
+        if (c === 'EBUSY' || c === 'EPERM' || c === 'ENOENT' || c === 'EACCES') {
+          (err as NodeJS.ErrnoException).code = c;
+        }
+      }
+      throw err;
+    }
   },
   deleteItem: async (path: string) => {
     return await ipcRenderer.invoke('delete-item', path);

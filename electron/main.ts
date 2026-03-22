@@ -1472,10 +1472,14 @@ ipcMain.handle('rename-item', async (_, oldPath: string, newPath: string) => {
         });
       }
       return true;
-    } catch (error) {
-      // Just return the error, do not attempt any fallback
+    } catch (error: unknown) {
       console.error('Error renaming item:', error);
-      throw error;
+      const err = error as NodeJS.ErrnoException & { code?: string };
+      const code = err?.code;
+      if (code === 'EBUSY' || code === 'EPERM') {
+        throw new Error('Cannot rename: File is currently open or in use by another application');
+      }
+      throw error instanceof Error ? error : new Error(String(error));
     }
   } catch (error) {
     console.error('Error renaming item:', error);

@@ -5,6 +5,8 @@ import { AppProvider } from './context/AppContext';
 import { Provider } from './components/ui/provider';
 import { Toaster } from './components/ui/toaster';
 import './styles/scrollbar.css';
+/** Keyframes for address-bar refresh, AI File Manager progress, etc. (was only imported by calculator/path-overlay entries). */
+import './index.css';
 
 // Check if this is the floating timer window
 const isFloatingTimer = window.location.hash === '#floating-timer';

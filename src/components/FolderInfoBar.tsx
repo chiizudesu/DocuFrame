@@ -216,7 +216,7 @@ const MiniSearchDropdown: React.FC<{
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, isCreateFolderOpen, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   const yearNav = useYearNavigation(currentDirectory)
   
@@ -229,7 +229,6 @@ export const FolderInfoBar: React.FC = () => {
   }
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(currentDirectory)
-  const [newFolderName, setNewFolderName] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isCreateSpreadsheetOpen, setIsCreateSpreadsheetOpen] = useState(false)
   const [newSpreadsheetName, setNewSpreadsheetName] = useState('')
@@ -341,6 +340,11 @@ export const FolderInfoBar: React.FC = () => {
     '0 0 0 1px rgba(147, 197, 253, 0.5), 0 0 22px rgba(59, 130, 246, 0.32)',
   )
   const addressBarJumpBorderColor = useColorModeValue('blue.400', 'blue.300')
+  /** Bright blue sweep — clean 6-stop gradient, leading edge slightly sharper */
+  const addressRefreshSweepGradient = useColorModeValue(
+    'linear-gradient(90deg, rgba(37,99,235,0) 0%, rgba(29,78,216,0.45) 20%, rgba(29,78,216,0.9) 42%, #2563eb 52%, rgba(59,130,246,0.55) 72%, rgba(96,165,250,0) 100%)',
+    'linear-gradient(90deg, rgba(59,130,246,0) 0%, rgba(59,130,246,0.4) 18%, rgba(37,99,235,0.85) 40%, #3b82f6 52%, rgba(96,165,250,0.5) 70%, rgba(147,197,253,0) 100%)',
+  )
 
   // Window controls
   const handleMinimize = () => {
@@ -586,12 +590,11 @@ export const FolderInfoBar: React.FC = () => {
       // Also dispatch for other components
       window.dispatchEvent(new CustomEvent('folderRefresh'));
       
-      // Wait for animation
-      await new Promise(resolve => setTimeout(resolve, 600))
+      // Hold overlay through at least one full sweep (matches CSS animation duration)
+      await new Promise(resolve => setTimeout(resolve, 580))
       setStatus('Directory reloaded', 'success')
     } catch (error) {
-      // Even on error, wait for the animation to complete
-      await new Promise(resolve => setTimeout(resolve, 600))
+      await new Promise(resolve => setTimeout(resolve, 580))
       addLog(`Failed to refresh: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
       setStatus('Failed to refresh folder', 'error')
     } finally {
@@ -1094,46 +1097,6 @@ export const FolderInfoBar: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [activeChevronIndex])
 
-  const handleCreateFolder = async () => {
-    try {
-      const fullPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, newFolderName)
-      await (window.electronAPI as any).createDirectory(fullPath)
-      addLog(`Created folder: ${newFolderName}`)
-      setStatus(`Created folder: ${newFolderName}`, 'success')
-      setIsCreateFolderOpen(false)
-      const createdName = newFolderName
-      setNewFolderName('')
-      // Refresh the current directory
-      const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory)
-      setFolderItems(contents)
-      // Select the newly created folder so F2 rename works immediately
-      requestAnimationFrame(() => {
-        setSelectedFiles([createdName])
-      })
-    } catch (error) {
-      console.error('Error creating folder:', error)
-      addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
-      setStatus(`Failed to create folder: ${newFolderName}`, 'error')
-    }
-  }
-
-  const handleCreateAndEnterFolder = async () => {
-    try {
-      const fullPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, newFolderName)
-      await (window.electronAPI as any).createDirectory(fullPath)
-      addLog(`Created and entered folder: ${newFolderName}`)
-      setStatus(`Created and entered folder: ${newFolderName}`, 'success')
-      setIsCreateFolderOpen(false)
-      setNewFolderName('')
-      // Navigate into the newly created folder
-      setCurrentDirectory(fullPath)
-    } catch (error) {
-      console.error('Error creating folder:', error)
-      addLog(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
-      setStatus(`Failed to create folder: ${newFolderName}`, 'error')
-    }
-  }
-
   const handleCreateBlankSpreadsheet = async () => {
     if (!newSpreadsheetName.trim()) return;
     
@@ -1200,7 +1163,7 @@ export const FolderInfoBar: React.FC = () => {
 
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      // Ctrl+Shift+N: Open create folder dialog
+      // Ctrl+Shift+N: Start inline new folder row in file grid
       if (e.ctrlKey && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
         e.preventDefault();
         setIsCreateFolderOpen(true);
@@ -1325,30 +1288,28 @@ export const FolderInfoBar: React.FC = () => {
           {...(activeChevronIndex !== null && { borderBottom: 'none' })}
         >
           {isRefreshing && (
-            <Box
-              position="absolute"
-              top={0}
-              left={0}
-              right={0}
-              bottom={0}
-              borderRadius="md"
-              pointerEvents="none"
-              zIndex={1}
-              overflow="hidden"
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 1,
+                overflow: 'hidden',
+                pointerEvents: 'none',
+                borderRadius: 'var(--chakra-radii-md, 0.375rem)',
+              }}
             >
-              <Box
-                position="absolute"
-                top={0}
-                left={0}
-                height="100%"
-                width="50%"
-                maxW="320px"
-                background="linear-gradient(100deg, transparent 0%, rgba(147,197,253,0.2) 35%, rgba(96,165,250,0.55) 50%, rgba(147,197,253,0.2) 65%, transparent 100%)"
+              <div
                 style={{
-                  animation: 'docuframe-address-refresh-shimmer 0.75s ease-out forwards',
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  width: '50%',
+                  background: addressRefreshSweepGradient,
+                  willChange: 'transform',
+                  animation: 'docuframe-address-refresh-blue-sweep 0.55s linear 1 forwards',
                 }}
               />
-            </Box>
+            </div>
           )}
           <Box
             position="relative"
@@ -1769,56 +1730,6 @@ export const FolderInfoBar: React.FC = () => {
           />
         </Box>
       </Flex>
-      <Dialog.Root open={isCreateFolderOpen} placement='center' onOpenChange={e => {
-        if (!e.open) {
-          setIsCreateFolderOpen(false);
-        }
-      }}>
-        <Portal>
-
-          <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
-          <Dialog.Positioner>
-            <Dialog.Content>
-              <Dialog.Header>Create New Folder</Dialog.Header>
-              <Dialog.CloseTrigger />
-              <Dialog.Body>
-                <Field.Root>
-                  <Field.Label>Folder Name</Field.Label>
-                  <Input
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newFolderName.trim()) {
-                        e.preventDefault();
-                        // Ctrl+Enter for regular create, Enter for create & enter
-                        if (e.ctrlKey) {
-                          handleCreateFolder();
-                        } else {
-                          handleCreateAndEnterFolder();
-                        }
-                      }
-                    }}
-                    placeholder="Enter folder name"
-                    autoFocus
-                  />
-                </Field.Root>
-              </Dialog.Body>
-              <Dialog.Footer>
-                <Button colorPalette="blue" mr={3} onClick={handleCreateFolder}>
-                  Create
-                </Button>
-                <Button colorPalette="green" mr={3} onClick={handleCreateAndEnterFolder}>
-                  Create & Enter
-                </Button>
-                <Button variant="ghost" onClick={() => setIsCreateFolderOpen(false)}>
-                  Cancel
-                </Button>
-              </Dialog.Footer>
-            </Dialog.Content>
-          </Dialog.Positioner>
-
-        </Portal>
-      </Dialog.Root>
       <Dialog.Root open={isCreateSpreadsheetOpen} placement='center' onOpenChange={e => {
         if (!e.open) {
           setIsCreateSpreadsheetOpen(false);

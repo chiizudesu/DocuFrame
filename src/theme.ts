@@ -102,6 +102,25 @@ const docuFrameConfig = defineConfig({
         },
       },
       /**
+       * Error toasts: ~10% less “neon” than default `red.solid` (tiny neutral mix), same contrast treatment as Chakra default.
+       */
+      toast: {
+        base: {
+          root: {
+            '&[data-type=error]': {
+              bg: {
+                /* Chakra red.500 / gray.500·600 — ~7–9% neutral pull ≈ slightly less saturated red */
+                _light: 'color-mix(in srgb, #ef4444 93%, #71717a 7%)',
+                _dark: 'color-mix(in srgb, #ef4444 91%, #52525b 9%)',
+              },
+              color: '{colors.red.contrast}',
+              '--toast-trigger-bg': '{white/10}',
+              '--toast-border-color': '{white/40}',
+            },
+          },
+        },
+      },
+      /**
        * Default solid checkbox uses semantic `border` for the unchecked frame — on df.dark.canvas (#171923)
        * it reads as near-invisible. Slightly lifted border vs shell border, no light fill (still 1px).
        */

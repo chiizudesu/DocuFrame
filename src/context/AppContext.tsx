@@ -715,6 +715,7 @@ export function useFileGridActions() {
   const addQuickAccessPath = useContextSelector(AppContext, (v) => v?.addQuickAccessPath);
   const removeQuickAccessPath = useContextSelector(AppContext, (v) => v?.removeQuickAccessPath);
   const logFileOperation = useContextSelector(AppContext, (v) => v?.logFileOperation);
+  const isCreateFolderOpen = useContextSelector(AppContext, (v) => v?.isCreateFolderOpen ?? false);
   const setIsCreateFolderOpen = useContextSelector(AppContext, (v) => v?.setIsCreateFolderOpen);
   const setIsAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.setIsAIFileManagerOpen);
   const setFileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.setFileManagerInitialSelection);
@@ -738,6 +739,7 @@ export function useFileGridActions() {
     addQuickAccessPath,
     removeQuickAccessPath,
     logFileOperation,
+    isCreateFolderOpen,
     setIsCreateFolderOpen,
     setIsAIFileManagerOpen,
     setFileManagerInitialSelection,

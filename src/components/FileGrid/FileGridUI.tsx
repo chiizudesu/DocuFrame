@@ -147,7 +147,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const isFile = contextMenu.fileItem.type === 'file';
   const isFolder = contextMenu.fileItem.type === 'folder';
   const isSingleFile = selectedFiles.length === 1;
-  const hasFileSpecific = fileName.endsWith('.pdf') || fileName.endsWith('.ahk') || showMergePDFs || showExtractZips || showExtractEmls;
+  const hasFileSpecific = fileName.endsWith('.pdf') || showMergePDFs || showExtractZips || showExtractEmls;
 
   const getClipboardFiles = () => {
     if (
@@ -188,6 +188,12 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
           <ExternalLink size={iconSz} style={iconStyle} />
           <Text fontSize="xs">Open</Text>
         </Flex>
+        {isFile && isSingleFile && (
+          <Flex {...rowProps} onClick={() => handleMenuAction('open_with_notepad')}>
+            <FileEdit size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Open with Notepad</Text>
+          </Flex>
+        )}
 
         {/* ── Edit / Rename Group ── */}
         <Separator borderColor={separatorColor} my={0.5} />
@@ -294,12 +300,6 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
               <Flex {...rowProps} onClick={() => handleMenuAction('extract_text')}>
                 <FileText size={iconSz} style={iconStyle} />
                 <Text fontSize="xs">Extract Text</Text>
-              </Flex>
-            )}
-            {fileName.endsWith('.ahk') && (
-              <Flex {...rowProps} onClick={() => handleMenuAction('edit_in_notepad')}>
-                <Edit2 size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Edit in Notepad</Text>
               </Flex>
             )}
             {showMergePDFs && (

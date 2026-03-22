@@ -27,6 +27,9 @@ const fileGridTableStyles = {
   tableLayout: 'fixed' as const,
 }
 
+/** List row index for inline “new folder” ghost row; must not overlap real file indices (0..n-1). */
+const NEW_FOLDER_GHOST_ROW_INDEX = -1
+
 // FileTableRow Component (extracted from FileGrid.tsx)
 const FileTableRow = React.memo<FileTableRowProps>(({
   file,
@@ -243,7 +246,7 @@ type FileRenameTableRowProps = FileTableRowProps & {
   renameInputRef: React.Ref<HTMLInputElement>;
   renameValue: string;
   setRenameValue: (value: string) => void;
-  handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void>;
+  handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void> | Promise<boolean>;
   onRenameCancel: () => void;
 };
 
@@ -303,7 +306,7 @@ function FileRenameTableRow({
 
   return (
     <chakra.tr
-      draggable={rowHandlers.draggable}
+      draggable={false}
       {...folderDropHandlers}
       data-row-index={index}
       data-file-index={index}
@@ -314,7 +317,10 @@ function FileRenameTableRow({
       onClick={(e: React.MouseEvent) => rowHandlers.onClick(file, index, e)}
       onMouseDown={(e: React.MouseEvent) => rowHandlers.onMouseDown(file, index, e)}
       onMouseUp={(e: React.MouseEvent) => rowHandlers.onMouseUp(file, index, e)}
-      onDragStart={(e: React.DragEvent) => rowHandlers.onDragStart(file, index, e)}
+      onDragStart={(e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       onDragEnd={rowHandlers.onDragEnd}
     >
       {columnOrder.map((column, colIndex) => {
@@ -355,6 +361,7 @@ function FileRenameTableRow({
                 w="100%"
                 minW={0}
                 m={0}
+                onMouseDown={(e) => e.stopPropagation()}
                 onSubmit={(ev) => {
                   void handleRenameSubmit(ev);
                 }}
@@ -379,11 +386,22 @@ function FileRenameTableRow({
                   alignItems="center"
                   maxH="20px"
                   borderRadius="2px"
-                  boxShadow={innerInsetRing}
                   bg={innerFieldBg}
                   boxSizing="border-box"
                   px={1}
                   py={0}
+                  overflow="hidden"
+                  position="relative"
+                  style={{ clipPath: 'inset(0 round 2px)' }}
+                  _after={{
+                    content: '""',
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '2px',
+                    boxShadow: innerInsetRing,
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}
                 >
                   <chakra.input
                     ref={renameInputRef}
@@ -409,7 +427,15 @@ function FileRenameTableRow({
                     bg="transparent"
                     color={fileTextColor}
                     boxSizing="border-box"
+                    borderRadius="2px"
+                    overflow="hidden"
                     _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+                    draggable={false}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') onRenameCancel();
                     }}
@@ -460,6 +486,196 @@ function FileRenameTableRow({
                 style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
               >
                 {getFileExtension(file.name)}
+              </Text>
+            </chakra.td>
+          );
+        }
+        return null;
+      })}
+    </chakra.tr>
+  );
+}
+
+type NewFolderGhostTableRowProps = {
+  columnOrder: string[];
+  columnVisibility: { name: boolean; size: boolean; modified: boolean; type: boolean };
+  cellStyles: FileRenameTableRowProps['cellStyles'];
+  rowDefaultBg: string;
+  rowHoverBg: string;
+  fileTextColor: string;
+  fileSubTextColor: string;
+  newFolderInputRef: React.RefObject<HTMLInputElement | null>;
+  newFolderDraftName: string;
+  setNewFolderDraftName: (v: string) => void;
+  submitInlineNewFolder: (navigateInto: boolean) => void | Promise<void>;
+  cancelInlineNewFolder: () => void;
+  rowHandlers: FileTableRowProps['rowHandlers'];
+};
+
+function NewFolderGhostTableRow({
+  columnOrder,
+  columnVisibility,
+  cellStyles,
+  rowDefaultBg,
+  rowHoverBg,
+  fileTextColor,
+  fileSubTextColor,
+  newFolderInputRef,
+  newFolderDraftName,
+  setNewFolderDraftName,
+  submitInlineNewFolder,
+  cancelInlineNewFolder,
+  rowHandlers,
+}: NewFolderGhostTableRowProps) {
+  const isListRowHovered = useListRowIsHovered(NEW_FOLDER_GHOST_ROW_INDEX);
+  const displayBg = isListRowHovered ? rowHoverBg : rowDefaultBg;
+  const cellStylesDisplay = useMemo(() => ({ ...cellStyles, bg: displayBg }), [cellStyles, displayBg]);
+
+  const innerFieldBg = useColorModeValue('#ffffff', '#000000');
+  const innerInsetRing = useColorModeValue(
+    'inset 0 0 0 1px rgba(0, 0, 0, 0.45)',
+    'inset 0 0 0 1px rgba(255, 255, 255, 0.88)',
+  );
+
+  return (
+    <chakra.tr
+      draggable={false}
+      data-row-index={NEW_FOLDER_GHOST_ROW_INDEX}
+      data-file-index={NEW_FOLDER_GHOST_ROW_INDEX}
+      data-new-folder-ghost="true"
+      opacity={0.92}
+      onMouseEnter={() => rowHandlers.onMouseEnter(NEW_FOLDER_GHOST_ROW_INDEX)}
+      onMouseLeave={(e: React.MouseEvent) => rowHandlers.onMouseLeave(NEW_FOLDER_GHOST_ROW_INDEX, e)}
+      onContextMenu={(e: React.MouseEvent) => e.preventDefault()}
+      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+      onDragStart={(e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      {columnOrder.map((column, colIndex) => {
+        const isName = column === 'name';
+        const isSize = column === 'size';
+        const isModified = column === 'modified';
+        const isType = column === 'type';
+
+        if (!columnVisibility[column as keyof typeof columnVisibility]) {
+          return null;
+        }
+
+        const cellKey = `new-folder-ghost-${column}-${colIndex}`;
+
+        if (isName) {
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay}>
+              <Flex
+                align="center"
+                w="100%"
+                minW={0}
+                m={0}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
+                  <FolderOpen size={16} strokeWidth={2} />
+                </Box>
+                <Box
+                  flex={1}
+                  minW={0}
+                  display="flex"
+                  alignItems="center"
+                  maxH="20px"
+                  borderRadius="2px"
+                  bg={innerFieldBg}
+                  boxSizing="border-box"
+                  px={1}
+                  py={0}
+                  overflow="hidden"
+                  position="relative"
+                  style={{ clipPath: 'inset(0 round 2px)' }}
+                  _after={{
+                    content: '""',
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: '2px',
+                    boxShadow: innerInsetRing,
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}
+                >
+                  <chakra.input
+                    ref={newFolderInputRef}
+                    type="text"
+                    aria-label="New folder name"
+                    value={newFolderDraftName}
+                    onChange={(e) => setNewFolderDraftName(e.target.value)}
+                    onBlur={cancelInlineNewFolder}
+                    autoFocus
+                    w="100%"
+                    minW={0}
+                    flex={1}
+                    fontSize="xs"
+                    lineHeight="18px"
+                    h="18px"
+                    minH="18px"
+                    maxH="18px"
+                    py={0}
+                    px={0}
+                    m={0}
+                    border="none"
+                    outline="none"
+                    bg="transparent"
+                    color={fileTextColor}
+                    boxSizing="border-box"
+                    borderRadius="2px"
+                    overflow="hidden"
+                    _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+                    draggable={false}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onDragStart={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelInlineNewFolder();
+                        return;
+                      }
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void submitInlineNewFolder(e.ctrlKey || e.metaKey);
+                      }
+                    }}
+                  />
+                </Box>
+              </Flex>
+            </chakra.td>
+          );
+        }
+        if (isSize) {
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay}>
+              <Text fontSize="xs" color={fileSubTextColor} style={{ userSelect: 'none' }}>
+                —
+              </Text>
+            </chakra.td>
+          );
+        }
+        if (isModified) {
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay}>
+              <Text fontSize="xs" color={fileSubTextColor} style={{ userSelect: 'none' }}>
+                —
+              </Text>
+            </chakra.td>
+          );
+        }
+        if (isType) {
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay}>
+              <Text fontSize="xs" color={fileSubTextColor} style={{ userSelect: 'none' }}>
+                Folder
               </Text>
             </chakra.td>
           );
@@ -952,8 +1168,15 @@ export interface FileListViewProps {
   unobserveFileElement: (element: HTMLElement | null) => void;
   formatFileSize: (size: string | undefined) => string;
   formatDate: (dateString: string) => string;
-  handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void>;
+  handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void> | Promise<boolean>;
   handleRenameCancel?: () => void;
+  /** Inline new-folder row (replaces modal); Enter creates, Ctrl/Cmd+Enter creates and opens folder */
+  isInlineCreatingFolder: boolean;
+  newFolderDraftName: string;
+  setNewFolderDraftName: (v: string) => void;
+  newFolderInputRef: React.RefObject<HTMLInputElement | null>;
+  submitInlineNewFolder: (navigateInto: boolean) => void | Promise<void>;
+  cancelInlineNewFolder: () => void;
   setIsRenaming: (name: string | null) => void;
   setRenameValue: (value: string) => void;
   setFileGridBackgroundUrl: (url: string) => void;
@@ -985,6 +1208,8 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.isDragOver !== next.isDragOver || prev.isSelecting !== next.isSelecting) return false;
   if (prev.selectionRect !== next.selectionRect) return false;
   if (prev.isRenaming !== next.isRenaming || prev.renameValue !== next.renameValue) return false;
+  if (prev.isInlineCreatingFolder !== next.isInlineCreatingFolder) return false;
+  if (prev.newFolderDraftName !== next.newFolderDraftName) return false;
   if (prev.nativeIcons !== next.nativeIcons) return false;
   if (prev.columnOrder !== next.columnOrder || prev.columnVisibility !== next.columnVisibility) return false;
   if (prev.columnWidths !== next.columnWidths) return false;
@@ -1070,6 +1295,12 @@ const FileListViewBody = React.memo(function FileListViewBody({
   formatDate,
   handleRenameSubmit,
   handleRenameCancel,
+  isInlineCreatingFolder,
+  newFolderDraftName,
+  setNewFolderDraftName,
+  newFolderInputRef,
+  submitInlineNewFolder,
+  cancelInlineNewFolder,
   setIsRenaming,
   setRenameValue,
   setFileGridBackgroundUrl,
@@ -1164,6 +1395,14 @@ const FileListViewBody = React.memo(function FileListViewBody({
       }
     }
   }, [isRenaming, sortedFiles, isGroupedByIndex]);
+
+  useEffect(() => {
+    if (!isInlineCreatingFolder) return;
+    const el = dropAreaRef.current;
+    if (el && el.scrollTop > 0) {
+      el.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  }, [isInlineCreatingFolder, dropAreaRef]);
 
   // Detect when new files are outside visible rows for glowing line indicator
   const [newFileAboveVisible, setNewFileAboveVisible] = useState(false);
@@ -1434,6 +1673,23 @@ const FileListViewBody = React.memo(function FileListViewBody({
                 handleResizeStart={handleResizeStart}
               />
               <tbody>
+                  {isInlineCreatingFolder && (
+                    <NewFolderGhostTableRow
+                      columnOrder={columnOrder}
+                      columnVisibility={columnVisibility}
+                      cellStyles={cellStyles}
+                      rowDefaultBg={rowDefaultBg}
+                      rowHoverBg={rowHoverBg}
+                      fileTextColor={fileTextColor}
+                      fileSubTextColor={fileSubTextColor}
+                      newFolderInputRef={newFolderInputRef}
+                      newFolderDraftName={newFolderDraftName}
+                      setNewFolderDraftName={setNewFolderDraftName}
+                      submitInlineNewFolder={submitInlineNewFolder}
+                      cancelInlineNewFolder={cancelInlineNewFolder}
+                      rowHandlers={rowHandlers}
+                    />
+                  )}
                   {groupedFiles.folders && groupedFiles.folders.length > 0 && (
                     <>
                       {folderVirtualItems.length > 0 && folderVirtualItems[0].start > 0 && (
@@ -1662,6 +1918,23 @@ const FileListViewBody = React.memo(function FileListViewBody({
                 handleResizeStart={handleResizeStart}
               />
               <tbody>
+                  {isInlineCreatingFolder && (
+                    <NewFolderGhostTableRow
+                      columnOrder={columnOrder}
+                      columnVisibility={columnVisibility}
+                      cellStyles={cellStyles}
+                      rowDefaultBg={rowDefaultBg}
+                      rowHoverBg={rowHoverBg}
+                      fileTextColor={fileTextColor}
+                      fileSubTextColor={fileSubTextColor}
+                      newFolderInputRef={newFolderInputRef}
+                      newFolderDraftName={newFolderDraftName}
+                      setNewFolderDraftName={setNewFolderDraftName}
+                      submitInlineNewFolder={submitInlineNewFolder}
+                      cancelInlineNewFolder={cancelInlineNewFolder}
+                      rowHandlers={rowHandlers}
+                    />
+                  )}
                   {virtualItems.length > 0 && virtualItems[0].start > 0 && (
                     <tr>
                         <td
