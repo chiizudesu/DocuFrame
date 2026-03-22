@@ -3418,19 +3418,24 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.workAreaSize;
 
+    const FLOATING_TIMER_PORTRAIT_MAX_WIDTH = 331;
+    const FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT = 300;
+    const FLOATING_TIMER_MAX_OTHER_AXIS = 2160;
+
     floatingTimerWindow = new BrowserWindow({
       width: 210,
       height: 120,
       minWidth: 60, // Allow shrinking to minimized size
       minHeight: 60, // Allow shrinking to minimized size
-      maxWidth: 500, // Reasonable maximum
-      maxHeight: 500, // Reasonable maximum
+      maxWidth: FLOATING_TIMER_MAX_OTHER_AXIS,
+      maxHeight: FLOATING_TIMER_MAX_OTHER_AXIS,
       x: width - 230, // Position near right edge
       y: 100, // 100px from top
       frame: false, // Frameless for custom design
-      transparent: true, // Transparent background
+      transparent: false, // Must be false for FancyZones resize support (transparent + WS_EX_LAYERED blocks OS resize)
+      backgroundColor: '#0f172a', // Match dark canvas bg so window chrome is invisible
       alwaysOnTop: true, // Always on top of other windows
-      resizable: false, // No manual resizing by user
+      resizable: true, // Allow FancyZones and OS tools to resize freely
       skipTaskbar: false, // Show in taskbar
       title: 'Time Logger', // Window title
       webPreferences: {
@@ -3450,6 +3455,33 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       });
     }
 
+    const applyFloatingTimerModeSizeLimits = (reason: string) => {
+      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
+
+      const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
+      const isPortrait = windowHeight > windowWidth;
+
+      if (isPortrait) {
+        floatingTimerWindow.setMaximumSize(FLOATING_TIMER_PORTRAIT_MAX_WIDTH, FLOATING_TIMER_MAX_OTHER_AXIS);
+        if (windowWidth > FLOATING_TIMER_PORTRAIT_MAX_WIDTH) {
+          console.log(
+            `[FloatingTimer] ${reason} — clamping portrait width from ${windowWidth} to ${FLOATING_TIMER_PORTRAIT_MAX_WIDTH}`
+          );
+          floatingTimerWindow.setSize(FLOATING_TIMER_PORTRAIT_MAX_WIDTH, windowHeight, true);
+        }
+      } else {
+        floatingTimerWindow.setMaximumSize(FLOATING_TIMER_MAX_OTHER_AXIS, FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT);
+        if (windowHeight > FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT) {
+          console.log(
+            `[FloatingTimer] ${reason} — clamping landscape height from ${windowHeight} to ${FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT}`
+          );
+          floatingTimerWindow.setSize(windowWidth, FLOATING_TIMER_LANDSCAPE_MAX_HEIGHT, true);
+        }
+      }
+    };
+
+    applyFloatingTimerModeSizeLimits('window created');
+
     // Set default expanded state when opened from function panel
     floatingTimerWindow.webContents.once('did-finish-load', () => {
       floatingTimerWindow?.webContents.send('set-expanded-state', true);
@@ -3458,6 +3490,44 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
     // Listen to window move events and check for snapping
     let isMoving = false;
     let lastSnapCorner: string | null = null;
+    let boundsWatcher: NodeJS.Timeout | null = null;
+
+    const getFloatingTimerBoundsSnapshot = () => {
+      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return null;
+      const [x, y] = floatingTimerWindow.getPosition();
+      const [width, height] = floatingTimerWindow.getSize();
+      return { x, y, width, height };
+    };
+
+    const formatFloatingTimerBounds = (bounds: { x: number; y: number; width: number; height: number }) =>
+      `size: ${bounds.width}x${bounds.height}  pos: ${bounds.x},${bounds.y}`;
+
+    let lastObservedBounds = getFloatingTimerBoundsSnapshot();
+
+    const logFloatingTimerBounds = (
+      reason: string,
+      options: { force?: boolean; includeResizable?: boolean } = {}
+    ) => {
+      if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
+      const currentBounds = getFloatingTimerBoundsSnapshot();
+      if (!currentBounds) return;
+
+      const changed =
+        !lastObservedBounds ||
+        currentBounds.x !== lastObservedBounds.x ||
+        currentBounds.y !== lastObservedBounds.y ||
+        currentBounds.width !== lastObservedBounds.width ||
+        currentBounds.height !== lastObservedBounds.height;
+
+      if (!options.force && !changed) return;
+
+      const resizableInfo = options.includeResizable
+        ? `  resizable: ${floatingTimerWindow.isResizable()}  maxSize: ${floatingTimerWindow.getMaximumSize()}`
+        : '';
+
+      console.log(`[FloatingTimer] ${reason} — ${formatFloatingTimerBounds(currentBounds)}${resizableInfo}`);
+      lastObservedBounds = currentBounds;
+    };
     
     floatingTimerWindow.on('will-move', (event, newBounds) => {
       isMoving = true;
@@ -3469,15 +3539,15 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       const windowWidth = actualWidth;
       const windowHeight = actualHeight;
       
-      // Skip snapping when expanded (1068x300) to allow FancyZones to handle it
-      const isExpanded = windowWidth >= 1000 && windowHeight >= 250 && windowHeight <= 350;
+      const isExpanded =
+        (windowWidth >= 800 && windowHeight >= 240) ||
+        (windowHeight >= 480 && windowWidth >= 320);
       if (isExpanded) {
-        // Clear any existing snap indicators
         if (lastSnapCorner !== null) {
           floatingTimerWindow.webContents.send('corner-snapped', null);
           lastSnapCorner = null;
         }
-        return; // Don't perform snapping when expanded
+        return;
       }
       
       const { screen } = require('electron');
@@ -3577,6 +3647,10 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       }
     });
     
+    floatingTimerWindow.on('move', () => {
+      logFloatingTimerBounds('move');
+    });
+
     floatingTimerWindow.on('moved', () => {
       if (!isMoving) return;
       isMoving = false;
@@ -3584,9 +3658,12 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
       if (!floatingTimerWindow || floatingTimerWindow.isDestroyed()) return;
       
       const [windowWidth, windowHeight] = floatingTimerWindow.getSize();
+      const [windowX, windowY] = floatingTimerWindow.getPosition();
+      logFloatingTimerBounds('moved', { force: true, includeResizable: true });
       
-      // Skip snapping when expanded (1068x300) to allow FancyZones to handle it
-      const isExpanded = windowWidth >= 1000 && windowHeight >= 250 && windowHeight <= 350;
+      const isExpanded =
+        (windowWidth >= 800 && windowHeight >= 240) ||
+        (windowHeight >= 480 && windowWidth >= 320);
       if (isExpanded) {
         // Clear any existing snap indicators
         setTimeout(() => {
@@ -3598,7 +3675,6 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         return; // Don't perform snapping when expanded
       }
       
-      const [windowX, windowY] = floatingTimerWindow.getPosition();
       const { screen } = require('electron');
       // Get the display where the window is currently positioned
       const currentDisplay = screen.getDisplayNearestPoint({ x: windowX, y: windowY });
@@ -3680,9 +3756,30 @@ const createFloatingTimerWindow = async (): Promise<{ success: boolean }> => {
         }
       }, 500);
     });
-    
+
+    // Log every resize and final resized event for FancyZones diagnostics
+    floatingTimerWindow.on('resize', () => {
+      applyFloatingTimerModeSizeLimits('resize');
+      logFloatingTimerBounds('resize');
+    });
+
+    floatingTimerWindow.on('resized', () => {
+      applyFloatingTimerModeSizeLimits('resized');
+      logFloatingTimerBounds('resized (final)', { force: true, includeResizable: true });
+    });
+
+    // Poll bounds so FancyZones / OS repositioning still gets logged even if Electron skips move/resize events.
+    boundsWatcher = setInterval(() => {
+      applyFloatingTimerModeSizeLimits('bounds watcher');
+      logFloatingTimerBounds('bounds changed (watcher)');
+    }, 250);
+
     // Clean up reference when window is closed
     floatingTimerWindow.on('closed', () => {
+      if (boundsWatcher) {
+        clearInterval(boundsWatcher);
+        boundsWatcher = null;
+      }
       console.log('[FloatingTimer] Window closed, broadcasting to main window');
       // Broadcast to main window that floating timer is closed
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -3819,6 +3916,7 @@ ipcMain.handle('resize-floating-timer', async (_, width: number, height: number)
     
     // Ensure we allow resizing programmatically
     floatingTimerWindow.setResizable(true);
+    floatingTimerWindow.setMaximumSize(2160, 2160);
     
     // Set the new size (this actually changes the window dimensions)
     floatingTimerWindow.setSize(width, height, true); // animate = true for smooth transition
@@ -3826,11 +3924,15 @@ ipcMain.handle('resize-floating-timer', async (_, width: number, height: number)
     // Update position to keep centered
     floatingTimerWindow.setPosition(currentX + offsetX, currentY + offsetY, true);
     
-    // Disable manual resizing again
-    floatingTimerWindow.setResizable(false);
-    
     // Track if window is minimized (100x100 indicates minimized state)
     floatingTimerIsMinimized = width === 100 && height === 100;
+
+    const isPortraitTarget = height > width;
+    if (isPortraitTarget) {
+      floatingTimerWindow.setMaximumSize(331, 2160);
+    } else {
+      floatingTimerWindow.setMaximumSize(2160, 300);
+    }
     
     // Verify the size was actually set
     const [newWidth, newHeight] = floatingTimerWindow.getSize();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useColorModeValue } from "./ui/color-mode";
 import { keyframes } from '@emotion/react';
 import {
@@ -22,7 +22,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { Play, Pause, Square, X, Settings, SkipForward, Minus, Plus, ChevronLeft, ChevronRight, Folder } from 'lucide-react';
+import { Play, Pause, Square, X, Settings, SkipForward, Minus, Plus, ChevronLeft, ChevronRight, Folder, LayoutTemplate, Smartphone, Monitor } from 'lucide-react';
 import { taskTimerService, Task } from '../services/taskTimer';
 import { settingsService } from '../services/settings';
 import { docuFramePalette as P } from '../docuFrameColors';
@@ -49,6 +49,21 @@ interface PomodoroState {
 const DEFAULT_SESSION_MIN = 25;
 const DEFAULT_BREAK_MIN = 5;
 const DEFAULT_TARGET_HOURS = 8;
+
+/** Default floating timer size on open (landscape bar). */
+const FLOATING_TIMER_OPEN_W = 1068;
+const FLOATING_TIMER_OPEN_H = 300;
+/** Default size when forcing portrait layout from the title bar. */
+const FLOATING_TIMER_PORTRAIT_W = 331;
+const FLOATING_TIMER_PORTRAIT_H = 625;
+
+const FLOATING_TIMER_LAYOUT_PREF_KEY = 'docuframe_floating_timer_layout_pref';
+
+type FloatingTimerLayoutPreference = 'auto' | 'portrait' | 'landscape';
+/** Avoid layout flip-flop when width ≈ height (e.g. FancyZones animation). */
+const LAYOUT_HYSTERESIS_PX = 20;
+/** Title bar approximate height for body `calc(100% - …)`. */
+const TITLE_BAR_PX = 32;
 
 // TODO: set to true for testing — 10s session/break
 const TEST_MODE = false;
@@ -150,7 +165,9 @@ const WorkShiftInfographic: React.FC<{
   pomodoroTargetHours: number;
   currentSessionIndex?: number; // 0-based; when in session phase, this box blinks blue
   isSessionActive?: boolean;
-}> = ({ tasks, sessionMinutes, pomodoroTargetHours, currentSessionIndex = -1, isSessionActive = false }) => {
+  /** `side`: right column in landscape. `stacked`: full-width top band in portrait. */
+  variant?: 'side' | 'stacked';
+}> = ({ tasks, sessionMinutes, pomodoroTargetHours, currentSessionIndex = -1, isSessionActive = false, variant = 'side' }) => {
   /** Light: darker slate so the panel matches “non-dark but not washed out” timer chrome */
   const panelChrome = useColorModeValue('#cfd8e3', P.dark.tabStrip);
   const panelBorder = useColorModeValue('#94a3b8', P.dark.border);
@@ -193,10 +210,11 @@ const WorkShiftInfographic: React.FC<{
   useEffect(() => {
     const tick = () => {
       const now = new Date();
-      const gmt8Str = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
-      setCurrentTimeGMT8(gmt8Str);
-      const gmt8h = parseInt(gmt8Str.split(':')[0]);
-      const gmt8m = parseInt(gmt8Str.split(':')[1]);
+      const gmt8Str24 = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Manila' });
+      const displayAmPm = now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Asia/Manila' });
+      setCurrentTimeGMT8(displayAmPm);
+      const gmt8h = parseInt(gmt8Str24.split(':')[0], 10);
+      const gmt8m = parseInt(gmt8Str24.split(':')[1], 10);
       const currentMinutes = gmt8h * 60 + gmt8m;
 
       const [sh, sm] = workShiftStart.split(':').map(Number);
@@ -246,8 +264,22 @@ const WorkShiftInfographic: React.FC<{
     return `${seconds >= 0 ? '+' : '-'}${h}:${m.toString().padStart(2, '0')}`;
   };
 
+  const isStacked = variant === 'stacked';
+
   return (
-    <Flex direction="column" w="320px" px={3} py={2} bg={panelChrome} borderLeft="1px solid" borderColor={panelBorder} gap={2} overflow="hidden">
+    <Flex
+      direction="column"
+      w={isStacked ? '100%' : '320px'}
+      flexShrink={0}
+      px={isStacked ? 2 : 3}
+      py={isStacked ? 1.5 : 2}
+      bg={panelChrome}
+      borderLeft={isStacked ? undefined : '1px solid'}
+      borderBottom={isStacked ? '1px solid' : undefined}
+      borderColor={panelBorder}
+      gap={isStacked ? 1.5 : 2}
+      overflow="hidden"
+    >
       {/* Current time + ahead/behind */}
       <Flex align="center" justify="space-between">
         <Badge px={3} py={1} borderRadius="sm" bg="green.500" color="white" fontSize="13px" fontWeight="700" letterSpacing="0.05em" boxShadow="none">
@@ -355,6 +387,53 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const soundEnabledRef = useRef(true);
   const customSoundPathRef = useRef('');
   const soundVolumeRef = useRef(100);
+
+  const layoutModeRef = useRef<'stacked' | 'row' | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    w: typeof window !== 'undefined' ? window.innerWidth : FLOATING_TIMER_OPEN_W,
+    h: typeof window !== 'undefined' ? window.innerHeight : FLOATING_TIMER_OPEN_H,
+  }));
+  const [layoutFromSize, setLayoutFromSize] = useState(
+    () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth
+  );
+  const [layoutPreference, setLayoutPreference] = useState<FloatingTimerLayoutPreference>(() => {
+    try {
+      const raw = localStorage.getItem(FLOATING_TIMER_LAYOUT_PREF_KEY);
+      if (raw === 'portrait' || raw === 'landscape' || raw === 'auto') return raw;
+    } catch {}
+    return 'auto';
+  });
+
+  const useStackedLayout =
+    layoutPreference === 'portrait' ? true : layoutPreference === 'landscape' ? false : layoutFromSize;
+
+  const syncViewportAndLayout = useCallback(() => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    setViewport({ w, h });
+    const prev = layoutModeRef.current;
+    let next: 'stacked' | 'row';
+    if (prev === null) {
+      next = h > w ? 'stacked' : 'row';
+    } else if (prev === 'stacked') {
+      next = w > h + LAYOUT_HYSTERESIS_PX ? 'row' : 'stacked';
+    } else {
+      next = h > w + LAYOUT_HYSTERESIS_PX ? 'stacked' : 'row';
+    }
+    layoutModeRef.current = next;
+    setLayoutFromSize(next === 'stacked');
+  }, []);
+
+  useEffect(() => {
+    syncViewportAndLayout();
+    const ro = new ResizeObserver(() => syncViewportAndLayout());
+    ro.observe(document.documentElement);
+    window.addEventListener('resize', syncViewportAndLayout);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncViewportAndLayout);
+    };
+  }, [syncViewportAndLayout]);
 
   useEffect(() => {
     const load = async () => {
@@ -482,7 +561,7 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
     };
     const handleDockToPanel = () => onClose();
     const handleSetExpandedState = (_expanded: boolean) => {
-      if ((window.electronAPI as any).resizeFloatingTimer) setTimeout(() => (window.electronAPI as any).resizeFloatingTimer(1068, 300), 100);
+      // Initial size is applied once in mount effect; avoid double resize with main process did-finish-load.
     };
     if ((window.electronAPI as any).onMessage) {
       (window.electronAPI as any).onMessage('corner-snapped', handleCornerSnapped);
@@ -499,8 +578,32 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   }, [onClose]);
 
   useEffect(() => {
-    if ((window.electronAPI as any).resizeFloatingTimer) (window.electronAPI as any).resizeFloatingTimer(1068, 300);
+    const api = (window.electronAPI as any)?.resizeFloatingTimer;
+    if (!api) return;
+    if (layoutPreference === 'portrait') api(FLOATING_TIMER_PORTRAIT_W, FLOATING_TIMER_PORTRAIT_H);
+    else if (layoutPreference === 'landscape') api(FLOATING_TIMER_OPEN_W, FLOATING_TIMER_OPEN_H);
+    else api(FLOATING_TIMER_OPEN_W, FLOATING_TIMER_OPEN_H);
   }, []);
+
+  const cycleLayoutPreference = useCallback(() => {
+    // Always flip to the opposite of the currently displayed layout so one click always changes what you see.
+    // If currently stacked (portrait display) → go to landscape; if row → go to portrait.
+    const next: FloatingTimerLayoutPreference = useStackedLayout ? 'landscape' : 'portrait';
+    setLayoutPreference(next);
+    try {
+      localStorage.setItem(FLOATING_TIMER_LAYOUT_PREF_KEY, next);
+    } catch {}
+    queueMicrotask(() => {
+      const api = (window.electronAPI as any)?.resizeFloatingTimer;
+      if (!api) return;
+      if (next === 'portrait') api(FLOATING_TIMER_PORTRAIT_W, FLOATING_TIMER_PORTRAIT_H);
+      else if (next === 'landscape') api(FLOATING_TIMER_OPEN_W, FLOATING_TIMER_OPEN_H);
+    });
+  }, [useStackedLayout]);
+
+  const layoutButtonTooltip = useStackedLayout
+    ? 'Portrait layout — click to switch to landscape'
+    : 'Landscape layout — click to switch to portrait';
 
   useEffect(() => {
     if (window.electronAPI && (window.electronAPI as any).sendToMainWindow) (window.electronAPI as any).sendToMainWindow('floating-timer-opened');
@@ -670,12 +773,81 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
   const phaseColor = pomodoroState.phase === 'session' ? 'green' : pomodoroState.phase === 'break' ? 'blue' : 'gray';
   const phaseBg = pomodoroState.phase === 'session' ? 'green.500' : pomodoroState.phase === 'break' ? 'blue.500' : 'gray.600';
 
+  const timerFontPx = useStackedLayout
+    ? Math.max(84, Math.min(
+        Math.round(viewport.w * 0.44),
+        Math.round(viewport.h * 0.18)
+      ))
+    : Math.max(
+        72,
+        Math.min(
+          258,
+          Math.min(Math.max(0, viewport.w - 400), Math.max(0, viewport.h - TITLE_BAR_PX - 72)) * 0.44
+        )
+      );
+
+  const noDragStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
+
+  const timerProgressBar = (
+    <Box w="100%">
+      <Progress.Root
+        value={progressPercent}
+        size="sm"
+        colorPalette={pomodoroState.phase === 'idle' ? 'gray' : pomodoroState.isPaused ? 'yellow' : phaseColor}
+        borderRadius="full"
+        bg={progressTrackBg}
+        striped={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}
+        animated={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}
+      >
+        <Progress.Track>
+          <Progress.Range />
+        </Progress.Track>
+      </Progress.Root>
+    </Box>
+  );
+
+  const portraitTimerDigits = (
+    <Flex align="center" justify="center" direction="column" gap={0} fontFamily="'Rajdhani', sans-serif" fontWeight="700" color={onCanvasText}>
+      <Text fontVariantNumeric="tabular-nums" fontSize={`${timerFontPx}px`} lineHeight="1">
+        {String(Math.floor(pomodoroState.currentTime / 60)).padStart(2, '0')}
+      </Text>
+      <Text fontVariantNumeric="tabular-nums" fontSize={`${timerFontPx}px`} lineHeight="1" opacity={0.75}>
+        {String(Math.floor(pomodoroState.currentTime) % 60).padStart(2, '0')}
+      </Text>
+    </Flex>
+  );
+
+  const landscapeTimerDigits = (
+    <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize={`${timerFontPx}px`} fontWeight="700" color={onCanvasText} lineHeight="1">
+      <Text as="span" w="1.2em" textAlign="right" fontVariantNumeric="tabular-nums" display="block">
+        {String(Math.floor(pomodoroState.currentTime / 60)).padStart(2, '0')}
+      </Text>
+      <Text as="span" w="0.4em" textAlign="center" display="block" opacity={Math.floor(pomodoroState.currentTime) % 2 === 0 ? 1 : 0} transition="opacity 0.1s">
+        :
+      </Text>
+      <Text as="span" w="1.2em" textAlign="left" fontVariantNumeric="tabular-nums" display="block">
+        {String(Math.floor(pomodoroState.currentTime) % 60).padStart(2, '0')}
+      </Text>
+    </Flex>
+  );
+
   return (
     <>
-      <Box w="100%" h="300px" bg="transparent" overflow="hidden" position="relative">
-        <Box bg={canvasBg} boxShadow="0 4px 16px rgba(0,0,0,0.4)" border="1px solid" borderColor={shellBorder} overflow="hidden" w="100%" h="300px">
+      <Box
+        w="100%"
+        h="100%"
+        minH="100vh"
+        bg={canvasBg}
+        boxShadow="0 4px 16px rgba(0,0,0,0.4)"
+        border="1px solid"
+        borderColor={shellBorder}
+        overflow="hidden"
+        position="relative"
+        display="flex"
+        flexDirection="column"
+      >
           {/* Title bar */}
-          <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg={chromeBg} borderBottom="1px solid" borderColor={shellBorder} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+          <Flex px={2} py={1} align="center" justify="space-between" cursor="grab" bg={chromeBg} borderBottom="1px solid" borderColor={shellBorder} flexShrink={0} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
             <Flex align="center" gap={2}>
               <Box px={3} py={1} borderRadius="md" bg={phaseBg} color="white" fontSize="12px" fontWeight="600">
                 {pomodoroState.phase === 'idle' ? 'Ready' : pomodoroState.phase === 'session' ? 'Session' : 'Break'}
@@ -686,7 +858,25 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
                 </Box>
               )}
             </Flex>
-            <Flex gap={1}>
+            <Flex gap={1} align="center">
+              <Tooltip content={layoutButtonTooltip}>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={cycleLayoutPreference}
+                  p={0.5}
+                  minW="auto"
+                  h="auto"
+                  _hover={{ bg: 'whiteAlpha.200' }}
+                  color={labelSubtext}
+                  aria-label={layoutButtonTooltip}
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                >
+                  <Icon boxSize={3.5} asChild>
+                    {layoutPreference === 'auto' ? <LayoutTemplate /> : layoutPreference === 'portrait' ? <Smartphone /> : <Monitor />}
+                  </Icon>
+                </Button>
+              </Tooltip>
               <Tooltip content="Settings">
                 <Button size="xs" variant="ghost" onClick={onSettingsOpen} p={0.5} minW="auto" h="auto" _hover={{ bg: 'whiteAlpha.200' }} color={labelSubtext} style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
                   <Icon boxSize={3.5} asChild><Settings /></Icon>
@@ -700,87 +890,107 @@ export const FloatingTaskTimerWindow: React.FC<FloatingTaskTimerWindowProps> = (
             </Flex>
           </Flex>
 
-          {/* Body */}
-          <Flex direction="row" h="calc(100% - 32px)" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            {/* Left sidebar: controls */}
-            <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg={chromeBg} borderRight="1px solid" borderColor={shellBorder} minW="60px">
-              <Tooltip content="Start" positioning={{
-                placement: "right"
-              }}>
-                <Button size="md" onClick={handleStartTimer} disabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.500"} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? "gray.600" : "green.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon boxSize={5} color="white" asChild><Play /></Icon>
-                </Button>
-              </Tooltip>
-              <Tooltip content="Pause" positioning={{
-                placement: "right"
-              }}>
-                <Button size="md" onClick={handlePauseTimer} disabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg={pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' || pomodoroState.isPaused ? "gray.600" : "yellow.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon boxSize={5} color="white" asChild><Pause /></Icon>
-                </Button>
-              </Tooltip>
-              <Tooltip content="Stop" positioning={{
-                placement: "right"
-              }}>
-                <Button size="md" onClick={handleStopTimer} disabled={pomodoroState.phase === 'idle'} bg={pomodoroState.phase === 'idle' ? "gray.600" : "red.500"} color="white" _hover={{ bg: pomodoroState.phase === 'idle' ? "gray.600" : "red.400" }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
-                  <Icon boxSize={5} color="white" asChild><Square /></Icon>
-                </Button>
-              </Tooltip>
-              {pomodoroState.phase === 'break' && (
-                <Tooltip content="Skip break" positioning={{
-                  placement: "right"
-                }}>
-                  <Button size="md" variant="ghost" onClick={handleSkipBreak} color="blue.400" _hover={{ bg: 'whiteAlpha.100' }} w="44px" h="44px" p={0} borderRadius="md">
-                    <Icon boxSize={5} asChild><SkipForward /></Icon>
-                  </Button>
-                </Tooltip>
-              )}
-            </Flex>
-
-            {/* Center + right */}
-            <Flex direction="row" flex={1} bg={canvasBg}>
-              {/* Center: timer */}
-              <Flex direction="column" flex={1} px={6} py={3}>
-                {/* Timer: MM | : | SS — fixed widths so no shifting; colon blinks per second */}
-                <Flex flex={1} align="center" justify="center" direction="column" gap={3}>
-                  <Flex align="center" justify="center" gap={0} fontFamily="'Rajdhani', sans-serif" fontSize="129px" fontWeight="700" color={onCanvasText} lineHeight="1">
-                    <Text as="span" w="1.2em" textAlign="right" fontVariantNumeric="tabular-nums" display="block">
-                      {String(Math.floor(pomodoroState.currentTime / 60)).padStart(2, '0')}
-                    </Text>
-                    <Text as="span" w="0.4em" textAlign="center" display="block" opacity={Math.floor(pomodoroState.currentTime) % 2 === 0 ? 1 : 0} transition="opacity 0.1s">
-                      :
-                    </Text>
-                    <Text as="span" w="1.2em" textAlign="left" fontVariantNumeric="tabular-nums" display="block">
-                      {String(Math.floor(pomodoroState.currentTime) % 60).padStart(2, '0')}
-                    </Text>
-                  </Flex>
-                  <Box w="100%" maxW="420px">
-                    <Progress.Root
-                      value={progressPercent}
-                      size="sm"
-                      colorPalette={pomodoroState.phase === 'idle' ? 'gray' : pomodoroState.isPaused ? 'yellow' : phaseColor}
-                      borderRadius="full"
-                      bg={progressTrackBg}
-                      striped={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}
-                      animated={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused}>
-                      <Progress.Track>
-                        <Progress.Range />
-                      </Progress.Track>
-                    </Progress.Root>
-                  </Box>
-                </Flex>
-              </Flex>
-
-              {/* Right: infographic */}
+          {/* Body: landscape = sidebar + timer + infographic; portrait (stacked) = infographic + timer + controls */}
+          {useStackedLayout ? (
+            <Flex direction="column" flex={1} minH={0} style={noDragStyle}>
               <WorkShiftInfographic
+                variant="stacked"
                 tasks={infographicTasks}
                 sessionMinutes={sessionMinutes}
                 pomodoroTargetHours={targetHours}
                 currentSessionIndex={pomodoroState.phase === 'session' ? infographicTasks.filter((t) => t.name === 'Session' && t.completed === true).length : -1}
                 isSessionActive={pomodoroState.phase === 'session' && !pomodoroState.isPaused}
               />
+              <Flex direction="column" flex={1} minH={0} px={4} py={2} bg={canvasBg}>
+                <Flex flex={1} align="center" justify="center" minH={0}>
+                  {portraitTimerDigits}
+                </Flex>
+              </Flex>
+              <Box flexShrink={0} px={4} pt={4} pb={3} bg={canvasBg} borderTop="1px solid" borderColor={shellBorder}>
+                {timerProgressBar}
+              </Box>
+              <HStack
+                flexShrink={0}
+                justify="center"
+                align="center"
+                gap={3}
+                py={3}
+                px={3}
+                bg={chromeBg}
+                borderTop="1px solid"
+                borderColor={shellBorder}
+                wrap="wrap"
+              >
+                <Tooltip content="Start" positioning={{ placement: 'top' }}>
+                  <Button size="md" onClick={handleStartTimer} disabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? 'gray.600' : 'green.500'} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? 'gray.600' : 'green.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                    <Icon boxSize={5} color="white" asChild><Play /></Icon>
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Pause" positioning={{ placement: 'top' }}>
+                  <Button size="md" onClick={handlePauseTimer} disabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg={pomodoroState.phase === 'idle' || pomodoroState.isPaused ? 'gray.600' : 'yellow.500'} color="white" _hover={{ bg: pomodoroState.phase === 'idle' || pomodoroState.isPaused ? 'gray.600' : 'yellow.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                    <Icon boxSize={5} color="white" asChild><Pause /></Icon>
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Stop" positioning={{ placement: 'top' }}>
+                  <Button size="md" onClick={handleStopTimer} disabled={pomodoroState.phase === 'idle'} bg={pomodoroState.phase === 'idle' ? 'gray.600' : 'red.500'} color="white" _hover={{ bg: pomodoroState.phase === 'idle' ? 'gray.600' : 'red.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                    <Icon boxSize={5} color="white" asChild><Square /></Icon>
+                  </Button>
+                </Tooltip>
+                {pomodoroState.phase === 'break' && (
+                  <Tooltip content="Skip break" positioning={{ placement: 'top' }}>
+                    <Button size="md" variant="ghost" onClick={handleSkipBreak} color="blue.400" _hover={{ bg: 'whiteAlpha.100' }} w="44px" h="44px" p={0} borderRadius="md">
+                      <Icon boxSize={5} asChild><SkipForward /></Icon>
+                    </Button>
+                  </Tooltip>
+                )}
+              </HStack>
             </Flex>
-          </Flex>
-        </Box>
+          ) : (
+            <Flex direction="row" flex={1} minH={0} style={noDragStyle}>
+              <Flex direction="column" align="center" justify="flex-start" gap={3} px={3} py={4} bg={chromeBg} borderRight="1px solid" borderColor={shellBorder} minW="60px" flexShrink={0}>
+                <Tooltip content="Start" positioning={{ placement: 'right' }}>
+                  <Button size="md" onClick={handleStartTimer} disabled={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused} bg={pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? 'gray.600' : 'green.500'} color="white" _hover={{ bg: pomodoroState.phase !== 'idle' && !pomodoroState.isPaused ? 'gray.600' : 'green.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                    <Icon boxSize={5} color="white" asChild><Play /></Icon>
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Pause" positioning={{ placement: 'right' }}>
+                  <Button size="md" onClick={handlePauseTimer} disabled={pomodoroState.phase === 'idle' || pomodoroState.isPaused} bg={pomodoroState.phase === 'idle' || pomodoroState.isPaused ? 'gray.600' : 'yellow.500'} color="white" _hover={{ bg: pomodoroState.phase === 'idle' || pomodoroState.isPaused ? 'gray.600' : 'yellow.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                    <Icon boxSize={5} color="white" asChild><Pause /></Icon>
+                  </Button>
+                </Tooltip>
+                <Tooltip content="Stop" positioning={{ placement: 'right' }}>
+                  <Button size="md" onClick={handleStopTimer} disabled={pomodoroState.phase === 'idle'} bg={pomodoroState.phase === 'idle' ? 'gray.600' : 'red.500'} color="white" _hover={{ bg: pomodoroState.phase === 'idle' ? 'gray.600' : 'red.400' }} _disabled={{ opacity: 0.4 }} w="44px" h="44px" p={0} borderRadius="md">
+                    <Icon boxSize={5} color="white" asChild><Square /></Icon>
+                  </Button>
+                </Tooltip>
+                {pomodoroState.phase === 'break' && (
+                  <Tooltip content="Skip break" positioning={{ placement: 'right' }}>
+                    <Button size="md" variant="ghost" onClick={handleSkipBreak} color="blue.400" _hover={{ bg: 'whiteAlpha.100' }} w="44px" h="44px" p={0} borderRadius="md">
+                      <Icon boxSize={5} asChild><SkipForward /></Icon>
+                    </Button>
+                  </Tooltip>
+                )}
+              </Flex>
+              <Flex direction="row" flex={1} minW={0} bg={canvasBg}>
+                <Flex direction="column" flex={1} minW={0} minH={0} px={6} pt={3} pb={2}>
+                  <Flex flex={1} align="center" justify="center" minH={0}>
+                    {landscapeTimerDigits}
+                  </Flex>
+                  <Box flexShrink={0} w="100%" pt={5} pb={2}>
+                    {timerProgressBar}
+                  </Box>
+                </Flex>
+                <WorkShiftInfographic
+                  variant="side"
+                  tasks={infographicTasks}
+                  sessionMinutes={sessionMinutes}
+                  pomodoroTargetHours={targetHours}
+                  currentSessionIndex={pomodoroState.phase === 'session' ? infographicTasks.filter((t) => t.name === 'Session' && t.completed === true).length : -1}
+                  isSessionActive={pomodoroState.phase === 'session' && !pomodoroState.isPaused}
+                />
+              </Flex>
+            </Flex>
+          )}
       </Box>
       <Dialog.Root open={isSettingsOpen} placement="center" onOpenChange={e => {
         if (!e.open) {

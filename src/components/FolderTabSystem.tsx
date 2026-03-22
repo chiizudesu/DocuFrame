@@ -130,9 +130,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
       path: targetPath,
       name: getDirectoryName(targetPath),
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7543/ingest/65ddb22e-57cb-49a6-baa1-e8b05064640a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'27c943'},body:JSON.stringify({sessionId:'27c943',location:'FolderTabSystem.tsx:addNewTab',message:'addNewTab called',data:{path,rootDirectory,currentDirectory,targetPath,newTabName:newTab.name,newTabId},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     setTabs(prev => [...prev, newTab]);
     // Don't switch to the new tab - keep the current active tab
     // setActiveTabId(newTabId);
@@ -432,10 +429,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
     }
   }, [draggedTab, tabs]);
 
-  // #region agent log
-  fetch('http://127.0.0.1:7543/ingest/65ddb22e-57cb-49a6-baa1-e8b05064640a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'27c943'},body:JSON.stringify({sessionId:'27c943',location:'FolderTabSystem.tsx:render',message:'Render tabs',data:{tabCount:tabs.length,activeTabId,tabs:tabs.map(t=>({id:t.id,name:t.name,path:t.path}))},timestamp:Date.now(),hypothesisId:'H1,H2'})}).catch(()=>{});
-  // #endregion
-
   return (
     <Box ref={tabsRef} bg={bgColor} px={0} pt="3px" pb={0} position="relative">
       <Flex align="center" gap="0" height="34px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
@@ -454,13 +447,14 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
         
         {/* Tab strip: flex:1 so it fills all space between the icon and window controls.
             No overflow on this container — allows bottom-corner flares to paint outside. */}
-        <Box
-          flex="1"
-          minW={0}
-          pt={1}
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <Flex align="end" gap="0" height="34px">
+        <Box flex="1" minW={0} pt={1}>
+          <Flex
+            align="end"
+            gap="0"
+            height="34px"
+            w="100%"
+            style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}
+          >
             {/* Tabs with | separators and space between */}
             {tabs.map((tab, index) => (
           <React.Fragment key={tab.id}>
@@ -470,6 +464,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             <Box
               flexShrink={0}
               draggable={true}
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
               onDragStart={(e) => {
                 // Only start tab drag if not dragging files
                 if (!e.dataTransfer.types.includes('Files')) {
@@ -663,11 +658,6 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 fontWeight={activeTabId === tab.id ? '500' : '400'}
               >
                 <span
-                  ref={(el) => {
-                    // #region agent log
-                    if (el) fetch('http://127.0.0.1:7543/ingest/65ddb22e-57cb-49a6-baa1-e8b05064640a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'27c943'},body:JSON.stringify({sessionId:'27c943',location:'FolderTabSystem.tsx:span-ref',message:'Tab name span',data:{tabId:tab.id,tabName:tab.name,spanWidth:el.offsetWidth,spanText:el.textContent,parentWidth:el.parentElement?.offsetWidth},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
-                    // #endregion
-                  }}
                   style={{
                     flex: '1 1 0%',
                     minWidth: 0,
@@ -796,6 +786,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             alignItems="center"
             h="34px"
             px={2}
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <Box
               ml={0}

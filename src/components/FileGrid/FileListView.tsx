@@ -239,6 +239,237 @@ const FileTableRow = React.memo<FileTableRowProps>(({
 
 FileTableRow.displayName = 'FileTableRow';
 
+type FileRenameTableRowProps = FileTableRowProps & {
+  renameInputRef: React.Ref<HTMLInputElement>;
+  renameValue: string;
+  setRenameValue: (value: string) => void;
+  handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void>;
+  onRenameCancel: () => void;
+};
+
+/** Windows Explorer–style rename: same columns as a normal row; blue outline via per-cell selection shadow; name column = icon + inset-bordered dark (light mode: light) edit box. */
+function FileRenameTableRow({
+  file,
+  index,
+  fileState,
+  finalBg,
+  rowHoverBg,
+  isFolderDropHovered,
+  columnOrder,
+  columnVisibility,
+  cellStyles,
+  nativeIcons,
+  fileTextColor,
+  fileSubTextColor,
+  formatFileSize,
+  formatDate,
+  observeFileElement,
+  unobserveFileElement,
+  rowHandlers,
+  folderDropHandlers,
+  renameInputRef,
+  renameValue,
+  setRenameValue,
+  handleRenameSubmit,
+  onRenameCancel,
+}: FileRenameTableRowProps) {
+  const isListRowHovered = useListRowIsHovered(index);
+  const displayBg = isListRowHovered && !isFolderDropHovered ? rowHoverBg : finalBg;
+  const cellStylesDisplay = useMemo(
+    () => ({ ...cellStyles, bg: displayBg }),
+    [cellStyles, displayBg],
+  );
+  const observedElRef = useRef<HTMLElement | null>(null);
+
+  const innerFieldBg = useColorModeValue('#ffffff', '#000000');
+  const innerInsetRing = useColorModeValue(
+    'inset 0 0 0 1px rgba(0, 0, 0, 0.45)',
+    'inset 0 0 0 1px rgba(255, 255, 255, 0.88)',
+  );
+
+  const visibleColumns = columnOrder.filter((c) => columnVisibility[c as keyof typeof columnVisibility]);
+  const getSelectionBoxShadow = (col: string) => {
+    if (!fileState.isFileSelected) return undefined;
+    const idx = visibleColumns.indexOf(col);
+    if (idx === -1) return undefined;
+    const isFirst = idx === 0;
+    const isLast = idx === visibleColumns.length - 1;
+    const c = 'var(--chakra-colors-blue-600)';
+    const parts: string[] = [`inset 0 1px 0 0 ${c}`, `inset 0 -1px 0 0 ${c}`];
+    if (isFirst) parts.push(`inset 1px 0 0 0 ${c}`);
+    if (isLast) parts.push(`inset -1px 0 0 0 ${c}`);
+    return parts.join(', ');
+  };
+
+  return (
+    <chakra.tr
+      draggable={rowHandlers.draggable}
+      {...folderDropHandlers}
+      data-row-index={index}
+      data-file-index={index}
+      data-new-file-row={fileState.isFileNew ? 'true' : undefined}
+      onMouseEnter={() => rowHandlers.onMouseEnter(index)}
+      onMouseLeave={(e: React.MouseEvent) => rowHandlers.onMouseLeave(index, e)}
+      onContextMenu={(e: React.MouseEvent) => rowHandlers.onContextMenu(file, e)}
+      onClick={(e: React.MouseEvent) => rowHandlers.onClick(file, index, e)}
+      onMouseDown={(e: React.MouseEvent) => rowHandlers.onMouseDown(file, index, e)}
+      onMouseUp={(e: React.MouseEvent) => rowHandlers.onMouseUp(file, index, e)}
+      onDragStart={(e: React.DragEvent) => rowHandlers.onDragStart(file, index, e)}
+      onDragEnd={rowHandlers.onDragEnd}
+    >
+      {columnOrder.map((column, colIndex) => {
+        const isName = column === 'name';
+        const isSize = column === 'size';
+        const isModified = column === 'modified';
+        const isType = column === 'type';
+
+        if (!columnVisibility[column as keyof typeof columnVisibility]) {
+          return null;
+        }
+
+        const selectionShadow = getSelectionBoxShadow(column);
+        const cellKey = `${file.path}-rename-${column}-${colIndex}`;
+
+        if (isName) {
+          return (
+            <chakra.td
+              key={cellKey}
+              {...cellStylesDisplay}
+              boxShadow={selectionShadow}
+              ref={(el: HTMLTableCellElement | null) => {
+                if (file.type === 'file') {
+                  if (el) {
+                    observedElRef.current = el;
+                    observeFileElement(el, file.path);
+                  } else {
+                    const toUnobserve = observedElRef.current;
+                    observedElRef.current = null;
+                    if (toUnobserve) unobserveFileElement(toUnobserve);
+                  }
+                }
+              }}
+            >
+              <Flex
+                as="form"
+                align="center"
+                w="100%"
+                minW={0}
+                m={0}
+                onSubmit={(ev) => {
+                  void handleRenameSubmit(ev);
+                }}
+              >
+                {file.type === 'file' && nativeIcons.has(file.path) ? (
+                  <Image
+                    src={nativeIcons.get(file.path)!}
+                    boxSize={4}
+                    mr={1.5}
+                    alt={`${file.name} icon`}
+                    flexShrink={0}
+                  />
+                ) : (
+                  <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
+                    <FolderOpen size={16} strokeWidth={2} />
+                  </Box>
+                )}
+                <Box
+                  flex={1}
+                  minW={0}
+                  display="flex"
+                  alignItems="center"
+                  maxH="20px"
+                  borderRadius="2px"
+                  boxShadow={innerInsetRing}
+                  bg={innerFieldBg}
+                  boxSizing="border-box"
+                  px={1}
+                  py={0}
+                >
+                  <chakra.input
+                    ref={renameInputRef}
+                    type="text"
+                    aria-label="Rename"
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onBlur={onRenameCancel}
+                    autoFocus
+                    w="100%"
+                    minW={0}
+                    flex={1}
+                    fontSize="xs"
+                    lineHeight="18px"
+                    h="18px"
+                    minH="18px"
+                    maxH="18px"
+                    py={0}
+                    px={0}
+                    m={0}
+                    border="none"
+                    outline="none"
+                    bg="transparent"
+                    color={fileTextColor}
+                    boxSizing="border-box"
+                    _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') onRenameCancel();
+                    }}
+                  />
+                </Box>
+              </Flex>
+            </chakra.td>
+          );
+        }
+        if (isSize) {
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              <Text
+                fontSize="xs"
+                color={fileSubTextColor}
+                style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
+              >
+                {file.type === 'folder' ? '-' : file.size ? formatFileSize(file.size) : '-'}
+              </Text>
+            </chakra.td>
+          );
+        }
+        if (isModified) {
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              <Text
+                fontSize="xs"
+                color={fileSubTextColor}
+                style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
+              >
+                {file.modified ? formatDate(file.modified) : '-'}
+              </Text>
+            </chakra.td>
+          );
+        }
+        if (isType) {
+          const getFileExtension = (filename: string): string => {
+            if (file.type === 'folder') return 'Folder';
+            const lastDot = filename.lastIndexOf('.');
+            if (lastDot === -1 || lastDot === filename.length - 1) return 'File';
+            return filename.substring(lastDot + 1).toUpperCase();
+          };
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              <Text
+                fontSize="xs"
+                color={fileSubTextColor}
+                style={{ userSelect: 'none', opacity: fileState.isFileCut ? 0.5 : 1 }}
+              >
+                {getFileExtension(file.name)}
+              </Text>
+            </chakra.td>
+          );
+        }
+        return null;
+      })}
+    </chakra.tr>
+  );
+}
+
 // GroupHeaderDropZone Component (extracted from FileGrid.tsx)
 interface GroupHeaderDropZoneProps {
   groupKey: string;
@@ -1218,31 +1449,39 @@ const FileListViewBody = React.memo(function FileListViewBody({
                         const fileIndex = virtualRow.index;
                         const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
                         const index = globalIndex >= 0 ? globalIndex : fileIndex;
+                        const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
+                        const folderDropHandlers = createFolderDropHandlers(file, index);
 
                         if (isRenaming === file.name) {
                           return (
-                            <tr key={index}>
-                                  <td colSpan={columnOrder.length} style={{ padding: '4px 8px' }}>
-                                      <form onSubmit={(ev) => { void handleRenameSubmit(ev); }}>
-                                        <Input
-                                          ref={renameInputRef}
-                                          value={renameValue}
-                                          onChange={(e) => setRenameValue(e.target.value)}
-                                          onBlur={onRenameCancel}
-                                          autoFocus
-                                          size="xs"
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Escape') onRenameCancel()
-                                          }}
-                                        />
-                                      </form>
-                                    </td>
-                                </tr>
+                            <FileRenameTableRow
+                              key={file.path}
+                              file={file}
+                              index={index}
+                              fileState={fileState}
+                              finalBg={finalBg}
+                              rowHoverBg={rowHoverBg}
+                              isFolderDropHovered={isFolderDropHovered}
+                              columnOrder={columnOrder}
+                              columnVisibility={columnVisibility}
+                              cellStyles={finalCellStyles}
+                              nativeIcons={nativeIcons}
+                              fileTextColor={fileTextColor}
+                              fileSubTextColor={fileSubTextColor}
+                              formatFileSize={formatFileSize}
+                              formatDate={formatDate}
+                              observeFileElement={observeFileElement}
+                              unobserveFileElement={unobserveFileElement}
+                              rowHandlers={rowHandlers}
+                              folderDropHandlers={folderDropHandlers}
+                              renameInputRef={renameInputRef}
+                              renameValue={renameValue}
+                              setRenameValue={setRenameValue}
+                              handleRenameSubmit={handleRenameSubmit}
+                              onRenameCancel={onRenameCancel}
+                            />
                           );
                         }
-
-                        const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
-                        const folderDropHandlers = createFolderDropHandlers(file, index);
 
                         return (
                           <FileTableRow
@@ -1325,31 +1564,39 @@ const FileListViewBody = React.memo(function FileListViewBody({
                           {groupFiles.map((file, fileIndex) => {
                             const globalIndex = sortedFiles.findIndex(f => f.path === file.path);
                             const index = globalIndex >= 0 ? globalIndex : fileIndex;
-                            
-                            if (isRenaming === file.name) {
-                              return (
-                                <tr key={index}>
-                                      <td colSpan={columnOrder.length} style={{ padding: '4px 8px' }}>
-                                          <form onSubmit={(ev) => { void handleRenameSubmit(ev); }}>
-                                            <Input
-                                              ref={renameInputRef}
-                                              value={renameValue}
-                                              onChange={(e) => setRenameValue(e.target.value)}
-                                              onBlur={onRenameCancel}
-                                              autoFocus
-                                              size="xs"
-                                              onKeyDown={(e) => {
-                                                if (e.key === 'Escape') onRenameCancel()
-                                              }}
-                                            />
-                                          </form>
-                                        </td>
-                                    </tr>
-                              );
-                            }
-
                             const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
                             const folderDropHandlers = createFolderDropHandlers(file, index);
+
+                            if (isRenaming === file.name) {
+                              return (
+                                <FileRenameTableRow
+                                  key={file.path}
+                                  file={file}
+                                  index={index}
+                                  fileState={fileState}
+                                  finalBg={finalBg}
+                                  rowHoverBg={rowHoverBg}
+                                  isFolderDropHovered={isFolderDropHovered}
+                                  columnOrder={columnOrder}
+                                  columnVisibility={columnVisibility}
+                                  cellStyles={finalCellStyles}
+                                  nativeIcons={nativeIcons}
+                                  fileTextColor={fileTextColor}
+                                  fileSubTextColor={fileSubTextColor}
+                                  formatFileSize={formatFileSize}
+                                  formatDate={formatDate}
+                                  observeFileElement={observeFileElement}
+                                  unobserveFileElement={unobserveFileElement}
+                                  rowHandlers={rowHandlers}
+                                  folderDropHandlers={folderDropHandlers}
+                                  renameInputRef={renameInputRef}
+                                  renameValue={renameValue}
+                                  setRenameValue={setRenameValue}
+                                  handleRenameSubmit={handleRenameSubmit}
+                                  onRenameCancel={onRenameCancel}
+                                />
+                              );
+                            }
 
                             return (
                               <FileTableRow
@@ -1427,31 +1674,39 @@ const FileListViewBody = React.memo(function FileListViewBody({
                     const index = virtualRow.index;
                     const file = sortedFiles[index];
                     if (!file) return null;
+                    const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
+                    const folderDropHandlers = createFolderDropHandlers(file, index);
 
                     if (isRenaming === file.name) {
                       return (
-                        <tr key={file.path}>
-                              <td colSpan={columnOrder.length} style={{ padding: '4px 8px' }}>
-                                  <form onSubmit={(ev) => { void handleRenameSubmit(ev); }}>
-                                    <Input
-                                      ref={renameInputRef}
-                                      value={renameValue}
-                                      onChange={(e) => setRenameValue(e.target.value)}
-                                      onBlur={onRenameCancel}
-                                      autoFocus
-                                      size="xs"
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Escape') onRenameCancel()
-                                      }}
-                                    />
-                                  </form>
-                                </td>
-                            </tr>
+                        <FileRenameTableRow
+                          key={file.path}
+                          file={file}
+                          index={index}
+                          fileState={fileState}
+                          finalBg={finalBg}
+                          rowHoverBg={rowHoverBg}
+                          isFolderDropHovered={isFolderDropHovered}
+                          columnOrder={columnOrder}
+                          columnVisibility={columnVisibility}
+                          cellStyles={finalCellStyles}
+                          nativeIcons={nativeIcons}
+                          fileTextColor={fileTextColor}
+                          fileSubTextColor={fileSubTextColor}
+                          formatFileSize={formatFileSize}
+                          formatDate={formatDate}
+                          observeFileElement={observeFileElement}
+                          unobserveFileElement={unobserveFileElement}
+                          rowHandlers={rowHandlers}
+                          folderDropHandlers={folderDropHandlers}
+                          renameInputRef={renameInputRef}
+                          renameValue={renameValue}
+                          setRenameValue={setRenameValue}
+                          handleRenameSubmit={handleRenameSubmit}
+                          onRenameCancel={onRenameCancel}
+                        />
                       );
                     }
-
-                    const { fileState, finalBg, finalCellStyles, isFolderDropHovered } = getRowProps(file, index);
-                    const folderDropHandlers = createFolderDropHandlers(file, index);
 
                     return (
                       <FileTableRow

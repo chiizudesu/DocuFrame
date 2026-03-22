@@ -261,7 +261,11 @@ const AppContent: React.FC = () => {
   }
   
   if (isFloatingTimerWindow) {
-    return <FloatingTaskTimerWindow onClose={() => window.close()} />;
+    return (
+      <Box w="100%" h="100vh" minH="100vh" overflow="hidden">
+        <FloatingTaskTimerWindow onClose={() => window.close()} />
+      </Box>
+    );
   }
 
   return (

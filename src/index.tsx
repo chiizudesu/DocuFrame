@@ -6,11 +6,12 @@ import { Provider } from './components/ui/provider';
 import { Toaster } from './components/ui/toaster';
 import './styles/scrollbar.css';
 
-// Check if this is the floating timer window and make it transparent
+// Check if this is the floating timer window
 const isFloatingTimer = window.location.hash === '#floating-timer';
 if (isFloatingTimer) {
-  document.body.style.backgroundColor = 'transparent';
-  document.documentElement.style.backgroundColor = 'transparent';
+  document.documentElement.style.height = '100%';
+  document.body.style.height = '100%';
+  document.body.style.margin = '0';
   document.body.classList.add('floating-timer');
 }
 

@@ -347,7 +347,7 @@ export const FileGrid: React.FC = () => {
     isRenamingRef.current = isRenaming;
   }, [isRenaming]);
 
-  // Position cursor at end of filename (before extension) when rename starts
+  // Collapsed caret when rename starts: before extension for files; end of name for folders / no extension (no full-name selection).
   useEffect(() => {
     if (isRenaming && !hasPositionedCursor.current) {
       const targetName = isRenaming;
@@ -356,9 +356,16 @@ export const FileGrid: React.FC = () => {
         if (!isRenamingRef.current || isRenamingRef.current !== targetName) return;
         if (renameInputRef.current) {
           const input = renameInputRef.current;
-          const cursorPosition = getFilenameWithoutExtension(renameValue);
+          const extStart = getFilenameWithoutExtension(renameValue);
+          const len = renameValue.length;
+          const entry = sortedFilesRef.current.find((f) => f.name === targetName);
           input.focus();
-          input.setSelectionRange(cursorPosition, cursorPosition);
+          if (entry?.type === 'file' && extStart > 0 && extStart < len) {
+            // Collapsed caret immediately before '.' — not selecting the whole filename.
+            input.setSelectionRange(extStart, extStart);
+          } else {
+            input.setSelectionRange(len, len);
+          }
           hasPositionedCursor.current = true;
           console.log('[Rename] Rename mode active - input focused and in edit mode:', { name: targetName, value: renameValue, attempt });
         } else if (attempt < 8) {
