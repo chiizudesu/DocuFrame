@@ -373,9 +373,14 @@ export const FileGrid: React.FC = () => {
 
   // Function to reset drag state - can be called by child components
   const resetDragState = useCallback(() => {
+    if (dragLeaveTimeoutRef.current) {
+      clearTimeout(dragLeaveTimeoutRef.current);
+      dragLeaveTimeoutRef.current = null;
+    }
     setIsDragOver(false);
     setDragCounter(0);
     setDraggedFiles(new Set());
+    setIsDragStarted(false);
   }, []);
 
   // Callback to handle when native icons are loaded
@@ -3029,6 +3034,17 @@ export const FileGrid: React.FC = () => {
     setFolderHoverState(new Set());
   }, []);
 
+  // Electron native startDrag + preventDefault on dragstart skips React row onDragEnd, so draggedFiles
+  // stayed set and thead kept pointer-events:none. Clear grid drag UI when any HTML5 drag ends.
+  useEffect(() => {
+    const onWindowDragEnd = () => {
+      resetDragState();
+      clearFolderHoverStates();
+    };
+    window.addEventListener('dragend', onWindowDragEnd);
+    return () => window.removeEventListener('dragend', onWindowDragEnd);
+  }, [resetDragState, clearFolderHoverStates]);
+
   const handleFolderDragEnter = useCallback((filePath: string) => {
     setFolderHoverState(new Set([filePath]));
   }, []);
@@ -4584,7 +4600,7 @@ export const FileGrid: React.FC = () => {
         handleResizeStart={handleResizeStart}
         handleGroupHeaderDrop={handleGroupHeaderDrop}
         suppressHeaderPointerEventsForFileDrag={
-          !draggingColumn && (draggedFiles.size > 0 || isDragOver || dragCounter > 0)
+          !draggingColumn && (isDragOver || dragCounter > 0)
         }
         groupedTransferTemplates={groupedTransferTemplates}
         onTransferFromGroupHeader={handleTransferFromGroupHeader}
