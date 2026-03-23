@@ -10,8 +10,7 @@ import {
   Plus,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
-import { FileTableRowProps } from './FileGridUtils'
-import { SortColumn } from './FileGridUtils'
+import { FileTableRowProps, SortColumn, setDropEffectCompatibleWithEffectAllowed } from './FileGridUtils'
 import { getIndexInfo } from '../../utils/indexPrefix'
 import { DF_GROUP_HEADER_GAP_BG, DF_GROUP_HEADER_LAYER_TEXT } from '../../docuFrameColors'
 
@@ -35,8 +34,8 @@ type GroupedVirtualRowItem =
   | { type: 'groupHeader'; groupKey: string; groupIndex: number }
   | { type: 'fileRow'; file: FileItem; globalIndex: number }
 
-/** Estimated height for a group header row (drop zone + divider); real height can vary slightly. */
-const GROUP_HEADER_HEIGHT_ESTIMATE = 64
+/** Estimated height for a group header row (divider + pb gap below + optional wrap); slight over-estimate avoids virtual list overlap. */
+const GROUP_HEADER_HEIGHT_ESTIMATE = 70
 
 // FileTableRow Component (extracted from FileGrid.tsx)
 const FileTableRow = React.memo<FileTableRowProps>(({
@@ -699,7 +698,8 @@ interface GroupHeaderDropZoneProps {
   groupKey: string;
   indexInfo: ReturnType<typeof getIndexInfo>;
   fileCount: number;
-  onDrop: (e: React.DragEvent) => void;
+  /** Second arg is true when Ctrl was held during drag-over or at drop (drop often loses ctrlKey after key-up). */
+  onDrop: (e: React.DragEvent, copyModifierActive: boolean) => void;
   transferTemplates: Array<{ command: string; filename: string }>;
   onTransfer: (opts: { command?: string; newName?: string }) => Promise<void>;
   pillBg: string;
@@ -726,6 +726,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
 }) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isCopyMode, setIsCopyMode] = useState(false);
+  const copyModifierDuringOverRef = useRef(false);
   const [manualFilename, setManualFilename] = useState('');
   const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
   const manualInputRef = useRef<HTMLInputElement>(null);
@@ -788,16 +789,18 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     const isInternal = hasCustomType || internalDragFlag;
     
     if (isInternal) {
+      let prefer: 'copy' | 'move' = 'move';
       if (effectAllowed === 'copy' || effectAllowed === 'copyMove' || effectAllowed === 'all' || (e.ctrlKey && effectAllowed !== 'move' && effectAllowed !== 'linkMove')) {
-        e.dataTransfer.dropEffect = 'copy';
+        prefer = 'copy';
       } else if (effectAllowed === 'move' || effectAllowed === 'linkMove' || (!e.ctrlKey && effectAllowed !== 'copy' && effectAllowed !== 'copyMove' && effectAllowed !== 'all')) {
-        e.dataTransfer.dropEffect = 'move';
+        prefer = 'move';
       } else {
-        e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+        prefer = e.ctrlKey ? 'copy' : 'move';
       }
+      setDropEffectCompatibleWithEffectAllowed(e, prefer);
       return 'internal';
     } else if (hasFilesType || hasExternalFiles) {
-      e.dataTransfer.dropEffect = 'copy';
+      setDropEffectCompatibleWithEffectAllowed(e, 'copy');
       return 'external';
     } else {
       e.dataTransfer.dropEffect = 'none';
@@ -809,6 +812,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     <Box
       mb={0.75}
       mt={mt}
+      pb={1.5}
       position="relative"
       data-group-drop-zone="true"
       onDragEnter={e => {
@@ -816,6 +820,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         e.stopPropagation();
         const dragType = checkAndSetDropEffect(e);
         if (dragType !== 'none') {
+          copyModifierDuringOverRef.current = e.ctrlKey;
           setIsDraggingOver(true);
           setIsCopyMode(e.ctrlKey);
         }
@@ -827,7 +832,9 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         if (dragType === 'none') {
           setIsDraggingOver(false);
           setIsCopyMode(false);
+          copyModifierDuringOverRef.current = false;
         } else {
+          copyModifierDuringOverRef.current = e.ctrlKey;
           setIsCopyMode(e.ctrlKey);
         }
       }}
@@ -837,6 +844,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         if (!e.currentTarget.contains(e.relatedTarget as Node)) {
           setIsDraggingOver(false);
           setIsCopyMode(false);
+          copyModifierDuringOverRef.current = false;
         }
       }}
       onDrop={(e) => {
@@ -851,15 +859,18 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         const isInternal = hasCustomType || internalDragFlag;
         const isExternal = hasFilesType && !isInternal;
         
+        const copyModifierActive = e.ctrlKey || copyModifierDuringOverRef.current;
         if (isInternal || isExternal) {
-          onDrop(e);
+          onDrop(e, copyModifierActive);
         }
         
         setIsDraggingOver(false);
         setIsCopyMode(false);
+        copyModifierDuringOverRef.current = false;
         clearFolderHoverStates();
       }}
     >
+      <Box position="relative">
       <Flex
         ref={headerRowRef}
         align="stretch"
@@ -888,7 +899,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           fontWeight="semibold"
           title={indexPillTitle}
           overflow="hidden"
-          py={isDraggingOver ? 1 : 0.5}
+          py={0.5}
         >
           <Text as="span" lineClamp={1} px={1} textAlign="center" w="100%">
             {indexPillLabel}
@@ -908,7 +919,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           align="center"
           gap={2}
           px={2}
-          py={isDraggingOver ? 1 : 0.5}
+          py={0.5}
           color={pillText}
         >
           <Text flex="1" fontSize="xs" fontWeight="medium" lineClamp={2} minW={0}>
@@ -951,7 +962,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           display="flex"
           alignItems="center"
           justifyContent="center"
-          py={isDraggingOver ? 1 : 0.5}
+          py={0.5}
         >
           <Menu.Root
             closeOnSelect={false}
@@ -1058,16 +1069,17 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
       {isDraggingOver && (
         <Flex
           position="absolute"
-          top={0}
-          left={0}
-          right={0}
-          bottom={0}
+          inset={0}
           pointerEvents="none"
           align="center"
           justify="center"
           bg="rgba(59,130,246,0.08)"
-          border="1px dashed"
-          borderColor="blue.400"
+          border="none"
+          borderRadius={0}
+          style={{
+            outline: '1px dashed var(--chakra-colors-blue-400, #60a5fa)',
+            outlineOffset: '-1px',
+          }}
         >
           <Icon boxSize={3.5} color="blue.400" mr={2} asChild><Upload /></Icon>
           <Text fontSize="xs" fontWeight="semibold" color="blue.400">
@@ -1075,6 +1087,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           </Text>
         </Flex>
       )}
+      </Box>
     </Box>
   );
 };
@@ -1102,6 +1115,8 @@ export interface FileListViewProps {
   sortDirection: 'asc' | 'desc';
   draggingColumn: string | null;
   dragTargetColumn: string | null;
+  /** Sticky list header sits above group rows; disable its hit-testing during file drag so layer drop zones receive the drop. */
+  suppressHeaderPointerEventsForFileDrag?: boolean;
   dragMousePos: { x: number; y: number } | null;
   dragOffset: { x: number; y: number };
   isDragThresholdMet: boolean;
@@ -1160,7 +1175,7 @@ export interface FileListViewProps {
   autoFitColumn: (column: string) => void;
   handleColumnDragStart: (column: string, e: React.MouseEvent) => void;
   handleResizeStart: (column: string, e: React.MouseEvent) => void;
-  handleGroupHeaderDrop: (e: React.DragEvent, groupKey: string) => Promise<void>;
+  handleGroupHeaderDrop: (e: React.DragEvent, groupKey: string, copyModifierActive?: boolean) => Promise<void>;
   groupedTransferTemplates: Record<string, Array<{ command: string; filename: string }>>;
   onTransferFromGroupHeader: (opts: { command?: string; newName?: string }) => Promise<void>;
   rowHandlers: {
@@ -1226,6 +1241,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.columnOrder !== next.columnOrder || prev.columnVisibility !== next.columnVisibility) return false;
   if (prev.columnWidths !== next.columnWidths) return false;
   if (prev.draggingColumn !== next.draggingColumn || prev.dragTargetColumn !== next.dragTargetColumn) return false;
+  if (prev.suppressHeaderPointerEventsForFileDrag !== next.suppressHeaderPointerEventsForFileDrag) return false;
   if (prev.dragMousePos !== next.dragMousePos || prev.dragOffset !== next.dragOffset) return false;
   if (prev.rowHandlers !== next.rowHandlers) return false;
   if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
@@ -1254,6 +1270,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   sortDirection,
   draggingColumn,
   dragTargetColumn,
+  suppressHeaderPointerEventsForFileDrag = false,
   dragMousePos,
   dragOffset,
   isDragThresholdMet,
@@ -1786,6 +1803,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                 draggingColumn={draggingColumn}
                 dragTargetColumn={dragTargetColumn}
                 hasDraggedColumn={hasDraggedColumn}
+                suppressPointerEventsForFileDrag={suppressHeaderPointerEventsForFileDrag}
                 setHeaderContextMenu={setHeaderContextMenu}
                 handleSort={handleSort}
                 autoFitColumn={autoFitColumn}
@@ -1832,13 +1850,27 @@ const FileListViewBody = React.memo(function FileListViewBody({
                         <tr key={`gh-${item.groupKey}-${virtualRow.index}`}>
                           <td
                             colSpan={columnOrder.length}
-                            style={{ padding: '8px 0', background: 'transparent' }}
+                            data-group-drop-zone="true"
+                            style={{ padding: 0, background: 'transparent', verticalAlign: 'top' }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              clearFolderHoverStates();
+                              const internalDragFlag = !!(window as any).__docuframeInternalDrag;
+                              const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
+                              const hasFilesType = e.dataTransfer.types.includes('Files');
+                              const isInternal = hasCustomType || internalDragFlag;
+                              const isExternal = hasFilesType && !isInternal;
+                              if (isInternal || isExternal) {
+                                await handleGroupHeaderDrop(e, item.groupKey, e.ctrlKey);
+                              }
+                            }}
                           >
                             <GroupHeaderDropZone
                               groupKey={item.groupKey}
                               indexInfo={indexInfo}
                               fileCount={groupFiles.length}
-                              onDrop={(e) => handleGroupHeaderDrop(e, item.groupKey)}
+                              onDrop={(e, copyMod) => handleGroupHeaderDrop(e, item.groupKey, copyMod)}
                               transferTemplates={groupedTransferTemplates[item.groupKey] ?? []}
                               onTransfer={onTransferFromGroupHeader}
                               pillBg={pillBg}
@@ -1956,6 +1988,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                 draggingColumn={draggingColumn}
                 dragTargetColumn={dragTargetColumn}
                 hasDraggedColumn={hasDraggedColumn}
+                suppressPointerEventsForFileDrag={suppressHeaderPointerEventsForFileDrag}
                 setHeaderContextMenu={setHeaderContextMenu}
                 handleSort={handleSort}
                 autoFitColumn={autoFitColumn}

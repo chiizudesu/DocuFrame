@@ -193,6 +193,8 @@ export const AppProvider: React.FC<{
   const [quickAccessPaths, setQuickAccessPaths] = useState<string[]>([]);
   // Recent client folders (latest 5 visited)
   const [recentClientPaths, setRecentClientPaths] = useState<string[]>([]);
+  /** After first settings load: allows persisting [] without clobbering disk before hydrate */
+  const recentClientPathsPersistReadyRef = useRef(false);
   // File grouping by index prefix - always on except blacklisted directories (from settings)
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
@@ -277,10 +279,14 @@ export const AppProvider: React.FC<{
       // Load recent client paths
       if (Array.isArray(settings.recentClientPaths)) {
         setRecentClientPaths(settings.recentClientPaths.slice(0, 5));
+      } else {
+        setRecentClientPaths([]);
       }
 
     } catch (error) {
       console.error('Error loading settings:', error);
+    } finally {
+      recentClientPathsPersistReadyRef.current = true;
     }
   }, []);
 
@@ -315,12 +321,12 @@ export const AppProvider: React.FC<{
     });
   }, [currentDirectory, rootDirectory]);
 
-  // Persist recent client paths when they change
+  // Persist recent client paths when they change (including empty, after settings have loaded once)
   const prevRecentRef = useRef<string>('');
   useEffect(() => {
+    if (!recentClientPathsPersistReadyRef.current && recentClientPaths.length === 0) return;
     if (prevRecentRef.current === JSON.stringify(recentClientPaths)) return;
     prevRecentRef.current = JSON.stringify(recentClientPaths);
-    if (recentClientPaths.length === 0) return;
     settingsService.getSettings().then(current => {
       settingsService.setSettings({ ...current, recentClientPaths }).catch(() => {});
     });

@@ -1,4 +1,5 @@
 import type { FileItem } from '../../types'
+import type { DragEvent } from 'react'
 
 // Sort types for list view
 export type SortColumn = 'name' | 'size' | 'modified'
@@ -8,6 +9,26 @@ export type SortDirection = 'asc' | 'desc'
 export function formatPathForLog(path: string) {
   const isWindows = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win');
   return isWindows ? path.replace(/\//g, '\\') : path;
+}
+
+/** Electron/native drags often set effectAllowed to copyLink; dropEffect must match or the OS shows “not allowed”. */
+export function setDropEffectCompatibleWithEffectAllowed(e: DragEvent, prefer: 'copy' | 'move') {
+  const raw = String(e.dataTransfer.effectAllowed || 'uninitialized')
+  if (raw === 'none') {
+    e.dataTransfer.dropEffect = 'none'
+    return
+  }
+  if (raw === 'all' || raw === 'uninitialized') {
+    e.dataTransfer.dropEffect = prefer
+    return
+  }
+  const canCopy = raw.includes('copy')
+  const canMove = raw.includes('move')
+  if (prefer === 'copy') {
+    e.dataTransfer.dropEffect = canCopy ? 'copy' : canMove ? 'move' : 'none'
+  } else {
+    e.dataTransfer.dropEffect = canMove ? 'move' : canCopy ? 'copy' : 'none'
+  }
 }
 
 // FileTableRow props interface

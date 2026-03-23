@@ -16,6 +16,8 @@ export type FileListTheadProps = {
   draggingColumn: string | null
   dragTargetColumn: string | null
   hasDraggedColumn: boolean
+  /** While true, thead ignores pointer events so file drops reach layer (group) rows under sticky headers. */
+  suppressPointerEventsForFileDrag?: boolean
   setHeaderContextMenu: (menu: { isOpen: boolean; position: { x: number; y: number } }) => void
   handleSort: (column: SortColumn) => void
   autoFitColumn: (column: string) => void
@@ -37,6 +39,7 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
   draggingColumn,
   dragTargetColumn,
   hasDraggedColumn,
+  suppressPointerEventsForFileDrag = false,
   setHeaderContextMenu,
   handleSort,
   autoFitColumn,
@@ -111,7 +114,7 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
   )
 
   return (
-    <Box as="thead">
+    <Box as="thead" pointerEvents={suppressPointerEventsForFileDrag ? 'none' : undefined}>
       <Box as="tr">
         {columnOrder.map((column) => {
           const isName = column === 'name'

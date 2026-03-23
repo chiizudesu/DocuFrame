@@ -15,7 +15,7 @@ import { settingsService } from '../services/settings'
 import type { FileItem } from '../types'
 import { FileProperties } from './CustomPropertiesDialog';
 import { extractIndexPrefix, setIndexPrefix, removeIndexPrefix, groupFilesByIndex, getIndexInfo, getAllIndexKeys, toProperCase, getMaxIndexPillWidth } from '../utils/indexPrefix';
-import { SortColumn, SortDirection, formatPathForLog } from './FileGrid/FileGridUtils';
+import { SortColumn, SortDirection, formatPathForLog, setDropEffectCompatibleWithEffectAllowed } from './FileGrid/FileGridUtils';
 import { FileContextMenu, BlankContextMenu, TemplateSubmenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
 import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog';
@@ -2616,8 +2616,27 @@ export const FileGrid: React.FC = () => {
     e.stopPropagation();
     
     const targetElement = e.target as HTMLElement;
-    if (targetElement && targetElement.closest('[data-group-drop-zone="true"]')) {
-      // Let headers manage their own drag behavior
+    const inGroupDropZone = !!(targetElement && targetElement.closest('[data-group-drop-zone="true"]'));
+    if (inGroupDropZone) {
+      // Target may be the <td> (padding): inner Box never sees dragOver — set a valid dropEffect here.
+      const hasFilesType = e.dataTransfer.types.includes('Files');
+      const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
+      const internalDragFlag = !!(window as any).__docuframeInternalDrag;
+      const isInternal = hasCustomType || internalDragFlag;
+      if (isInternal) {
+        const effectAllowed = e.dataTransfer.effectAllowed as string;
+        let prefer: 'copy' | 'move' = 'move';
+        if (effectAllowed === 'copy' || effectAllowed === 'copyMove' || effectAllowed === 'all' || (e.ctrlKey && effectAllowed !== 'move' && effectAllowed !== 'linkMove')) {
+          prefer = 'copy';
+        } else if (effectAllowed === 'move' || effectAllowed === 'linkMove' || (!e.ctrlKey && effectAllowed !== 'copy' && effectAllowed !== 'copyMove' && effectAllowed !== 'all')) {
+          prefer = 'move';
+        } else {
+          prefer = e.ctrlKey ? 'copy' : 'move';
+        }
+        setDropEffectCompatibleWithEffectAllowed(e, prefer);
+      } else if (hasFilesType) {
+        setDropEffectCompatibleWithEffectAllowed(e, 'copy');
+      }
       return;
     }
     
@@ -2640,7 +2659,7 @@ export const FileGrid: React.FC = () => {
     if (isInternalDrag) {
       e.dataTransfer.dropEffect = 'none';
     } else if (hasFilesType) {
-      e.dataTransfer.dropEffect = 'copy';
+      setDropEffectCompatibleWithEffectAllowed(e, 'copy');
     } else {
       e.dataTransfer.dropEffect = 'none';
     }
@@ -3023,14 +3042,14 @@ export const FileGrid: React.FC = () => {
     });
   }, []);
 
-  const handleGroupHeaderDrop = useCallback(async (e: React.DragEvent, targetIndexKey: string) => {
+  const handleGroupHeaderDrop = useCallback(async (e: React.DragEvent, targetIndexKey: string, copyModifierActive = false) => {
     e.preventDefault();
     e.stopPropagation();
     clearFolderHoverStates();
     
-    // Detect if Ctrl key is pressed for copy operation
-    const isCopyOperation = e.ctrlKey;
-    console.log('[FileGrid] handleGroupHeaderDrop', { targetIndexKey, isCopyOperation, ctrlKey: e.ctrlKey });
+    // Copy: use modifier captured during drag-over; drop often fires with ctrlKey false after key release.
+    const isCopyOperation = e.ctrlKey || copyModifierActive;
+    console.log('[FileGrid] handleGroupHeaderDrop', { targetIndexKey, isCopyOperation, ctrlKey: e.ctrlKey, copyModifierActive });
     
     let filePaths: string[] = [];
     
@@ -4564,6 +4583,9 @@ export const FileGrid: React.FC = () => {
         handleColumnDragStart={handleColumnDragStart}
         handleResizeStart={handleResizeStart}
         handleGroupHeaderDrop={handleGroupHeaderDrop}
+        suppressHeaderPointerEventsForFileDrag={
+          !draggingColumn && (draggedFiles.size > 0 || isDragOver || dragCounter > 0)
+        }
         groupedTransferTemplates={groupedTransferTemplates}
         onTransferFromGroupHeader={handleTransferFromGroupHeader}
         rowHandlers={rowHandlers}
