@@ -3,7 +3,7 @@ import { useColorModeValue } from "../ui/color-mode";
 import { ListRowHoverProvider, useListRowIsHovered } from './ListRowHoverContext'
 import { FileListTheadRow } from './FileListThead'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Box, Text, Icon, Flex, Input, Image, Menu, IconButton, Portal, chakra } from '@chakra-ui/react';
+import { Box, Text, Icon, Flex, Input, Image, Popover, IconButton, Portal, Separator, chakra } from '@chakra-ui/react';
 import {
   FolderOpen,
   Upload,
@@ -12,7 +12,13 @@ import {
 import type { FileItem } from '../../types'
 import { FileTableRowProps, SortColumn, setDropEffectCompatibleWithEffectAllowed } from './FileGridUtils'
 import { getIndexInfo } from '../../utils/indexPrefix'
-import { DF_GROUP_HEADER_GAP_BG, DF_GROUP_HEADER_LAYER_TEXT } from '../../docuFrameColors'
+import { DF_GROUP_HEADER_GAP_BG, DF_GROUP_HEADER_LAYER_TEXT, docuFramePalette } from '../../docuFrameColors'
+
+/** Match function-row transfer popovers — flat chrome, no blue ring */
+const suppressFocusRing = {
+  outline: 'none',
+  boxShadow: 'none',
+} as const
 
 const fileGridTableStyles = {
   width: 'fit-content',
@@ -729,7 +735,6 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   const copyModifierDuringOverRef = useRef(false);
   const [manualFilename, setManualFilename] = useState('');
   const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
-  const manualInputRef = useRef<HTMLInputElement>(null);
   const headerRowRef = useRef<HTMLDivElement>(null);
   const [squareSide, setSquareSide] = useState(22);
 
@@ -748,12 +753,14 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const menuListBg = useColorModeValue('white', 'gray.800');
-  const menuListBorder = useColorModeValue('gray.200', 'gray.700');
-  const menuItemBg = useColorModeValue('gray.50', 'gray.700');
-  const menuHoverBg = useColorModeValue('gray.100', 'gray.600');
-  const menuPlaceholderColor = useColorModeValue('gray.400', 'gray.500');
-  const inputBg = useColorModeValue('gray.50', 'gray.700');
+  const p = docuFramePalette;
+  const panelBg = useColorModeValue(p.light.toolbar, p.dark.tabStrip);
+  const menuListBg = useColorModeValue(p.light.listRow, p.dark.tabStrip);
+  const menuListBorder = useColorModeValue(p.light.border, p.dark.border);
+  const menuHoverBg = useColorModeValue(p.light.rowHover, p.dark.chromeHover);
+  const menuPlaceholderColor = useColorModeValue(p.light.subtext, p.dark.subtext);
+  const inputBg = useColorModeValue(p.light.listRow, p.dark.listRow);
+  const labelColor = useColorModeValue('gray.800', 'gray.100');
 
   const handleTransferTemplate = (command: string) => {
     onTransfer({ command });
@@ -964,18 +971,19 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           justifyContent="center"
           py={0.5}
         >
-          <Menu.Root
-            closeOnSelect={false}
+          <Popover.Root
             open={isTransferMenuOpen}
+            closeOnInteractOutside
             onOpenChange={({ open }) => {
               if (!open) setManualFilename('');
               setIsTransferMenuOpen(open);
             }}
             positioning={{
               placement: 'bottom-end',
-              strategy: 'fixed'
-            }}>
-            <Menu.Trigger asChild>
+              strategy: 'fixed',
+            }}
+          >
+            <Popover.Trigger asChild>
               <IconButton
                 aria-label="Transfer to this group"
                 size="xs"
@@ -988,56 +996,99 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
                 bg="transparent"
                 borderRadius={0}
                 _hover={{ bg: 'rgba(255,255,255,0.14)' }}
+                _focus={suppressFocusRing}
+                _focusVisible={suppressFocusRing}
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
               >
                 <Plus size={12} />
               </IconButton>
-            </Menu.Trigger>
-            <Portal><Menu.Positioner><Menu.Content>
-                  {transferTemplates.length === 0 ? (
-                    <Box py={2.5} px={4} my={0.5} borderRadius="md" bg={menuItemBg}>
-                      <Text fontSize="sm" color={menuPlaceholderColor}>No templates</Text>
-                    </Box>
-                  ) : (
-                    transferTemplates.map((t) => {
-                      const displayText = t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
-                      return (
-                        <Box
-                          key={t.command}
-                          w="100%"
-                          textAlign="left"
-                          py={2.5}
-                          px={4}
-                          my={0.5}
-                          fontSize="sm"
-                          borderRadius="md"
-                          bg={menuItemBg}
-                          cursor="pointer"
-                          border="none"
-                          _hover={{ bg: menuHoverBg }}
-                          _focus={{ bg: menuHoverBg }}
-                          _focusVisible={{ outline: '2px solid', outlineColor: 'blue.400', outlineOffset: '1px' }}
-                          title={t.filename}
-                          asChild
-                        >
-                          <button type="button" onClick={() => handleTransferTemplate(t.command)}>
-                            {displayText}
-                          </button>
-                        </Box>
-                      );
-                    })
-                  )}
-                  <Menu.Separator borderColor={menuListBorder} my={2} />
-                  <Box w="100%" my={0.5} onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+            </Popover.Trigger>
+            <Portal>
+              <Popover.Positioner>
+                <Popover.Content
+                  minW="260px"
+                  maxW="min(90vw, 420px)"
+                  borderWidth="1px"
+                  borderStyle="solid"
+                  borderColor={menuListBorder}
+                  bg={panelBg}
+                  zIndex={10000}
+                  _focus={suppressFocusRing}
+                  _focusVisible={suppressFocusRing}
+                  p={2}
+                >
+                  <Box
+                    maxH="240px"
+                    overflowY="auto"
+                    borderWidth="1px"
+                    borderStyle="solid"
+                    borderColor={menuListBorder}
+                    bg={menuListBg}
+                  >
+                    {transferTemplates.length === 0 ? (
+                      <Box py={2} px={3}>
+                        <Text fontSize="sm" color={menuPlaceholderColor}>
+                          No templates
+                        </Text>
+                      </Box>
+                    ) : (
+                      <Box display="flex" flexDirection="column" py={1}>
+                        {transferTemplates.map((t) => {
+                          const displayText =
+                            t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
+                          return (
+                            <Box
+                              key={t.command}
+                              w="100%"
+                              maxH="50px"
+                              minH={0}
+                              textAlign="left"
+                              py={1}
+                              px={3}
+                              fontSize="sm"
+                              color={labelColor}
+                              bg="transparent"
+                              cursor="pointer"
+                              border="none"
+                              display="flex"
+                              alignItems="center"
+                              _hover={{ bg: menuHoverBg }}
+                              _focus={suppressFocusRing}
+                              _focusVisible={{ ...suppressFocusRing, bg: menuHoverBg }}
+                              title={t.filename}
+                              asChild
+                            >
+                              <button type="button" onClick={() => handleTransferTemplate(t.command)}>
+                                <Text
+                                  as="span"
+                                  lineClamp={1}
+                                  fontSize="sm"
+                                  textAlign="left"
+                                  color={labelColor}
+                                  overflow="hidden"
+                                  textOverflow="ellipsis"
+                                  w="100%"
+                                >
+                                  {displayText}
+                                </Text>
+                              </button>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    )}
+                  </Box>
+                  <Separator borderColor={menuListBorder} my={2} />
+                  <Box w="100%" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
                     <Input
-                      ref={manualInputRef}
+                      size="sm"
                       w="100%"
-                      py={2.5}
-                      px={4}
-                      h="auto"
+                      h="40px"
                       minH="40px"
+                      py={2}
+                      px={3}
                       fontSize="sm"
-                      borderRadius="md"
+                      borderRadius={0}
                       bg={inputBg}
                       border="1px solid"
                       borderColor={menuListBorder}
@@ -1051,12 +1102,15 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
                         }
                       }}
                       _placeholder={{ color: menuPlaceholderColor }}
-                      _hover={{ borderColor: menuHoverBg }}
-                      _focus={{ borderColor: 'blue.400', boxShadow: '0 0 0 1px var(--chakra-colors-blue-400)' }}
+                      _hover={{ borderColor: menuListBorder }}
+                      _focus={suppressFocusRing}
+                      _focusVisible={suppressFocusRing}
                     />
                   </Box>
-                </Menu.Content></Menu.Positioner></Portal>
-          </Menu.Root>
+                </Popover.Content>
+              </Popover.Positioner>
+            </Portal>
+          </Popover.Root>
         </Box>
       </Flex>
       <Flex h="1px" w="100%" flexShrink={0} gap={0} align="stretch" aria-hidden>
