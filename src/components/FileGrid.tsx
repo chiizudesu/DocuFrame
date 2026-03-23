@@ -553,26 +553,17 @@ export const FileGrid: React.FC = () => {
   // Group files by index prefix when grouping is enabled
   const groupedFiles = useMemo(() => {
     if (!isGroupedByIndex) {
-      console.log(
-        `[GroupView FileGrid] flat_table reason=flag_off dir="${currentDirectory || ''}" itemCount=${sortedFiles.length}`,
-      );
       return null;
     }
     if (sortedFiles.length === 0) {
-      console.log(
-        `[GroupView FileGrid] flat_table reason=empty_list dir="${currentDirectory || ''}" (loading or no files)`,
-      );
       return null;
     }
 
     const grouped = groupFilesByIndex(sortedFiles);
     const groupKeys = Object.keys(grouped);
     const ok = groupKeys.length > 0;
-    console.log(
-      `[GroupView FileGrid] ${ok ? 'group_table' : 'flat_table'} dir="${currentDirectory || ''}" itemCount=${sortedFiles.length} groupKeys=${groupKeys.join(',')} folderRowCount=${grouped.folders?.length ?? 0}`,
-    );
     return ok ? grouped : null;
-  }, [sortedFiles, isGroupedByIndex, currentDirectory]);
+  }, [sortedFiles, isGroupedByIndex]);
 
   // Pre-compute file name to path map for O(1) drag lookups (moved early to avoid initialization errors)
   const fileNameToPathMap = useMemo(() => {
@@ -4518,13 +4509,30 @@ export const FileGrid: React.FC = () => {
   }, [isSelecting, sortedFiles]);
 
   
-  const handleGridClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-      return;
-    }
-    (document.activeElement as HTMLElement)?.blur?.();
+  const shouldSkipGridFocusClear = useCallback((target: EventTarget | null) => {
+    if (!target || !(target instanceof HTMLElement)) return true;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return false;
   }, []);
+
+  const handleGridClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (shouldSkipGridFocusClear(e.target)) return;
+      (document.activeElement as HTMLElement)?.blur?.();
+    },
+    [shouldSkipGridFocusClear],
+  );
+
+  /** Capture so dead zones (e.g. past the table, below short lists) still dismiss focus-driven UI before inner stopPropagation. */
+  const handleGridPointerDownCapture = useCallback(
+    (e: React.PointerEvent) => {
+      if (shouldSkipGridFocusClear(e.target)) return;
+      (document.activeElement as HTMLElement)?.blur?.();
+    },
+    [shouldSkipGridFocusClear],
+  );
 
   return (
     <Box 
@@ -4533,6 +4541,7 @@ export const FileGrid: React.FC = () => {
       height="100%" 
       position="relative"
       onClick={handleGridClick}
+      onPointerDownCapture={handleGridPointerDownCapture}
     >
       <FileListView
         dropAreaRef={dropAreaRef}

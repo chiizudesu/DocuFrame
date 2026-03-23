@@ -103,17 +103,6 @@ interface ElectronAPI {
   convertFilePathToHttpUrl: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
   // Image clipboard methods
   saveImageFromClipboard: (currentDirectory: string, filename: string, base64Data: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
-  // Task Timer methods
-  saveTaskLog: (dateString: string, task: any) => Promise<{ success: boolean; error?: string }>;
-  getTaskLogs: (dateString: string) => Promise<{ success: boolean; tasks: any[]; error?: string }>;
-  deleteTaskLog: (dateString: string, taskId: string) => Promise<{ success: boolean; error?: string }>;
-  getActiveWindowTitle: () => Promise<{ success: boolean; title: string }>;
-  openFloatingTimer: () => Promise<{ success: boolean }>;
-  sendToMainWindow: (channel: string, ...args: any[]) => void;
-  updateFloatingTimerPosition: (x: number, y: number) => Promise<{ success: boolean; snappedCorner: string | null; x: number; y: number }>;
-  getScreenInfo: () => Promise<{ success: boolean; workArea?: { width: number; height: number } }>;
-  resizeFloatingTimer: (width: number, height: number) => Promise<void>;
-  checkPanelProximity: () => Promise<{ isNearPanel: boolean }>;
   // Path paste methods
   getCurrentDirectory: () => Promise<string>;
   onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
@@ -129,9 +118,6 @@ interface ElectronAPI {
   onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
-  // Pomodoro sound folder
-  listSoundFiles: (folderPath: string) => Promise<{ success: boolean; files: string[]; error?: string }>;
-  getFileUrlForAudio: (filePath: string) => Promise<{ success: boolean; url?: string; error?: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -370,41 +356,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveImageFromClipboard: async (currentDirectory: string, filename: string, base64Data: string) => {
     return await ipcRenderer.invoke('save-image-from-clipboard', currentDirectory, filename, base64Data);
   },
-  
-  // Task Timer methods
-  saveTaskLog: async (dateString: string, task: any) => {
-    return await ipcRenderer.invoke('save-task-log', dateString, task);
-  },
-  getTaskLogs: async (dateString: string) => {
-    return await ipcRenderer.invoke('get-task-logs', dateString);
-  },
-  deleteTaskLog: async (dateString: string, taskId: string) => {
-    return await ipcRenderer.invoke('delete-task-log', dateString, taskId);
-  },
-  getActiveWindowTitle: async () => {
-    return await ipcRenderer.invoke('get-active-window-title');
-  },
-  analyzeWindowActivity: async (windowActivityData: string) => {
-    return await ipcRenderer.invoke('analyze-window-activity', windowActivityData);
-  },
-  openFloatingTimer: async () => {
-    return await ipcRenderer.invoke('open-floating-timer');
-  },
-  sendToMainWindow: (channel: string, ...args: any[]) => {
-    ipcRenderer.send('send-to-main-window', channel, ...args);
-  },
-  updateFloatingTimerPosition: async (x: number, y: number) => {
-    return await ipcRenderer.invoke('update-floating-timer-position', x, y);
-  },
-  getScreenInfo: async () => {
-    return await ipcRenderer.invoke('get-screen-info');
-  },
-  resizeFloatingTimer: async (width: number, height: number) => {
-    return await ipcRenderer.invoke('resize-floating-timer', width, height);
-  },
-  checkPanelProximity: async () => {
-    return await ipcRenderer.invoke('check-panel-proximity');
-  },
   // Background image management methods
   getUserDataPath: async () => {
     return await ipcRenderer.invoke('get-user-data-path');
@@ -436,13 +387,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: async (targetFilePath: string) => {
     return await ipcRenderer.invoke('replace-with-latest-file', targetFilePath);
-  },
-  // Pomodoro sound folder
-  listSoundFiles: async (folderPath: string) => {
-    return await ipcRenderer.invoke('list-sound-files', folderPath);
-  },
-  getFileUrlForAudio: async (filePath: string) => {
-    return await ipcRenderer.invoke('get-file-url-for-audio', filePath);
   },
   selectPasteValue: async (value: string) => {
     return await ipcRenderer.invoke('select-paste-value', value);

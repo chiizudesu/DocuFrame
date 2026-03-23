@@ -133,10 +133,3 @@
     opacity: 0.5;
   }
 }
-
-/* Floating timer window */
-body.floating-timer,
-body.floating-timer #root {
-  height: 100%;
-  min-height: 100%;
-}

@@ -12,7 +12,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Clock, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { OrgCodesDialog } from './OrgCodesDialog';
@@ -29,7 +29,6 @@ import { Calculator as CalculatorDialog } from './Calculator';
 import { ClientSearchOverlay } from './ClientSearchOverlay';
 import { type DialogType, type MinimizedDialog } from './MinimizedDialogsBar';
 import { getAppVersion } from '../utils/version';
-import { taskTimerService, TimerState } from '../services/taskTimer';
 import { extractIndexPrefix, getAllIndexKeys } from '../utils/indexPrefix';
 import { joinPath } from '../utils/path';
 import {
@@ -584,7 +583,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     folderItems,
     selectedFiles,
     setSelectedFiles,
-    setLogFileOperation,
+    logFileOperation,
     setIsSettingsOpen,
     isPreviewPaneOpen,
     setIsPreviewPaneOpen,
@@ -623,47 +622,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   const [transferSelectedIndex, setTransferSelectedIndex] = useState<string | null>(null);
   const [transferCustomIndex, setTransferCustomIndex] = useState('');
   const [transferManualFilename, setTransferManualFilename] = useState('');
-  
-  // Task Timer state (kept for logFileOperation functionality)
-  const [timerState, setTimerState] = useState<TimerState>({ currentTask: null, isRunning: false, isPaused: false });
-  
+
   // Use client search shortcut hook
   useClientSearchShortcut(setClientSearchOpen);
-  
-  // Load timer state from localStorage on mount (for logFileOperation functionality)
-  useEffect(() => {
-    const savedState = taskTimerService.getTimerState();
-    setTimerState(savedState);
-  }, []);
-  
-  // Function to log file operations (exported via context)
-  const logFileOperation = React.useCallback((operation: string, details?: string) => {
-    if (timerState.isRunning && timerState.currentTask && !timerState.isPaused) {
-      const updatedTask = taskTimerService.logFileOperation(timerState.currentTask, operation, details);
-      setTimerState({
-        ...timerState,
-        currentTask: updatedTask
-      });
-    }
-  }, [timerState]);
-  
-  // Register logFileOperation with context so other components can use it
-  React.useEffect(() => {
-    setLogFileOperation(() => logFileOperation);
-  }, [logFileOperation, setLogFileOperation]);
-
-  // Handle opening floating timer window
-  const handleOpenFloatingTimer = async () => {
-    try {
-      await (window.electronAPI as any).openFloatingTimer();
-      addLog('Opened floating timer window', 'info');
-      setStatus('Floating timer opened', 'success');
-    } catch (error) {
-      console.error('[TaskTimer] Error opening floating timer:', error);
-      addLog(`Error opening floating timer: ${error}`, 'error');
-      setStatus('Failed to open floating timer', 'error');
-    }
-  };
 
   const [updateInfo, setUpdateInfo] = useState<{
     currentVersion: string;
@@ -819,11 +780,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       console.log('[ClientSearch] Button clicked - opening client search');
       setClientSearchOpen(true);
       setStatus('Opened Client Search', 'info');
-      return;
-    }
-
-    if (action === 'task_timer') {
-      await handleOpenFloatingTimer();
       return;
     }
 
@@ -1426,12 +1382,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             action="manage_templates" 
             description="Create, edit, and manage template YAMLs" 
             color="indigo.400" 
-          />
-          <FunctionButton 
-            icon={Clock} 
-            action="task_timer" 
-            description="Open floating task timer window" 
-            color="green.400" 
           />
           <FunctionButton 
             icon={RotateCcw} 

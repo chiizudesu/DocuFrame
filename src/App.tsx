@@ -5,7 +5,6 @@ import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
-import { FloatingTaskTimerWindow } from './components/FloatingTaskTimerWindow';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
 
@@ -31,7 +30,6 @@ const AppContent: React.FC = () => {
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   const isSettingsWindow = window.location.hash === '#settings';
-  const isFloatingTimerWindow = window.location.hash === '#floating-timer';
 
   useEffect(() => {
     const handleThemeChange = (_event: unknown, newTheme: 'light' | 'dark') => {
@@ -260,14 +258,6 @@ const AppContent: React.FC = () => {
     );
   }
   
-  if (isFloatingTimerWindow) {
-    return (
-      <Box w="100%" h="100vh" minH="100vh" overflow="hidden">
-        <FloatingTaskTimerWindow onClose={() => window.close()} />
-      </Box>
-    );
-  }
-
   return (
     <Box
       w="100%"

@@ -8,6 +8,23 @@
     <link rel="icon" type="image/x-icon" href="/32.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DocuFrame</title>
+    <script>
+      (function () {
+        if (typeof console === 'undefined') return;
+        var msg = 'Download the React DevTools';
+        function wrap(name) {
+          var orig = console[name];
+          if (typeof orig !== 'function') return;
+          console[name] = function () {
+            var a = arguments[0];
+            if (typeof a === 'string' && a.indexOf(msg) !== -1) return;
+            return orig.apply(console, arguments);
+          };
+        }
+        wrap('log');
+        wrap('info');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -202,11 +202,8 @@ export const AppProvider: React.FC<{
   /** No-op: FileGrid still calls this after loads; group view uses currentDirectory only */
   const setDisplayedDirectory = useCallback((_path: string) => {}, []);
   
-  // Task Timer file operation logging
-  const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {
-    // Default no-op function
-    console.log('[AppContext] logFileOperation called but not initialized yet');
-  });
+  // File operation logging hook (no-op unless a feature wires richer behavior)
+  const [logFileOperation, setLogFileOperation] = useState<(operation: string, details?: string) => void>(() => () => {});
 
   // Settings loading function
   const loadSettings = useCallback(async () => {

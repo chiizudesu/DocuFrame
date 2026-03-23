@@ -1151,14 +1151,15 @@ const GroupHeaderDropZone = React.memo(GroupHeaderDropZoneInner);
 // FileListView Component (replaces renderListView function)
 export interface FileListViewProps {
   // Refs
-  dropAreaRef: React.RefObject<HTMLDivElement>;
-  gridContainerRef: React.Ref<HTMLTableElement>;
-  renameInputRef: React.RefObject<HTMLInputElement>;
+  dropAreaRef: React.RefObject<HTMLDivElement | null>;
+  gridContainerRef: React.Ref<HTMLTableElement | null>;
+  renameInputRef: React.RefObject<HTMLInputElement | null>;
+  /** Rubber-band rectangle: positioned imperatively during drag so React state does not re-render the grid each frame */
+  marqueeOverlayRef: React.RefObject<HTMLDivElement | null>;
   
   // State
   isDragOver: boolean;
   isSelecting: boolean;
-  selectionRect: { startX: number; startY: number; currentX: number; currentY: number } | null;
   isGroupedByIndex: boolean;
   groupedFiles: Record<string, FileItem[]> | null;
   sortedFiles: FileItem[];
@@ -1286,7 +1287,6 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.newFileHighlightBg !== next.newFileHighlightBg) return false;
   if (prev.memoizedArraySignature !== next.memoizedArraySignature) return false;
   if (prev.isDragOver !== next.isDragOver || prev.isSelecting !== next.isSelecting) return false;
-  if (prev.selectionRect !== next.selectionRect) return false;
   if (prev.isRenaming !== next.isRenaming || prev.renameValue !== next.renameValue) return false;
   if (prev.isInlineCreatingFolder !== next.isInlineCreatingFolder) return false;
   if (prev.newFolderDraftName !== next.newFolderDraftName) return false;
@@ -1304,6 +1304,9 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.backgroundType !== next.backgroundType) return false;
   if (prev.backgroundFillUrl !== next.backgroundFillUrl) return false;
   if (prev.fileGridBackgroundUrl !== next.fileGridBackgroundUrl) return false;
+  if (prev.groupedTransferTemplates !== next.groupedTransferTemplates) return false;
+  if (prev.handleGroupHeaderDrop !== next.handleGroupHeaderDrop) return false;
+  if (prev.onTransferFromGroupHeader !== next.onTransferFromGroupHeader) return false;
   return true;
 }
 
@@ -1311,9 +1314,9 @@ const FileListViewBody = React.memo(function FileListViewBody({
   dropAreaRef,
   gridContainerRef,
   renameInputRef,
+  marqueeOverlayRef,
   isDragOver,
   isSelecting,
-  selectionRect,
   isGroupedByIndex,
   groupedFiles,
   sortedFiles = [],
@@ -1811,24 +1814,19 @@ const FileListViewBody = React.memo(function FileListViewBody({
         </Box>
       )}
       
-      {/* Drag selection rectangle overlay */}
-      {isSelecting && selectionRect && (
-        <Box
-          position="absolute"
-          border="1.5px solid"
-          borderColor="rgba(96, 165, 250, 0.9)"
-          bg="rgba(59, 130, 246, 0.15)"
-          pointerEvents="none"
-          zIndex={999}
-          transition="all 0.05s ease-out"
-          style={{
-            left: Math.min(selectionRect.startX, selectionRect.currentX),
-            top: Math.min(selectionRect.startY, selectionRect.currentY),
-            width: Math.abs(selectionRect.currentX - selectionRect.startX),
-            height: Math.abs(selectionRect.currentY - selectionRect.startY),
-          }}
-        />
-      )}
+      {/* Drag selection rectangle — geometry updated from FileGrid via marqueeOverlayRef (no per-frame React state) */}
+      <Box
+        ref={marqueeOverlayRef}
+        position="absolute"
+        border="1.5px solid"
+        borderColor="rgba(96, 165, 250, 0.9)"
+        bg="rgba(59, 130, 246, 0.15)"
+        pointerEvents="none"
+        zIndex={999}
+        visibility={isSelecting ? 'visible' : 'hidden'}
+        style={{ left: 0, top: 0, width: 0, height: 0 }}
+        aria-hidden
+      />
       
       {isGroupedByIndex && groupedFiles && Object.keys(groupedFiles).length > 0 ? (
         <>
