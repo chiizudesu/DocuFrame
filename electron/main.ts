@@ -1586,7 +1586,35 @@ ipcMain.handle('open-file-in-notepad', async (_, filePath: string) => {
     }
   } catch (error) {
     console.error('Failed to open file in Notepad:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Windows: shell "Create Shortcut" wizard (same as Explorer New → Shortcut)
+ipcMain.handle('open-windows-create-shortcut-wizard', async (_, workingDirectory: string) => {
+  try {
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'Create Shortcut wizard is only available on Windows.' };
+    }
+    const dir = path.resolve(workingDirectory);
+    let st;
+    try {
+      st = await fsPromises.stat(dir);
+    } catch {
+      return { success: false, error: 'Folder not found.' };
+    }
+    if (!st.isDirectory()) {
+      return { success: false, error: 'Path is not a folder.' };
+    }
+    spawn('rundll32.exe', ['appwiz.cpl,NewLinkHere', dir], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    return { success: true };
+  } catch (error) {
+    console.error('Failed to open Create Shortcut wizard:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });
 

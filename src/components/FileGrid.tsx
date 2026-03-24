@@ -1224,6 +1224,27 @@ export const FileGrid: React.FC = () => {
             }
           }
           break
+        case 'open_with_notepad':
+          if (contextMenu.fileItem.type === 'file') {
+            setStatus(`Opening ${contextMenu.fileItem.name} in Notepad`, 'info')
+            addLog(`Opening in Notepad: ${contextMenu.fileItem.name}`)
+            try {
+              const result = await window.electronAPI.openFileInNotepad(contextMenu.fileItem.path)
+              if (result?.success) {
+                addLog(`Successfully opened ${contextMenu.fileItem.name} in Notepad`, 'response')
+                setStatus('File opened in Notepad', 'success')
+              } else {
+                const msg = result?.error || 'Unknown error'
+                addLog(`Failed to open file in Notepad: ${msg}`, 'error')
+                setStatus('Failed to open file in Notepad', 'error')
+              }
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+              addLog(`Failed to open file in Notepad: ${errorMessage}`, 'error')
+              setStatus('Failed to open file in Notepad', 'error')
+            }
+          }
+          break
         case 'edit_in_notepad':
           if (contextMenu.fileItem.name.toLowerCase().endsWith('.ahk')) {
             setStatus(`Opening ${contextMenu.fileItem.name} in Notepad`, 'info')
@@ -4715,6 +4736,23 @@ export const FileGrid: React.FC = () => {
             const msg = error instanceof Error ? error.message : 'Unknown error';
             addLog(`Failed to create Word document: ${msg}`, 'error');
             setStatus('Failed to create Word document', 'error');
+          }
+        }}
+        onCreateShortcut={async () => {
+          try {
+            const result = await window.electronAPI.openWindowsCreateShortcutWizard(currentDirectory);
+            if (result.success) {
+              addLog('Opened Windows Create Shortcut wizard', 'info');
+              setStatus('Create Shortcut wizard opened', 'info');
+            } else {
+              const msg = result.error || 'Could not open Create Shortcut wizard';
+              addLog(msg, 'error');
+              setStatus(msg, 'error');
+            }
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            addLog(`Create Shortcut wizard failed: ${msg}`, 'error');
+            setStatus('Create Shortcut wizard failed', 'error');
           }
         }}
         onCreateFromTemplate={async (templatePath: string, templateName: string) => {

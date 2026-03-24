@@ -88,6 +88,8 @@ declare global {
       writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;
       deleteFile: (filePath: string) => Promise<{ success: boolean }>;
       getFileIcon: (filePath: string) => Promise<string | null>;
+      openFileInNotepad: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+      openWindowsCreateShortcutWizard: (workingDirectory: string) => Promise<{ success: boolean; error?: string }>;
       showProperties: (filePath: string) => Promise<{ success: boolean }>;
       getFileStats: (filePath: string) => Promise<{ size: number; mtime: Date; ctime: Date; atime: Date; isFile: boolean; isDirectory: boolean }>;
       isFileBlocked: (filePath: string) => Promise<boolean>;

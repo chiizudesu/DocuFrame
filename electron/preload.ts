@@ -59,6 +59,8 @@ interface ElectronAPI {
   deleteFile: (filePath: string) => Promise<{ success: boolean }>;
   getFileIcon: (filePath: string) => Promise<string | null>;
   openFileInNotepad: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  /** Windows: opens the Create Shortcut wizard for the given folder (Explorer New → Shortcut). */
+  openWindowsCreateShortcutWizard: (workingDirectory: string) => Promise<{ success: boolean; error?: string }>;
   showProperties: (filePath: string) => Promise<{ success: boolean }>;
   // File properties methods
   getFileStats: (filePath: string) => Promise<{ size: number; mtime: Date; ctime: Date; atime: Date; isFile: boolean; isDirectory: boolean }>;
@@ -245,6 +247,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   openFileInNotepad: async (filePath: string) => {
     return await ipcRenderer.invoke('open-file-in-notepad', filePath);
+  },
+  openWindowsCreateShortcutWizard: async (workingDirectory: string) => {
+    return await ipcRenderer.invoke('open-windows-create-shortcut-wizard', workingDirectory);
   },
   showProperties: async (filePath: string) => {
     return await ipcRenderer.invoke('show-properties', filePath);

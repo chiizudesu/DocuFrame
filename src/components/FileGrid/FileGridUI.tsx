@@ -40,6 +40,7 @@ import {
   Folder,
   FolderPlus,
   FileEdit,
+  Link2,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
@@ -380,6 +381,7 @@ export interface BlankContextMenuProps {
   onCreateTextFile: () => void;
   onCreateSpreadsheet: () => void;
   onCreateWordDoc: () => void;
+  onCreateShortcut: () => void;
   onCreateFromTemplate: (templatePath: string, templateName: string) => void;
 }
 
@@ -394,6 +396,7 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   onCreateTextFile,
   onCreateSpreadsheet,
   onCreateWordDoc,
+  onCreateShortcut,
   onCreateFromTemplate,
 }) => {
   const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
@@ -519,6 +522,10 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
             <Flex {...rowProps} onClick={() => { onCreateWordDoc(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
               <FileEdit size={iconSz} style={iconStyle} />
               <Text fontSize="xs">Word Document</Text>
+            </Flex>
+            <Flex {...rowProps} onClick={() => { onCreateShortcut(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
+              <Link2 size={iconSz} style={iconStyle} />
+              <Text fontSize="xs">New Shortcut</Text>
             </Flex>
             {templates.length > 0 && (
               <>
