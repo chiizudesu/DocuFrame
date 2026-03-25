@@ -24,6 +24,10 @@ export interface Config {
   hideTemporaryFiles?: boolean;
   aiEditorInstructions?: string;
   quickAccessPaths?: string[];
+  /** Localhost HTTP bridge for Chrome extension PDF capture (127.0.0.1 only). */
+  chromeExtensionBridgeEnabled?: boolean;
+  chromeExtensionBridgePort?: number;
+  chromeExtensionBridgeSecret?: string;
 
 }
 

@@ -54,6 +54,10 @@ export interface AppSettings {
   fileGridSortPreferences?: Record<string, { sortColumn: string; sortDirection: string }>; // Per-directory sort (path -> { sortColumn, sortDirection })
   fileGridColumnWidths?: { name: number; size: number; modified: number; type: number }; // Global column widths (consistent across directories)
   fileGridGroupByIndexPreferences?: Record<string, boolean>; // Deprecated - no longer used
+  /** Localhost HTTP bridge for Chrome extension PDF capture. */
+  chromeExtensionBridgeEnabled?: boolean;
+  chromeExtensionBridgePort?: number;
+  chromeExtensionBridgeSecret?: string;
 
 }
 

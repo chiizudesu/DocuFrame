@@ -42,6 +42,7 @@ import {
   Plus,
   Trash2,
   Download,
+  Plug,
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import {
@@ -218,7 +219,16 @@ interface Settings {
   enableBackgrounds?: boolean;
   groupViewAlwaysEnabled?: boolean;
   groupViewBlacklist?: string[];
+  chromeExtensionBridgeEnabled?: boolean;
+  chromeExtensionBridgePort?: number;
+  chromeExtensionBridgeSecret?: string;
 
+}
+
+function generateChromeBridgeSecret(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
@@ -263,6 +273,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
   const [groupViewBlacklistInput, setGroupViewBlacklistInput] = useState('');
+  const [chromeExtensionBridgeEnabled, setChromeExtensionBridgeEnabled] = useState(false);
+  const [chromeExtensionBridgePort, setChromeExtensionBridgePort] = useState('48721');
+  const [chromeExtensionBridgeSecret, setChromeExtensionBridgeSecret] = useState('');
 
   // Keyboard recorder state
   const [isKeyRecorderOpen, setIsKeyRecorderOpen] = useState(false);
@@ -343,6 +356,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setEnableBackgrounds(loadedSettings.enableBackgrounds !== false);
         setGroupViewAlwaysEnabled(loadedSettings.groupViewAlwaysEnabled !== false);
         setGroupViewBlacklist(Array.isArray(loadedSettings.groupViewBlacklist) ? loadedSettings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
+        setChromeExtensionBridgeEnabled(loadedSettings.chromeExtensionBridgeEnabled === true);
+        setChromeExtensionBridgePort(
+          String(loadedSettings.chromeExtensionBridgePort ?? 48721),
+        );
+        setChromeExtensionBridgeSecret(loadedSettings.chromeExtensionBridgeSecret || '');
 
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -403,6 +421,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
   const handleSave = async () => {
     try {
+      let bridgeSecret = chromeExtensionBridgeSecret.trim();
+      if (chromeExtensionBridgeEnabled && !bridgeSecret) {
+        bridgeSecret = generateChromeBridgeSecret();
+        setChromeExtensionBridgeSecret(bridgeSecret);
+      }
+      const bridgePortParsed = parseInt(chromeExtensionBridgePort, 10);
+      const bridgePortNum =
+        Number.isFinite(bridgePortParsed) && bridgePortParsed > 0 && bridgePortParsed < 65536
+          ? bridgePortParsed
+          : 48721;
+
       const newSettings: Settings = {
         rootPath,
         claudeApiKey: claudeApiKey || undefined,
@@ -436,6 +465,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         enableBackgrounds,
         groupViewAlwaysEnabled,
         groupViewBlacklist,
+        chromeExtensionBridgeEnabled,
+        chromeExtensionBridgePort: bridgePortNum,
+        chromeExtensionBridgeSecret: bridgeSecret || undefined,
 
       };
       
@@ -1153,6 +1185,25 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
               transition="all 0.2s"
             >
               <Text>Group View</Text>
+            </Tabs.Trigger>
+            <Tabs.Trigger value="bridge"
+              justifyContent="flex-start" 
+              px={2} 
+              py={1.5}
+              borderRadius={0}
+              fontSize="sm"
+              fontWeight="500"
+              color={tabInactiveColor}
+              _selected={{ 
+                bg: tabSelectedBg, 
+                color: tabSelectedColor, 
+                borderLeft: '3px solid',
+                borderLeftColor: 'blue.500',
+              }}
+              _hover={{ bg: tabHoverBg }}
+              transition="all 0.2s"
+            >
+              <Text>Chrome bridge</Text>
             </Tabs.Trigger>
           </Tabs.List>
           </Box>
@@ -2289,6 +2340,150 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           </VStack>
                         )}
                       </Field.Root>
+                    </Box>
+                  </SettingsGroup>
+                </VStack>
+              </SettingsScrollPanel>
+            </Tabs.Content>
+
+            {/* Chrome extension bridge */}
+            <Tabs.Content value="bridge" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
+              <SettingsScrollPanel>
+                <VStack align="stretch" gap={8}>
+                  <SettingsSection
+                    title="Chrome extension bridge"
+                    description="Lets the Chrome Functions extension save page PDFs into the folder you have open in DocuFrame. Listens only on 127.0.0.1 while enabled."
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  />
+                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
+                    <SettingsToggleRow
+                      title="Enable bridge"
+                      description="Opens a local HTTP port for the extension. Turn off when not in use."
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      showDivider
+                      control={
+                        <Switch.Root
+                          checked={chromeExtensionBridgeEnabled}
+                          onCheckedChange={(d) => {
+                            const on = d.checked === true;
+                            setChromeExtensionBridgeEnabled(on);
+                            if (on && !chromeExtensionBridgeSecret.trim()) {
+                              setChromeExtensionBridgeSecret(generateChromeBridgeSecret());
+                            }
+                          }}
+                          colorPalette="blue"
+                          size="sm"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <Box px={2.5} py={2} borderTopWidth="1px" borderColor={borderColor}>
+                      <Field.Root>
+                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                          Port
+                        </Field.Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={65535}
+                          value={chromeExtensionBridgePort}
+                          onChange={(e) => setChromeExtensionBridgePort(e.target.value)}
+                          bg={inputBg}
+                          borderColor={borderColor}
+                          borderRadius="md"
+                          size="sm"
+                          fontSize="sm"
+                          disabled={!chromeExtensionBridgeEnabled}
+                        />
+                      </Field.Root>
+                    </Box>
+                    <Box px={2.5} py={2} borderTopWidth="1px" borderColor={borderColor}>
+                      <Field.Root>
+                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
+                          Shared secret
+                        </Field.Label>
+                        <Text fontSize="xs" color={secondaryTextColor} mb={2} lineHeight="short">
+                          Paste this port and secret into the Chrome Functions sidebar. Regenerating invalidates the old secret.
+                        </Text>
+                        <HStack gap={2} align="stretch" flexWrap="wrap">
+                          <Input
+                            readOnly
+                            value={chromeExtensionBridgeSecret}
+                            placeholder={chromeExtensionBridgeEnabled ? 'Save to generate' : 'Enable bridge first'}
+                            bg={inputBg}
+                            borderColor={borderColor}
+                            borderRadius="md"
+                            size="sm"
+                            fontSize="xs"
+                            fontFamily="mono"
+                            flex={1}
+                            minW={0}
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            borderRadius="md"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(chromeExtensionBridgeSecret);
+                                showToast({
+                                  title: 'Copied',
+                                  description: 'Secret copied to clipboard',
+                                  status: 'success',
+                                  duration: 2000,
+                                  isClosable: true,
+                                });
+                              } catch {
+                                showToast({
+                                  title: 'Copy failed',
+                                  status: 'error',
+                                  duration: 2000,
+                                  isClosable: true,
+                                });
+                              }
+                            }}
+                            disabled={!chromeExtensionBridgeSecret.trim()}
+                          >
+                            Copy
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            borderRadius="md"
+                            onClick={() => {
+                              setChromeExtensionBridgeSecret(generateChromeBridgeSecret());
+                              showToast({
+                                title: 'Secret regenerated',
+                                description: 'Update the Chrome extension with the new secret.',
+                                status: 'info',
+                                duration: 4000,
+                                isClosable: true,
+                              });
+                            }}
+                            disabled={!chromeExtensionBridgeEnabled}
+                          >
+                            Regenerate
+                          </Button>
+                        </HStack>
+                      </Field.Root>
+                    </Box>
+                    <Box px={2.5} py={2} borderTopWidth="1px" borderColor={borderColor}>
+                      <HStack gap={2} align="center" color={secondaryTextColor}>
+                        <Icon boxSize={4} asChild>
+                          <Plug />
+                        </Icon>
+                        <Text fontSize="xs" lineHeight="short">
+                          DocuFrame must be running with a folder open. PDFs save to that folder.
+                        </Text>
+                      </HStack>
                     </Box>
                   </SettingsGroup>
                 </VStack>

@@ -7,6 +7,7 @@ import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
+import { showToast } from './components/ui/toaster';
 
 const AppContent: React.FC = () => {
   const { colorMode, setColorMode } = useColorMode();
@@ -119,6 +120,35 @@ const AppContent: React.FC = () => {
       window.electronAPI?.removeAllListeners?.('update-progress');
     };
   }, [addLog, setStatus]);
+
+  useEffect(() => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      data: { ok: true; filename: string } | { ok: false; error: string }
+    ) => {
+      if (data.ok) {
+        showToast({
+          title: 'Saved from Chrome extension',
+          description: data.filename,
+          status: 'success',
+          duration: 5000,
+          isClosable: true,
+        });
+      } else {
+        showToast({
+          title: 'Chrome extension save failed',
+          description: data.error,
+          status: 'error',
+          duration: 8000,
+          isClosable: true,
+        });
+      }
+    };
+    window.electronAPI?.onChromeBridgePdfResult?.(handler);
+    return () => {
+      window.electronAPI?.removeAllListeners?.('chromeBridgePdfResult');
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

@@ -69,6 +69,9 @@ interface ElectronAPI {
   
   // Event listeners
   onFolderContentsChanged: (callback: (event: any, data: { directory: string }) => void) => void;
+  onChromeBridgePdfResult: (
+    callback: (event: any, data: { ok: true; filename: string } | { ok: false; error: string }) => void
+  ) => void;
   removeAllListeners: (channel: string) => void;
   startDrag: (filePath: string) => void;
   

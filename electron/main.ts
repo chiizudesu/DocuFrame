@@ -152,6 +152,310 @@ const cleanupExpressServer = () => {
   }
 };
 
+// --- Chrome extension bridge (localhost PDF ingest) ---
+const DEFAULT_CHROME_BRIDGE_PORT = 48721;
+let chromeBridgeApp: express.Application | null = null;
+let chromeBridgeServer: import('http').Server | null = null;
+
+function getBearerTokenFromRequest(req: express.Request): string | null {
+  const h = req.headers.authorization;
+  if (!h || typeof h !== 'string') return null;
+  const m = /^Bearer\s+(.+)$/i.exec(h.trim());
+  return m ? m[1].trim() : null;
+}
+
+function sanitizeChromeBridgePdfFilename(raw: string): string {
+  let s = (raw || 'page')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) s = 'page';
+  const withoutExt = s.replace(/\.pdf$/i, '');
+  let base = withoutExt.length > 100 ? withoutExt.slice(0, 100).trim() : withoutExt;
+  if (!base) base = 'page';
+  return `${base}.pdf`;
+}
+
+function isResolvedPathInsideDirectory(filePath: string, dir: string): boolean {
+  const resolvedFile = path.resolve(filePath);
+  const resolvedDir = path.resolve(dir);
+  if (process.platform === 'win32') {
+    const f = resolvedFile.toLowerCase();
+    const d = resolvedDir.toLowerCase();
+    return f === d || f.startsWith(d + path.sep);
+  }
+  return resolvedFile === resolvedDir || resolvedFile.startsWith(resolvedDir + path.sep);
+}
+
+function stopChromeExtensionBridgeServer(): void {
+  if (chromeBridgeServer) {
+    try {
+      chromeBridgeServer.close();
+      console.log('[Main] Chrome extension bridge server stopped');
+    } catch (error) {
+      console.error('[Main] Error stopping Chrome extension bridge:', error);
+    }
+    chromeBridgeServer = null;
+    chromeBridgeApp = null;
+  }
+}
+
+/** Notify renderer(s) so DocuFrame can show in-app toasts (not only OS / extension notifications). */
+function broadcastChromeBridgePdfResult(payload: { ok: true; filename: string } | { ok: false; error: string }) {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('chromeBridgePdfResult', payload);
+    }
+  });
+}
+
+async function startChromeExtensionBridgeServer(cfg: Config): Promise<void> {
+  stopChromeExtensionBridgeServer();
+  if (!cfg.chromeExtensionBridgeEnabled) return;
+
+  let secret = cfg.chromeExtensionBridgeSecret;
+  if (!secret) {
+    secret = randomBytes(32).toString('hex');
+    await saveConfig({ chromeExtensionBridgeSecret: secret });
+    cfg = { ...cfg, chromeExtensionBridgeSecret: secret };
+  }
+
+  const port = cfg.chromeExtensionBridgePort ?? DEFAULT_CHROME_BRIDGE_PORT;
+  const effectiveSecret = secret;
+
+  const appBridge = express();
+  chromeBridgeApp = appBridge;
+
+  appBridge.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-DocuFrame-Filename');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
+  const requireAuth: express.RequestHandler = (req, res, next) => {
+    const token = getBearerTokenFromRequest(req);
+    if (token !== effectiveSecret) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+  };
+
+  appBridge.get('/health', requireAuth, async (_req, res) => {
+    try {
+      const cfg = await loadConfig();
+      const dir = currentDirectoryPath || null;
+      let currentDirectoryBase: string | null = null;
+      if (dir) {
+        try {
+          currentDirectoryBase = path.basename(dir);
+        } catch {
+          currentDirectoryBase = null;
+        }
+      }
+      res.json({
+        ok: true,
+        currentDirectory: dir,
+        currentDirectoryBase,
+        transferCommandMappings: cfg.transferCommandMappings || {},
+      });
+    } catch (e) {
+      console.error('[ChromeBridge] /health error:', e);
+      res.json({ ok: true, currentDirectory: null, currentDirectoryBase: null, transferCommandMappings: {} });
+    }
+  });
+
+  appBridge.post(
+    '/merge-pdfs',
+    requireAuth,
+    express.json({ limit: '120mb' }),
+    async (req, res) => {
+      try {
+        const dir = currentDirectoryPath;
+        if (!dir) {
+          const err = 'No current directory open in DocuFrame';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const parts = req.body?.partsBase64;
+        if (!Array.isArray(parts) || parts.length === 0) {
+          const err = 'partsBase64 must be a non-empty array';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const rawName = req.body?.filename || 'merged.pdf';
+        let filename = sanitizeChromeBridgePdfFilename(rawName);
+        let fullPath = path.join(dir, filename);
+
+        try {
+          await fsPromises.access(fullPath);
+          const now = new Date();
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const t = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+          const baseNoExt = filename.replace(/\.pdf$/i, '');
+          filename = `${baseNoExt}_${t}.pdf`;
+          fullPath = path.join(dir, filename);
+        } catch {
+          /* use chosen name */
+        }
+
+        if (!isResolvedPathInsideDirectory(fullPath, dir)) {
+          const err = 'Invalid path';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const merged = await PDFDocument.create();
+        for (const b64 of parts) {
+          if (typeof b64 !== 'string' || !b64.length) continue;
+          let buf: Buffer;
+          try {
+            buf = Buffer.from(b64, 'base64');
+          } catch {
+            const err = 'Invalid base64 in partsBase64';
+            broadcastChromeBridgePdfResult({ ok: false, error: err });
+            return res.status(400).json({ error: err });
+          }
+          if (buf.length === 0) continue;
+          const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+          const copied = await merged.copyPages(src, src.getPageIndices());
+          for (const p of copied) {
+            merged.addPage(p);
+          }
+        }
+
+        const outBuf = Buffer.from(await merged.save());
+        if (outBuf.length === 0) {
+          const err = 'Merged PDF is empty';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        await fsPromises.writeFile(fullPath, outBuf);
+        const savedBasename = path.basename(fullPath);
+        broadcastChromeBridgePdfResult({ ok: true, filename: savedBasename });
+
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('folderContentsChanged', {
+              directory: dir,
+              event: 'add',
+              filePath: fullPath,
+              newFiles: [savedBasename],
+            });
+          }
+        });
+
+        return res.json({ success: true, path: fullPath });
+      } catch (error: any) {
+        console.error('[ChromeBridge] merge-pdfs error:', error);
+        const err = error?.message ?? 'Merge failed';
+        broadcastChromeBridgePdfResult({ ok: false, error: err });
+        return res.status(500).json({ error: err });
+      }
+    }
+  );
+
+  appBridge.post(
+    '/save-pdf',
+    requireAuth,
+    express.raw({ type: () => true, limit: '50mb' }),
+    async (req, res) => {
+      try {
+        const dir = currentDirectoryPath;
+        if (!dir) {
+          const err = 'No current directory open in DocuFrame';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const rawHeader = req.header('x-docuframe-filename') || 'page.pdf';
+        let filename = sanitizeChromeBridgePdfFilename(rawHeader);
+        let fullPath = path.join(dir, filename);
+
+        try {
+          await fsPromises.access(fullPath);
+          const now = new Date();
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const t = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+          const baseNoExt = filename.replace(/\.pdf$/i, '');
+          filename = `${baseNoExt}_${t}.pdf`;
+          fullPath = path.join(dir, filename);
+        } catch {
+          // file does not exist — use chosen name
+        }
+
+        if (!isResolvedPathInsideDirectory(fullPath, dir)) {
+          const err = 'Invalid path';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const body = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          const err = 'Empty or invalid PDF body';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        await fsPromises.writeFile(fullPath, body);
+
+        const savedBasename = path.basename(fullPath);
+        broadcastChromeBridgePdfResult({ ok: true, filename: savedBasename });
+
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('folderContentsChanged', {
+              directory: dir,
+              event: 'add',
+              filePath: fullPath,
+              newFiles: [savedBasename],
+            });
+          }
+        });
+
+        return res.json({ success: true, path: fullPath });
+      } catch (error: any) {
+        console.error('[ChromeBridge] save-pdf error:', error);
+        const err = error?.message ?? 'Write failed';
+        broadcastChromeBridgePdfResult({ ok: false, error: err });
+        return res.status(500).json({ error: err });
+      }
+    }
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    const srv = appBridge.listen(port, '127.0.0.1', () => {
+      chromeBridgeServer = srv;
+      console.log(`[Main] Chrome extension bridge listening on http://127.0.0.1:${port}`);
+      resolve();
+    });
+    srv.on('error', (err: NodeJS.ErrnoException) => {
+      console.error('[Main] Chrome extension bridge listen error:', err);
+      chromeBridgeServer = null;
+      chromeBridgeApp = null;
+      reject(err);
+    });
+  });
+}
+
+async function syncChromeExtensionBridgeWithConfig(): Promise<void> {
+  try {
+    const cfg = await loadConfig();
+    stopChromeExtensionBridgeServer();
+    if (cfg.chromeExtensionBridgeEnabled) {
+      await startChromeExtensionBridgeServer(cfg);
+    }
+  } catch (e) {
+    console.error('[Main] syncChromeExtensionBridgeWithConfig failed:', e);
+  }
+}
+
 // Convert file path to HTTP URL for PDF viewing
 const convertFilePathToHttpUrl = (filePath: string): string => {
   try {
@@ -734,6 +1038,8 @@ app.whenReady().then(async () => {
 
   // Initialize Express server for PDF file serving
   initializeExpressServer();
+
+  await syncChromeExtensionBridgeWithConfig();
   
   createWindow();
   
@@ -944,6 +1250,7 @@ app.on('quit', () => {
   stopAllWatchers();
   // Cleanup Express server
   cleanupExpressServer();
+  stopChromeExtensionBridgeServer();
 });
 
 app.on('activate', () => {
@@ -1065,6 +1372,7 @@ ipcMain.handle('set-config', async (_, config: Config) => {
     }
 
     await saveConfig(config);
+    await syncChromeExtensionBridgeWithConfig();
     return config;
   } catch (error) {
     console.error('Error occurred in handler for \'set-config\':', error);
