@@ -278,12 +278,6 @@ export const FileGrid: React.FC = () => {
   
   // Drag selection state
   const [isSelecting, setIsSelecting] = useState(false)
-  const [selectionRect, setSelectionRect] = useState<{
-    startX: number
-    startY: number
-    currentX: number
-    currentY: number
-  } | null>(null)
   const selectionModifiersRef = useRef<{ shiftKey: boolean; ctrlKey: boolean }>({ shiftKey: false, ctrlKey: false })
   const justFinishedSelectingRef = useRef(false)
   const containerPaddingLeftRef = useRef<number>(0)
@@ -298,7 +292,9 @@ export const FileGrid: React.FC = () => {
   const [dragCounter, setDragCounter] = useState(0)
   const dragLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const dropAreaRef = useRef<HTMLDivElement>(null)
-  
+  /** Rubber-band rectangle inside FileListView; geometry set imperatively (see syncMarqueeSelectionBox). */
+  const marqueeOverlayRef = useRef<HTMLDivElement | null>(null)
+
   // Cleanup drag leave timeout on unmount
   useEffect(() => {
     return () => {
@@ -4343,6 +4339,40 @@ export const FileGrid: React.FC = () => {
     return `${selectedFiles.join(',')}|${cutPaths}|${folderPaths}|${fileSearchFilter ?? ''}`;
   }, [selectedFiles, clipboard, folderHoverState, fileSearchFilter]);
 
+  const syncMarqueeSelectionBox = useCallback(
+    (selectionBox: { left: number; top: number; right: number; bottom: number }) => {
+      const overlay = marqueeOverlayRef.current;
+      const root = dropAreaRef.current;
+      const container = gridContainerRef.current || root;
+      if (!overlay || !root || !container) return;
+      let { left, top, right, bottom } = selectionBox;
+      if (container !== root) {
+        const dx = container.offsetLeft;
+        const dy = container.offsetTop;
+        left += dx;
+        right += dx;
+        top += dy;
+        bottom += dy;
+      }
+      const w = Math.max(0, right - left);
+      const h = Math.max(0, bottom - top);
+      overlay.style.left = `${left}px`;
+      overlay.style.top = `${top}px`;
+      overlay.style.width = `${w}px`;
+      overlay.style.height = `${h}px`;
+    },
+    [],
+  );
+
+  const resetMarqueeOverlay = useCallback(() => {
+    const el = marqueeOverlayRef.current;
+    if (!el) return;
+    el.style.left = '0px';
+    el.style.top = '0px';
+    el.style.width = '0px';
+    el.style.height = '0px';
+  }, []);
+
   // Drag selection handlers
   const handleSelectionMouseDown = useCallback((e: React.MouseEvent) => {
     // Only start selection if clicking on empty space (not on file rows, headers, or interactive elements)
@@ -4376,9 +4406,14 @@ export const FileGrid: React.FC = () => {
 
       const selectionRectData = { startX, startY, currentX: startX, currentY: startY };
       setIsSelecting(true);
-      setSelectionRect(selectionRectData);
       selectionRectRef.current = selectionRectData;
-      
+      syncMarqueeSelectionBox({
+        left: startX,
+        top: startY,
+        right: startX,
+        bottom: startY,
+      });
+
       // Track modifier keys for global handler
       selectionModifiersRef.current = {
         shiftKey: e.shiftKey,
@@ -4391,15 +4426,15 @@ export const FileGrid: React.FC = () => {
         setSelectedFile(null);
       }
     }
-  }, []);
+  }, [syncMarqueeSelectionBox]);
 
   const handleSelectionMouseUp = useCallback(() => {
     if (isSelecting) {
       setIsSelecting(false);
-      setSelectionRect(null);
       selectionRectRef.current = null;
+      resetMarqueeOverlay();
     }
-  }, [isSelecting]);
+  }, [isSelecting, resetMarqueeOverlay]);
 
   const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget && selectedFiles.length > 0 && !isSelecting) {
@@ -4439,7 +4474,6 @@ export const FileGrid: React.FC = () => {
 
         const newRect = { ...rectRef, currentX, currentY };
         selectionRectRef.current = newRect;
-        setSelectionRect(newRect);
 
         const selectionBox = {
           left: Math.min(rectRef.startX, currentX),
@@ -4447,6 +4481,7 @@ export const FileGrid: React.FC = () => {
           right: Math.max(rectRef.startX, currentX),
           bottom: Math.max(rectRef.startY, currentY),
         };
+        syncMarqueeSelectionBox(selectionBox);
 
         const intersectingFiles: string[] = [];
         const rows = container.querySelectorAll('[data-row-index]');
@@ -4511,8 +4546,8 @@ export const FileGrid: React.FC = () => {
           }
         }
         setIsSelecting(false);
-        setSelectionRect(null);
         selectionRectRef.current = null;
+        resetMarqueeOverlay();
       };
 
       document.addEventListener('mousemove', handleGlobalMouseMove, { passive: true });
@@ -4527,7 +4562,7 @@ export const FileGrid: React.FC = () => {
         }
       };
     }
-  }, [isSelecting, sortedFiles]);
+  }, [isSelecting, sortedFiles, syncMarqueeSelectionBox, resetMarqueeOverlay]);
 
   
   const shouldSkipGridFocusClear = useCallback((target: EventTarget | null) => {
@@ -4568,9 +4603,9 @@ export const FileGrid: React.FC = () => {
         dropAreaRef={dropAreaRef}
         gridContainerRef={gridContainerRef}
         renameInputRef={renameInputRef}
+        marqueeOverlayRef={marqueeOverlayRef}
         isDragOver={isDragOver}
         isSelecting={isSelecting}
-        selectionRect={selectionRect}
         isGroupedByIndex={isGroupedByIndex}
         groupedFiles={groupedFiles}
         sortedFiles={sortedFiles}

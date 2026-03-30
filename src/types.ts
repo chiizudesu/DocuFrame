@@ -73,6 +73,9 @@ declare global {
       onWindowMaximize: (cb: (event: any) => void) => void;
       onWindowUnmaximize: (cb: (event: any) => void) => void;
       onFolderContentsChanged: (cb: (event: any, data: { directory: string }) => void) => void;
+      onChromeBridgePdfResult: (
+        cb: (event: any, data: { ok: true; filename: string } | { ok: false; error: string }) => void
+      ) => void;
       removeAllListeners: (channel: string) => void;
       readCsv: (filePath: string) => Promise<any[]>;
       moveFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;

@@ -256,7 +256,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
 FileTableRow.displayName = 'FileTableRow';
 
 type FileRenameTableRowProps = FileTableRowProps & {
-  renameInputRef: React.Ref<HTMLInputElement>;
+  renameInputRef: React.RefObject<HTMLInputElement | null>;
   renameValue: string;
   setRenameValue: (value: string) => void;
   handleRenameSubmit: (e?: React.FormEvent) => void | Promise<void> | Promise<boolean>;
