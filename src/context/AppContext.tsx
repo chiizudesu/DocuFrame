@@ -5,8 +5,9 @@ import { normalizePath, getClientFolderPath } from '../utils/path';
 import type { AddressBarJumpApi } from '../types/addressBarJump';
 import {
   DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
-  LEGACY_JUMP_MODE_ON_PARENT_SHORTCUT,
+  DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT,
 } from '../constants/shortcutDefaults';
+import { isPlainBackspaceOnlyShortcut } from '../utils/shortcuts';
 
 interface FileItem {
   name: string;
@@ -105,6 +106,8 @@ interface AppContextType {
   setJumpModeOnParentShortcut: (shortcut: string) => void;
   enableJumpModeOnParentShortcut: boolean;
   setEnableJumpModeOnParentShortcut: (value: boolean) => void;
+  backspaceNavigationShortcut: string;
+  enableBackspaceNavigationShortcut: boolean;
   /** Three folder paths for F2–F4 jump mode (empty string = unset; F5 = refresh) */
   jumpModeQuickFolderPaths: string[];
   addressBarJumpRef: React.MutableRefObject<AddressBarJumpApi | null>;
@@ -184,6 +187,10 @@ export const AppProvider: React.FC<{
     DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
   );
   const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState<boolean>(true);
+  const [backspaceNavigationShortcut, setBackspaceNavigationShortcut] = useState<string>(
+    DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT,
+  );
+  const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState<boolean>(true);
   const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
   const addressBarJumpRef = useRef<AddressBarJumpApi | null>(null);
   const [showClientInfoBar, setShowClientInfoBar] = useState<boolean>(true);
@@ -237,24 +244,46 @@ export const AppProvider: React.FC<{
       if (settings.clientSearchShortcut) {
         setClientSearchShortcut(settings.clientSearchShortcut);
       }
-      const jp = settings.jumpModeOnParentShortcut;
-      if (!jp) {
-        setJumpModeOnParentShortcut(DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT);
-      } else if (jp === LEGACY_JUMP_MODE_ON_PARENT_SHORTCUT) {
-        setJumpModeOnParentShortcut(DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT);
+      const jp = settings.jumpModeOnParentShortcut?.trim();
+      const bsNavRaw = settings.backspaceNavigationShortcut;
+      const bsTrim = typeof bsNavRaw === 'string' ? bsNavRaw.trim() : '';
+      const directParentUnset =
+        settings.backspaceNavigationShortcut === undefined || bsTrim === '';
+      const directParentSameAsJump =
+        !!jp &&
+        bsTrim !== '' &&
+        jp.replace(/\s+/g, '').toLowerCase() === bsTrim.replace(/\s+/g, '').toLowerCase();
+      let nextJump = jp || DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT;
+      let nextBsNav =
+        bsTrim !== '' ? bsTrim : DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT;
+      let migrateSplitJumpAndParent = false;
+      // Legacy: jump was plain Backspace only. Ctrl+Backspace never matched until jump is stored as Ctrl+Backspace.
+      if (
+        isPlainBackspaceOnlyShortcut(jp) &&
+        (directParentUnset || directParentSameAsJump)
+      ) {
+        nextJump = DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT;
+        if (directParentUnset) {
+          nextBsNav = DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT;
+        }
+        migrateSplitJumpAndParent = true;
+      }
+      setJumpModeOnParentShortcut(nextJump);
+      setBackspaceNavigationShortcut(nextBsNav);
+      setEnableJumpModeOnParentShortcut(settings.enableJumpModeOnParentShortcut !== false);
+      setEnableBackspaceNavigationShortcut(settings.enableBackspaceNavigationShortcut !== false);
+      if (migrateSplitJumpAndParent) {
         settingsService
           .getSettings()
           .then((c) =>
             settingsService.setSettings({
               ...c,
-              jumpModeOnParentShortcut: DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
+              jumpModeOnParentShortcut: nextJump,
+              backspaceNavigationShortcut: nextBsNav,
             }),
           )
           .catch(() => {});
-      } else {
-        setJumpModeOnParentShortcut(jp);
       }
-      setEnableJumpModeOnParentShortcut(settings.enableJumpModeOnParentShortcut !== false);
       {
         const next = ['', '', ''];
         const q = settings.jumpModeQuickFolderPaths;
@@ -567,6 +596,8 @@ export const AppProvider: React.FC<{
       setJumpModeOnParentShortcut,
       enableJumpModeOnParentShortcut,
       setEnableJumpModeOnParentShortcut,
+      backspaceNavigationShortcut,
+      enableBackspaceNavigationShortcut,
       jumpModeQuickFolderPaths,
       addressBarJumpRef,
       showClientInfoBar,

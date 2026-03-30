@@ -8,6 +8,7 @@ import { SettingsWindow } from './components/SettingsWindow';
 import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
 import { showToast } from './components/ui/toaster';
+import { getParentPath, normalizePath } from './utils/path';
 
 const AppContent: React.FC = () => {
   const { colorMode, setColorMode } = useColorMode();
@@ -17,12 +18,15 @@ const AppContent: React.FC = () => {
     setInitialCommandMode,
     isSettingsOpen,
     setIsSettingsOpen,
+    currentDirectory,
     setCurrentDirectory,
     setStatus,
     addLog,
     calculatorShortcut,
     jumpModeOnParentShortcut,
     enableJumpModeOnParentShortcut,
+    backspaceNavigationShortcut,
+    enableBackspaceNavigationShortcut,
     addressBarJumpRef,
     rootDirectory,
     jumpModeQuickFolderPaths,
@@ -172,6 +176,38 @@ const AppContent: React.FC = () => {
         }
         return;
       }
+
+      if (
+        enableBackspaceNavigationShortcut &&
+        !isInputFocused &&
+        !isQuickNavigating &&
+        jump &&
+        !jump.isActive() &&
+        eventMatchesShortcut(e, backspaceNavigationShortcut)
+      ) {
+        e.preventDefault();
+        const parent = getParentPath(currentDirectory);
+        if (!parent || normalizePath(parent) === normalizePath(currentDirectory)) {
+          setStatus('Already at root level', 'info');
+          return;
+        }
+        const normalizedParent = normalizePath(parent);
+        void (async () => {
+          try {
+            const isValid = await window.electronAPI.validatePath(normalizedParent);
+            if (isValid) {
+              setCurrentDirectory(normalizedParent);
+              addLog(`Navigated to parent: ${normalizedParent}`);
+              setStatus('Navigated to parent directory', 'info');
+            } else {
+              setStatus('Cannot access parent directory', 'error');
+            }
+          } catch {
+            setStatus('Navigation failed', 'error');
+          }
+        })();
+        return;
+      }
       
       if (!isInputFocused && !isQuickNavigating && jump) {
         const openJumpValidated = async (folderPath: string) => {
@@ -267,6 +303,9 @@ const AppContent: React.FC = () => {
     calculatorShortcut,
     jumpModeOnParentShortcut,
     enableJumpModeOnParentShortcut,
+    backspaceNavigationShortcut,
+    enableBackspaceNavigationShortcut,
+    currentDirectory,
     addressBarJumpRef,
     rootDirectory,
     jumpModeQuickFolderPaths,

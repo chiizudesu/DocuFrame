@@ -21,7 +21,11 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
 }) => {
   const { surfaceBg: bgColor, titleBarBg, borderColor, inputBg } = useDialogChrome();
   const successColor = useColorModeValue('green.500', 'green.400');
-  
+  const summaryBoxBg = useColorModeValue('green.50', 'green.900');
+  const fileRowBg = useColorModeValue('gray.50', 'gray.700');
+  const emptyStateBg = useColorModeValue('yellow.50', 'yellow.900');
+  const emptyStateTextColor = useColorModeValue('yellow.700', 'yellow.300');
+
   const getIcon = () => {
     switch (type) {
       case 'zip':
@@ -55,6 +59,8 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
     }
   };
 
+  const SummaryTypeIcon = getIcon();
+
   return (
     <Dialog.Root open={isOpen} size='lg' placement='center' onOpenChange={e => {
       if (!e.open) {
@@ -68,7 +74,9 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
           <Dialog.Content bg={bgColor}>
             <Dialog.Header>
               <Flex align="center">
-                <Icon as={CheckCircle} color={successColor} mr={3} boxSize={6} />
+                <Icon color={successColor} mr={3} boxSize={6} asChild>
+                  <CheckCircle />
+                </Icon>
                 {getTitle()}
               </Flex>
             </Dialog.Header>
@@ -81,10 +89,12 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
                   borderRadius="md"
                   border="1px"
                   borderColor={borderColor}
-                  bg={useColorModeValue('green.50', 'green.900')}
+                  bg={summaryBoxBg}
                 >
                   <Flex align="center" mb={2}>
-                    <Icon as={getIcon()} color={getColor()} mr={2} boxSize={5} />
+                    <Icon color={getColor()} mr={2} boxSize={5} asChild>
+                      <SummaryTypeIcon />
+                    </Icon>
                     <Text fontWeight="bold">
                       Successfully extracted {extractedFiles.length} file{extractedFiles.length !== 1 ? 's' : ''}
                     </Text>
@@ -117,9 +127,11 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
                             align="center"
                             p={2}
                             borderRadius="md"
-                            bg={useColorModeValue('gray.50', 'gray.700')}
+                            bg={fileRowBg}
                           >
-                            <Icon as={FileText} mr={2} color="blue.400" boxSize={4} />
+                            <Icon mr={2} color="blue.400" boxSize={4} asChild>
+                              <FileText />
+                            </Icon>
                             <Text fontSize="sm" flex="1">
                               {file}
                             </Text>
@@ -139,9 +151,9 @@ export const ExtractionResultDialog: React.FC<ExtractionResultDialogProps> = ({
                     borderRadius="md"
                     border="1px"
                     borderColor={borderColor}
-                    bg={useColorModeValue('yellow.50', 'yellow.900')}
+                    bg={emptyStateBg}
                   >
-                    <Text color={useColorModeValue('yellow.700', 'yellow.300')}>
+                    <Text color={emptyStateTextColor}>
                       No files were extracted. The {type.toUpperCase()} file{sourceFiles.length !== 1 ? 's' : ''} may be empty or contain no {type === 'zip' ? 'files' : 'attachments'}.
                     </Text>
                   </Box>

@@ -221,7 +221,7 @@ const MiniSearchDropdown: React.FC<{
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   const yearNav = useYearNavigation(currentDirectory)
   
@@ -989,6 +989,33 @@ export const FolderInfoBar: React.FC = () => {
         e.preventDefault()
         handleMiniSearchBackspace()
       }
+    } else if (
+      enableBackspaceNavigationShortcut &&
+      eventMatchesShortcut(e.nativeEvent, backspaceNavigationShortcut) &&
+      miniSearchText.length === 0
+    ) {
+      e.preventDefault()
+      const parent = getParentPath(currentDirectory)
+      if (!parent || normalizePath(parent) === normalizePath(currentDirectory)) {
+        setStatus('Already at root level', 'info')
+        return
+      }
+      const normalizedParent = normalizePath(parent)
+      closeMiniSearch()
+      void (async () => {
+        try {
+          const isValid = await (window.electronAPI as any).validatePath(normalizedParent)
+          if (isValid) {
+            setCurrentDirectory(normalizedParent)
+            addLog(`Navigated to parent: ${normalizedParent}`)
+            setStatus('Navigated to parent directory', 'info')
+          } else {
+            setStatus('Cannot access parent directory', 'error')
+          }
+        } catch {
+          setStatus('Navigation failed', 'error')
+        }
+      })()
     }
   }
 

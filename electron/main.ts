@@ -429,6 +429,105 @@ async function startChromeExtensionBridgeServer(cfg: Config): Promise<void> {
     }
   );
 
+  /** Move a file from Electron's Downloads folder into the current DocuFrame directory (Auxor native export). */
+  appBridge.post('/transfer-download', requireAuth, express.json({ limit: '1mb' }), async (req, res) => {
+    try {
+      const dir = currentDirectoryPath;
+      if (!dir) {
+        const err = 'No current directory open in DocuFrame';
+        broadcastChromeBridgePdfResult({ ok: false, error: err });
+        return res.status(400).json({ error: err });
+      }
+
+      const downloadFilename = typeof req.body?.downloadFilename === 'string' ? req.body.downloadFilename.trim() : '';
+      const targetFilenameRaw = typeof req.body?.targetFilename === 'string' ? req.body.targetFilename.trim() : '';
+      if (!downloadFilename || !targetFilenameRaw) {
+        return res.status(400).json({ error: 'Missing downloadFilename or targetFilename' });
+      }
+
+      const downloadsPath = app.getPath('downloads');
+      let sourcePath: string;
+      if (path.isAbsolute(downloadFilename)) {
+        const resolved = path.resolve(downloadFilename);
+        const resolvedDl = path.resolve(downloadsPath);
+        if (!isResolvedPathInsideDirectory(resolved, resolvedDl)) {
+          const err = 'downloadFilename must be under the Downloads folder';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+        sourcePath = resolved;
+      } else {
+        sourcePath = path.join(downloadsPath, path.basename(downloadFilename));
+      }
+
+      const extFromSource = path.extname(sourcePath) || '.pdf';
+      let baseTarget = targetFilenameRaw
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      baseTarget = baseTarget.replace(/\.[^/.]+$/, '').trim();
+      if (!baseTarget) baseTarget = 'document';
+      if (baseTarget.length > 150) baseTarget = baseTarget.slice(0, 150).trim();
+      const sanitized = `${baseTarget}${extFromSource}`;
+
+      let destPath = path.join(dir, sanitized);
+      if (!isResolvedPathInsideDirectory(destPath, dir)) {
+        const err = 'Invalid path';
+        broadcastChromeBridgePdfResult({ ok: false, error: err });
+        return res.status(400).json({ error: err });
+      }
+
+      if (!(await fsPromises.stat(sourcePath).catch(() => null))?.isFile()) {
+        const err = `File not found in Downloads: ${path.basename(sourcePath)}`;
+        broadcastChromeBridgePdfResult({ ok: false, error: err });
+        return res.status(404).json({ error: err });
+      }
+
+      try {
+        await fsPromises.access(destPath);
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const t = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+        const stem = baseTarget;
+        destPath = path.join(dir, `${stem}_${t}${extFromSource}`);
+        if (!isResolvedPathInsideDirectory(destPath, dir)) {
+          const err = 'Invalid path';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+      } catch {
+        /* destination free */
+      }
+
+      await fsPromises.copyFile(sourcePath, destPath);
+      try {
+        await fsPromises.unlink(sourcePath);
+      } catch (e) {
+        console.warn('[ChromeBridge] transfer-download could not delete source:', e);
+      }
+
+      const savedBasename = path.basename(destPath);
+      broadcastChromeBridgePdfResult({ ok: true, filename: savedBasename });
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('folderContentsChanged', {
+            directory: dir,
+            event: 'add',
+            filePath: destPath,
+            newFiles: [savedBasename],
+          });
+        }
+      });
+
+      return res.json({ success: true, path: destPath });
+    } catch (error: any) {
+      console.error('[ChromeBridge] transfer-download error:', error);
+      const err = error?.message ?? 'Transfer failed';
+      broadcastChromeBridgePdfResult({ ok: false, error: err });
+      return res.status(500).json({ error: err });
+    }
+  });
+
   await new Promise<void>((resolve, reject) => {
     const srv = appBridge.listen(port, '127.0.0.1', () => {
       chromeBridgeServer = srv;

@@ -47,6 +47,19 @@ export function parseShortcut(shortcutRaw: string | undefined | null): ParsedSho
 	return { needCtrl, needAlt, needShift, needMeta, needCommandOrControl, key };
 }
 
+/** True when the shortcut is only the Backspace key (no modifiers). */
+export function isPlainBackspaceOnlyShortcut(shortcutRaw: string | undefined | null): boolean {
+	const p = parseShortcut(shortcutRaw);
+	return (
+		!p.needCommandOrControl &&
+		!p.needCtrl &&
+		!p.needAlt &&
+		!p.needShift &&
+		!p.needMeta &&
+		p.key === 'backspace'
+	);
+}
+
 export function eventMatchesShortcut(event: KeyboardEvent, shortcutRaw: string | undefined | null): boolean {
 	if (!shortcutRaw) return false;
 	const parsed = parseShortcut(shortcutRaw);
@@ -79,7 +92,7 @@ export function eventMatchesShortcut(event: KeyboardEvent, shortcutRaw: string |
 
 	// Named navigation keys (parseShortcut lowercases the last token)
 	if (key === 'backspace') {
-		return eventKey === 'Backspace';
+		return eventKey === 'Backspace' || event.code === 'Backspace';
 	}
 	if (key === 'delete' || key === 'del') {
 		return eventKey === 'Delete';

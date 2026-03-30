@@ -47,10 +47,11 @@ import {
 import { settingsService } from '../services/settings';
 import {
   DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
-  LEGACY_JUMP_MODE_ON_PARENT_SHORTCUT,
+  DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT,
 } from '../constants/shortcutDefaults';
 import { useAppContext } from '../context/AppContext';
 import { normalizePath } from '../utils/path';
+import { isPlainBackspaceOnlyShortcut } from '../utils/shortcuts';
 import {
   AffixedInputRow,
   PathInputRow,
@@ -204,6 +205,8 @@ interface Settings {
   enableClientSearchShortcut?: boolean;
   jumpModeOnParentShortcut?: string;
   enableJumpModeOnParentShortcut?: boolean;
+  backspaceNavigationShortcut?: string;
+  enableBackspaceNavigationShortcut?: boolean;
   jumpModeQuickFolderPaths?: string[];
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
@@ -255,6 +258,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
   );
   const [enableJumpModeOnParentShortcut, setEnableJumpModeOnParentShortcut] = useState(true);
+  const [backspaceNavigationShortcut, setBackspaceNavigationShortcut] = useState(
+    DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT,
+  );
+  const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState(true);
   const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
   const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
@@ -318,12 +325,31 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setEnableFileWatching(loadedSettings.enableFileWatching !== false);
         setClientSearchShortcut(loadedSettings.clientSearchShortcut || 'Alt+F');
         setEnableClientSearchShortcut(loadedSettings.enableClientSearchShortcut !== false);
-        setJumpModeOnParentShortcut(
-          loadedSettings.jumpModeOnParentShortcut === LEGACY_JUMP_MODE_ON_PARENT_SHORTCUT
-            ? DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT
-            : loadedSettings.jumpModeOnParentShortcut || DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
-        );
+        {
+          const jp = loadedSettings.jumpModeOnParentShortcut?.trim();
+          const bs = loadedSettings.backspaceNavigationShortcut;
+          const bsTrim = typeof bs === 'string' ? bs.trim() : '';
+          const directUnset =
+            loadedSettings.backspaceNavigationShortcut === undefined || bsTrim === '';
+          const sameKeyAsJump =
+            !!jp &&
+            bsTrim !== '' &&
+            jp.replace(/\s+/g, '').toLowerCase() === bsTrim.replace(/\s+/g, '').toLowerCase();
+          const upgradePlainBackspaceJump =
+            isPlainBackspaceOnlyShortcut(jp) && (directUnset || sameKeyAsJump);
+          setJumpModeOnParentShortcut(
+            !jp
+              ? DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT
+              : upgradePlainBackspaceJump
+                ? DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT
+                : jp,
+          );
+          setBackspaceNavigationShortcut(
+            bsTrim !== '' ? bsTrim : DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT,
+          );
+        }
         setEnableJumpModeOnParentShortcut(loadedSettings.enableJumpModeOnParentShortcut !== false);
+        setEnableBackspaceNavigationShortcut(loadedSettings.enableBackspaceNavigationShortcut !== false);
         {
           const next = ['', '', ''];
           const q = loadedSettings.jumpModeQuickFolderPaths;
@@ -451,6 +477,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         enableClientSearchShortcut,
         jumpModeOnParentShortcut,
         enableJumpModeOnParentShortcut,
+        backspaceNavigationShortcut,
+        enableBackspaceNavigationShortcut,
         jumpModeQuickFolderPaths: jumpModeQuickFolderPaths.map((s) => (typeof s === 'string' ? s.trim() : '')),
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
@@ -938,6 +966,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         break;
       case 'jumpModeOnParentShortcut':
         setJumpModeOnParentShortcut(newShortcut);
+        break;
+      case 'backspaceNavigationShortcut':
+        setBackspaceNavigationShortcut(newShortcut);
         break;
 
     }
@@ -1574,7 +1605,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                             _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
                         </td>
                         <td style={{ fontWeight: '500', color: textColor }}>
-                          Address bar at parent
+                          Jump mode at parent
                         </td>
                         <td>
                           <Text fontSize="10px" color={textColor}>
@@ -1582,10 +1613,32 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                           </Text>
                         </td>
                         <td style={{ color: secondaryTextColor }}>
-                          Opens the address-bar filter on the parent folder; when the filter is already open, the same shortcut moves up one folder at a time (see address bar preview)
+                          Opens the address-bar jump filter anchored on the parent folder; with the filter open, the same shortcut moves up one level at a time (see address bar preview)
                         </td>
                       </tr>
 
+                      <tr>
+                        <td style={{ textAlign: 'center' }}>
+                          <IconButton
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => openKeyRecorder('backspaceNavigationShortcut')}
+                            aria-label="Change shortcut"
+                            color={useColorModeValue('gray.500', 'gray.400')}
+                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
+                        </td>
+                        <td style={{ fontWeight: '500', color: textColor }}>
+                          Go to parent folder
+                        </td>
+                        <td>
+                          <Text fontSize="10px" color={textColor}>
+                            {backspaceNavigationShortcut}
+                          </Text>
+                        </td>
+                        <td style={{ color: secondaryTextColor }}>
+                          Moves the file grid to the parent directory without opening jump mode (also closes jump mode if it was open)
+                        </td>
+                      </tr>
 
                     </tbody>
                   </table>
