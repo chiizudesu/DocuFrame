@@ -297,10 +297,8 @@ export const UploadToVaultsDialog: React.FC<UploadToVaultsDialogProps> = ({
                   colorPalette="blue"
                   onClick={handleSubmit}
                   disabled={!canSubmit}
-                  loading={isLoading}
-                  loadingText="Uploading…"
                 >
-                  Upload and push
+                  {isLoading ? 'Uploading…' : 'Upload and push'}
                 </Button>
               )}
             </Dialog.Footer>
