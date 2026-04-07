@@ -225,6 +225,7 @@ interface Settings {
   chromeExtensionBridgeEnabled?: boolean;
   chromeExtensionBridgePort?: number;
   chromeExtensionBridgeSecret?: string;
+  vaultsClientPdfsDirectory?: string;
 
 }
 
@@ -243,6 +244,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [clientbasePath, setClientbasePath] = useState('');
   const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
   const [workpaperTemplateFolderPath, setWorkpaperTemplateFolderPath] = useState<string>('');
+  const [vaultsClientPdfsDirectory, setVaultsClientPdfsDirectory] = useState('');
   const [activationShortcut, setActivationShortcut] = useState('`');
   const [enableActivationShortcut, setEnableActivationShortcut] = useState(true);
   const [calculatorShortcut, setCalculatorShortcut] = useState('Alt+Q');
@@ -314,6 +316,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setClaudeApiKey(loadedSettings.claudeApiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
         setClientbasePath(loadedSettings.clientbasePath || '');
+        setVaultsClientPdfsDirectory(loadedSettings.vaultsClientPdfsDirectory || '');
         setActivationShortcut(loadedSettings.activationShortcut || '`');
         setEnableActivationShortcut(loadedSettings.enableActivationShortcut !== false);
         setCalculatorShortcut(loadedSettings.calculatorShortcut || 'Alt+Q');
@@ -496,6 +499,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         chromeExtensionBridgeEnabled,
         chromeExtensionBridgePort: bridgePortNum,
         chromeExtensionBridgeSecret: bridgeSecret || undefined,
+        vaultsClientPdfsDirectory: vaultsClientPdfsDirectory.trim() || undefined,
 
       };
       
@@ -568,6 +572,24 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       showToast({
         title: 'Error',
         description: 'Failed to select directory',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
+
+  const handleBrowseVaultsClientPdfs = async () => {
+    try {
+      const result = await window.electronAPI.selectDirectory();
+      if (result) {
+        setVaultsClientPdfsDirectory(result);
+      }
+    } catch (error) {
+      console.error('Error selecting Client PDFs folder:', error);
+      showToast({
+        title: 'Error',
+        description: 'Failed to select folder',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -1317,6 +1339,24 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         />
                       </Field.Root>
                     </VStack>
+                  </SettingsSection>
+
+                  <SettingsSection
+                    title="Vaults Client PDFs folder"
+                    description="Absolute path to the Client PDFs intake folder in your Vaults repo (e.g. Client Emails/Client PDFs). Used by Upload to Vaults Repo in the file grid."
+                    textColor={textColor}
+                    secondaryTextColor={secondaryTextColor}
+                    mb={0}
+                  >
+                    <PathInputRow
+                      value={vaultsClientPdfsDirectory}
+                      onChange={(e) => setVaultsClientPdfsDirectory(e.target.value)}
+                      placeholder="Select or paste path to Client PDFs folder…"
+                      onBrowse={handleBrowseVaultsClientPdfs}
+                      inputBg={inputBg}
+                      borderColor={borderColor}
+                      browseAriaLabel="Browse Client PDFs folder"
+                    />
                   </SettingsSection>
 
                   <Flex align="center" justify="space-between" gap={3} wrap="wrap" pt={1}>

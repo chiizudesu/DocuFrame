@@ -58,6 +58,8 @@ export interface AppSettings {
   chromeExtensionBridgeEnabled?: boolean;
   chromeExtensionBridgePort?: number;
   chromeExtensionBridgeSecret?: string;
+  /** Absolute path to Vaults Client PDFs folder (e.g. …/Vaults/Client Emails/Client PDFs). */
+  vaultsClientPdfsDirectory?: string;
 
 }
 

@@ -134,6 +134,18 @@ declare global {
       readDirectory: (path: string) => Promise<Array<FileItem & { isHidden?: boolean }>>;
       // Replace selected file with latest Downloads file
       replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
+      uploadClientPdfsToVaults: (payload: {
+        sourcePaths: string[];
+        clientName: string;
+        year: string;
+        targetDir: string;
+      }) => Promise<{
+        success: boolean;
+        message: string;
+        copiedPaths?: string[];
+        gitRoot?: string;
+        stderr?: string;
+      }>;
     };
   }
 } 

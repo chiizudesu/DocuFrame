@@ -8,12 +8,21 @@ import {
   Button,
   HStack,
   Text,
-  Badge,
   Flex,
   Icon,
 } from '@chakra-ui/react';
 import { ChevronDown, Search, User, Briefcase } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import {
+  CLIENT_DB_FY_YEARS,
+  getAddress,
+  getClientLink,
+  getClientName,
+  getIrdNumber,
+  getJobLink,
+  type ClientDbRow,
+} from '../services/clientDatabaseCsv';
+import { docuFramePalette } from '../docuFrameColors';
 
 interface ClientSearchOverlayProps {
   isOpen?: boolean;
@@ -31,16 +40,19 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
     setInternalIsOpen(value);
   } : setInternalIsOpen;
   const [searchValue, setSearchValue] = useState('');
-  const [selectedYear, setSelectedYear] = useState('2025');
-  const [results, setResults] = useState<any[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string>(CLIENT_DB_FY_YEARS[CLIENT_DB_FY_YEARS.length - 1]);
+  const [results, setResults] = useState<ClientDbRow[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const bgColor = useColorModeValue('#ffffff', 'gray.800');
-  const cardBg = useColorModeValue('white', 'gray.700');
-  const borderColor = useColorModeValue('gray.200', 'gray.600');
-  const overlayBg = useColorModeValue('rgba(0,0,0,0.3)', 'rgba(0,0,0,0.6)');
+  const bgColor = useColorModeValue(docuFramePalette.light.toolbar, docuFramePalette.dark.canvas);
+  const cardBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
+  const borderColor = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
   const shadowColor = useColorModeValue('rgba(0,0,0,0.1)', 'rgba(0,0,0,0.4)');
+  const clientNameColor = useColorModeValue('gray.800', 'white');
+  const rowHoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
+  const cardHoverBorder = useColorModeValue(docuFramePalette.light.rowSelected, docuFramePalette.dark.border);
+  const buttonHoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.chromeHover);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -84,15 +96,13 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
         setIsLoading(false);
         return;
       }
-      const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
-      const filtered = rows.filter((row: any) => {
-        const clientNameField = clientNameFields.find(field => row[field] !== undefined);
-        if (clientNameField && row[clientNameField]) {
-          const clientValue = String(row[clientNameField]).toLowerCase();
-          return clientValue.includes(value.toLowerCase());
-        }
-        return false;
-      }).slice(0, 3);
+      const filtered = (rows as ClientDbRow[])
+        .filter((row) => {
+          const name = getClientName(row);
+          if (!name) return false;
+          return name.toLowerCase().includes(value.toLowerCase());
+        })
+        .slice(0, 3);
       setResults(filtered);
     } catch (error) {
       setStatus('Client search failed', 'error');
@@ -101,20 +111,24 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
     setIsLoading(false);
   };
 
-  const handleClientAction = (row: any) => {
-    const clientLink = row['Client Link'];
+  const handleClientAction = (row: ClientDbRow) => {
+    const clientLink = getClientLink(row);
     if (clientLink) window.open(clientLink, '_blank');
     else setStatus('No client link available', 'error');
   };
 
-  const handleJobAction = (row: any) => {
-    const jobLinkField = `${selectedYear} Job Link`;
-    const jobLink = row[jobLinkField];
+  const handleJobAction = (row: ClientDbRow) => {
+    const jobLink = getJobLink(row, selectedYear);
     if (jobLink) window.open(jobLink, '_blank');
-    else setStatus(`No ${selectedYear} job link available`, 'error');
+    else setStatus(`No FY${selectedYear} job link available`, 'error');
   };
 
-  const toggleYear = () => setSelectedYear(selectedYear === '2025' ? '2026' : '2025');
+  const toggleYear = () => {
+    const idx = CLIENT_DB_FY_YEARS.indexOf(selectedYear as (typeof CLIENT_DB_FY_YEARS)[number]);
+    const i = idx >= 0 ? idx : 0;
+    const next = (i + 1) % CLIENT_DB_FY_YEARS.length;
+    setSelectedYear(CLIENT_DB_FY_YEARS[next]);
+  };
   const closeOverlay = () => { setIsOpen(false); setSearchValue(''); setResults([]); };
 
   if (!isOpen) return null;
@@ -214,10 +228,9 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
           ) : results.length > 0 ? (
             <VStack gap={0} align="stretch" p={2}>
               {results.map((row, idx) => {
-                const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
-                const clientNameField = clientNameFields.find(field => row[field] !== undefined);
-                const clientName = clientNameField ? row[clientNameField] : `Client ${idx + 1}`;
-                const group = row['Group'] || 'No Group';
+                const displayName = getClientName(row) || `Client ${idx + 1}`;
+                const address = getAddress(row);
+                const ird = getIrdNumber(row);
                 return (
                   <Box
                     key={idx}
@@ -226,17 +239,14 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
                     borderWidth="1px"
                     borderColor={borderColor}
                     p={3}
-                    _hover={{ borderColor: 'blue.300', transform: 'translateY(-1px)', boxShadow: 'sm' }}
+                    _hover={{ borderColor: cardHoverBorder, bg: rowHoverBg, transform: 'translateY(-1px)', boxShadow: 'sm' }}
                     transition="all 0.15s ease"
                   >
                     <Flex justify="space-between" align="center" gap={3}>
                       <VStack align="start" gap={1} flex="1" minW="0">
-                        <Flex align="center" gap={2} flexWrap="wrap">
-                          <Text fontWeight="medium" fontSize="sm" color={useColorModeValue('gray.800', 'white')} lineClamp={1}>{clientName}</Text>
-                          <Badge colorPalette="purple" borderRadius="sm" px={2} py={0} fontSize="10px" textTransform="none">{group}</Badge>
-                        </Flex>
-                        {row['Address'] && (<Text fontSize="xs" color="gray.500" lineClamp={1}>{row['Address']}</Text>)}
-                        {row['IRD No.'] && (<Text fontSize="10px" color="gray.400">IRD: {row['IRD No.']}</Text>)}
+                        <Text fontWeight="medium" fontSize="sm" color={clientNameColor} lineClamp={1}>{displayName}</Text>
+                        {address ? <Text fontSize="xs" color="gray.500" lineClamp={1}>{address}</Text> : null}
+                        {ird ? <Text fontSize="10px" color="gray.400">IRD: {ird}</Text> : null}
                       </VStack>
                       <HStack gap={2}>
                         <Button
@@ -246,9 +256,9 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
                           fontSize="11px"
                           px={2}
                           onClick={() => handleClientAction(row)}
-                          _hover={{ bg: useColorModeValue('gray.50', 'gray.600'), transform: 'translateY(-1px)' }}
+                          _hover={{ bg: buttonHoverBg, transform: 'translateY(-1px)' }}
                           transition="all 0.15s"
-                          disabled={!row['Client Link']}><Icon boxSize="3" asChild><User /></Icon>Client
+                          disabled={!getClientLink(row)}><Icon boxSize="3" asChild><User /></Icon>Client
                                                   </Button>
                         <Button
                           colorPalette="blue"
@@ -258,7 +268,7 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
                           onClick={() => handleJobAction(row)}
                           _hover={{ transform: 'translateY(-1px)', boxShadow: 'sm' }}
                           transition="all 0.15s"
-                          disabled={!row[`${selectedYear} Job Link`]}><Icon boxSize="3" asChild><Briefcase /></Icon>{selectedYear}</Button>
+                          disabled={!getJobLink(row, selectedYear)}><Icon boxSize="3" asChild><Briefcase /></Icon>{selectedYear}</Button>
                       </HStack>
                     </Flex>
                   </Box>

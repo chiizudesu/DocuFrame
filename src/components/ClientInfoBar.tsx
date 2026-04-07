@@ -91,8 +91,7 @@ export const ClientInfoBar: React.FC = () => {
     openClientLink,
     openJobLink,
     hasClientLink,
-    has2025JobLink,
-    has2026JobLink,
+    jobYearsWithLinks,
   } = useClientInfo(currentDirectory, rootDirectory);
 
   const noClientBg = useColorModeValue('gray.100', 'gray.700');
@@ -171,6 +170,7 @@ export const ClientInfoBar: React.FC = () => {
               content="Copied to clipboard"
               showArrow
               open={showCopiedIrd}
+              disabled={!showCopiedIrd}
               positioning={{
                 placement: "bottom"
               }}
@@ -182,19 +182,14 @@ export const ClientInfoBar: React.FC = () => {
               </Box>
             </Tooltip>
           </Section>
-          {(has2025JobLink || has2026JobLink) && (
+          {jobYearsWithLinks.length > 0 && (
             <Section>
               <Text {...labelStyle}>XPM</Text>
-              {has2025JobLink && (
-                <Block onClick={() => openJobLink('2025')} cursor="pointer">
-                  2025
+              {jobYearsWithLinks.map((year) => (
+                <Block key={year} onClick={() => openJobLink(year)} cursor="pointer">
+                  {year}
                 </Block>
-              )}
-              {has2026JobLink && (
-                <Block onClick={() => openJobLink('2026')} cursor="pointer">
-                  2026
-                </Block>
-              )}
+              ))}
             </Section>
           )}
           <Box flex={1} minW={2} />
@@ -204,6 +199,7 @@ export const ClientInfoBar: React.FC = () => {
               content="Copied to clipboard"
               showArrow
               open={showCopiedAddress}
+              disabled={!showCopiedAddress}
               positioning={{
                 placement: "bottom"
               }}

@@ -4,6 +4,7 @@
  */
 import React from 'react';
 import { MergePDFDialog } from '../MergePDFDialog';
+import { UploadToVaultsDialog } from '../UploadToVaultsDialog';
 import { ExtractedTextDialog } from '../ExtractedTextDialog';
 import { CustomPropertiesDialog } from '../CustomPropertiesDialog';
 import { ImagePasteDialog } from '../ImagePasteDialog';
@@ -25,6 +26,9 @@ export interface FileGridDialogsProps {
   setStatus: (msg: string, type?: 'default' | 'error' | 'info' | 'success') => void;
   refreshDirectory: (path: string) => Promise<void>;
   setMergePDFOpen: (open: boolean) => void;
+  setUploadToVaultsOpen: (open: boolean) => void;
+  setVaultUploadSourcePaths: (paths: string[]) => void;
+  setVaultUploadTargetDir: (dir: string) => void;
   setExtractedTextOpen: (open: boolean) => void;
   setPropertiesOpen: (open: boolean) => void;
   setImagePasteOpen: (open: boolean) => void;
@@ -35,6 +39,9 @@ export interface FileGridDialogsProps {
   setIsSmartRenameDialogOpen: (open: boolean) => void;
   setSmartRenameFile: (f: FileItem | null) => void;
   isMergePDFOpen: boolean;
+  isUploadToVaultsOpen: boolean;
+  vaultUploadSourcePaths: string[];
+  vaultUploadTargetDir: string;
   isExtractedTextOpen: boolean;
   extractedTextData: { fileName: string; text: string };
   isPropertiesOpen: boolean;
@@ -74,12 +81,18 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
     setStatus,
     refreshDirectory,
     setMergePDFOpen,
+    setUploadToVaultsOpen,
+    setVaultUploadSourcePaths,
+    setVaultUploadTargetDir,
     setExtractedTextOpen,
     setPropertiesOpen,
     setImagePasteOpen,
     setIsMoveToDialogOpen,
     setMoveToFiles,
     isMergePDFOpen,
+    isUploadToVaultsOpen,
+    vaultUploadSourcePaths,
+    vaultUploadTargetDir,
     isExtractedTextOpen,
     extractedTextData,
     isPropertiesOpen,
@@ -112,6 +125,18 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
           onClose={() => setMergePDFOpen(false)}
           currentDirectory={currentDirectory}
           preselectedFiles={selectedFiles.filter((filename) => filename.toLowerCase().endsWith('.pdf'))}
+        />
+      )}
+      {isUploadToVaultsOpen && vaultUploadSourcePaths.length > 0 && (
+        <UploadToVaultsDialog
+          isOpen
+          onClose={() => {
+            setUploadToVaultsOpen(false);
+            setVaultUploadSourcePaths([]);
+            setVaultUploadTargetDir('');
+          }}
+          sourcePaths={vaultUploadSourcePaths}
+          targetDir={vaultUploadTargetDir}
         />
       )}
       {isExtractedTextOpen && (

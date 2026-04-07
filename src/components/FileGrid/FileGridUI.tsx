@@ -41,6 +41,7 @@ import {
   FolderPlus,
   FileEdit,
   Link2,
+  CloudUpload,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
@@ -301,6 +302,12 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
               <Flex {...rowProps} onClick={() => handleMenuAction('extract_text')}>
                 <FileText size={iconSz} style={iconStyle} />
                 <Text fontSize="xs">Extract Text</Text>
+              </Flex>
+            )}
+            {fileName.endsWith('.pdf') && selectedPDFs.length >= 1 && (
+              <Flex {...rowProps} onClick={() => handleMenuAction('upload_to_vaults')}>
+                <CloudUpload size={iconSz} style={iconStyle} />
+                <Text fontSize="xs">Upload to Vaults Repo</Text>
               </Flex>
             )}
             {showMergePDFs && (

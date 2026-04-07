@@ -33,6 +33,7 @@ import { useYearNavigation } from '../hooks/useYearNavigation'
 import { useDirectorySearch } from '../hooks/useDirectorySearch'
 import { joinPath, getParentPath, normalizePath, isChildPath, getRelativePathSegments, pathsEqualForJump, resolveJumpTargetInBreadcrumbs } from '../utils/path'
 import { eventMatchesShortcut } from '../utils/shortcuts'
+import { getErrorMessageFromUnknown } from '@/components/ui/toaster'
 import type { FileItem } from '../types'
 import {
   docuFramePalette as P,
@@ -772,6 +773,7 @@ export const FolderInfoBar: React.FC = () => {
     searchResults: miniSearchResults,
     selectedResultIndex: miniSelectedIndex,
     setSelectedResultIndex: setMiniSelectedIndex,
+    isLoading: miniSearchLoading,
   } = directorySearch
 
   const handleOpenFile = async (file: FileItem) => {
@@ -866,6 +868,63 @@ export const FolderInfoBar: React.FC = () => {
       closeMiniSearch()
       return
     }
+
+    const trimmedJumpName = miniSearchText.trim()
+    if (trimmedJumpName && miniSearchResults.length === 0 && !miniSearchLoading) {
+      if (
+        trimmedJumpName === '.' ||
+        trimmedJumpName === '..' ||
+        trimmedJumpName.includes('\\') ||
+        trimmedJumpName.includes('/')
+      ) {
+        addLog(`Invalid folder name: ${trimmedJumpName}`, 'error')
+        setStatus('Invalid folder name', 'error')
+        closeMiniSearch()
+        return
+      }
+      const normalizedParent = normalizePath(miniSearchPath)
+      if (!normalizedParent) {
+        closeMiniSearch()
+        return
+      }
+      void (async () => {
+        try {
+          const isValid = await (window.electronAPI as any).validatePath(normalizedParent)
+          if (!isValid) {
+            addLog(`Cannot create folder in inaccessible path`, 'error')
+            setStatus('Cannot access folder', 'error')
+            return
+          }
+          const contents = await (window.electronAPI as any).getDirectoryContents(normalizedParent)
+          const files = Array.isArray(contents)
+            ? contents
+            : contents?.files && Array.isArray(contents.files)
+              ? contents.files
+              : []
+          const existing = files.find(
+            (f: FileItem) => typeof f?.name === 'string' && f.name.toLowerCase() === trimmedJumpName.toLowerCase()
+          )
+          if (existing) {
+            addLog(`A file or folder named "${trimmedJumpName}" already exists.`, 'error')
+            setStatus('Cannot create folder: name already exists', 'error')
+            return
+          }
+          const fullPath = joinPath(normalizedParent === '/' ? '' : normalizedParent, trimmedJumpName)
+          await (window.electronAPI as any).createDirectory(fullPath)
+          const dest = normalizePath(fullPath) || fullPath
+          setCurrentDirectory(dest)
+          addLog(`Created and entered folder: ${trimmedJumpName}`)
+          setStatus(`Created and entered folder: ${trimmedJumpName}`, 'success')
+        } catch (error) {
+          const errorMessage = getErrorMessageFromUnknown(error)
+          addLog(`Failed to create folder: ${errorMessage}`, 'error')
+          setStatus(`Failed to create folder: ${trimmedJumpName}`, 'error')
+        }
+      })()
+      closeMiniSearch()
+      return
+    }
+
     const normalizedPath = normalizePath(miniSearchPath)
     if (!normalizedPath) {
       closeMiniSearch()

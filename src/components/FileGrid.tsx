@@ -243,6 +243,9 @@ export const FileGrid: React.FC = () => {
   const [lastClickTime, setLastClickTime] = useState<number>(0)
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
+  const [isUploadToVaultsOpen, setUploadToVaultsOpen] = useState(false)
+  const [vaultUploadSourcePaths, setVaultUploadSourcePaths] = useState<string[]>([])
+  const [vaultUploadTargetDir, setVaultUploadTargetDir] = useState('')
   const [isExtractedTextOpen, setExtractedTextOpen] = useState(false)
   const [extractedTextData, setExtractedTextData] = useState({ fileName: '', text: '' })
   const [isIndexPrefixDialogOpen, setIsIndexPrefixDialogOpen] = useState(false)
@@ -1076,6 +1079,31 @@ export const FileGrid: React.FC = () => {
           setMergePDFOpen(true)
           setStatus('Opening Merge PDF dialog', 'info')
           break
+        case 'upload_to_vaults': {
+          const appSettings = await settingsService.getSettings()
+          const vaultDir = appSettings.vaultsClientPdfsDirectory?.trim()
+          if (!vaultDir) {
+            addLog('Set Vaults Client PDFs folder in Settings → Paths before uploading.', 'error')
+            setStatus('Configure Client PDFs folder in Settings → Paths', 'error')
+            break
+          }
+          const pdfsForVault = sortedFiles.filter(
+            (f) =>
+              f.type === 'file' &&
+              selectedFilesSet.has(f.name) &&
+              f.name.toLowerCase().endsWith('.pdf')
+          )
+          if (pdfsForVault.length === 0) {
+            addLog('No PDF files in selection to upload.', 'error')
+            setStatus('No PDFs selected', 'error')
+            break
+          }
+          setVaultUploadSourcePaths(pdfsForVault.map((f) => f.path))
+          setVaultUploadTargetDir(vaultDir)
+          setUploadToVaultsOpen(true)
+          setStatus('Upload to Vaults', 'info')
+          break
+        }
         case 'extract_zip':
           const selectedZipFiles = selectedFiles.filter(filename => 
             filename.toLowerCase().endsWith('.zip')
@@ -1401,7 +1429,7 @@ export const FileGrid: React.FC = () => {
     }
 
   handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, setIsAIFileManagerOpen, setFileManagerInitialSelection, refreshDirectory])
+  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, setUploadToVaultsOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, setIsAIFileManagerOpen, setFileManagerInitialSelection, refreshDirectory])
 
   const closeFileOpFailure = useCallback(() => {
     setFileOpFailureDialog((d) => ({ ...d, open: false }))
@@ -4859,6 +4887,9 @@ export const FileGrid: React.FC = () => {
         setStatus={setStatus}
         refreshDirectory={refreshDirectory}
         setMergePDFOpen={setMergePDFOpen}
+        setUploadToVaultsOpen={setUploadToVaultsOpen}
+        setVaultUploadSourcePaths={setVaultUploadSourcePaths}
+        setVaultUploadTargetDir={setVaultUploadTargetDir}
         setExtractedTextOpen={setExtractedTextOpen}
         setPropertiesOpen={setPropertiesOpen}
         setImagePasteOpen={setImagePasteOpen}
@@ -4869,6 +4900,9 @@ export const FileGrid: React.FC = () => {
         setIsSmartRenameDialogOpen={setIsSmartRenameDialogOpen}
         setSmartRenameFile={setSmartRenameFile}
         isMergePDFOpen={isMergePDFOpen}
+        isUploadToVaultsOpen={isUploadToVaultsOpen}
+        vaultUploadSourcePaths={vaultUploadSourcePaths}
+        vaultUploadTargetDir={vaultUploadTargetDir}
         isExtractedTextOpen={isExtractedTextOpen}
         extractedTextData={extractedTextData}
         isPropertiesOpen={isPropertiesOpen}

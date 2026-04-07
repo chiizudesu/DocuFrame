@@ -28,6 +28,7 @@ export interface Config {
   chromeExtensionBridgeEnabled?: boolean;
   chromeExtensionBridgePort?: number;
   chromeExtensionBridgeSecret?: string;
+  vaultsClientPdfsDirectory?: string;
 
 }
 

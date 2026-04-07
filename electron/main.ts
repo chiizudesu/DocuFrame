@@ -20,9 +20,11 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { PDFDocument } from 'pdf-lib';
 import PDFParser from 'pdf2json';
 import { fileSystemService } from '../src/services/fileSystem';
+import { findClientRow, getIrdNumber } from '../src/services/clientDatabaseCsv';
 import type { Config } from '../src/services/config';
 import { handleCommand } from '../src/main/commandHandler';
 import { transferFiles } from '../src/main/commands/transfer';
+import { uploadClientPdfsToVaults } from '../src/main/vaultsClientPdfUpload';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
 import { autoUpdaterService } from '../src/main/autoUpdater';
@@ -1017,7 +1019,7 @@ async function handlePathPasteActivate() {
         const rows = await new Promise<any[]>((resolve, reject) => {
           try {
             const content = fs.readFileSync(csvPath, 'utf8');
-            const records = parse(content, { columns: true, skip_empty_lines: true });
+            const records = parse(content, { columns: true, skip_empty_lines: true, bom: true });
             resolve(records);
           } catch (err) {
             reject(err);
@@ -1025,22 +1027,9 @@ async function handlePathPasteActivate() {
         });
         
         if (rows && rows.length > 0) {
-          const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
-          const match = rows.find((row: any) => {
-            const field = clientNameFields.find(f => row[f] !== undefined);
-            if (!field) return false;
-            return String(row[field]).toLowerCase().replace(/\s+/g, '') === clientName.toLowerCase().replace(/\s+/g, '');
-          }) || rows.find((row: any) => {
-            const field = clientNameFields.find(f => row[f] !== undefined);
-            if (!field) return false;
-            return String(row[field]).toLowerCase().includes(clientName.toLowerCase());
-          });
-          
+          const match = findClientRow(rows, clientName);
           if (match) {
-            irdNumber = match['IRD No.'] || match['IRD Number'] || match['ird number'] || match['ird_number'] || null;
-            if (irdNumber === '-' || irdNumber === '') {
-              irdNumber = null;
-            }
+            irdNumber = getIrdNumber(match);
           }
         }
       }
@@ -2422,6 +2411,26 @@ ipcMain.handle('copy-file-silent', async (_, sourcePath: string, targetPath: str
   }
 });
 
+ipcMain.handle(
+  'upload-client-pdfs-to-vaults',
+  async (
+    event,
+    payload: { sourcePaths: string[]; clientName: string; year: string; targetDir: string },
+  ) => {
+    try {
+      return await uploadClientPdfsToVaults(payload, (progress) => {
+        event.sender.send('vault-upload-progress', progress);
+      });
+    } catch (error) {
+      console.error('upload-client-pdfs-to-vaults:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  },
+);
+
 // Silent move files (no conflict dialogs - auto-rename on conflict)
 ipcMain.handle('move-files-silent', async (_, files: string[], targetDirectory: string) => {
   try {
@@ -2549,7 +2558,7 @@ ipcMain.on('ondragstart', async (event, files) => {
 ipcMain.handle('read-csv', async (_, filePath) => {
   try {
     const content = fs.readFileSync(filePath, 'utf8');
-    const records = parse(content, { columns: true, skip_empty_lines: true });
+    const records = parse(content, { columns: true, skip_empty_lines: true, bom: true });
     return records;
   } catch (err) {
     console.error('Failed to read CSV:', err);

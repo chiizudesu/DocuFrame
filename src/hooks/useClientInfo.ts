@@ -1,8 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
+import {
+  findClientRow,
+  getAddress,
+  getClientLink,
+  getClientName,
+  getIrdNumber,
+  getJobLink,
+  resolveJobLinkFallback,
+  yearsWithJobLinks,
+  type ClientDbRow,
+} from '../services/clientDatabaseCsv';
 
-export interface ClientInfo {
-  [key: string]: string | undefined;
-}
+export type ClientInfo = ClientDbRow;
 
 export function useClientInfo(currentDirectory: string, rootDirectory: string) {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
@@ -33,16 +42,7 @@ export function useClientInfo(currentDirectory: string, rootDirectory: string) {
         setLoading(false);
         return;
       }
-      const clientNameFields = ['Client Name', 'ClientName', 'client name', 'client_name'];
-      const match = rows.find((row: any) => {
-        const field = clientNameFields.find(f => row[f] !== undefined);
-        if (!field) return false;
-        return String(row[field]).toLowerCase().replace(/\s+/g, '') === clientName.toLowerCase().replace(/\s+/g, '');
-      }) || rows.find((row: any) => {
-        const field = clientNameFields.find(f => row[f] !== undefined);
-        if (!field) return false;
-        return String(row[field]).toLowerCase().includes(clientName.toLowerCase());
-      });
+      const match = findClientRow(rows as ClientDbRow[], clientName);
       setClientInfo(match || null);
     } catch {
       setClientInfo(null);
@@ -58,64 +58,47 @@ export function useClientInfo(currentDirectory: string, rootDirectory: string) {
     }
   }, [clientName, loadClientInfo]);
 
-  const getClientName = () => {
-    if (!clientInfo) return null;
-    return clientInfo['Client Name'] || clientInfo['ClientName'] || clientInfo['client name'] || clientInfo['client_name'] || null;
-  };
-
-  const getIRDNumber = () => {
-    if (!clientInfo) return null;
-    return clientInfo['IRD No.'] || clientInfo['IRD Number'] || clientInfo['ird number'] || clientInfo['ird_number'] || null;
-  };
-
-  const getAddress = () => {
-    if (!clientInfo) return null;
-    return clientInfo['Address'] || clientInfo['address'] || null;
-  };
+  const getClientNameDisplay = () => getClientName(clientInfo);
+  const getIRDNumber = () => getIrdNumber(clientInfo);
+  const getAddressDisplay = () => getAddress(clientInfo);
 
   const openClientLink = () => {
-    if (clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink'])) {
-      window.open(clientInfo['Client Link'] || clientInfo['ClientLink'], '_blank');
-    }
+    const link = getClientLink(clientInfo);
+    if (link) window.open(link, '_blank');
   };
 
   const openJobLink = (year?: string) => {
     if (!clientInfo) return;
     if (year) {
-      const link = clientInfo[`${year} Job Link`];
+      const link = getJobLink(clientInfo, year);
       if (link) window.open(link, '_blank');
-    } else {
-      if (taxYear && clientInfo[`${taxYear} Job Link`]) {
-        window.open(clientInfo[`${taxYear} Job Link`], '_blank');
-      } else if (clientInfo['2025 Job Link']) {
-        window.open(clientInfo['2025 Job Link'], '_blank');
-      } else if (clientInfo['2026 Job Link']) {
-        window.open(clientInfo['2026 Job Link'], '_blank');
-      }
+      return;
     }
+    const link = resolveJobLinkFallback(clientInfo, taxYear);
+    if (link) window.open(link, '_blank');
   };
 
   const sep = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win') ? '\\' : '/';
 
-  // The path to the client folder itself (root/year/clientName)
   const clientFolderPath =
     clientInfo && rootIdx !== -1 && pathSegments.length > rootIdx + 2
       ? pathSegments.slice(0, rootIdx + 3).join(sep)
       : null;
+
+  const jobYearsWithLinks = yearsWithJobLinks(clientInfo);
 
   return {
     clientInfo,
     loading,
     taxYear,
     clientName,
-    getClientName,
+    getClientName: getClientNameDisplay,
     getIRDNumber,
-    getAddress,
+    getAddress: getAddressDisplay,
     openClientLink,
     openJobLink,
-    hasClientLink: !!(clientInfo && (clientInfo['Client Link'] || clientInfo['ClientLink'])),
-    has2025JobLink: !!(clientInfo && clientInfo['2025 Job Link']),
-    has2026JobLink: !!(clientInfo && clientInfo['2026 Job Link']),
+    hasClientLink: !!getClientLink(clientInfo),
+    jobYearsWithLinks,
     clientFolderPath,
   };
 }
