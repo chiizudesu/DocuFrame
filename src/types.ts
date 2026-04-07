@@ -146,6 +146,7 @@ declare global {
         gitRoot?: string;
         stderr?: string;
       }>;
+      onVaultUploadProgress: (cb: (event: any, data: { step: string; message: string }) => void) => void;
     };
   }
 } 
