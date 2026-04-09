@@ -130,9 +130,28 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
     }
   };
 
+  const stripMarkdown = (text: string): string => {
+    return text
+      .replace(/^#{1,6}\s+/gm, '')           // headers
+      .replace(/\*\*\*(.+?)\*\*\*/g, '$1')   // bold+italic
+      .replace(/\*\*(.+?)\*\*/g, '$1')        // bold
+      .replace(/\*(.+?)\*/g, '$1')            // italic
+      .replace(/_(.+?)_/g, '$1')              // italic underscore
+      .replace(/`{3}[\s\S]*?`{3}/g, '')       // code blocks
+      .replace(/`(.+?)`/g, '$1')              // inline code
+      .replace(/\[(.+?)\]\(.+?\)/g, '$1')     // links
+      .replace(/!\[.*?\]\(.+?\)/g, '')        // images
+      .replace(/^[-*_]{3,}\s*$/gm, '')        // horizontal rules
+      .replace(/^>\s+/gm, '')                 // blockquotes
+      .replace(/^[\s]*[-*+]\s+/gm, '')        // unordered lists
+      .replace(/^[\s]*\d+\.\s+/gm, '')        // ordered lists
+      .replace(/\n{3,}/g, '\n\n')             // collapse 3+ newlines to 1 blank line
+      .trim();
+  };
+
   const handleCopy = async () => {
     if (result) {
-      await navigator.clipboard.writeText(result);
+      await navigator.clipboard.writeText(stripMarkdown(result));
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     }
