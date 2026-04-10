@@ -109,7 +109,7 @@
       "public/**/*"
     ],
     "win": {
-      "icon": "public/256.ico",
+      "icon": "public/icon.ico",
       "target": [
         {
           "target": "nsis",
