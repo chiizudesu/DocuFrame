@@ -14,9 +14,7 @@ class AutoUpdaterService {
     autoUpdater.setFeedURL({
       provider: 'github',
       owner: 'chiizudesu',
-      repo: 'DocuFrame',
-      private: true,
-      token: process.env.GH_TOKEN
+      repo: 'DocuFrame'
     });
 
     // Configure auto-updater
@@ -96,10 +94,6 @@ class AutoUpdaterService {
       console.log('Checking for updates...');
     });
 
-    // Update downloaded
-    autoUpdater.on('update-downloaded', (info) => {
-      console.log('Update downloaded:', info);
-    });
   }
 
   // Method to manually check for updates

@@ -26,10 +26,9 @@
     "electron-pack": "electron-builder",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "dist-win": "npm run build && electron-builder --win",
-    "dist-win-safe": "npm run build-no-check && electron-builder --win",
-    "dist-win-unsigned": "npm run build-no-check && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
-    "publish-github": "npm run build-no-check && set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --publish=always",
+    "dist-win": "npm run build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
+    "dist-win-unsigned": "npm run build-no-check && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
+    "publish-github": "npm run build-no-check && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --publish always",
     "make": "electron-forge make",
     "publish": "electron-forge publish"
   },
@@ -101,26 +100,18 @@
     "appId": "com.edwardmatias.docuframe",
     "productName": "DocuFrame",
     "directories": {
-      "output": "release-v107"
+      "output": "release"
     },
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "public/**/*",
-      "build/icon.ico"
+      "public/**/*"
     ],
     "asarUnpack": [
       "public/**/*"
     ],
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "chiizudesu",
-        "repo": "DocuFrame"
-      }
-    ],
     "win": {
-      "icon": "build/icon.ico",
+      "icon": "public/256.ico",
       "target": [
         {
           "target": "nsis",
@@ -131,21 +122,25 @@
       ],
       "forceCodeSigning": false,
       "signAndEditExecutable": false,
-      "signExts": null,
       "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DocuFrame"
+      "shortcutName": "DocuFrame",
+      "uninstallDisplayName": "DocuFrame",
+      "deleteAppDataOnUninstall": false
     },
-    "mac": {
-      "icon": "build/icon.ico"
-    },
-    "linux": {
-      "icon": "build/icon.ico"
-    }
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "chiizudesu",
+        "repo": "DocuFrame"
+      }
+    ]
   }
 }

@@ -227,20 +227,23 @@ const AppContent: React.FC = () => {
             setStatus('Jump folder path is not accessible', 'error');
           }
         };
-        if (e.key === 'F1') {
-          if (rootDirectory?.trim()) {
-            e.preventDefault();
-            void openJumpValidated(rootDirectory);
-          }
-          return;
-        }
-        const fn = ['F2', 'F3', 'F4'].indexOf(e.key);
-        if (fn >= 0) {
-          const p = jumpModeQuickFolderPaths[fn]?.trim();
-          if (p) {
-            e.preventDefault();
-            void openJumpValidated(p);
+        // Skip F-key shortcuts when modifier keys are held (e.g. Alt+F4 closes window, Ctrl+F4, etc.)
+        if (!e.altKey && !e.ctrlKey && !e.metaKey) {
+          if (e.key === 'F1') {
+            if (rootDirectory?.trim()) {
+              e.preventDefault();
+              void openJumpValidated(rootDirectory);
+            }
             return;
+          }
+          const fn = ['F2', 'F3', 'F4'].indexOf(e.key);
+          if (fn >= 0) {
+            const p = jumpModeQuickFolderPaths[fn]?.trim();
+            if (p) {
+              e.preventDefault();
+              void openJumpValidated(p);
+              return;
+            }
           }
         }
       }

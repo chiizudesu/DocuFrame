@@ -2765,7 +2765,7 @@ export const FileGrid: React.FC = () => {
         addLog(`Uploading ${validFiles.length} file(s) to current directory`);
         setStatus('Uploading files...', 'info');
         
-        const results = await window.electronAPI.moveFiles(validFiles.map(f => f.path), currentDirectory);
+        const results = await window.electronAPI.copyFiles(validFiles.map(f => f.path), currentDirectory);
         
         const successful = results.filter((r: any) => r.status === 'success').length;
         const failed = results.filter((r: any) => r.status === 'error').length;
@@ -3076,6 +3076,9 @@ export const FileGrid: React.FC = () => {
     const onWindowDragEnd = () => {
       resetDragState();
       clearFolderHoverStates();
+      // Clear the internal drag flag so cancelled/external-dropped internal drags don't
+      // poison subsequent external drops from Windows Explorer.
+      try { delete (window as any).__docuframeInternalDrag; } catch {}
     };
     window.addEventListener('dragend', onWindowDragEnd);
     return () => window.removeEventListener('dragend', onWindowDragEnd);
