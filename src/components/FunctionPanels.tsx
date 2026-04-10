@@ -15,7 +15,6 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
-import { OrgCodesDialog } from './OrgCodesDialog';
 import { MergePDFDialog } from './MergePDFDialog';
 import { ExtractionResultDialog } from './ExtractionResultDialog';
 import { LateClaimsDialog } from './LateClaimsDialog';
@@ -594,7 +593,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     addRecentlyTransferredFiles,
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
-  const [isOrgCodesOpen, setOrgCodesOpen] = useState(false);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
   const [isExtractionResultOpen, setExtractionResultOpen] = useState(false);
   const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
@@ -664,11 +662,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       setStatus('Opened transfer mapping', 'info');
       return;
     }
-    if (action === 'org_codes') {
-      setOrgCodesOpen(true);
-      setStatus('Opened Org Codes manager', 'info');
-      return;
-    }
+
     if (action === 'merge_pdfs') {
       setMergePDFOpen(true);
       setStatus('Opened Merge PDF dialog', 'info');
@@ -959,7 +953,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       transfer_mapping: 'Transfer Map',
       ai_editor: 'AI Editor',
       update: 'Update',
-      org_codes: 'Org Codes'
     };
     const friendlyName = functionNames[action] || action;
     setStatus(`Executing ${friendlyName}...`, 'info');
@@ -1595,7 +1588,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       {isTransferMappingOpen && (
         <TransferMappingDialog isOpen onClose={() => setTransferMappingOpen(false)} />
       )}
-      {isOrgCodesOpen && <OrgCodesDialog isOpen onClose={() => setOrgCodesOpen(false)} />}
       {isMergePDFOpen && (
         <MergePDFDialog
           isOpen

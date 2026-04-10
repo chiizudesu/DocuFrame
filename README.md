@@ -1,114 +1,54 @@
 # DocuFrame
 
-A purpose-built desktop file explorer for accountants, built with Electron and React. DocuFrame replaces generic file managers with accounting-specific workflows: smart file organisation, index-prefix grouping, PDF tools, Xero integration, AI-assisted document analysis, and fast keyboard-driven navigation.
+A purpose-built desktop file explorer for accountants, built with Electron and React. DocuFrame replaces generic file managers with accounting-specific workflows: smart file organisation, index-prefix grouping, PDF tools, AI-assisted document analysis, and fast keyboard-driven navigation.
 
 ---
 
 ## Table of Contents
 
-- [Features](#features)
-- [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Xero Integration](#xero-integration)
+- [Features](#features)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Jump Mode](#jump-mode)
+- [Index Prefix System](#index-prefix-system)
 - [AI Tools](#ai-tools)
 - [PDF Tools](#pdf-tools)
 - [File Operations](#file-operations)
 - [Templates](#templates)
-- [Auto-Updater](#auto-updater)
+- [Auto-Updates](#auto-updates)
 - [Development](#development)
-- [Building](#building)
 - [License](#license)
-
----
-
-## Features
-
-### File Management
-- **File grid** with sortable columns (name, size, modified date, type)
-- **Index-prefix grouping** — files are automatically grouped by their numeric prefix (e.g. `01 Letter.pdf`, `02 Invoice.pdf`)
-- **Smart rename** — batch rename files with prefix assignment
-- **Inline folder creation** — create folders without leaving the keyboard
-- **Drag and drop** — move files within the app or drag in files from Windows Explorer
-- **Clipboard operations** — cut, copy, paste with Ctrl+X/C/V
-- **Multi-select** — Shift+click, Ctrl+click, or rubber-band marquee selection
-- **Quick file search** — type to filter files instantly within a directory
-- **Preview pane** — preview PDFs, images, and documents inline
-
-### Navigation
-- **Folder tab system** — open multiple directories in tabs
-- **Jump mode** (F1–F4) — instant keyboard navigation to configured quick-access folders
-- **Address bar jump** — start typing anywhere to open the address bar and jump to a path
-- **Backspace navigation** — navigate to parent directory
-- **Quick Navigate Overlay** — command palette for rapid folder switching
-- **Breadcrumb trail** — visual path with click-to-navigate segments
-- **F5 refresh** — reload current directory
-
-### PDF Tools
-- **PDF Merge** — combine multiple PDFs into one, with drag-and-drop reordering
-- **PDF viewer** — inline PDF preview via embedded viewer
-- **PDF to CSV** — extract structured data from PDFs into spreadsheet format
-- **PDF text extraction** — extract raw text from PDF documents
-
-### AI Tools (requires Anthropic API key)
-- **AI File Manager** — describe a task in natural language; Claude reorganises, renames, and moves files
-- **AI Editor** — select files and apply AI-driven edits or transformations
-- **AI Templater** — generate documents from YAML templates using AI
-- **Document Analysis** — extract structured data from scanned documents
-
-### Xero Integration
-- OAuth 2.0 authentication flow
-- Upload PDFs directly to Xero Vaults (client document storage)
-- Client database lookup from CSV for fast client selection
-- IRD number and client info bar
-
-### Other
-- **Calculator** — built-in calculator accessible via keyboard shortcut
-- **Transfer tool** — move or copy files between directories with conflict resolution
-- **Custom properties** — attach metadata to files
-- **Organisation codes dialog** — manage chart-of-accounts-style org codes
-- **Settings window** — all preferences in one place
-- **Native Windows icons** — real OS file type icons in the grid
-- **Auto-updater** — silent background updates via GitHub Releases
-- **Dark/light theme** — system-aware with manual toggle
-
----
-
-## Requirements
-
-- **Node.js** 18 or later
-- **npm** 9 or later
-- Windows 10/11 (primary target; macOS/Linux builds possible but untested)
 
 ---
 
 ## Installation
 
+### For Users
+
+1. Go to the [Releases](https://github.com/chiizudesu/DocuFrame/releases) page
+2. Download the latest `DocuFrame Setup x.x.x.exe`
+3. Run the installer — no admin rights required (installs per-user by default)
+4. Launch DocuFrame from the desktop shortcut or Start Menu
+
+Updates are delivered automatically. When a new version is available, DocuFrame will notify you and install it on the next restart.
+
+### For Developers
+
 ```bash
 git clone https://github.com/chiizudesu/DocuFrame.git
 cd DocuFrame
 npm install
-```
-
-### Backend (Xero OAuth server)
-
-```bash
-npm run install-backend
+npm run dev
 ```
 
 ---
 
 ## Configuration
 
-Copy the sample config and update it for your environment:
+On first launch, DocuFrame will prompt you to set your workspace root in **Settings**. This is the top-level folder that contains your client files (e.g. `C:\Users\YourName\Documents\Clients`).
 
-```bash
-cp config.sample.json config.json
-```
-
-Edit `config.json`:
+You can also edit `config.json` directly in the app data folder. A sample is provided at `config.sample.json`:
 
 ```json
 {
@@ -116,38 +56,52 @@ Edit `config.json`:
 }
 ```
 
-`rootPath` is the root directory DocuFrame opens on launch. All navigation stays within this tree by default.
+All navigation in DocuFrame stays within this root by default.
 
 ---
 
-## Xero Integration
+## Features
 
-Copy the environment template:
+### File Management
+- **File grid** with sortable columns (name, size, modified date, type)
+- **Index-prefix grouping** — files are automatically grouped by their numeric prefix (`01 Letter.pdf`, `02 Invoice.pdf`)
+- **Smart rename** — batch rename files with prefix assignment
+- **Inline folder creation** — create folders without leaving the keyboard
+- **Drag and drop** — move files within the app or drag in files from Windows Explorer
+- **Clipboard operations** — cut, copy, paste with Ctrl+X / C / V
+- **Multi-select** — Shift+click, Ctrl+click, or rubber-band marquee selection
+- **Quick file search** — type to filter files instantly within the current directory
+- **Preview pane** — preview PDFs, images, and documents inline
 
-```bash
-cp .env.example .env
-```
+### Navigation
+- **Folder tab system** — open multiple directories in tabs
+- **Jump mode** (F1–F4) — instant keyboard navigation to configured quick-access folders
+- **Address bar jump** — start typing anywhere to open the address bar and jump to a path
+- **Backspace navigation** — navigate to parent directory
+- **Quick Navigate overlay** — command palette for rapid folder switching
+- **Breadcrumb trail** — visual path with click-to-navigate segments
+- **F5 refresh** — reload current directory
 
-Fill in `.env`:
+### PDF Tools
+- **PDF Merge** — combine multiple PDFs into one, with drag-and-drop page reordering
+- **PDF viewer** — inline PDF preview via embedded viewer
+- **PDF to CSV** — extract structured data from PDFs into spreadsheet format
+- **PDF text extraction** — extract raw text from PDF documents
 
-```env
-SESSION_SECRET=some_long_random_string
-XERO_CLIENT_ID=your_xero_app_client_id
-XERO_CLIENT_SECRET=your_xero_app_client_secret
-XERO_REDIRECT_URI=http://localhost:5173/oauth/callback.html
-PORT=3001
-```
+### AI Tools
+- **AI File Manager** — describe a task in natural language; Claude reorganises, renames, and moves files
+- **AI Editor** — select files and apply AI-driven edits or transformations
+- **AI Templater** — generate documents from YAML templates using AI
+- **Document Analysis** — extract structured data from scanned documents
 
-To get Xero credentials:
-1. Go to [developer.xero.com](https://developer.xero.com) → My Apps → New App
-2. Set redirect URI to `http://localhost:5173/oauth/callback.html`
-3. Copy Client ID and Client Secret into `.env`
-
-Start the backend before using Xero features:
-
-```bash
-npm run start-backend
-```
+### Other
+- **Calculator** — built-in calculator accessible via keyboard shortcut
+- **Transfer tool** — move or copy files between directories with conflict resolution
+- **Upload to Vaults** — commit and push PDFs to a configured Vaults git repository
+- **Settings window** — all preferences in one place
+- **Native Windows icons** — real OS file type icons in the grid
+- **Auto-updater** — silent background updates via GitHub Releases
+- **Dark/light theme** — system-aware with manual toggle
 
 ---
 
@@ -168,11 +122,11 @@ npm run start-backend
 | `F2` | Rename selected file |
 | `Delete` | Delete selected files |
 | `Backspace` | Navigate to parent directory |
-| `Enter` | Open selected file/folder |
-| `Escape` | Close active overlay/dialog |
+| `Enter` | Open selected file or folder |
+| `Escape` | Close active overlay or dialog |
 | Any letter | Open address bar jump at current directory, pre-filled |
 
-Shortcuts for Jump Mode quick folders (F2–F4), the calculator, and backspace navigation are configurable in Settings.
+The jump mode folders (F2–F4), calculator shortcut, and backspace navigation are all configurable in **Settings**.
 
 ---
 
@@ -191,7 +145,22 @@ Jump mode lets you instantly navigate to any folder in your workspace by typing 
 - Enter to navigate into the selected folder
 - Escape to close
 
-**Note:** F1–F4 shortcuts are skipped when modifier keys are held. This ensures system shortcuts like Alt+F4 (close window) work normally.
+System shortcuts like **Alt+F4** always take priority over F-key jump shortcuts.
+
+---
+
+## Index Prefix System
+
+Files are named with a numeric prefix to define their display order and group:
+
+```
+01 Engagement Letter.pdf
+02 Financial Statements.pdf
+02 Tax Return.pdf
+03 Correspondence.pdf
+```
+
+Files sharing a prefix are grouped together in the grid. Use **Smart Rename** to assign or change prefixes in bulk. The prefix determines which group header a file appears under and can be reassigned by dragging a file onto a different group header.
 
 ---
 
@@ -202,23 +171,23 @@ AI features require an [Anthropic API key](https://console.anthropic.com/).
 Set it in **Settings → AI → API Key**.
 
 ### AI File Manager
-Open the AI File Manager pane, describe what you want done (e.g. "move all 2023 invoices into a subfolder called Invoices 2023"), and Claude will plan and execute the file operations.
+Open the AI File Manager pane and describe what you want done (e.g. *"move all 2023 invoices into a subfolder called Invoices 2023"*). Claude will plan and execute the file operations.
 
 ### AI Editor
-Select one or more files in the grid, open the AI Editor, describe a transformation, and Claude will process the file content. Results can be copied or saved.
+Select one or more files in the grid, open the AI Editor, describe a transformation, and Claude will process the file content. Results can be copied or saved directly.
 
 ### AI Templater
-Choose a YAML template from the Templates folder, provide context, and Claude fills in the document structure.
+Choose a YAML template, provide context, and Claude fills in the document structure. Templates live in the `templates/` folder.
 
 ---
 
 ## PDF Tools
 
 ### Merge PDFs
-Right-click selected PDFs → Merge, or use the Merge PDF button in the toolbar. Drag to reorder pages before merging.
+Select multiple PDFs → right-click → **Merge**, or use the Merge PDF button in the toolbar. Drag to reorder before merging.
 
 ### PDF to CSV
-Right-click a PDF → Extract to CSV. DocuFrame parses the PDF and produces a structured CSV file in the same directory.
+Right-click a PDF → **Extract to CSV**. DocuFrame parses the PDF and produces a structured CSV file in the same directory.
 
 ### Preview
 Click any PDF in the file grid to open it in the preview pane on the right. The pane can be toggled with the preview button in the toolbar.
@@ -227,24 +196,12 @@ Click any PDF in the file grid to open it in the preview pane on the right. The 
 
 ## File Operations
 
-### Index Prefix System
-Files are named with a numeric prefix to define their display order and group:
-
-```
-01 Engagement Letter.pdf
-02 Financial Statements.pdf
-02 Tax Return.pdf
-03 Correspondence.pdf
-```
-
-Files sharing a prefix are grouped together in the grid. Use **Smart Rename** to assign or change prefixes in bulk.
-
 ### Drag and Drop
-- **Within DocuFrame** — drag files onto a group header to move them into that prefix group, or drag onto a folder to move inside it
+- **Within DocuFrame** — drag files onto a group header to reassign their prefix, or onto a folder to move inside it
 - **From Windows Explorer** — drag files into the DocuFrame window to copy them into the current directory
 
 ### Transfer Tool
-Use the Transfer dialog (accessible via command panel) to move or copy files between two directories with conflict detection and resolution options.
+Available via the command panel. Move or copy files between two directories with conflict detection and resolution options.
 
 ---
 
@@ -252,44 +209,34 @@ Use the Transfer dialog (accessible via command panel) to move or copy files bet
 
 Templates are YAML files stored in the `templates/` directory. They define document structure for common accounting outputs (tax returns, management reports, etc.).
 
-To add a template, create a `.yaml` file in `templates/` following the structure of the existing examples.
+To add a template, create a `.yaml` file in `templates/` following the structure of the existing examples, then reference it from the AI Templater.
 
 ---
 
-## Auto-Updater
+## Auto-Updates
 
-DocuFrame uses `electron-updater` to check for and apply updates from GitHub Releases.
+DocuFrame checks for updates automatically in the background. When a new version is available:
 
-### For users
-Updates are checked automatically. When a new version is available, a dialog will appear asking you to restart and install. You can also trigger a manual check from the command panel (`update` command).
+1. A dialog appears: **"A new version (x.x.x) is available"**
+2. The update downloads silently
+3. Another dialog appears: **"Update Ready — Restart Now or Later"**
+4. Click **Restart Now** to apply, or **Later** to install on the next launch
 
-### For developers (releasing an update)
-1. Bump the version in `package.json`
-2. Set your GitHub PAT with `repo` scope:
-   ```bash
-   $env:GH_TOKEN="ghp_yourtoken"   # PowerShell
-   ```
-3. Build and publish:
-   ```bash
-   npm run publish-github
-   ```
-   This builds the installer and uploads it to GitHub Releases along with `latest.yml` (which the updater polls).
-
-The repository is public, so no token is needed in the distributed app — `electron-updater` can fetch `latest.yml` and download the installer anonymously.
+You can also trigger a manual check from the command panel using the `update` command.
 
 ---
 
 ## Development
 
 ```bash
-# Start the app in development mode (hot reload)
+# Start in development mode (hot reload)
 npm run dev
-
-# Start with standalone React DevTools (Profiler)
-npm run profiler
 
 # Type-check without building
 npx tsc --noEmit
+
+# Start with standalone React DevTools (Profiler tab)
+npm run profiler
 ```
 
 ### Project Structure
@@ -298,45 +245,25 @@ npx tsc --noEmit
 src/
   App.tsx                  # Root component, global keyboard handlers
   components/              # UI components
-    FileGrid.tsx            # Main file grid (5000+ lines, core of the app)
+    FileGrid.tsx            # Main file grid (core of the app)
     FileGrid/               # FileGrid sub-components
-      FileGridUI.tsx        # Visual chrome
-      FileListView.tsx      # Virtualised list + group view
-      FileGridUtils.tsx     # Drag/drop helpers, sort types
-      FileListThead.tsx     # Sticky column headers
     FolderInfoBar.tsx       # Address bar + breadcrumbs
     CommandPanel.tsx        # Command palette
     PreviewPane.tsx         # File preview
     SettingsWindow.tsx      # Settings
-    ...
   context/
-    AppContext.tsx           # Global state (current directory, settings, etc.)
-  main/                    # Electron main-process code called from renderer
+    AppContext.tsx           # Global state
+  main/                    # Electron main-process helpers
     commandHandler.ts
-    commands/               # Individual command implementations
+    commands/               # Command implementations
     autoUpdater.ts
-  services/                # Business logic (file system, AI, config, etc.)
-  utils/                   # Pure helpers (paths, shortcuts, index prefixes)
+  services/                # Business logic (file system, AI, config)
+  utils/                   # Pure helpers
 electron/
-  main.ts                  # Electron main process (IPC handlers, window management)
-  preload.ts               # Context bridge (exposes electronAPI to renderer)
+  main.ts                  # Electron main process
+  preload.ts               # Context bridge
 templates/                 # YAML document templates
-server/                    # Express backend (Xero OAuth)
 ```
-
----
-
-## Building
-
-```bash
-# Build installer (unsigned, for local testing)
-npm run dist-win-unsigned
-
-# Build and publish to GitHub Releases
-npm run publish-github
-```
-
-Output goes to `release/`.
 
 ---
 
