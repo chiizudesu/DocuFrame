@@ -563,15 +563,15 @@ export const FolderInfoBar: React.FC = () => {
     try {
       const result = await (window.electronAPI as any).openCmdAtDirectory(currentDirectory);
       if (result?.success) {
-        addLog(`Opened CMD at: ${currentDirectory}`);
-        setStatus('Opened CMD at current directory', 'success');
+        addLog(`Opened terminal at: ${currentDirectory}`);
+        setStatus('Opened terminal at current directory', 'success');
       } else {
-        addLog(`Failed to open CMD: ${result?.error || 'Unknown error'}`, 'error');
-        setStatus('Failed to open CMD', 'error');
+        addLog(`Failed to open terminal: ${result?.error || 'Unknown error'}`, 'error');
+        setStatus('Failed to open terminal', 'error');
       }
     } catch (error) {
-      addLog(`Failed to open CMD: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      setStatus('Failed to open CMD', 'error');
+      addLog(`Failed to open terminal: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to open terminal', 'error');
     }
   }
 
@@ -1748,13 +1748,13 @@ export const FolderInfoBar: React.FC = () => {
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}><RefreshCw size={18} /></IconButton>
         </Box>
-        {/* Open CMD at current directory - between refresh and open in explorer */}
-        <Tooltip content="Open CMD at current directory" showArrow positioning={{
+        {/* Open terminal at current directory - between refresh and open in explorer */}
+        <Tooltip content="Open terminal at current directory" showArrow positioning={{
           placement: "bottom"
         }}>
           <Box mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
             <IconButton
-              aria-label="Open CMD at current directory"
+              aria-label="Open terminal at current directory"
               variant="ghost"
               size="sm"
               borderRadius={0}

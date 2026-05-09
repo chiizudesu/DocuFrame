@@ -2054,3 +2054,90 @@ export async function editTemplateStream(
     }
   });
 }
+
+export interface JobContextClaudeParams {
+  clientName: string;
+  entityTypeHint: string;
+  currentYear: string;
+  folderFileNames: string[];
+  a3FileContents: Array<{ fileName: string; content: string }>;
+}
+
+export interface JobContextClaudeResult {
+  entityType: string;
+  industryClassification: string;
+  previousBudget: string;
+  currentBudget: string;
+  jobInclusions: Array<{ type: string; count: number }>;
+  aiJobSummary: string;
+  riskAreas: string;
+  timeTraps: string;
+}
+
+export async function analyzeJobContext(params: JobContextClaudeParams): Promise<JobContextClaudeResult> {
+  const settings = await settingsService.getSettings();
+  const apiKey = settings.claudeApiKey;
+  if (!apiKey) throw new Error('Claude API key not set. Please add your API key in Settings.');
+
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const a3ContentBlock = params.a3FileContents.length > 0
+    ? params.a3FileContents.map(f => `--- ${f.fileName} ---\n${f.content}`).join('\n\n')
+    : '(no A3 workpaper files found)';
+
+  const fileListBlock = params.folderFileNames.join('\n');
+
+  const systemPrompt = `You are an expert New Zealand accounting job analyst. Analyse the provided client directory information and return a JSON object only — no markdown, no explanation, just raw JSON.
+
+The JSON must have exactly these fields:
+{
+  "entityType": string,
+  "industryClassification": string,
+  "previousBudget": string,
+  "currentBudget": string,
+  "jobInclusions": [{"type": string, "count": number}],
+  "aiJobSummary": string,
+  "riskAreas": string,
+  "timeTraps": string
+}
+
+Rules:
+- entityType: Use the entity type hint provided. If A3 content explicitly mentions "Look through company" or "LTC", override to "Look-through Company".
+- industryClassification: Use NZ industry sector terminology (e.g. "Rental Property", "Agriculture - Farming", "Retail - Food & Beverage", "Professional Services", "Construction", "Transport"). Derive from client name, file names, and A3 content.
+- previousBudget: Dollar amount from prior year (e.g. "$3,500") or "Unknown" if not found.
+- currentBudget: Dollar amount for this engagement year (e.g. "$4,000") or "Unknown" if not found.
+- jobInclusions: List only return/report types present. Types allowed: "Financial Statements", "IR4 Tax Return", "IR3 Tax Return", "IR6 Tax Return", "IR7 Tax Return". Count = number of that type (usually 1). Only include types evidenced by file names or A3 content.
+- aiJobSummary: One concise sentence (max 120 chars) summarising this job.
+- riskAreas: Brief bullet-point style list of accounting risk areas for this engagement (max 200 chars total).
+- timeTraps: Brief bullet-point style list of likely time traps for this job (max 200 chars total).`;
+
+  const userMessage = `Client: ${params.clientName}
+Year: ${params.currentYear}
+Entity type hint: ${params.entityTypeHint}
+
+Files in directory:
+${fileListBlock}
+
+A3 Workpaper content:
+${a3ContentBlock}`;
+
+  const response = await retryWithBackoff(async () => {
+    return await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 800,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: [{ type: 'text', text: userMessage }] }],
+      temperature: 0.2,
+    });
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') throw new Error('Unexpected response format from Claude');
+
+  const raw = content.text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+  try {
+    return JSON.parse(raw) as JobContextClaudeResult;
+  } catch {
+    throw new Error('Claude returned invalid JSON. Please try again.');
+  }
+}

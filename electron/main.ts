@@ -1874,14 +1874,14 @@ ipcMain.handle('open-directory', async (_, dirPath: string) => {
 ipcMain.handle('open-cmd-at-directory', async (_, dirPath: string) => {
   try {
     if (process.platform === 'win32') {
-      // Windows Terminal: new-tab with cmd.exe - starts in correct folder, avoids profile cwd flash & AutoRun duplication
-      const child = spawn('wt.exe', ['new-tab', 'cmd.exe', '/k', `cd /d "${dirPath}"`], {
+      // Windows Terminal: new-tab with PowerShell - starts in correct folder
+      const child = spawn('wt.exe', ['new-tab', 'pwsh.exe', '-NoExit', '-Command', `Set-Location '${dirPath}'`], {
         detached: true,
         stdio: 'ignore',
         windowsHide: false
       });
       child.on('error', () => {
-        spawn('cmd.exe', ['/K'], { cwd: dirPath, detached: true, stdio: 'ignore', windowsHide: false }).unref();
+        spawn('powershell.exe', ['-NoExit', '-Command', `Set-Location '${dirPath}'`], { detached: true, stdio: 'ignore', windowsHide: false }).unref();
       });
       child.unref();
     } else if (process.platform === 'darwin') {

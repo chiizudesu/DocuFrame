@@ -96,8 +96,6 @@ export const FileGrid: React.FC = () => {
     logFileOperation,
     isCreateFolderOpen,
     setIsCreateFolderOpen,
-    setIsAIFileManagerOpen,
-    setFileManagerInitialSelection,
   } = useFileGridActions()
 
   // Memoize selectedFiles as Set for O(1) lookup performance (moved early to avoid initialization errors)
@@ -420,7 +418,7 @@ export const FileGrid: React.FC = () => {
           const extStart = getFilenameWithoutExtension(renameValue);
           const len = renameValue.length;
           const entry = sortedFilesRef.current.find((f) => f.name === targetName);
-          input.focus();
+          input.focus({ preventScroll: true });
           if (entry?.type === 'file' && extStart > 0 && extStart < len) {
             // Collapsed caret immediately before '.' — not selecting the whole filename.
             input.setSelectionRange(extStart, extStart);
@@ -463,7 +461,6 @@ export const FileGrid: React.FC = () => {
   const rowSelectedBg = useColorModeValue(P.light.rowSelected, P.dark.rowSelected)
   const rowHoverBg = useColorModeValue(P.light.rowHover, P.dark.rowHover)
   const rowDefaultBg = useColorModeValue(P.light.listRow, P.dark.canvas)
-  const newFileHighlightBg = useColorModeValue('green.100', 'rgba(74, 222, 128, 0.13)')
   const folderDropBgColor = useColorModeValue('blue.100', 'blue.700')
   const searchHighlightBg = useColorModeValue('blue.50', 'blue.900')
   const dragGhostBg = useColorModeValue('gray.50', '#171923')
@@ -1002,6 +999,10 @@ export const FileGrid: React.FC = () => {
 
     try {
       switch (action) {
+        case 'copy_path':
+          await navigator.clipboard.writeText(contextMenu.fileItem.path)
+          setStatus(`Copied path: ${contextMenu.fileItem.path}`, 'info')
+          break
         case 'open':
           await handleOpenOrNavigate(contextMenu.fileItem)
           break
@@ -1012,18 +1013,6 @@ export const FileGrid: React.FC = () => {
             setStatus(`Opened new tab for ${contextMenu.fileItem.name}`, 'info');
           }
           handleCloseContextMenu();
-          break
-        case 'add_to_file_manager':
-          {
-            const names = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
-              ? selectedFiles
-              : [contextMenu.fileItem.name];
-            setFileManagerInitialSelection(names);
-            setIsAIFileManagerOpen(true);
-            addLog(`File Manager opened with ${names.length} item(s) selected`, 'info');
-            setStatus(`File Manager: ${names.length} item(s) selected`, 'info');
-            handleCloseContextMenu();
-          }
           break
         case 'rename':
           console.log('[Rename] Context menu rename triggered:', { name: contextMenu.fileItem.name, path: contextMenu.fileItem.path });
@@ -1429,7 +1418,7 @@ export const FileGrid: React.FC = () => {
     }
 
   handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, setUploadToVaultsOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, setIsAIFileManagerOpen, setFileManagerInitialSelection, refreshDirectory])
+  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, setUploadToVaultsOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, refreshDirectory])
 
   const closeFileOpFailure = useCallback(() => {
     setFileOpFailureDialog((d) => ({ ...d, open: false }))
@@ -4664,7 +4653,6 @@ export const FileGrid: React.FC = () => {
         memoizedArraySignature={memoizedArraySignature}
         rowSelectedBg={rowSelectedBg}
         rowDefaultBg={rowDefaultBg}
-        newFileHighlightBg={newFileHighlightBg}
         searchHighlightBg={searchHighlightBg}
         folderDropBgColor={folderDropBgColor}
         fileSearchFilter={fileSearchFilter}

@@ -12,11 +12,10 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
+import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Briefcase, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { MergePDFDialog } from './MergePDFDialog';
-import { ExtractionResultDialog } from './ExtractionResultDialog';
 import { LateClaimsDialog } from './LateClaimsDialog';
 import { AIEditorDialog } from './AIEditorDialog';
 import { AITemplaterDialog } from './AITemplaterDialog';
@@ -588,13 +587,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setIsPreviewPaneOpen,
     sessionLayerViewEnabled,
     setSessionLayerViewEnabled,
-    isAIFileManagerOpen,
-    setIsAIFileManagerOpen,
+    isJobContextOpen,
+    setIsJobContextOpen,
     addRecentlyTransferredFiles,
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
-  const [isExtractionResultOpen, setExtractionResultOpen] = useState(false);
   const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
   const [isAIEditorOpen, setAIEditorOpen] = useState(false);
   const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
@@ -643,11 +641,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     isDownloaded: false,
     error: undefined
   });
-  const [extractionResult, setExtractionResult] = useState<{
-    type: 'zip' | 'eml';
-    extractedFiles: string[];
-    sourceFiles: string[];
-  } | null>(null);
   const buttonHoverBg = useColorModeValue('gray.300', 'rgba(255,255,255,0.08)');
   const dividerColor = useColorModeValue('#e2e8f0', 'gray.600');
   const toggleActiveBg = DF_SESSION_RAIL_BG;
@@ -798,16 +791,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           // Log file operation
           logFileOperation('Extract ZIPs', `Extracted ${result.extractedFiles?.length || 0} files from ZIP archives`);
           
-          // Show extraction result dialog
-          if (result.extractedFiles && result.extractedFiles.length > 0) {
-            setExtractionResult({
-              type: 'zip',
-              extractedFiles: result.extractedFiles,
-              sourceFiles: []
-            });
-            setExtractionResultOpen(true);
-          }
-          
           // Refresh folder view to show extracted files
           try {
             const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
@@ -850,16 +833,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           
           // Log file operation
           logFileOperation('Extract EML', `Extracted ${result.extractedFiles?.length || 0} attachments from EML files`);
-          
-          // Show extraction result dialog
-          if (result.extractedFiles && result.extractedFiles.length > 0) {
-            setExtractionResult({
-              type: 'eml',
-              extractedFiles: result.extractedFiles,
-              sourceFiles: []
-            });
-            setExtractionResultOpen(true);
-          }
           
           // Refresh folder view to show extracted attachments
           try {
@@ -1522,29 +1495,29 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           </Tooltip>
 
           <Tooltip
-            content={isAIFileManagerOpen ? 'Hide AI file manager' : 'Show AI file manager'}
+            content={isJobContextOpen ? 'Hide job context' : 'Show job context'}
             showArrow
             openDelay={0}
             closeDelay={0}
             positioning={{ placement: "bottom", gutter: 8 }}
           >
             <IconButton
-              aria-label="AI file manager"
+              aria-label="Job context"
               size="sm"
-              variant={isAIFileManagerOpen ? "solid" : "ghost"}
+              variant={isJobContextOpen ? "solid" : "ghost"}
               borderRadius={0}
-              bg={isAIFileManagerOpen ? toggleActiveBg : undefined}
-              color={isAIFileManagerOpen ? "white" : buttonColor}
+              bg={isJobContextOpen ? toggleActiveBg : undefined}
+              color={isJobContextOpen ? "white" : buttonColor}
               onClick={() => {
-                setIsAIFileManagerOpen(!isAIFileManagerOpen);
-                addLog(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`);
-                setStatus(`AI file manager ${!isAIFileManagerOpen ? 'opened' : 'closed'}`, 'info');
+                setIsJobContextOpen(!isJobContextOpen);
+                addLog(`Job context ${!isJobContextOpen ? 'opened' : 'closed'}`);
+                setStatus(`Job context ${!isJobContextOpen ? 'opened' : 'closed'}`, 'info');
               }}
-              _hover={{ bg: isAIFileManagerOpen ? toggleActiveHoverBg : buttonHoverBg }}
+              _hover={{ bg: isJobContextOpen ? toggleActiveHoverBg : buttonHoverBg }}
               _focus={suppressFocusRing}
               _focusVisible={suppressFocusRing}
               h={FN_TOOLBAR_BTN}
-              w={FN_TOOLBAR_BTN}><Brain size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
+              w={FN_TOOLBAR_BTN}><Briefcase size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
           </Tooltip>
 
           <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
@@ -1594,15 +1567,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           onClose={() => setMergePDFOpen(false)}
           currentDirectory={currentDirectory}
           onFileOperation={logFileOperation}
-        />
-      )}
-      {isExtractionResultOpen && (
-        <ExtractionResultDialog
-          isOpen
-          onClose={() => setExtractionResultOpen(false)}
-          type={extractionResult?.type || 'zip'}
-          extractedFiles={extractionResult?.extractedFiles || []}
-          sourceFiles={extractionResult?.sourceFiles || []}
         />
       )}
       {isLateClaimsOpen && (

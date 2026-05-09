@@ -120,11 +120,12 @@ const FileTableRow = React.memo<FileTableRowProps>(({
         const cellKey = `${file.path}-${column}-${colIndex}`;
 
         if (isName) {
+          const nameShadow = [selectionShadow, fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null].filter(Boolean).join(', ') || undefined;
           return (
             <chakra.td
               key={cellKey}
               {...cellStylesDisplay}
-              boxShadow={selectionShadow}
+              boxShadow={nameShadow}
               ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -350,11 +351,12 @@ function FileRenameTableRow({
         const cellKey = `${file.path}-rename-${column}-${colIndex}`;
 
         if (isName) {
+          const nameShadow = [selectionShadow, fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null].filter(Boolean).join(', ') || undefined;
           return (
             <chakra.td
               key={cellKey}
               {...cellStylesDisplay}
-              boxShadow={selectionShadow}
+              boxShadow={nameShadow}
               ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -422,7 +424,7 @@ function FileRenameTableRow({
                     aria-label="Rename"
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={onRenameCancel}
+                    onBlur={() => { void handleRenameSubmit(); }}
                     autoFocus
                     w="100%"
                     minW={0}
@@ -1194,7 +1196,6 @@ export interface FileListViewProps {
   memoizedArraySignature: string;
   rowSelectedBg: string;
   rowDefaultBg: string;
-  newFileHighlightBg: string;
   searchHighlightBg: string;
   folderDropBgColor: string;
   fileSearchFilter: string | undefined;
@@ -1284,7 +1285,6 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.sortedFiles !== next.sortedFiles) return false;
   if (prev.isGroupedByIndex !== next.isGroupedByIndex) return false;
   if (prev.groupedFiles !== next.groupedFiles) return false;
-  if (prev.newFileHighlightBg !== next.newFileHighlightBg) return false;
   if (prev.memoizedArraySignature !== next.memoizedArraySignature) return false;
   if (prev.isDragOver !== next.isDragOver || prev.isSelecting !== next.isSelecting) return false;
   if (prev.isRenaming !== next.isRenaming || prev.renameValue !== next.renameValue) return false;
@@ -1345,7 +1345,6 @@ const FileListViewBody = React.memo(function FileListViewBody({
   memoizedArraySignature: _memoizedArraySignature,
   rowSelectedBg,
   rowDefaultBg,
-  newFileHighlightBg,
   searchHighlightBg,
   folderDropBgColor,
   fileSearchFilter,
@@ -1547,13 +1546,11 @@ const FileListViewBody = React.memo(function FileListViewBody({
 
     const isSearchHighlight = hasActiveSearch && index === 0;
     const defaultRowBg = rowDefaultBgForFill;
-    const rowBg = stableFileState.isFileNew
-      ? newFileHighlightBg
-      : stableFileState.isFileSelected
-        ? rowSelectedBg
-        : isSearchHighlight
-          ? searchHighlightBg
-          : defaultRowBg;
+    const rowBg = stableFileState.isFileSelected
+      ? rowSelectedBg
+      : isSearchHighlight
+        ? searchHighlightBg
+        : defaultRowBg;
     const isFolderDropHovered = file.type === 'folder' && folderHoverState.has(file.path);
     const finalBg = isFolderDropHovered ? folderDropBgColor : rowBg;
 
@@ -1570,28 +1567,11 @@ const FileListViewBody = React.memo(function FileListViewBody({
     hasActiveSearch,
     rowSelectedBg,
     rowDefaultBgForFill,
-    newFileHighlightBg,
     searchHighlightBg,
     folderDropBgColor,
     cellStyles,
   ]);
 
-  // Scroll rename row into view when isRenaming is set
-  useEffect(() => {
-    if (!isRenaming || sortedFiles.length === 0) return;
-    const idx = sortedFiles.findIndex((f) => f.name === isRenaming);
-    if (idx < 0) return;
-    if (!isGroupedByIndex) {
-      rowVirtualizerRef.current.scrollToIndex(idx, { align: 'start' });
-      return;
-    }
-    const flatIdx = flatGroupedItems.findIndex(
-      (it) => it.type === 'fileRow' && it.file.name === isRenaming,
-    );
-    if (flatIdx >= 0) {
-      groupedVirtualizerRef.current.scrollToIndex(flatIdx, { align: 'start' });
-    }
-  }, [isRenaming, sortedFiles, isGroupedByIndex, flatGroupedItems]);
 
   useEffect(() => {
     if (!isInlineCreatingFolder) return;

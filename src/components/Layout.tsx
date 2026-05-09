@@ -4,7 +4,7 @@ import { Grid, GridItem, Box } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
 import { ClientInfoBar } from './ClientInfoBar';
 import { PreviewPane } from './PreviewPane';
-import { AIFileManagerPane } from './AIFileManagerPane';
+import { JobContextPane } from './JobContextPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
 import { FileGrid } from './FileGrid';
@@ -16,7 +16,7 @@ import { settingsService } from '../services/settings';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 
 export const Layout: React.FC = () => {
-  const { isPreviewPaneOpen, isAIFileManagerOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
+  const { isPreviewPaneOpen, isJobContextOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
   const { clientInfo } = useClientInfo(currentDirectory, rootDirectory);
   const [sidebarWidth, setSidebarWidth] = useState(263);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -121,9 +121,9 @@ export const Layout: React.FC = () => {
   return <Grid templateAreas={`
         "tabs tabs tabs tabs"
         "header header header header"
-        "sidebar main preview aiFileManager"
+        "sidebar main preview jobContext"
         "status status status status"
-      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isAIFileManagerOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
+      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isJobContextOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
     <GridItem
       area="header"
@@ -242,21 +242,21 @@ export const Layout: React.FC = () => {
     >
       <PreviewPane />
     </GridItem>
-    {/* AI File Manager Pane - lazy-mount: only render when open to avoid re-renders on context change */}
-    <GridItem 
-      area="aiFileManager" 
-      bg="df.toolbar" 
-      overflow="hidden" 
-      display="flex" 
-      flexDirection="column" 
+    {/* Job Context Pane - always mounted to preserve state when toggled */}
+    <GridItem
+      area="jobContext"
+      bg="df.toolbar"
+      overflow="hidden"
+      display="flex"
+      flexDirection="column"
       boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
       borderLeftWidth="1px"
       borderLeftStyle="solid"
       borderLeftColor="df.border"
-      visibility={isAIFileManagerOpen ? 'visible' : 'hidden'}
-      width={isAIFileManagerOpen ? 'auto' : '0px'}
+      visibility={isJobContextOpen ? 'visible' : 'hidden'}
+      width={isJobContextOpen ? 'auto' : '0px'}
     >
-      {isAIFileManagerOpen && <AIFileManagerPane />}
+      <JobContextPane />
     </GridItem>
     {/* Status Footer */}
     <GridItem

@@ -144,8 +144,9 @@ export function groupFilesByIndex<T extends { name: string; type?: string }>(
       return;
     }
     
-    // Group files by index prefix
-    const indexKey = extractIndexPrefix(file.name) || 'Other';
+    // Group files by index prefix (only known indexes get their own group)
+    const prefix = extractIndexPrefix(file.name);
+    const indexKey = (prefix && WORKPAPER_DESCRIPTIONS[prefix]) ? prefix : 'Other';
     if (!groups[indexKey]) {
       groups[indexKey] = [];
     }

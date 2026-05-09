@@ -199,10 +199,6 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
 
         {/* ── Edit / Rename Group ── */}
         <Separator borderColor={separatorColor} my={0.5} />
-        <Flex {...rowProps} onClick={() => handleMenuAction('add_to_file_manager')}>
-          <FolderPlus size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Add selection to File Manager</Text>
-        </Flex>
         {isSingleFile && (
           <Flex {...rowProps} onClick={() => handleMenuAction('rename')}>
             <Edit2 size={iconSz} style={iconStyle} />
@@ -333,6 +329,10 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
 
         {/* ── Clipboard ── */}
         <Separator borderColor={separatorColor} my={0.5} />
+        <Flex {...rowProps} onClick={() => { handleMenuAction('copy_path'); handleCloseContextMenu(); }}>
+          <Link2 size={iconSz} style={iconStyle} />
+          <Text fontSize="xs">Copy Path</Text>
+        </Flex>
         {isFile && (
           <Flex {...rowProps} onClick={() => {
             const filesToMove = getClipboardFiles();

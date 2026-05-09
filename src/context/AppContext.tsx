@@ -66,10 +66,8 @@ interface AppContextType {
   setPreviewFiles: (files: FileItem[]) => void;
   isPreviewPaneOpen: boolean;
   setIsPreviewPaneOpen: (isOpen: boolean) => void;
-  isAIFileManagerOpen: boolean;
-  setIsAIFileManagerOpen: (isOpen: boolean) => void;
-  fileManagerInitialSelection: string[] | null;
-  setFileManagerInitialSelection: (names: string[] | null) => void;
+  isJobContextOpen: boolean;
+  setIsJobContextOpen: (isOpen: boolean) => void;
   selectAllFiles: () => void;
   setSelectAllFiles: (callback: () => void) => void;
   folderItems: FileItem[];
@@ -165,8 +163,7 @@ export const AppProvider: React.FC<{
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
-  const [isAIFileManagerOpen, setIsAIFileManagerOpen] = useState<boolean>(false);
-  const [fileManagerInitialSelection, setFileManagerInitialSelection] = useState<string[] | null>(null);
+  const [isJobContextOpen, setIsJobContextOpen] = useState<boolean>(false);
   const [selectAllFilesCallback, setSelectAllFilesCallback] = useState<() => void>(() => () => {});
   const [folderItems, setFolderItems] = useState<FileItem[]>([]);
   // Selected files for function buttons
@@ -565,10 +562,8 @@ export const AppProvider: React.FC<{
       setPreviewFiles,
       isPreviewPaneOpen,
       setIsPreviewPaneOpen,
-      isAIFileManagerOpen,
-      setIsAIFileManagerOpen,
-      fileManagerInitialSelection,
-      setFileManagerInitialSelection,
+      isJobContextOpen,
+      setIsJobContextOpen,
       selectAllFiles,
       setSelectAllFiles,
       folderItems,
@@ -634,30 +629,24 @@ export const useAppContext = (): AppContextType => {
   return context;
 };
 
-/** Selective context hook for AIFileManagerPane - only re-renders when these values change, not on selectedFiles etc. */
-export const useAIFileManagerContextSelection = () => {
+/** Selective context hook for JobContextPane - only re-renders when these values change. */
+export const useJobContextSelection = () => {
   const currentDirectory = useContextSelector(AppContext, (v) => v?.currentDirectory ?? '');
   const folderItems = useContextSelector(AppContext, (v) => v?.folderItems ?? []);
-  const isAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.isAIFileManagerOpen ?? false);
-  const setIsAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.setIsAIFileManagerOpen);
-  const fileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.fileManagerInitialSelection ?? null);
-  const setFileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.setFileManagerInitialSelection);
+  const isJobContextOpen = useContextSelector(AppContext, (v) => v?.isJobContextOpen ?? false);
+  const setIsJobContextOpen = useContextSelector(AppContext, (v) => v?.setIsJobContextOpen);
   const addLog = useContextSelector(AppContext, (v) => v?.addLog);
   const setStatus = useContextSelector(AppContext, (v) => v?.setStatus);
-  const logFileOperation = useContextSelector(AppContext, (v) => v?.logFileOperation);
-  if (!setIsAIFileManagerOpen || !setFileManagerInitialSelection || !addLog || !setStatus || !logFileOperation) {
-    throw new Error('useAIFileManagerContextSelection must be used within an AppProvider');
+  if (!setIsJobContextOpen || !addLog || !setStatus) {
+    throw new Error('useJobContextSelection must be used within an AppProvider');
   }
   return {
     currentDirectory,
     folderItems,
-    isAIFileManagerOpen,
-    setIsAIFileManagerOpen,
-    fileManagerInitialSelection,
-    setFileManagerInitialSelection,
+    isJobContextOpen,
+    setIsJobContextOpen,
     addLog,
     setStatus,
-    logFileOperation,
   };
 };
 
@@ -751,8 +740,6 @@ export function useFileGridActions() {
   const logFileOperation = useContextSelector(AppContext, (v) => v?.logFileOperation);
   const isCreateFolderOpen = useContextSelector(AppContext, (v) => v?.isCreateFolderOpen ?? false);
   const setIsCreateFolderOpen = useContextSelector(AppContext, (v) => v?.setIsCreateFolderOpen);
-  const setIsAIFileManagerOpen = useContextSelector(AppContext, (v) => v?.setIsAIFileManagerOpen);
-  const setFileManagerInitialSelection = useContextSelector(AppContext, (v) => v?.setFileManagerInitialSelection);
   if (
     !addLog ||
     !setStatus ||
@@ -760,9 +747,7 @@ export function useFileGridActions() {
     !addQuickAccessPath ||
     !removeQuickAccessPath ||
     !logFileOperation ||
-    !setIsCreateFolderOpen ||
-    !setIsAIFileManagerOpen ||
-    !setFileManagerInitialSelection
+    !setIsCreateFolderOpen
   ) {
     throw new Error('useFileGridActions must be used within an AppProvider');
   }
@@ -775,8 +760,6 @@ export function useFileGridActions() {
     logFileOperation,
     isCreateFolderOpen,
     setIsCreateFolderOpen,
-    setIsAIFileManagerOpen,
-    setFileManagerInitialSelection,
   };
 }
 
