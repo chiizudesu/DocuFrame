@@ -64,15 +64,20 @@ export async function runJobContextAnalysis(
   const currentYear = extractYearFromPath(currentDirectory);
   const entityTypeHint = deriveEntityTypeHint(clientName);
 
-  // Find A3 files (PDF only) and any file with "look through" in the name
+  const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg']);
+  const getExt = (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase();
+
+  // Find A3 files for text reading — exclude image extensions even if typed as 'file'
   const a3Files = folderItems.filter((f) => {
     if (f.type !== 'pdf' && f.type !== 'file' && f.type !== 'document') return false;
+    if (IMAGE_EXTENSIONS.has(getExt(f.name))) return false;
     const prefix = extractIndexPrefix(f.name);
     return prefix === 'A3';
   });
 
   const ltcFiles = folderItems.filter((f) => {
     if (f.type !== 'pdf' && f.type !== 'file') return false;
+    if (IMAGE_EXTENSIONS.has(getExt(f.name))) return false;
     return f.name.toLowerCase().includes('look through') || f.name.toLowerCase().includes('lookthrough');
   });
 
@@ -104,9 +109,10 @@ export async function runJobContextAnalysis(
     }
   }
 
-  // Read A3 image files for vision analysis
+  // Read A3 image files for vision analysis — match by type OR extension
   const a3ImageFiles = folderItems.filter((f) => {
-    if (f.type !== 'image') return false;
+    const isImage = f.type === 'image' || IMAGE_EXTENSIONS.has(getExt(f.name));
+    if (!isImage) return false;
     const prefix = extractIndexPrefix(f.name);
     return prefix === 'A3';
   }).slice(0, 3);
