@@ -85,7 +85,10 @@ export async function runJobContextAnalysis(
   });
 
   const a3FileContents: Array<{ fileName: string; content: string }> = [];
-  const api = window.electronAPI as { readPdfText?: (path: string) => Promise<string> } | undefined;
+  const api = window.electronAPI as {
+    readPdfText?: (path: string) => Promise<string>;
+    readImageAsDataUrl?: (path: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>;
+  } | undefined;
 
   for (const file of uniqueFilesToRead) {
     try {
@@ -101,6 +104,27 @@ export async function runJobContextAnalysis(
     }
   }
 
+  // Read A3 image files for vision analysis
+  const a3ImageFiles = folderItems.filter((f) => {
+    if (f.type !== 'image') return false;
+    const prefix = extractIndexPrefix(f.name);
+    return prefix === 'A3';
+  }).slice(0, 3);
+
+  const a3ImageContents: Array<{ fileName: string; dataUrl: string }> = [];
+  for (const file of a3ImageFiles) {
+    try {
+      if (api?.readImageAsDataUrl) {
+        const result = await api.readImageAsDataUrl(file.path);
+        if (result.success && result.dataUrl) {
+          a3ImageContents.push({ fileName: file.name, dataUrl: result.dataUrl });
+        }
+      }
+    } catch {
+      // skip unreadable images
+    }
+  }
+
   const folderFileNames = folderItems.map((f) => f.name);
 
   const result: JobContextClaudeResult = await analyzeJobContext({
@@ -109,6 +133,7 @@ export async function runJobContextAnalysis(
     currentYear,
     folderFileNames,
     a3FileContents,
+    a3ImageContents,
   });
 
   const budgetNum = parseBudgetToNumber(result.currentBudget);

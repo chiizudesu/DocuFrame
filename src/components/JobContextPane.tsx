@@ -31,6 +31,7 @@ interface JobContextState {
   data: JobContextData | null;
   error: string | null;
   userNotes: string;
+  riskAreasOverride: string | null;
 }
 
 function getEntityBadgeColor(entityType: string): string {
@@ -79,9 +80,12 @@ export const JobContextPane: React.FC = () => {
     data: null,
     error: null,
     userNotes: '',
+    riskAreasOverride: null,
   });
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesInput, setNotesInput] = useState('');
+  const [isEditingRiskAreas, setIsEditingRiskAreas] = useState(false);
+  const [riskAreasInput, setRiskAreasInput] = useState('');
   const analysingRef = useRef(false);
 
   // Colors — aligned to docuFramePalette, same pattern as ClientInfoPane
@@ -116,7 +120,7 @@ export const JobContextPane: React.FC = () => {
     setStatus('Analysing job context...', 'info');
     try {
       const data = await runJobContextAnalysis(currentDirectory, folderItems);
-      setState((prev) => ({ ...prev, status: 'done', data, error: null }));
+      setState((prev) => ({ ...prev, status: 'done', data, error: null, riskAreasOverride: null }));
       addLog('Job context analysis complete');
       setStatus('Job context ready', 'success');
     } catch (err) {
@@ -138,6 +142,20 @@ export const JobContextPane: React.FC = () => {
     setNotesInput(state.userNotes);
     setIsEditingNotes(false);
   }, [state.userNotes]);
+
+  const handleStartEditRiskAreas = useCallback(() => {
+    setRiskAreasInput(state.riskAreasOverride ?? state.data?.riskAreas ?? '');
+    setIsEditingRiskAreas(true);
+  }, [state.riskAreasOverride, state.data?.riskAreas]);
+
+  const handleSaveRiskAreas = useCallback(() => {
+    setState((prev) => ({ ...prev, riskAreasOverride: riskAreasInput }));
+    setIsEditingRiskAreas(false);
+  }, [riskAreasInput]);
+
+  const handleCancelRiskAreas = useCallback(() => {
+    setIsEditingRiskAreas(false);
+  }, []);
 
   const handleStartEditNotes = useCallback(() => {
     setNotesInput(state.userNotes);
@@ -355,9 +373,71 @@ export const JobContextPane: React.FC = () => {
           </DataRow>
 
           {/* Risk Areas */}
-          <DataRow label="Risk Areas" labelColor={labelColor} borderColor={borderColor}>
-            <Text fontSize="xs" color={rowValueColor} lineHeight="1.6" whiteSpace="pre-wrap">{state.data.riskAreas || '—'}</Text>
-          </DataRow>
+          <Box
+            borderBottomWidth="1px"
+            borderBottomStyle="solid"
+            borderBottomColor={borderColor}
+            py={2.5}
+            px={3}
+          >
+            <Flex align="center" justify="space-between" mb={1}>
+              <Text fontSize="10px" fontWeight="600" color={labelColor} textTransform="uppercase" letterSpacing="0.06em">
+                Risk Areas
+              </Text>
+              {!isEditingRiskAreas ? (
+                <IconButton
+                  aria-label="Edit risk areas"
+                  size="xs"
+                  variant="ghost"
+                  onClick={handleStartEditRiskAreas}
+                  _focus={{ outline: 'none', boxShadow: 'none' }}
+                  _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+                >
+                  <Pencil size={12} />
+                </IconButton>
+              ) : (
+                <Flex gap={1}>
+                  <IconButton
+                    aria-label="Save risk areas"
+                    size="xs"
+                    variant="ghost"
+                    colorPalette="green"
+                    onClick={handleSaveRiskAreas}
+                    _focus={{ outline: 'none', boxShadow: 'none' }}
+                    _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+                  >
+                    <Check size={12} />
+                  </IconButton>
+                  <IconButton
+                    aria-label="Cancel risk areas"
+                    size="xs"
+                    variant="ghost"
+                    onClick={handleCancelRiskAreas}
+                    _focus={{ outline: 'none', boxShadow: 'none' }}
+                    _focusVisible={{ outline: 'none', boxShadow: 'none' }}
+                  >
+                    <X size={12} />
+                  </IconButton>
+                </Flex>
+              )}
+            </Flex>
+            {isEditingRiskAreas ? (
+              <Textarea
+                value={riskAreasInput}
+                onChange={(e) => setRiskAreasInput(e.target.value)}
+                size="sm"
+                rows={4}
+                bg={notesBg}
+                fontSize="xs"
+                resize="vertical"
+                placeholder="Edit risk areas…"
+              />
+            ) : (
+              <Text fontSize="xs" color={rowValueColor} lineHeight="1.6" whiteSpace="pre-wrap">
+                {(state.riskAreasOverride ?? state.data.riskAreas) || '—'}
+              </Text>
+            )}
+          </Box>
 
           {/* Time Traps */}
           <DataRow label="Time Traps" labelColor={labelColor} borderColor={borderColor}>

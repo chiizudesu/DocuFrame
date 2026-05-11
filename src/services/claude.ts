@@ -2061,6 +2061,7 @@ export interface JobContextClaudeParams {
   currentYear: string;
   folderFileNames: string[];
   a3FileContents: Array<{ fileName: string; content: string }>;
+  a3ImageContents?: Array<{ fileName: string; dataUrl: string }>;
 }
 
 export interface JobContextClaudeResult {
@@ -2087,7 +2088,7 @@ export async function analyzeJobContext(params: JobContextClaudeParams): Promise
 
   const fileListBlock = params.folderFileNames.join('\n');
 
-  const systemPrompt = `You are an expert New Zealand accounting job analyst. Analyse the provided client directory information and return a JSON object only — no markdown, no explanation, just raw JSON.
+  const systemPrompt = `You are an expert New Zealand accounting job analyst. Analyse the provided client directory information and return a JSON object only — no markdown, no explanation, just raw JSON. If any A3 workpaper images are provided, read them for additional context such as budgets, entity details, or risk information.
 
 The JSON must have exactly these fields:
 {
@@ -2121,12 +2122,25 @@ ${fileListBlock}
 A3 Workpaper content:
 ${a3ContentBlock}`;
 
+  type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+  const imageBlocks = (params.a3ImageContents ?? []).flatMap((img) => {
+    const match = img.dataUrl.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/);
+    if (!match) return [];
+    return [
+      { type: 'text' as const, text: `A3 image file: ${img.fileName}` },
+      {
+        type: 'image' as const,
+        source: { type: 'base64' as const, media_type: match[1] as ImageMediaType, data: match[2] },
+      },
+    ];
+  });
+
   const response = await retryWithBackoff(async () => {
     return await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 800,
       system: systemPrompt,
-      messages: [{ role: 'user', content: [{ type: 'text', text: userMessage }] }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: userMessage }, ...imageBlocks] }],
       temperature: 0.2,
     });
   });
