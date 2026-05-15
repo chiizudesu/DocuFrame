@@ -22,7 +22,6 @@ import {
   ChevronLeft,
   RefreshCw,
   Star,
-  SquareTerminal,
   ExternalLink,
   File,
   Folder,
@@ -556,22 +555,6 @@ export const FolderInfoBar: React.FC = () => {
       setCurrentDirectory(rootDirectory)
       addLog('Navigated to root directory')
       setStatus('Navigated to home', 'info')
-    }
-  }
-
-  const handleOpenCmdClick = async () => {
-    try {
-      const result = await (window.electronAPI as any).openCmdAtDirectory(currentDirectory);
-      if (result?.success) {
-        addLog(`Opened terminal at: ${currentDirectory}`);
-        setStatus('Opened terminal at current directory', 'success');
-      } else {
-        addLog(`Failed to open terminal: ${result?.error || 'Unknown error'}`, 'error');
-        setStatus('Failed to open terminal', 'error');
-      }
-    } catch (error) {
-      addLog(`Failed to open terminal: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-      setStatus('Failed to open terminal', 'error');
     }
   }
 
@@ -1748,23 +1731,6 @@ export const FolderInfoBar: React.FC = () => {
             tabIndex={-1}
             onMouseDown={(e) => e.preventDefault()}><RefreshCw size={18} /></IconButton>
         </Box>
-        {/* Open terminal at current directory - between refresh and open in explorer */}
-        <Tooltip content="Open terminal at current directory" showArrow positioning={{
-          placement: "bottom"
-        }}>
-          <Box mr={1} style={{ WebkitAppRegion: 'no-drag' } as any}>
-            <IconButton
-              aria-label="Open terminal at current directory"
-              variant="ghost"
-              size="sm"
-              borderRadius={0}
-              onClick={handleOpenCmdClick}
-              color={iconColor}
-              _hover={{ bg: folderBarStripHoverBg }}
-              tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}><SquareTerminal size={18} /></IconButton>
-          </Box>
-        </Tooltip>
         {/* Open in file explorer - right of CMD */}
         <Tooltip content="Open in file explorer" showArrow positioning={{
           placement: "bottom"
