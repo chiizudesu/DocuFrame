@@ -221,7 +221,7 @@ const MiniSearchDropdown: React.FC<{
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, hideTemporaryFiles, hideDotFiles, fileSearchFilter, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, fileSearchFilter, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   const yearNav = useYearNavigation(currentDirectory)
   
@@ -283,7 +283,12 @@ export const FolderInfoBar: React.FC = () => {
       if (hideDotFiles && typeof f?.name === 'string' && f.name.startsWith('.')) {
         return false;
       }
-      
+
+      // Filter CLAUDE.md files
+      if (hideClaudeMd && typeof f?.name === 'string' && f.name.toLowerCase() === 'claude.md') {
+        return false;
+      }
+
       return true;
     });
   }
@@ -301,9 +306,12 @@ export const FolderInfoBar: React.FC = () => {
       if (hideDotFiles && typeof f?.name === 'string' && f.name.startsWith('.')) {
         return false
       }
+      if (hideClaudeMd && typeof f?.name === 'string' && f.name.toLowerCase() === 'claude.md') {
+        return false
+      }
       return true
     },
-    [hideTemporaryFiles, hideDotFiles]
+    [hideTemporaryFiles, hideDotFiles, hideClaudeMd]
   )
 
   // Address row: v2 FolderInfoBar — gray.700 strip, gray.600 address well
@@ -1329,7 +1337,7 @@ export const FolderInfoBar: React.FC = () => {
               _hover={{
                 bg: quickAccessPaths.includes(currentDirectory) ? pinActiveHoverBg : folderBarStripHoverBg,
               }}
-              onClick={() => addQuickAccessPath(currentDirectory)}
+              onClick={() => quickAccessPaths.includes(currentDirectory) ? removeQuickAccessPath(currentDirectory) : addQuickAccessPath(currentDirectory)}
               tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()}>{quickAccessPaths.includes(currentDirectory)
                 ? <Star size={18} fill="currentColor" strokeWidth={0} />

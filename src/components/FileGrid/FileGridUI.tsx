@@ -561,8 +561,8 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
                       setNewSubmenuOpen(false);
                     }}
                   >
-                    <FileSpreadsheet size={12} style={iconStyle} />
-                    <Text fontSize="xs">{template.name.replace(/\.xlsx$/i, '')}</Text>
+                    {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={iconStyle} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={iconStyle} /> : <FileText size={12} style={iconStyle} />}
+                    <Text fontSize="xs">{template.name}</Text>
                   </Flex>
                 ))}
               </>
@@ -652,8 +652,8 @@ export const TemplateSubmenu: React.FC<TemplateSubmenuProps> = ({
                 onClose();
               }}
             >
-              <FileSpreadsheet size={12} style={{ marginRight: '6px' }} />
-              <Text fontSize="xs">{template.name.replace('.xlsx', '')}</Text>
+              {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={{ marginRight: '6px' }} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={{ marginRight: '6px' }} /> : <FileText size={12} style={{ marginRight: '6px' }} />}
+              <Text fontSize="xs">{template.name}</Text>
             </Flex>
           ))
         )}

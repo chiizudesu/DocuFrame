@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import Sortable from 'sortablejs';
 import { useColorModeValue } from "./ui/color-mode";
-import { Box, Text, Flex, Icon, IconButton, HStack, Separator } from '@chakra-ui/react';
+import { Box, Text, Flex, Icon, Separator } from '@chakra-ui/react';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
-import { Folder, Star, ChevronUp, ChevronDown } from 'lucide-react';
+import { Folder, Star, GripVertical } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { docuFramePalette as P } from '../docuFrameColors';
 
@@ -12,7 +13,7 @@ export const ClientInfoPane: React.FC = () => {
     rootDirectory,
     quickAccessPaths,
     removeQuickAccessPath,
-    moveQuickAccessPath,
+    reorderQuickAccessPaths,
     recentClientPaths,
   } = useAppContext();
 
@@ -26,6 +27,33 @@ export const ClientInfoPane: React.FC = () => {
 
   const [quickAccessOpen] = useState(true);
   const [rootFolders, setRootFolders] = useState<Array<{ name: string; path: string }>>([]);
+  const sortableListRef = useRef<HTMLDivElement>(null);
+  const sortableRef = useRef<Sortable | null>(null);
+  const quickAccessPathsRef = useRef(quickAccessPaths);
+  quickAccessPathsRef.current = quickAccessPaths;
+
+  // Initialise SortableJS on the pinned folders list
+  useEffect(() => {
+    if (!sortableListRef.current) return;
+    sortableRef.current = Sortable.create(sortableListRef.current, {
+      animation: 150,
+      handle: '.drag-handle',
+      ghostClass: 'sortable-ghost',
+      onEnd: (evt) => {
+        const { oldIndex, newIndex } = evt;
+        if (oldIndex === undefined || newIndex === undefined || oldIndex === newIndex) return;
+        const current = [...quickAccessPathsRef.current];
+        const [moved] = current.splice(oldIndex, 1);
+        current.splice(newIndex, 0, moved);
+        reorderQuickAccessPaths(current);
+      },
+    });
+    return () => {
+      sortableRef.current?.destroy();
+      sortableRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Load root directory folders for default Quick Access
   useEffect(() => {
@@ -107,43 +135,61 @@ export const ClientInfoPane: React.FC = () => {
               >
                 {/* Folders list */}
                 <>
-                  {/* Pinned quick access folders */}
+                  {/* Pinned quick access folders — SortableJS manages DOM order */}
+                  <Box ref={sortableListRef} display="flex" flexDirection="column">
                   {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 ? (
-                    quickAccessPaths.map((pinnedPath, index) => (
+                    quickAccessPaths.map((pinnedPath) => (
                       <Flex
                         key={pinnedPath}
                         align="center"
-                        px={4}
+                        px={2}
                         py="3px"
                         mb="3px"
                         fontSize="13px"
-                        _hover={{
-                          bg: transferSectionBg
-                        }}
+                        _hover={{ bg: transferSectionBg }}
                         color={textColor}
                         cursor="pointer"
                         style={{ userSelect: 'none' }}
                         onClick={() => setCurrentDirectory(pinnedPath)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          removeQuickAccessPath(pinnedPath);
-                        }}
                         borderRadius={0}
                         position="relative"
                         role="group"
+                        data-path={pinnedPath}
                       >
-                        {/* Star icon for pinned items */}
-                        <Icon
-                          boxSize={2.5}
-                          color="yellow.400"
-                          fill="yellow.400"
-                          position="absolute"
-                          left="8px"
-                          top="50%"
-                          transform="translateY(-50%)"
+                        {/* Drag handle */}
+                        <Box
+                          className="drag-handle"
+                          color="gray.400"
+                          cursor="grab"
                           flexShrink={0}
-                          asChild><Star /></Icon>
-                        <Icon boxSize={4} mr={2} ml={2} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
+                          px="2px"
+                          opacity={0}
+                          _groupHover={{ opacity: 1 }}
+                          transition="opacity 0.15s"
+                          onClick={(e) => e.stopPropagation()}
+                          display="flex"
+                          alignItems="center"
+                        >
+                          <GripVertical size={12} />
+                        </Box>
+                        {/* Star icon — click to unpin */}
+                        <Box
+                          as="span"
+                          display="flex"
+                          alignItems="center"
+                          flexShrink={0}
+                          px="2px"
+                          onClick={(e) => { e.stopPropagation(); removeQuickAccessPath(pinnedPath); }}
+                          title="Unpin"
+                        >
+                          <Icon
+                            boxSize={2.5}
+                            color="yellow.400"
+                            fill="yellow.400"
+                            asChild
+                          ><Star /></Icon>
+                        </Box>
+                        <Icon boxSize={4} mr={2} ml={1} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
                         <Text
                           lineClamp={1}
                           color="inherit"
@@ -152,28 +198,10 @@ export const ClientInfoPane: React.FC = () => {
                         >
                           {pinnedPath.split(/[/\\]/).filter(Boolean).pop()}
                         </Text>
-                        {/* Move up/down buttons */}
-                        <HStack gap={0} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.15s" onClick={(e) => e.stopPropagation()}>
-                          <IconButton
-                            aria-label="Move up"
-                            size="xs"
-                            variant="ghost"
-                            minW={6}
-                            h={6}
-                            disabled={index === 0}
-                            onClick={() => moveQuickAccessPath(pinnedPath, 'up')}><ChevronUp size={14} /></IconButton>
-                          <IconButton
-                            aria-label="Move down"
-                            size="xs"
-                            variant="ghost"
-                            minW={6}
-                            h={6}
-                            disabled={index === quickAccessPaths.length - 1}
-                            onClick={() => moveQuickAccessPath(pinnedPath, 'down')}><ChevronDown size={14} /></IconButton>
-                        </HStack>
                       </Flex>
                     ))
                   ) : null}
+                  </Box>
 
                   {/* Separator between pinned and auto-populated when both exist */}
                   {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 && rootFolders.filter(f => !quickAccessPaths?.includes(f.path)).length > 0 && (

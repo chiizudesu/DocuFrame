@@ -822,6 +822,7 @@ function buildDefaultConfig(): Config {
     enableClientSearchShortcut: true,
     sidebarCollapsedByDefault: false,
     hideTemporaryFiles: true,
+    hideClaudeMd: true,
     aiEditorInstructions: '',
   };
 }
@@ -3368,12 +3369,16 @@ ipcMain.handle('get-workpaper-templates', async () => {
     
     const files = fs.readdirSync(workpaperTemplateFolderPath);
     const templates = files
-      .filter(file => file.endsWith('.xlsx'))
+      .filter(file => {
+        if (file.startsWith('.')) return false;
+        const fullPath = path.join(workpaperTemplateFolderPath, file);
+        return fs.statSync(fullPath).isFile();
+      })
       .map(file => ({
         name: path.basename(file),
         path: path.join(workpaperTemplateFolderPath, file)
       }));
-    
+
     return { success: true, templates };
   } catch (error) {
     console.error('[Main] Error getting workpaper templates:', error);

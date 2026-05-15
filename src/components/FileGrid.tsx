@@ -84,6 +84,7 @@ export const FileGrid: React.FC = () => {
     contentSearchResults,
     hideTemporaryFiles,
     hideDotFiles,
+    hideClaudeMd,
     isGroupedByIndex,
   } = useFileGridFiltersAndVisibility()
   const { quickAccessPaths } = useFileGridQuickAccessPaths()
@@ -125,10 +126,15 @@ export const FileGrid: React.FC = () => {
       if (hideDotFiles && typeof f?.name === 'string' && f.name.startsWith('.')) {
         return false;
       }
-      
+
+      // Filter CLAUDE.md files
+      if (hideClaudeMd && typeof f?.name === 'string' && f.name.toLowerCase() === 'claude.md') {
+        return false;
+      }
+
       return true;
     });
-  }, [hideTemporaryFiles, hideDotFiles, isTemporaryFile]);
+  }, [hideTemporaryFiles, hideDotFiles, hideClaudeMd, isTemporaryFile]);
 
   // Memoized file size formatting for better performance
   const formatFileSize = useCallback((size: string | undefined) => {
@@ -4004,7 +4010,7 @@ export const FileGrid: React.FC = () => {
     if (currentDirectory) {
       refreshDirectory(currentDirectory);
     }
-  }, [hideTemporaryFiles, hideDotFiles, currentDirectory, refreshDirectory]);
+  }, [hideTemporaryFiles, hideDotFiles, hideClaudeMd, currentDirectory, refreshDirectory]);
 
   // Load file grid background image settings
   useEffect(() => {
@@ -4810,18 +4816,16 @@ export const FileGrid: React.FC = () => {
           }
         }}
         onCreateFromTemplate={async (templatePath: string, templateName: string) => {
-          const fileName = templateName.replace(/\.xlsx$/i, '');
-          const fullFileName = `${fileName}.xlsx`;
           try {
-            const destPath = joinPath(currentDirectory, fullFileName);
+            const destPath = joinPath(currentDirectory, templateName);
             await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
-            addLog(`Created ${fullFileName} from template`);
-            setStatus(`Created ${fullFileName} from template`, 'success');
+            addLog(`Created ${templateName} from template`);
+            setStatus(`Created ${templateName} from template`, 'success');
             await refreshDirectory(currentDirectory);
-            setSelectedFiles([fullFileName]);
-            setSelectedFile(fullFileName);
-            setIsRenaming(fullFileName);
-            setRenameValue(fullFileName);
+            setSelectedFiles([templateName]);
+            setSelectedFile(templateName);
+            setIsRenaming(templateName);
+            setRenameValue(templateName);
           } catch (error) {
             console.error('Error creating from template:', error);
             addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
@@ -4853,13 +4857,12 @@ export const FileGrid: React.FC = () => {
           }}
           onCreateFromTemplate={async (templatePath: string, templateName: string) => {
             try {
-              const fileName = templateName.replace('.xlsx', '');
-              const destPath = `${contextMenu.fileItem!.path}\\${fileName}.xlsx`;
-              
+              const destPath = `${contextMenu.fileItem!.path}\\${templateName}`;
+
               await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
-              
-              addLog(`Created ${fileName}.xlsx from template in ${contextMenu.fileItem!.name}`);
-              setStatus(`Created ${fileName}.xlsx from template`, 'success');
+
+              addLog(`Created ${templateName} from template in ${contextMenu.fileItem!.name}`);
+              setStatus(`Created ${templateName} from template`, 'success');
               
               if (contextMenu.fileItem!.path === currentDirectory) {
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
