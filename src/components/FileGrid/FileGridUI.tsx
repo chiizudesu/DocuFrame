@@ -42,6 +42,7 @@ import {
   FileEdit,
   Link2,
   CloudUpload,
+  Terminal,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
@@ -390,6 +391,8 @@ export interface BlankContextMenuProps {
   onCreateWordDoc: () => void;
   onCreateShortcut: () => void;
   onCreateFromTemplate: (templatePath: string, templateName: string) => void;
+  onCopyPath: () => void;
+  onOpenPowerShell: () => void;
 }
 
 export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
@@ -405,6 +408,8 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   onCreateWordDoc,
   onCreateShortcut,
   onCreateFromTemplate,
+  onCopyPath,
+  onOpenPowerShell,
 }) => {
   const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
@@ -494,6 +499,15 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
           <Flex {...rowProps} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
             <ImageIcon size={iconSz} style={iconStyle} />
             <Text fontSize="xs">Paste Image</Text>
+          </Flex>
+          <Separator borderColor={separatorColor} my={0.5} />
+          <Flex {...rowProps} onClick={() => { onCopyPath(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
+            <Link2 size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Copy Path</Text>
+          </Flex>
+          <Flex {...rowProps} onClick={() => { onOpenPowerShell(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
+            <Terminal size={iconSz} style={iconStyle} />
+            <Text fontSize="xs">Open PowerShell</Text>
           </Flex>
         </Box>
       </Box>

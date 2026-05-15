@@ -1874,8 +1874,8 @@ ipcMain.handle('open-directory', async (_, dirPath: string) => {
 ipcMain.handle('open-cmd-at-directory', async (_, dirPath: string) => {
   try {
     if (process.platform === 'win32') {
-      // Windows Terminal: new-tab with PowerShell - starts in correct folder
-      const child = spawn('wt.exe', ['new-tab', 'pwsh.exe', '-NoExit', '-Command', `Set-Location '${dirPath}'`], {
+      // Try Windows Terminal first; fall back to bare powershell.exe
+      const child = spawn('wt.exe', ['new-tab', 'powershell.exe', '-NoExit', '-Command', `Set-Location '${dirPath}'`], {
         detached: true,
         stdio: 'ignore',
         windowsHide: false

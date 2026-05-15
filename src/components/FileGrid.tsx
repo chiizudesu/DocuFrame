@@ -4828,6 +4828,18 @@ export const FileGrid: React.FC = () => {
             setStatus('Failed to create from template', 'error');
           }
         }}
+        onCopyPath={() => {
+          navigator.clipboard.writeText(currentDirectory);
+          setStatus(`Copied path: ${currentDirectory}`, 'info');
+        }}
+        onOpenPowerShell={async () => {
+          try {
+            await (window.electronAPI as any).openCmdAtDirectory(currentDirectory);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            setStatus(`Failed to open PowerShell: ${msg}`, 'error');
+          }
+        }}
       />
       {contextMenu.fileItem?.type === 'folder' && (
         <TemplateSubmenu
