@@ -555,6 +555,12 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
                   <Flex
                     key={template.path}
                     {...rowProps}
+                    h="22px"
+                    minH="22px"
+                    maxH="22px"
+                    overflow="hidden"
+                    align="center"
+                    flexWrap="nowrap"
                     onClick={() => {
                       onCreateFromTemplate(template.path, template.name);
                       setBlankContextMenu({ ...blankContextMenu, isOpen: false });
@@ -562,7 +568,7 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
                     }}
                   >
                     {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={iconStyle} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={iconStyle} /> : <FileText size={12} style={iconStyle} />}
-                    <Text fontSize="xs">{template.name}</Text>
+                    <Text fontSize="xs" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">{template.name}</Text>
                   </Flex>
                 ))}
               </>
@@ -644,16 +650,20 @@ export const TemplateSubmenu: React.FC<TemplateSubmenuProps> = ({
               key={template.path}
               align="center"
               px={2.5}
-              py="3px"
               cursor="pointer"
               _hover={{ bg: hoverBg }}
+              h="22px"
+              minH="22px"
+              maxH="22px"
+              overflow="hidden"
+              flexWrap="nowrap"
               onClick={() => {
                 onCreateFromTemplate(template.path, template.name);
                 onClose();
               }}
             >
-              {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={{ marginRight: '6px' }} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={{ marginRight: '6px' }} /> : <FileText size={12} style={{ marginRight: '6px' }} />}
-              <Text fontSize="xs">{template.name}</Text>
+              {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={{ marginRight: '6px', flexShrink: 0 }} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={{ marginRight: '6px', flexShrink: 0 }} /> : <FileText size={12} style={{ marginRight: '6px', flexShrink: 0 }} />}
+              <Text fontSize="xs" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">{template.name}</Text>
             </Flex>
           ))
         )}
