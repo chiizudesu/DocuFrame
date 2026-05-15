@@ -211,6 +211,7 @@ interface Settings {
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
+  hideClaudeMd?: boolean;
   aiEditorInstructions?: string; // NEW
   workShiftStart?: string;
   workShiftEnd?: string;
@@ -269,6 +270,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
   const [hideDotFiles, setHideDotFiles] = useState(true);
+  const [hideClaudeMd, setHideClaudeMd] = useState(true);
   const [workShiftStart, setWorkShiftStart] = useState('06:00');
   const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
   const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
@@ -369,6 +371,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         // NEW: file grid setting (default true when unset)
         setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
         setHideDotFiles(loadedSettings.hideDotFiles !== false);
+        setHideClaudeMd(loadedSettings.hideClaudeMd !== false);
         // Work shift settings
         setWorkShiftStart(loadedSettings.workShiftStart || '06:00');
         setWorkShiftEnd(loadedSettings.workShiftEnd || '15:00');
@@ -486,6 +489,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         sidebarCollapsedByDefault,
         hideTemporaryFiles,
         hideDotFiles,
+        hideClaudeMd,
         workShiftStart,
         workShiftEnd,
         productivityTargetHours,
@@ -2283,10 +2287,31 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       borderColor={borderColor}
                       textColor={textColor}
                       secondaryTextColor={secondaryTextColor}
+                      showDivider
                       control={
                         <Switch.Root
                           checked={hideDotFiles}
                           onCheckedChange={(d) => setHideDotFiles(d.checked === true)}
+                          colorPalette="blue"
+                          size="sm"
+                        >
+                          <Switch.HiddenInput />
+                          <Switch.Control>
+                            <Switch.Thumb />
+                          </Switch.Control>
+                        </Switch.Root>
+                      }
+                    />
+                    <SettingsToggleRow
+                      title="Hide CLAUDE.md"
+                      description="Hide CLAUDE.md files used by Claude Code for AI instructions"
+                      borderColor={borderColor}
+                      textColor={textColor}
+                      secondaryTextColor={secondaryTextColor}
+                      control={
+                        <Switch.Root
+                          checked={hideClaudeMd}
+                          onCheckedChange={(d) => setHideClaudeMd(d.checked === true)}
                           colorPalette="blue"
                           size="sm"
                         >

@@ -28,6 +28,7 @@ export interface AppSettings {
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
+  hideClaudeMd?: boolean;
   aiEditorInstructions?: string;
   quickAccessPaths?: string[];
   recentClientPaths?: string[]; // Latest 5 client folders visited (paths)

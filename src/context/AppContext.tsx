@@ -59,6 +59,8 @@ interface AppContextType {
   setHideTemporaryFiles: (hide: boolean) => void;
   hideDotFiles: boolean;
   setHideDotFiles: (hide: boolean) => void;
+  hideClaudeMd: boolean;
+  setHideClaudeMd: (hide: boolean) => void;
   aiEditorInstructions: string;             // NEW
   setAiEditorInstructions: (instructions: string) => void; // NEW
   // Preview
@@ -126,6 +128,7 @@ interface AppContextType {
   addQuickAccessPath: (path: string) => Promise<void>;
   removeQuickAccessPath: (path: string) => Promise<void>;
   moveQuickAccessPath: (path: string, direction: 'up' | 'down') => Promise<void>;
+  reorderQuickAccessPaths: (paths: string[]) => Promise<void>;
   // Recent client folders (latest 5 visited)
   recentClientPaths: string[];
   // File grouping by index prefix (computed from settings: always on except blacklist)
@@ -159,6 +162,7 @@ export const AppProvider: React.FC<{
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
   const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
+  const [hideClaudeMd, setHideClaudeMd] = useState<boolean>(true);
   const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
@@ -221,6 +225,7 @@ export const AppProvider: React.FC<{
       setHideTemporaryFiles(settings.hideTemporaryFiles !== false);
       // NEW: Load hideDotFiles (default true when unset)
       setHideDotFiles(settings.hideDotFiles !== false);
+      setHideClaudeMd(settings.hideClaudeMd !== false);
       // NEW: Load AI editor instructions (default to current instructions if unset)
       if (settings.aiEditorInstructions !== undefined) {
         setAiEditorInstructions(settings.aiEditorInstructions);
@@ -526,6 +531,16 @@ export const AppProvider: React.FC<{
     }
   }, []);
 
+  const reorderQuickAccessPaths = useCallback(async (paths: string[]) => {
+    setQuickAccessPaths(paths);
+    try {
+      const current = await settingsService.getSettings();
+      await settingsService.setSettings({ ...current, quickAccessPaths: paths });
+    } catch (e) {
+      console.error('Failed to persist quick access reorder:', e);
+    }
+  }, []);
+
   return (
     <AppContext.Provider value={{
       currentDirectory,
@@ -556,6 +571,8 @@ export const AppProvider: React.FC<{
       setHideTemporaryFiles,
       hideDotFiles,
       setHideDotFiles,
+      hideClaudeMd,
+      setHideClaudeMd,
       aiEditorInstructions,                 // NEW
       setAiEditorInstructions,              // NEW
       previewFiles,
@@ -608,6 +625,7 @@ export const AppProvider: React.FC<{
       addQuickAccessPath,
       removeQuickAccessPath,
       moveQuickAccessPath,
+      reorderQuickAccessPaths,
       recentClientPaths,
       logFileOperation,
       setLogFileOperation,
@@ -712,6 +730,7 @@ export function useFileGridFiltersAndVisibility() {
   const contentSearchResults = useContextSelector(AppContext, (v) => v?.contentSearchResults ?? []);
   const hideTemporaryFiles = useContextSelector(AppContext, (v) => v?.hideTemporaryFiles ?? true);
   const hideDotFiles = useContextSelector(AppContext, (v) => v?.hideDotFiles ?? true);
+  const hideClaudeMd = useContextSelector(AppContext, (v) => v?.hideClaudeMd ?? true);
   const isGroupedByIndex = useContextSelector(AppContext, (v) => v?.isGroupedByIndex ?? false);
   if (!setFileSearchFilter) {
     throw new Error('useFileGridFiltersAndVisibility must be used within an AppProvider');
@@ -722,6 +741,7 @@ export function useFileGridFiltersAndVisibility() {
     contentSearchResults,
     hideTemporaryFiles,
     hideDotFiles,
+    hideClaudeMd,
     isGroupedByIndex,
   };
 }

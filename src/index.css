@@ -124,6 +124,13 @@
   }
 }
 
+/* SortableJS ghost placeholder for quick access drag reorder */
+.sortable-ghost {
+  opacity: 0.4;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 4px;
+}
+
 /* Pulse animation for timer indicator */
 @keyframes pulse {
   0%, 100% {
