@@ -14,6 +14,7 @@ import { useAppContext } from '../context/AppContext';
 import { useClientInfo } from '../hooks/useClientInfo';
 import { settingsService } from '../services/settings';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
+import { TransferPanel } from './TransferPanel';
 
 export const Layout: React.FC = () => {
   const { isPreviewPaneOpen, isJobContextOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
@@ -118,7 +119,9 @@ export const Layout: React.FC = () => {
   loadSidebarSettings();
 }, []);
 
-  return <Grid templateAreas={`
+  return (
+    <>
+    <Grid templateAreas={`
         "tabs tabs tabs tabs"
         "header header header header"
         "sidebar main preview jobContext"
@@ -268,5 +271,8 @@ export const Layout: React.FC = () => {
     >
       <Footer />
     </GridItem>
-  </Grid>;
+  </Grid>
+  <TransferPanel />
+  </>
+  );
 };

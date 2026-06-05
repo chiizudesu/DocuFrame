@@ -3701,7 +3701,7 @@ const createSettingsWindow = () => {
       minWidth: 560,
       minHeight: 420,
       title: 'Settings - DocuFrame',
-      icon: path.join(__dirname, '../assets/32.ico'),
+      icon: path.join(__dirname, '../public/icon.ico'),
       show: false,
       frame: false, // Use custom titlebar like main window
       titleBarStyle: 'hidden',

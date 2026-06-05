@@ -4866,7 +4866,8 @@ export const FileGrid: React.FC = () => {
               
               if (contextMenu.fileItem!.path === currentDirectory) {
                 const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                setFolderItems(contents);
+                const files = Array.isArray(contents) ? contents : (contents?.files ?? []);
+                setFolderItems(filterFiles(files));
               }
             } catch (error) {
               console.error('Error creating from template:', error);

@@ -569,7 +569,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setStatus,
     currentDirectory,
     setFolderItems,
-    folderItems,
     selectedFiles,
     setSelectedFiles,
     logFileOperation,
@@ -584,12 +583,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
 
-  // Transfer dropdown state
-  const [transferCommandMappings, setTransferCommandMappings] = useState<{ [key: string]: string }>({});
-  const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
-  const [transferSelectedIndex, setTransferSelectedIndex] = useState<string | null>(null);
-  const [transferCustomIndex, setTransferCustomIndex] = useState('');
-  const [transferManualFilename, setTransferManualFilename] = useState('');
 
   // Use client search shortcut hook
   useClientSearchShortcut(setClientSearchOpen);
@@ -780,13 +773,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             logFileOperation(`${fileName} transferred to ${dirName}`);
           }
           
-          // Refresh folder view
-          setStatus('Refreshing folder...', 'info');
-          if (window.electronAPI && typeof window.electronAPI.getDirectoryContents === 'function') {
-            const contents = await window.electronAPI.getDirectoryContents(currentDirectory);
-            if (typeof setFolderItems === 'function') setFolderItems(contents);
-            setStatus('Folder refreshed', 'success');
-          }
+          // Refresh folder view via FileGrid's filtered reload path
+          window.dispatchEvent(new CustomEvent('directoryRefreshed', { detail: { directory: currentDirectory } }));
+          setStatus('Transfer Latest completed', 'success');
         } else {
           addLog(result.message, 'error');
           setStatus('Transfer Latest failed', 'error');
@@ -846,104 +835,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setOnRestoreDialog(() => handleRestoreDialog);
     setOnCloseMinimizedDialog(() => handleCloseMinimizedDialog);
   }, [setOnRestoreDialog, setOnCloseMinimizedDialog]);
-
-  // Load transfer mappings on mount and when updated
-  const loadTransferMappings = useCallback(async () => {
-    try {
-      const config = await (window.electronAPI as any).getConfig();
-      const mappings = config?.transferCommandMappings || {};
-      setTransferCommandMappings(mappings);
-    } catch (error) {
-      console.error('[FunctionPanels] Error loading transfer mappings:', error);
-      setTransferCommandMappings({});
-    }
-  }, []);
-
-  useEffect(() => {
-    loadTransferMappings();
-    const handleMappingsUpdate = () => loadTransferMappings();
-    window.addEventListener('transferMappingsUpdated', handleMappingsUpdate);
-    return () => window.removeEventListener('transferMappingsUpdated', handleMappingsUpdate);
-  }, [loadTransferMappings]);
-
-  // Group transfer templates by index key
-  const groupedTransferTemplates = useMemo(() => {
-    const groups: Record<string, Array<{ command: string; filename: string }>> = {};
-    Object.entries(transferCommandMappings).forEach(([command, filename]) => {
-      const match = (filename as string).match(/^([A-Z]+\d*)\s*-/);
-      const groupKey = match ? match[1] : 'Other';
-      if (!groups[groupKey]) groups[groupKey] = [];
-      groups[groupKey].push({ command, filename: filename as string });
-    });
-    Object.keys(groups).forEach(key => {
-      groups[key].sort((a, b) => a.command.localeCompare(b.command));
-    });
-    return groups;
-  }, [transferCommandMappings]);
-
-  // Indexes not available in current directory (same source as group headers: getAllIndexKeys, exclude Other)
-  const indexesNotInDir = useMemo(() => {
-    const indexesInDir = new Set<string>();
-    (folderItems || []).forEach((item: { name: string; type?: string }) => {
-      if (item.type === 'folder') return;
-      const key = extractIndexPrefix(item.name);
-      if (key) indexesInDir.add(key);
-    });
-    const allIndexes = getAllIndexKeys();
-    return allIndexes
-      .filter(k => !indexesInDir.has(k))
-      .sort((a, b) => a.localeCompare(b));
-  }, [folderItems]);
-  // Handle transfer from panel (two-phase dropdown)
-  const handleTransferFromPanel = useCallback(async (opts: { command?: string; newName?: string }) => {
-    try {
-      setStatus('Transferring...', 'info');
-      const transferOptions: { numFiles: number; command?: string; newName?: string; currentDirectory: string } = {
-        numFiles: 1,
-        currentDirectory,
-      };
-      if (opts.command) {
-        transferOptions.command = opts.command;
-      } else if (opts.newName?.trim()) {
-        transferOptions.newName = opts.newName.trim();
-        transferOptions.command = 'transfer';
-      } else {
-        setStatus('No template or filename provided', 'error');
-        return;
-      }
-      const result = await (window.electronAPI as any).transfer(transferOptions);
-      if (result.success) {
-        addLog(result.message, 'response');
-        setStatus('Transfer completed', 'success');
-        window.dispatchEvent(new CustomEvent('folderRefresh'));
-        const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-        setFolderItems(Array.isArray(contents) ? contents : (contents?.files ?? []));
-      } else {
-        addLog(result.message, 'error');
-        setStatus('Transfer failed', 'error');
-        showToast({
-          title: 'Transfer Failed',
-          description: result.message,
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-          position: 'top',
-        });
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`Transfer failed: ${errorMessage}`, 'error');
-      setStatus('Transfer failed', 'error');
-      showToast({
-        title: 'Transfer Failed',
-        description: errorMessage,
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-        position: 'top',
-      });
-    }
-  }, [currentDirectory, addLog, setStatus, setFolderItems]);
 
   // Icon-only function button component
   const FunctionButton: React.FC<{
@@ -1112,28 +1003,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
               w={FN_TOOLBAR_BTN}><Columns2 size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
           </Tooltip>
 
-          <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
-
-          <TransferDropdownMenu
-            isOpen={isTransferMenuOpen}
-            onOpenChange={setIsTransferMenuOpen}
-            buttonColor={buttonColor}
-            buttonHoverBg={buttonHoverBg}
-            indexesNotInDir={indexesNotInDir}
-            groupedTransferTemplates={groupedTransferTemplates}
-            transferSelectedIndex={transferSelectedIndex}
-            transferCustomIndex={transferCustomIndex}
-            transferManualFilename={transferManualFilename}
-            setTransferSelectedIndex={setTransferSelectedIndex}
-            setTransferCustomIndex={setTransferCustomIndex}
-            setTransferManualFilename={setTransferManualFilename}
-            onTransfer={handleTransferFromPanel}
-            onClose={() => {
-              setTransferSelectedIndex(null);
-              setTransferCustomIndex('');
-              setTransferManualFilename('');
-            }}
-          />
         </Flex>
         
         {/* Right side: Settings */}

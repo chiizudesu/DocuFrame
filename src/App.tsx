@@ -156,6 +156,9 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't process app shortcuts while TransferPanel is open
+      if (document.body.dataset.transferPanelOpen === 'true') return;
+
       const target = e.target as HTMLElement;
       const isInputFocused =
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
@@ -258,12 +261,7 @@ const AppContent: React.FC = () => {
         return;
       }
       
-      if (!isInputFocused && !isQuickNavigating && e.ctrlKey && e.code === 'Space') {
-        setIsQuickNavigating(true);
-        setInitialCommandMode(true);
-        e.preventDefault();
-        return;
-      }
+      // Ctrl+Space is handled by TransferPanel
 
       if (!isInputFocused && eventMatchesShortcut(e, calculatorShortcut)) {
         setIsCalculatorOpen(true);

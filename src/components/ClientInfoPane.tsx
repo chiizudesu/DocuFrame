@@ -35,7 +35,7 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
     <Flex align="center" px="9px" h="24px" flexShrink={0}>
       <Text
         fontSize="11px"
-        fontWeight="600"
+        fontWeight="700"
         letterSpacing="0.01em"
         color={titleColor}
         userSelect="none"
@@ -44,8 +44,6 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
         {title}
       </Text>
     </Flex>
-    {/* Hairline divider */}
-    <Box h="1px" bg={borderColor} />
     {/* Items */}
     <Box py="2px">
       {children}
