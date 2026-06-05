@@ -1,12 +1,115 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import Sortable from 'sortablejs';
 import { useColorModeValue } from "./ui/color-mode";
-import { Box, Text, Flex, Icon, Separator } from '@chakra-ui/react';
+import { Box, Text, Flex, Icon } from '@chakra-ui/react';
 import * as ScrollArea from '@radix-ui/react-scroll-area';
-import { Folder, Star, GripVertical } from 'lucide-react';
+import { Folder, Star, FolderOpen } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { docuFramePalette as P } from '../docuFrameColors';
 
+// ── One Commander-style section container ─────────────────
+interface SectionContainerProps {
+  title: string;
+  children: React.ReactNode;
+  containerBg: string;
+  borderColor: string;
+  titleColor: string;
+}
+
+const SectionContainer: React.FC<SectionContainerProps> = ({
+  title,
+  children,
+  containerBg,
+  borderColor,
+  titleColor,
+}) => (
+  <Box
+    mx="7px"
+    mb="7px"
+    borderRadius="3px"
+    border="1px solid"
+    borderColor={borderColor}
+    bg={containerBg}
+  >
+    {/* Section header */}
+    <Flex align="center" px="9px" h="24px" flexShrink={0}>
+      <Text
+        fontSize="11px"
+        fontWeight="600"
+        letterSpacing="0.01em"
+        color={titleColor}
+        userSelect="none"
+        lineHeight="1"
+      >
+        {title}
+      </Text>
+    </Flex>
+    {/* Hairline divider */}
+    <Box h="1px" bg={borderColor} />
+    {/* Items */}
+    <Box py="2px">
+      {children}
+    </Box>
+  </Box>
+);
+
+// ── Compact sidebar row ───────────────────────────────────
+interface SidebarItemProps {
+  label: string;
+  textColor: string;
+  hoverBg: string;
+  onClick: () => void;
+  rightSlot?: React.ReactNode;
+  iconOverride?: React.ReactNode;
+  iconColor?: string;
+  draggable?: boolean;
+  'data-path'?: string;
+}
+
+const SidebarItem: React.FC<SidebarItemProps> = ({
+  label,
+  textColor,
+  hoverBg,
+  onClick,
+  rightSlot,
+  iconOverride,
+  iconColor = 'blue.400',
+  draggable = false,
+  ...rest
+}) => (
+  <Flex
+    align="center"
+    pl="8px"
+    pr="5px"
+    minH="24px"
+    _hover={{ bg: hoverBg }}
+    color={textColor}
+    cursor={draggable ? 'grab' : 'default'}
+    userSelect="none"
+    onClick={onClick}
+    role="group"
+    {...rest}
+  >
+    <Icon boxSize="14px" mr="7px" color={iconColor} flexShrink={0} asChild>
+      {iconOverride ?? <Folder />}
+    </Icon>
+    <Text
+      fontSize="12.5px"
+      lineHeight="24px"
+      color="inherit"
+      fontWeight="normal"
+      flex={1}
+      overflow="hidden"
+      textOverflow="ellipsis"
+      whiteSpace="nowrap"
+    >
+      {label}
+    </Text>
+    {rightSlot}
+  </Flex>
+);
+
+// ── Main component ────────────────────────────────────────
 export const ClientInfoPane: React.FC = () => {
   const {
     setCurrentDirectory,
@@ -17,27 +120,26 @@ export const ClientInfoPane: React.FC = () => {
     recentClientPaths,
   } = useAppContext();
 
-  const bgColor = useColorModeValue(P.light.sidebar, P.dark.sidebar);
-  const textColor = useColorModeValue('#334155', 'white');
-  const secondaryTextColor = useColorModeValue('#64748b', P.dark.subtext);
-  const dividerBorderColor = useColorModeValue('gray.300', P.dark.tableBorder);
-  const transferBg = 'transparent';
-  const transferSectionBg = useColorModeValue('#f8fafc', '#182438');
-  const recentClientsSectionBg = useColorModeValue('#f1f5f9', '#1a202c');
+  const bgColor        = useColorModeValue(P.light.sidebar, P.dark.sidebar);
+  const textColor      = useColorModeValue('#334155', '#c8d0db');
+  const titleColor     = useColorModeValue('#6b7280', '#7a8699');
+  const hoverBg        = useColorModeValue('#f1f5f9', '#1f2637');
+  const containerBg    = useColorModeValue('#f8fafc', '#1a1f2e');
+  const borderColor    = useColorModeValue('#e2e8f0', '#2a3347');
 
-  const [quickAccessOpen] = useState(true);
-  const [rootFolders, setRootFolders] = useState<Array<{ name: string; path: string }>>([]);
+  const [rootFolders, setRootFolders] = React.useState<Array<{ name: string; path: string }>>([]);
   const sortableListRef = useRef<HTMLDivElement>(null);
-  const sortableRef = useRef<Sortable | null>(null);
+  const sortableRef     = useRef<Sortable | null>(null);
   const quickAccessPathsRef = useRef(quickAccessPaths);
   quickAccessPathsRef.current = quickAccessPaths;
 
-  // Initialise SortableJS on the pinned folders list
+  // SortableJS for pinned folders
   useEffect(() => {
     if (!sortableListRef.current) return;
     sortableRef.current = Sortable.create(sortableListRef.current, {
       animation: 150,
-      handle: '.drag-handle',
+      forceFallback: true,
+      fallbackTolerance: 5,
       ghostClass: 'sortable-ghost',
       onEnd: (evt) => {
         const { oldIndex, newIndex } = evt;
@@ -48,20 +150,14 @@ export const ClientInfoPane: React.FC = () => {
         reorderQuickAccessPaths(current);
       },
     });
-    return () => {
-      sortableRef.current?.destroy();
-      sortableRef.current = null;
-    };
+    return () => { sortableRef.current?.destroy(); sortableRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load root directory folders for default Quick Access
+  // Load root directory folders
   useEffect(() => {
-    const loadRootFolders = async () => {
-      if (!rootDirectory) {
-        setRootFolders([]);
-        return;
-      }
+    const load = async () => {
+      if (!rootDirectory) { setRootFolders([]); return; }
       try {
         const entries = await window.electronAPI.getDirectoryContents(rootDirectory);
         const folders = Array.isArray(entries)
@@ -69,269 +165,111 @@ export const ClientInfoPane: React.FC = () => {
           : [];
         folders.sort((a: any, b: any) => a.name.localeCompare(b.name));
         setRootFolders(folders.map((f: any) => ({ name: f.name, path: f.path })));
-      } catch (error) {
-        console.error('Failed to load root folders for Quick Access:', error);
-        setRootFolders([]);
-      }
+      } catch { setRootFolders([]); }
     };
-    loadRootFolders();
+    load();
   }, [rootDirectory]);
 
-  const sectionHeaderHoverBg = useColorModeValue('gray.50', 'gray.800');
-  const sectionHeaderStyle = {
-    w: "100%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    px: 2,
-    py: 2,
-    borderRadius: "md",
-    bg: "transparent",
-    _hover: { bg: sectionHeaderHoverBg },
-    transition: "background 0.2s",
-    border: "none",
-    mb: 0,
-  };
+  const hasPinned       = Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0;
+  const unpinnedFolders = rootFolders.filter(f => !quickAccessPaths?.includes(f.path));
+  const hasRootFolders  = unpinnedFolders.length > 0;
+  const hasRecent       = Array.isArray(recentClientPaths) && recentClientPaths.length > 0;
 
-  const hasRecentClients =
-    Array.isArray(recentClientPaths) && recentClientPaths.length > 0;
+  const sectionProps = { containerBg, borderColor, titleColor };
 
   return (
-    <Box 
-      h="100%" 
-      bg={bgColor}
-      display="flex"
-      flexDirection="column"
-      overflow="hidden"
-      minH={0}
-    >
-      {/* Quick Access only: must not wrap Recent — ScrollArea content height follows children, so flex-grow inside it never fills the pane. */}
+    <Box h="100%" bg={bgColor} display="flex" flexDirection="column" overflow="hidden" minH={0}>
       <ScrollArea.Root
-        type="always"
-        style={{
-          flex: hasRecentClients ? '0 1 auto' : '1 1 0',
-          minHeight: 0,
-          overflow: 'hidden',
-          padding: 4,
-        }}
+        type="auto"
+        style={{ flex: '1 1 0', minHeight: 0, overflow: 'hidden' }}
         className="sidebar-scroll-area"
       >
         <ScrollArea.Viewport style={{ height: '100%', width: '100%' }}>
-          <Box p={4} pb={hasRecentClients ? 2 : 4}>
-        {/* Quick Access Section */}
-        <Box mb={1} flexShrink={0}>
-          <Box {...sectionHeaderStyle} py={1} mb={0}>
-            <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
-              QUICK ACCESS
-            </Text>
-          </Box>
-          {quickAccessOpen && (
-            <Box w="100%" display="flex" flexDirection="column" pt={0} pb={0}>
-              <Box
-                position="relative"
-                display="flex"
-                flexDirection="column"
-                bg={transferBg}
-              >
-                {/* Folders list */}
-                <>
-                  {/* Pinned quick access folders — SortableJS manages DOM order */}
-                  <Box ref={sortableListRef} display="flex" flexDirection="column">
-                  {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 ? (
-                    quickAccessPaths.map((pinnedPath) => (
-                      <Flex
-                        key={pinnedPath}
-                        align="center"
-                        px={2}
-                        py="3px"
-                        mb="3px"
-                        fontSize="13px"
-                        _hover={{ bg: transferSectionBg }}
-                        color={textColor}
-                        cursor="pointer"
-                        style={{ userSelect: 'none' }}
-                        onClick={() => setCurrentDirectory(pinnedPath)}
-                        borderRadius={0}
-                        position="relative"
-                        role="group"
-                        data-path={pinnedPath}
-                      >
-                        {/* Drag handle */}
-                        <Box
-                          className="drag-handle"
-                          color="gray.400"
-                          cursor="grab"
-                          flexShrink={0}
-                          px="2px"
-                          opacity={0}
-                          _groupHover={{ opacity: 1 }}
-                          transition="opacity 0.15s"
-                          onClick={(e) => e.stopPropagation()}
-                          display="flex"
-                          alignItems="center"
-                        >
-                          <GripVertical size={12} />
-                        </Box>
-                        {/* Star icon — click to unpin */}
+          <Box pt="8px">
+
+            {/* ── Pinned (Quick Access) ── */}
+            {hasPinned && (
+              <SectionContainer title="Quick Access" {...sectionProps}>
+                <Box ref={sortableListRef} display="flex" flexDirection="column">
+                  {quickAccessPaths.map((pinnedPath) => (
+                    <SidebarItem
+                      key={pinnedPath}
+                      label={pinnedPath.split(/[/\\]/).filter(Boolean).pop() ?? pinnedPath}
+                      textColor={textColor}
+                      hoverBg={hoverBg}
+                      onClick={() => setCurrentDirectory(pinnedPath)}
+                      data-path={pinnedPath}
+                      draggable
+                      rightSlot={
                         <Box
                           as="span"
                           display="flex"
                           alignItems="center"
                           flexShrink={0}
-                          px="2px"
-                          onClick={(e) => { e.stopPropagation(); removeQuickAccessPath(pinnedPath); }}
+                          px="4px"
+                          opacity={0}
+                          _groupHover={{ opacity: 1 }}
+                          transition="opacity 0.15s"
+                          onClick={(e: React.MouseEvent) => { e.stopPropagation(); removeQuickAccessPath(pinnedPath); }}
                           title="Unpin"
                         >
-                          <Icon
-                            boxSize={2.5}
-                            color="yellow.400"
-                            fill="yellow.400"
-                            asChild
-                          ><Star /></Icon>
+                          <Icon boxSize="11px" color="yellow.500" fill="yellow.500" asChild><Star /></Icon>
                         </Box>
-                        <Icon boxSize={4} mr={2} ml={1} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
-                        <Text
-                          lineClamp={1}
-                          color="inherit"
-                          fontWeight="normal"
-                          flex={1}
-                        >
-                          {pinnedPath.split(/[/\\]/).filter(Boolean).pop()}
-                        </Text>
-                      </Flex>
-                    ))
-                  ) : null}
-                  </Box>
-
-                  {/* Separator between pinned and auto-populated when both exist */}
-                  {Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0 && rootFolders.filter(f => !quickAccessPaths?.includes(f.path)).length > 0 && (
-                    <Separator
-                      my={1}
-                      borderColor={dividerBorderColor}
-                      opacity={0.25}
-                      width="85%"
-                      mx="auto"
+                      }
                     />
-                  )}
+                  ))}
+                </Box>
+              </SectionContainer>
+            )}
 
-                  {/* Root path folders (excluding pinned duplicates) */}
-                  {Array.isArray(rootFolders) && rootFolders.length > 0 ? (
-                    rootFolders
-                      .filter(f => !quickAccessPaths?.includes(f.path))
-                      .map((folder) => (
-                        <Flex
-                          key={folder.path}
-                          align="center"
-                          px={4}
-                          py="3px"
-                          mb="3px"
-                          fontSize="13px"
-                          _hover={{ bg: transferSectionBg }}
-                          color={textColor}
-                          cursor="pointer"
-                          style={{ userSelect: 'none' }}
-                          onClick={() => setCurrentDirectory(folder.path)}
-                          borderRadius={0}
-                          position="relative"
-                        >
-                          {/* Invisible placeholder to align with starred items */}
-                          <Box
-                            boxSize={2.5}
-                            position="absolute"
-                            left="8px"
-                            top="50%"
-                            transform="translateY(-50%)"
-                            flexShrink={0}
-                          />
-                          <Icon boxSize={4} mr={2} ml={2} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
-                          <Text lineClamp={1} color="inherit" fontWeight="normal">
-                            {folder.name}
-                          </Text>
-                        </Flex>
-                      ))
-                  ) : null}
+            {/* ── Root Folders ── */}
+            {hasRootFolders && (
+              <SectionContainer
+                title={rootDirectory ? (rootDirectory.split(/[/\\]/).filter(Boolean).pop() ?? 'Folders') : 'Folders'}
+                {...sectionProps}
+              >
+                {unpinnedFolders.map((folder) => (
+                  <SidebarItem
+                    key={folder.path}
+                    label={folder.name}
+                    textColor={textColor}
+                    hoverBg={hoverBg}
+                    onClick={() => setCurrentDirectory(folder.path)}
+                  />
+                ))}
+              </SectionContainer>
+            )}
 
-                  {/* Empty state when neither pinned nor root has items */}
-                  {(!quickAccessPaths || quickAccessPaths.length === 0) && rootFolders.length === 0 && (
-                    <Flex justify="center" align="center" py={3}>
-                      <Text fontSize="sm" color={secondaryTextColor}>
-                        No folders found
-                      </Text>
-                    </Flex>
-                  )}
-                </>
-              </Box>
-            </Box>
-          )}
-        </Box>
+            {/* ── Recent Clients ── */}
+            {hasRecent && (
+              <SectionContainer title="Recent Clients" {...sectionProps}>
+                {recentClientPaths.map((clientPath) => (
+                  <SidebarItem
+                    key={clientPath}
+                    label={clientPath.split(/[/\\]/).filter(Boolean).pop() ?? clientPath}
+                    textColor={textColor}
+                    hoverBg={hoverBg}
+                    onClick={() => setCurrentDirectory(clientPath)}
+                    iconOverride={<FolderOpen size={14} />}
+                    iconColor="blue.400"
+                  />
+                ))}
+              </SectionContainer>
+            )}
+
+            {/* Empty state */}
+            {!hasPinned && !hasRootFolders && !hasRecent && (
+              <Flex justify="center" align="center" py={6}>
+                <Text fontSize="xs" color={titleColor}>No folders found</Text>
+              </Flex>
+            )}
 
           </Box>
         </ScrollArea.Viewport>
-        <ScrollArea.Scrollbar orientation="vertical">
+        <ScrollArea.Scrollbar orientation="vertical" style={{ width: 4 }}>
           <ScrollArea.Thumb />
         </ScrollArea.Scrollbar>
       </ScrollArea.Root>
-
-      {hasRecentClients && (
-        <Box
-          flex={1}
-          minH={0}
-          mt={2}
-          mx={4}
-          mb={4}
-          bg={recentClientsSectionBg}
-          borderRadius="lg"
-          overflow="hidden"
-          px={2}
-          py={2}
-          display="flex"
-          flexDirection="column"
-        >
-          <Box {...sectionHeaderStyle} py={1} mb={0} flexShrink={0}>
-            <Text fontSize="sm" fontWeight="semibold" color={textColor} letterSpacing={0.5}>
-              RECENT CLIENTS
-            </Text>
-          </Box>
-          <Box flex={1} minH={0} overflowY="auto" position="relative" display="flex" flexDirection="column">
-            {recentClientPaths.map((clientPath) => (
-              <Flex
-                key={clientPath}
-                align="center"
-                px={2}
-                py="3px"
-                mb="3px"
-                fontSize="13px"
-                _hover={{ bg: transferSectionBg }}
-                color={textColor}
-                cursor="pointer"
-                style={{ userSelect: 'none' }}
-                onClick={() => setCurrentDirectory(clientPath)}
-                borderRadius={0}
-                position="relative"
-                flexShrink={0}
-              >
-                <Icon boxSize={4} mr={2} color="blue.400" flexShrink={0} asChild><Folder /></Icon>
-                <Text lineClamp={1} color="inherit" fontWeight="normal" flex={1}>
-                  {clientPath.split(/[/\\]/).filter(Boolean).pop()}
-                </Text>
-              </Flex>
-            ))}
-          </Box>
-        </Box>
-      )}
-      {/* Transfer Files Section removed */}
-      {/* Document Insights functionality moved to dedicated dialog */}
-      {/* Downloads Section */}
-      {/* Removed as per user request */}
-      {/* Recent Activity */}
-      {/* Removed as per user request */}
-      {/* Document Insights Modal removed - functionality moved to dedicated dialog */}
     </Box>
   );
 };
-
-
-
-
-
-

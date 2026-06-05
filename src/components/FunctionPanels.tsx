@@ -12,21 +12,12 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FileText, FilePlus2, FileEdit, Archive, Settings, Mail, Star, RotateCcw, Calculator, Sparkles, Brain, Briefcase, Download, Columns2, FileSpreadsheet, X, FileType, Wand2, ChevronDown, Layers } from 'lucide-react';
+import { FilePlus2, FileEdit, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { MergePDFDialog } from './MergePDFDialog';
-import { LateClaimsDialog } from './LateClaimsDialog';
-import { AIEditorDialog } from './AIEditorDialog';
-import { AITemplaterDialog } from './AITemplaterDialog';
-import { DocumentAnalysisDialog } from './DocumentAnalysisDialog';
-import { PdfToCsvDialog } from './PdfToCsvDialog';
-import { ManageTemplatesDialog } from './ManageTemplatesDialog';
-import { UpdateDialog } from './UpdateDialog';
-import { Calculator as CalculatorDialog } from './Calculator';
 import { ClientSearchOverlay } from './ClientSearchOverlay';
 import { type DialogType, type MinimizedDialog } from './MinimizedDialogsBar';
-import { getAppVersion } from '../utils/version';
 import { extractIndexPrefix, getAllIndexKeys } from '../utils/indexPrefix';
 import { joinPath } from '../utils/path';
 import {
@@ -587,29 +578,10 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setIsPreviewPaneOpen,
     sessionLayerViewEnabled,
     setSessionLayerViewEnabled,
-    isJobContextOpen,
-    setIsJobContextOpen,
     addRecentlyTransferredFiles,
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
-  const [isLateClaimsOpen, setLateClaimsOpen] = useState(false);
-  const [isAIEditorOpen, setAIEditorOpen] = useState(false);
-  const [isAITemplaterOpen, setAITemplaterOpen] = useState(false);
-  const [isDocumentAnalysisOpen, setDocumentAnalysisOpen] = useState(false);
-  const [isPdfToCsvOpen, setPdfToCsvOpen] = useState(false);
-  const [isManageTemplatesOpen, setManageTemplatesOpen] = useState(false);
-  
-  // Keys to force remount and reset dialog state when closing minimized dialogs
-  const [dialogKeys, setDialogKeys] = useState({
-    aiEditor: 0,
-    aiTemplater: 0,
-    documentAnalysis: 0,
-    pdfToCsv: 0,
-    manageTemplates: 0,
-  });
-  const [isCalculatorOpen, setCalculatorOpen] = useState(false);
-  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
 
   // Transfer dropdown state
@@ -622,32 +594,10 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
   // Use client search shortcut hook
   useClientSearchShortcut(setClientSearchOpen);
 
-  const [updateInfo, setUpdateInfo] = useState<{
-    currentVersion: string;
-    availableVersion?: string;
-    releaseNotes?: string;
-    downloadSize?: string;
-    isDownloading: boolean;
-    downloadProgress?: number;
-    isDownloaded: boolean;
-    error?: string;
-  }>({
-    currentVersion: getAppVersion(),
-    availableVersion: undefined,
-    releaseNotes: undefined,
-    downloadSize: undefined,
-    isDownloading: false,
-    downloadProgress: undefined,
-    isDownloaded: false,
-    error: undefined
-  });
   const buttonHoverBg = useColorModeValue('gray.300', 'rgba(255,255,255,0.08)');
   const dividerColor = useColorModeValue('#e2e8f0', 'gray.600');
   const toggleActiveBg = DF_SESSION_RAIL_BG;
   const toggleActiveHoverBg = DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG;
-  const minimizedIconActiveBg = DF_SESSION_RAIL_BG;
-  const minimizedIconColor = 'white';
-  const minimizedIconHoverBg = DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG;
 
   const handleAction = async (action: string) => {
     if (action === 'transfer_mapping') {
@@ -718,48 +668,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         setStatus('GST Rename failed', 'error');
         console.error('[FunctionPanels] GST Rename error:', error);
       }
-      return;
-    }
-
-    if (action === 'late_claims') {
-      setLateClaimsOpen(true);
-      setStatus('Opened Late Claims Calculator', 'info');
-      return;
-    }
-
-    if (action === 'ai_editor') {
-      setAIEditorOpen(true);
-      setStatus('Opened AI Email Editor', 'info');
-      return;
-    }
-
-    if (action === 'ai_templater') {
-      setAITemplaterOpen(true);
-      setStatus('Opened AI Templater', 'info');
-      return;
-    }
-
-    if (action === 'analyze_docs') {
-      setDocumentAnalysisOpen(true);
-      setStatus('Opened Document Analysis', 'info');
-      return;
-    }
-
-    if (action === 'pdf_to_csv') {
-      setPdfToCsvOpen(true);
-      setStatus('Opened PDF to CSV', 'info');
-      return;
-    }
-
-    if (action === 'manage_templates') {
-      setManageTemplatesOpen(true);
-      setStatus('Opened Template Manager', 'info');
-      return;
-    }
-
-    if (action === 'calculator') {
-      setCalculatorOpen(true);
-      setStatus('Opened Calculator', 'info');
       return;
     }
 
@@ -908,13 +816,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       return;
     }
 
-    // Handle update action
-    if (action === 'update') {
-      setIsUpdateDialogOpen(true);
-      setStatus('Opened update dialog', 'info');
-      return;
-    }
-
     addLog(`Executing action: ${action}`);
     const functionNames: { [key: string]: string } = {
       gst_template: 'GST Template',
@@ -931,163 +832,13 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setStatus(`Executing ${friendlyName}...`, 'info');
   };
 
-  const handleCheckForUpdates = async () => {
-    addLog('Checking for updates...', 'info');
-    setUpdateInfo(prev => ({ ...prev, error: undefined }));
-    
-    try {
-      const result = await window.electronAPI.executeCommand('update', currentDirectory);
-      
-      if (result.success) {
-        addLog('Update check completed', 'response');
-        setUpdateInfo(prev => ({
-          ...prev,
-          availableVersion: undefined,
-          error: undefined
-        }));
-      } else {
-        addLog(result.message, 'error');
-        setUpdateInfo(prev => ({
-          ...prev,
-          error: result.message
-        }));
-      }
-    } catch (error) {
-      const errorMsg = `Error checking for updates: ${error}`;
-      addLog(errorMsg, 'error');
-      setUpdateInfo(prev => ({
-        ...prev,
-        error: errorMsg
-      }));
-    }
-  };
-
-  const handleDownloadUpdate = async () => {
-    addLog('Downloading update...', 'info');
-    setUpdateInfo(prev => ({ 
-      ...prev, 
-      isDownloading: true, 
-      downloadProgress: 0,
-      error: undefined 
-    }));
-    
-    // Simulate download progress
-    const progressInterval = setInterval(() => {
-      setUpdateInfo(prev => {
-        if (prev.downloadProgress! >= 100) {
-          clearInterval(progressInterval);
-          return {
-            ...prev,
-            isDownloading: false,
-            isDownloaded: true
-          };
-        }
-        return {
-          ...prev,
-          downloadProgress: (prev.downloadProgress || 0) + 10
-        };
-      });
-    }, 500);
-  };
-
-  const handleInstallUpdate = async () => {
-    addLog('Installing update...', 'info');
-    try {
-      await window.electronAPI.quitAndInstall();
-    } catch (error) {
-      const errorMsg = `Error installing update: ${error}`;
-      addLog(errorMsg, 'error');
-      setUpdateInfo(prev => ({
-        ...prev,
-        error: errorMsg
-      }));
-    }
-  };
-
-  // Minimized dialogs handlers
-  const handleMinimizeDialog = (type: DialogType) => {
-    switch (type) {
-      case 'documentAnalysis':
-        setDocumentAnalysisOpen(false);
-        break;
-      case 'aiEditor':
-        setAIEditorOpen(false);
-        break;
-      case 'aiTemplater':
-        setAITemplaterOpen(false);
-        break;
-      case 'pdfToCsv':
-        setPdfToCsvOpen(false);
-        break;
-      case 'manageTemplates':
-        setManageTemplatesOpen(false);
-        break;
-    }
-    
-    setMinimizedDialogs(prev => {
-      if (prev.some(d => d.type === type)) return prev;
-      
-      const labels: Record<DialogType, string> = {
-        documentAnalysis: 'Analyze Documents',
-        aiEditor: 'AI Editor',
-        aiTemplater: 'AI Templater',
-        pdfToCsv: 'PDF to CSV',
-        manageTemplates: 'Templates'
-      };
-      
-      return [...prev, { type, label: labels[type] }];
-    });
-  };
-
+  // Minimized dialogs handlers (kept for Layout/FolderTabSystem compatibility)
   const handleRestoreDialog = (type: DialogType) => {
     setMinimizedDialogs(prev => prev.filter(d => d.type !== type));
-    
-    switch (type) {
-      case 'documentAnalysis':
-        setDocumentAnalysisOpen(true);
-        break;
-      case 'aiEditor':
-        setAIEditorOpen(true);
-        break;
-      case 'aiTemplater':
-        setAITemplaterOpen(true);
-        break;
-      case 'pdfToCsv':
-        setPdfToCsvOpen(true);
-        break;
-      case 'manageTemplates':
-        setManageTemplatesOpen(true);
-        break;
-    }
   };
 
   const handleCloseMinimizedDialog = (type: DialogType) => {
     setMinimizedDialogs(prev => prev.filter(d => d.type !== type));
-    
-    // Reset dialog state by incrementing key to force remount
-    setDialogKeys(prev => ({
-      ...prev,
-      [type]: prev[type as keyof typeof prev] + 1,
-    }));
-    
-    // Ensure dialog is closed
-    switch (type) {
-      case 'documentAnalysis':
-        setDocumentAnalysisOpen(false);
-        break;
-      case 'aiEditor':
-        setAIEditorOpen(false);
-        break;
-      case 'aiTemplater':
-        setAITemplaterOpen(false);
-        break;
-      case 'pdfToCsv':
-        setPdfToCsvOpen(false);
-        break;
-      case 'manageTemplates':
-        setManageTemplatesOpen(false);
-        break;
-    }
   };
 
   // Register handlers with Layout
@@ -1263,178 +1014,45 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         borderRadius={0}
         bg="df.toolbar"
       >
-        {/* GST Functions */}
+        {/* Action buttons */}
         <Flex gap={1}>
-          <FunctionButton 
-            icon={Download} 
-            action="gst_transfer" 
-            description="Transfer latest file from DL to current path" 
-            color="blue.600" 
+          <FunctionButton
+            icon={Download}
+            action="gst_transfer"
+            description="Transfer latest file from DL to current path"
+            color="blue.600"
           />
-          <FunctionButton 
-            icon={FileEdit} 
-            action="gst_rename" 
-            description="Rename files according to GST standards" 
-            color="green.400" 
+          <FunctionButton
+            icon={FileEdit}
+            action="gst_rename"
+            description="Rename files according to GST standards"
+            color="green.400"
           />
-          <FunctionButton 
-            icon={Calculator} 
-            action="late_claims" 
-            description="Calculate GST late claims adjustments" 
-            color="orange.400" 
+          <FunctionButton
+            icon={FilePlus2}
+            action="merge_pdfs"
+            description="Combine multiple PDF files into one document"
+            color="red.400"
+          />
+          <FunctionButton
+            icon={Archive}
+            action="extract_zips"
+            description="Extract all ZIP files in current directory"
+            color="orange.400"
+          />
+          <FunctionButton
+            icon={Mail}
+            action="extract_eml"
+            description="Extract attachments from EML files"
+            color="cyan.400"
+          />
+          <FunctionButton
+            icon={Settings}
+            action="transfer_mapping"
+            description="Edit transfer command mappings"
+            color="gray.600"
           />
         </Flex>
-        
-        <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
-        
-        {/* File Management Functions */}
-        <Flex gap={1}>
-          <FunctionButton 
-            icon={FilePlus2} 
-            action="merge_pdfs" 
-            description="Combine multiple PDF files into one document" 
-            color="red.400" 
-          />
-          <FunctionButton 
-            icon={Archive} 
-            action="extract_zips" 
-            description="Extract all ZIP files in current directory" 
-            color="orange.400" 
-          />
-          <FunctionButton 
-            icon={Mail} 
-            action="extract_eml" 
-            description="Extract attachments from EML files" 
-            color="cyan.400" 
-          />
-          <FunctionButton 
-            icon={Settings} 
-            action="transfer_mapping" 
-            description="Edit transfer command mappings" 
-            color="gray.600" 
-          />
-        </Flex>
-        
-        <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
-        
-        {/* Utilities Functions */}
-        <Flex gap={1}>
-          <FunctionButton 
-            icon={Wand2} 
-            action="ai_editor" 
-            description="Email AI editor for content generation" 
-            color="yellow.400" 
-          />
-          <FunctionButton 
-            icon={Sparkles} 
-            action="ai_templater" 
-            description="Create AI templates for content generation" 
-            color="purple.400" 
-          />
-          <FunctionButton 
-            icon={Brain} 
-            action="analyze_docs" 
-            description="AI-powered document analysis and insights" 
-            color="blue.400" 
-          />
-          <FunctionButton 
-            icon={FileSpreadsheet} 
-            action="pdf_to_csv" 
-            description="Convert PDF tables to CSV format" 
-            color="green.400" 
-          />
-          <FunctionButton 
-            icon={FileEdit} 
-            action="manage_templates" 
-            description="Create, edit, and manage template YAMLs" 
-            color="indigo.400" 
-          />
-          <FunctionButton 
-            icon={RotateCcw} 
-            action="update" 
-            description="Update application and components" 
-            color="pink.400" 
-          />
-        </Flex>
-        
-        {/* Minimized Dialogs - if any */}
-        {minimizedDialogs.length > 0 && (
-          <>
-            <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
-            <Flex gap={0.5} align="center">
-              {minimizedDialogs.map((dialog) => {
-                const getDialogIcon = (type: DialogType) => {
-                  switch (type) {
-                    case 'documentAnalysis':
-                      return Brain;
-                    case 'aiEditor':
-                      return Mail;
-                    case 'aiTemplater':
-                      return FileType;
-                    case 'pdfToCsv':
-                      return FileSpreadsheet;
-                    case 'manageTemplates':
-                      return FileText;
-                    default:
-                      return FileText;
-                  }
-                };
-                const DialogIcon = getDialogIcon(dialog.type);
-                return (
-                  <Box
-                    key={dialog.type}
-                    position="relative"
-                    _hover={{
-                      '& .close-button': {
-                        opacity: 1,
-                      },
-                    }}
-                  >
-                    <Tooltip
-                      content={dialog.label}
-                      showArrow
-                      openDelay={0}
-                      closeDelay={0}
-                      positioning={{ placement: "bottom", gutter: 8 }}
-                    >
-                      <IconButton
-                        aria-label={dialog.label}
-                        size="sm"
-                        variant="solid"
-                        borderRadius={0}
-                        bg={minimizedIconActiveBg}
-                        color={minimizedIconColor}
-                        onClick={() => handleRestoreDialog(dialog.type)}
-                        _hover={{ bg: minimizedIconHoverBg }}
-                        h={FN_TOOLBAR_BTN}
-                        w={FN_TOOLBAR_BTN}>{React.createElement(DialogIcon, { size: FN_TOOLBAR_ICON, strokeWidth: 2 })}</IconButton>
-                    </Tooltip>
-                    <IconButton
-                      aria-label={`Close ${dialog.label}`}
-                      size="xs"
-                      position="absolute"
-                      top={-1}
-                      right={-1}
-                      variant="solid"
-                      colorPalette="red"
-                      borderRadius="full"
-                      w="16px"
-                      minW="16px"
-                      h="16px"
-                      p={0}
-                      opacity={0}
-                      className="close-button"
-                      transition="opacity 0.2s"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCloseMinimizedDialog(dialog.type);
-                      }}><X size={10} /></IconButton>
-                  </Box>
-                );
-              })}
-            </Flex>
-          </>
-        )}
         
         {/* Spacer */}
         <Box flex="1" />
@@ -1494,32 +1112,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
               w={FN_TOOLBAR_BTN}><Columns2 size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
           </Tooltip>
 
-          <Tooltip
-            content={isJobContextOpen ? 'Hide job context' : 'Show job context'}
-            showArrow
-            openDelay={0}
-            closeDelay={0}
-            positioning={{ placement: "bottom", gutter: 8 }}
-          >
-            <IconButton
-              aria-label="Job context"
-              size="sm"
-              variant={isJobContextOpen ? "solid" : "ghost"}
-              borderRadius={0}
-              bg={isJobContextOpen ? toggleActiveBg : undefined}
-              color={isJobContextOpen ? "white" : buttonColor}
-              onClick={() => {
-                setIsJobContextOpen(!isJobContextOpen);
-                addLog(`Job context ${!isJobContextOpen ? 'opened' : 'closed'}`);
-                setStatus(`Job context ${!isJobContextOpen ? 'opened' : 'closed'}`, 'info');
-              }}
-              _hover={{ bg: isJobContextOpen ? toggleActiveHoverBg : buttonHoverBg }}
-              _focus={suppressFocusRing}
-              _focusVisible={suppressFocusRing}
-              h={FN_TOOLBAR_BTN}
-              w={FN_TOOLBAR_BTN}><Briefcase size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
-          </Tooltip>
-
           <Separator orientation="vertical" borderColor={dividerColor} h={FN_TOOLBAR_SEP_H} />
 
           <TransferDropdownMenu
@@ -1567,68 +1159,6 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           onClose={() => setMergePDFOpen(false)}
           currentDirectory={currentDirectory}
           onFileOperation={logFileOperation}
-        />
-      )}
-      {isLateClaimsOpen && (
-        <LateClaimsDialog isOpen onClose={() => setLateClaimsOpen(false)} currentDirectory={currentDirectory} />
-      )}
-      {(isAIEditorOpen || minimizedDialogs.some((d) => d.type === 'aiEditor')) && (
-        <AIEditorDialog
-          key={`aiEditor-${dialogKeys.aiEditor}`}
-          isOpen={isAIEditorOpen}
-          onClose={() => setAIEditorOpen(false)}
-          onMinimize={() => handleMinimizeDialog('aiEditor')}
-        />
-      )}
-      {(isAITemplaterOpen || minimizedDialogs.some((d) => d.type === 'aiTemplater')) && (
-        <AITemplaterDialog
-          key={`aiTemplater-${dialogKeys.aiTemplater}`}
-          isOpen={isAITemplaterOpen}
-          onClose={() => handleCloseMinimizedDialog('aiTemplater')}
-          currentDirectory={currentDirectory}
-          onMinimize={() => handleMinimizeDialog('aiTemplater')}
-        />
-      )}
-      {(isDocumentAnalysisOpen || minimizedDialogs.some((d) => d.type === 'documentAnalysis')) && (
-        <DocumentAnalysisDialog
-          key={`documentAnalysis-${dialogKeys.documentAnalysis}`}
-          isOpen={isDocumentAnalysisOpen}
-          onClose={() => setDocumentAnalysisOpen(false)}
-          currentDirectory={currentDirectory}
-          selectedFiles={selectedFiles}
-          folderItems={folderItems}
-          onMinimize={() => handleMinimizeDialog('documentAnalysis')}
-        />
-      )}
-      {(isPdfToCsvOpen || minimizedDialogs.some((d) => d.type === 'pdfToCsv')) && (
-        <PdfToCsvDialog
-          key={`pdfToCsv-${dialogKeys.pdfToCsv}`}
-          isOpen={isPdfToCsvOpen}
-          onClose={() => setPdfToCsvOpen(false)}
-          currentDirectory={currentDirectory}
-          selectedFiles={selectedFiles}
-          folderItems={folderItems}
-          onMinimize={() => handleMinimizeDialog('pdfToCsv')}
-        />
-      )}
-      {(isManageTemplatesOpen || minimizedDialogs.some((d) => d.type === 'manageTemplates')) && (
-        <ManageTemplatesDialog
-          key={`manageTemplates-${dialogKeys.manageTemplates}`}
-          isOpen={isManageTemplatesOpen}
-          onClose={() => setManageTemplatesOpen(false)}
-          currentDirectory={currentDirectory}
-          onMinimize={() => handleMinimizeDialog('manageTemplates')}
-        />
-      )}
-      {isCalculatorOpen && <CalculatorDialog isOpen onClose={() => setCalculatorOpen(false)} />}
-      {isUpdateDialogOpen && (
-        <UpdateDialog
-          isOpen
-          onClose={() => setIsUpdateDialogOpen(false)}
-          onCheckForUpdates={handleCheckForUpdates}
-          onDownloadUpdate={handleDownloadUpdate}
-          onInstallUpdate={handleInstallUpdate}
-          updateInfo={updateInfo}
         />
       )}
       {isClientSearchOpen && <ClientSearchOverlay isOpen onClose={() => setClientSearchOpen(false)} />}

@@ -18,7 +18,7 @@ import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 export const Layout: React.FC = () => {
   const { isPreviewPaneOpen, isJobContextOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
   const { clientInfo } = useClientInfo(currentDirectory, rootDirectory);
-  const [sidebarWidth, setSidebarWidth] = useState(263);
+  const [sidebarWidth, setSidebarWidth] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [minimizedDialogs, setMinimizedDialogs] = useState<MinimizedDialog[]>([]);
   const [onRestoreDialog, setOnRestoreDialog] = useState<((type: DialogType) => void) | undefined>();
