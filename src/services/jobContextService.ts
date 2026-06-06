@@ -37,10 +37,11 @@ function deriveEntityTypeHint(clientName: string): string {
 
 function extractClientNameFromPath(directory: string): string {
   const segments = directory.replace(/\\/g, '/').split('/').filter(Boolean);
-  const annualIdx = segments.findIndex(
-    (s) => s.toLowerCase().replace(/\s+/g, '') === 'annualaccounts'
-  );
-  if (annualIdx > 0) return segments[annualIdx - 1];
+  // Client name is the parent folder (or grandparent if in a year subfolder)
+  const last = segments[segments.length - 1];
+  if (/^20\d{2}$/.test(last) && segments.length >= 2) {
+    return segments[segments.length - 2];
+  }
   return segments[segments.length - 2] || segments[segments.length - 1] || 'Unknown';
 }
 

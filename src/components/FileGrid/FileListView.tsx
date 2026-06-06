@@ -5,7 +5,7 @@ import { FileListTheadRow } from './FileListThead'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Box, Text, Icon, Flex, Input, Image, Popover, IconButton, Portal, Separator, chakra } from '@chakra-ui/react';
 import {
-  FolderOpen,
+  Folder,
   Upload,
   Plus,
 } from 'lucide-react'
@@ -152,7 +152,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                   />
                 ) : (
                   <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
-                    <FolderOpen size={16} strokeWidth={2} />
+                    <Folder size={16} strokeWidth={2} />
                   </Box>
                 )}
 
@@ -391,7 +391,7 @@ function FileRenameTableRow({
                   />
                 ) : (
                   <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
-                    <FolderOpen size={16} strokeWidth={2} />
+                    <Folder size={16} strokeWidth={2} />
                   </Box>
                 )}
                 <Box
@@ -592,7 +592,7 @@ function NewFolderGhostTableRow({
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
-                  <FolderOpen size={16} strokeWidth={2} />
+                  <Folder size={16} strokeWidth={2} />
                 </Box>
                 <Box
                   flex={1}
@@ -886,9 +886,13 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         px={0}
         py={0}
         gap={0}
-        minHeight="22px"
+        minHeight="26px"
         bg={isDraggingOver ? dropZoneBg : pillBg}
-        transition="background 0.15s ease"
+        style={isDraggingOver ? undefined : { background: `linear-gradient(135deg, ${pillBg} 0%, color-mix(in srgb, ${pillBg} 85%, #4a7ab5) 50%, ${pillBg} 100%)` }}
+        borderTop="1px solid rgba(255,255,255,0.06)"
+        boxShadow="0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)"
+        transition="background 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease"
+        _hover={isDraggingOver ? undefined : { filter: 'brightness(1.06)' }}
         borderRadius={0}
         cursor={isDraggingOver ? 'copy' : 'default'}
       >
@@ -909,6 +913,8 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           title={indexPillTitle}
           overflow="hidden"
           py={0.5}
+          borderLeft="2px solid rgba(114, 205, 244, 0.5)"
+          style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}
         >
           <Text as="span" lineClamp={1} px={1} textAlign="center" w="100%">
             {indexPillLabel}
@@ -916,10 +922,10 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         </Box>
         <Box
           flexShrink={0}
-          w="3px"
-          minW="3px"
+          w="2px"
+          minW="2px"
           alignSelf="stretch"
-          bg={DF_GROUP_HEADER_GAP_BG}
+          bg="rgba(0,0,0,0.3)"
           aria-hidden
         />
         <Flex
@@ -931,7 +937,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           py={0.5}
           color={pillText}
         >
-          <Text flex="1" fontSize="xs" fontWeight="medium" lineClamp={2} minW={0}>
+          <Text flex="1" fontSize="xs" fontWeight="medium" lineClamp={2} minW={0} letterSpacing="0.01em">
             {isDraggingOver && isCopyMode
               ? `📋 Copy to ${groupKey}${indexInfo.description ? ` — ${indexInfo.description}` : ''}`
               : indexInfo.description || ''}
@@ -941,23 +947,25 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
             flexShrink={0}
             px={2}
             py={0.5}
-            bg="rgba(255,255,255,0.12)"
+            bg="rgba(255,255,255,0.08)"
             color={pillText}
-            borderRadius={0}
+            borderRadius="3px"
+            border="1px solid rgba(255,255,255,0.1)"
             fontSize="xs"
             fontWeight="semibold"
             minW="32px"
             textAlign="center"
+            style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}
           >
             {fileCount}
           </Box>
         </Flex>
         <Box
           flexShrink={0}
-          w="3px"
-          minW="3px"
+          w="2px"
+          minW="2px"
           alignSelf="stretch"
-          bg={DF_GROUP_HEADER_GAP_BG}
+          bg="rgba(0,0,0,0.3)"
           aria-hidden
         />
         <Box
@@ -1115,13 +1123,13 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           </Popover.Root>
         </Box>
       </Flex>
-      <Flex h="1px" w="100%" flexShrink={0} gap={0} align="stretch" aria-hidden>
-        <Box flexShrink={0} w={`${squareSide}px`} minW={`${squareSide}px`} maxW={`${squareSide}px`} bg={dividerColor} />
-        <Box flexShrink={0} w="3px" minW="3px" bg={DF_GROUP_HEADER_GAP_BG} />
-        <Box flex="1" minW={0} bg={dividerColor} />
-        <Box flexShrink={0} w="3px" minW="3px" bg={DF_GROUP_HEADER_GAP_BG} />
-        <Box flexShrink={0} w={`${squareSide}px`} minW={`${squareSide}px`} maxW={`${squareSide}px`} bg={dividerColor} />
-      </Flex>
+      <Box
+        h="1px"
+        w="100%"
+        flexShrink={0}
+        aria-hidden
+        style={{ background: 'linear-gradient(90deg, transparent, rgba(114,205,244,0.15) 20%, rgba(114,205,244,0.15) 80%, transparent)' }}
+      />
       {isDraggingOver && (
         <Flex
           position="absolute"

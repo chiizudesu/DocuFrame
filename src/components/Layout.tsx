@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useColorModeValue } from "./ui/color-mode";
 import { Grid, GridItem, Box } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
-import { ClientInfoBar } from './ClientInfoBar';
 import { PreviewPane } from './PreviewPane';
 import { JobContextPane } from './JobContextPane';
 import { FolderInfoBar } from './FolderInfoBar';
@@ -11,14 +10,15 @@ import { FileGrid } from './FileGrid';
 import { FolderTabSystem } from './FolderTabSystem';
 import { Footer } from './Footer';
 import { useAppContext } from '../context/AppContext';
-import { useClientInfo } from '../hooks/useClientInfo';
 import { settingsService } from '../services/settings';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 import { TransferPanel } from './TransferPanel';
+import { ClientHeaderStrip } from './ClientHeaderStrip';
+import { ClientListView } from './ClientListView';
+import { normalizePath } from '../utils/path';
 
 export const Layout: React.FC = () => {
-  const { isPreviewPaneOpen, isJobContextOpen, showClientInfoBar, currentDirectory, rootDirectory } = useAppContext();
-  const { clientInfo } = useClientInfo(currentDirectory, rootDirectory);
+  const { isPreviewPaneOpen, isJobContextOpen, currentDirectory, rootDirectory } = useAppContext();
   const [sidebarWidth, setSidebarWidth] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [minimizedDialogs, setMinimizedDialogs] = useState<MinimizedDialog[]>([]);
@@ -214,19 +214,17 @@ export const Layout: React.FC = () => {
       position="relative"
       zIndex={0}
     >
-      <Box flex="1" minH={0} overflow="auto">
-        <FileGrid />
-      </Box>
-      {showClientInfoBar && clientInfo && (
-        <Box
-          flexShrink={0}
-          overflow="hidden"
-          borderTopWidth="1px"
-          borderTopStyle="solid"
-          borderTopColor="df.border"
-        >
-          <ClientInfoBar />
+      {normalizePath(currentDirectory) === normalizePath(rootDirectory) ? (
+        <Box flex="1" minH={0} overflow="auto">
+          <ClientListView />
         </Box>
+      ) : (
+        <>
+          <ClientHeaderStrip />
+          <Box flex="1" minH={0} overflow="auto">
+            <FileGrid />
+          </Box>
+        </>
       )}
     </GridItem>
     {/* Preview Pane */}

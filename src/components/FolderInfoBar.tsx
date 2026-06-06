@@ -221,7 +221,7 @@ const MiniSearchDropdown: React.FC<{
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, fileSearchFilter, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   const yearNav = useYearNavigation(currentDirectory)
   
@@ -239,9 +239,6 @@ export const FolderInfoBar: React.FC = () => {
   const [newSpreadsheetName, setNewSpreadsheetName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const addressBarRef = useRef<HTMLDivElement>(null)
-  const searchInputRef = useRef<HTMLInputElement>(null)
-  const searchInputContainerRef = useRef<HTMLDivElement>(null)
-  const [searchValue, setSearchValue] = useState('')
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState<number>(-1)
   const [clickCount, setClickCount] = useState(0)
@@ -330,7 +327,6 @@ export const FolderInfoBar: React.FC = () => {
   const addressBarItemHoverBg = useColorModeValue(P.light.chromeHover, P.dark.addressWellHover)
   const textColor = useColorModeValue('#334155', 'gray.100')
   const iconColor = useColorModeValue('#64748b', P.dark.subtext)
-  const inputFocusBgColor = useColorModeValue('gray.200', '#4A5568')
   const inputBorderColor = useColorModeValue('gray.300', 'transparent') // Light: thin border to separate inputs from white header
   const separatorColor = useColorModeValue('gray.300', P.dark.border)
   const yearNavDisabledColor = useColorModeValue('gray.300', 'gray.600')
@@ -339,7 +335,6 @@ export const FolderInfoBar: React.FC = () => {
   const dropdownHoverBg = useColorModeValue('gray.100', P.dark.rowHover)
   const folderIconColor = useColorModeValue('#3b82f6', '#63B3ED')
   const fileIconColor = useColorModeValue('#64748b', '#718096')
-  const placeholderColor = useColorModeValue('gray.500', 'gray.400')
   const miniCurrentFolderBg = useColorModeValue('gray.600', 'gray.400')
   const miniCurrentFolderColor = useColorModeValue('white', 'gray.900')
   const miniSeparatorColor = useColorModeValue('gray.500', 'gray.400')
@@ -435,13 +430,6 @@ export const FolderInfoBar: React.FC = () => {
     }
   }
 
-  // Sync search input when filter is cleared externally (e.g. when FileGrid loads new directory)
-  useEffect(() => {
-    if (fileSearchFilter === '') {
-      setSearchValue('');
-      setStatus('', 'info');
-    }
-  }, [fileSearchFilter, setStatus]);
 
   // Exit edit mode when clicking outside the address bar
   useEffect(() => {
@@ -574,7 +562,6 @@ export const FolderInfoBar: React.FC = () => {
       // Clear all state first for a true cold reload
       setSelectedFiles([])
       setClipboard({ files: [], operation: null })
-      setSearchValue('')
       setFileSearchFilter('') // Clear search filter
       
       // Dispatch a force reload event that FileGrid will listen to for immediate reload
@@ -1441,14 +1428,14 @@ export const FolderInfoBar: React.FC = () => {
                         as="span"
                         px={3}
                         py={0.9}
-                        borderRadius="md"
+                        borderRadius="4px"
                         bg="blue.600"
                         color="white"
                         fontSize="sm"
                         fontWeight="medium"
                         cursor="pointer"
                         _hover={{ bg: 'blue.500' }}
-                        transition="background 0.15s"
+                        transition="background 0.15s ease, transform 0.1s ease"
                         userSelect="none"
                         onClick={async (e) => {
                           e.stopPropagation();
@@ -1474,12 +1461,12 @@ export const FolderInfoBar: React.FC = () => {
                     <Flex
                       align="center"
                       px={2}
-                      py="2px"
+                      py="1px"
                       cursor={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'default' : 'pointer'}
                       bg={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonBg : 'transparent'}
-                      borderRadius="lg"
+                      borderRadius="4px"
                       _hover={idx !== breadcrumbs.length - 1 || activeChevronIndex !== null ? { bg: addressBarItemHoverBg } : undefined}
-                      transition="background 0.2s ease"
+                      transition="background 0.15s ease"
                       position="relative"
                       zIndex={1}
                       onClick={async (e) => {
@@ -1522,24 +1509,25 @@ export const FolderInfoBar: React.FC = () => {
                           as="span"
                           display="inline-flex"
                           alignItems="center"
-                          mx={1}
-                          opacity={0.8}
+                          mx={0.5}
+                          opacity={0.5}
                           color={textColor}
                           cursor="pointer"
-                          borderRadius="md"
+                          borderRadius="3px"
                           p={0.5}
-                          _hover={{ bg: addressBarItemHoverBg }}
+                          transition="opacity 0.15s ease, background 0.15s ease"
+                          _hover={{ bg: addressBarItemHoverBg, opacity: 1 }}
                           onClick={(e) => {
                             e.stopPropagation()
                             openMiniSearch(idx)
                           }}
                         >
-                          <ChevronRight size={16} />
+                          <ChevronRight size={14} />
                         </Box>
                       </Tooltip>
                     ) : (
-                      <Box as="span" mx={1} display="inline-flex" alignItems="center" flexShrink={0} opacity={0.8} color={textColor}>
-                        <ChevronRight size={16} />
+                      <Box as="span" mx={0.5} display="inline-flex" alignItems="center" flexShrink={0} opacity={0.5} color={textColor}>
+                        <ChevronRight size={14} />
                       </Box>
                     )
                   )}
@@ -1756,45 +1744,6 @@ export const FolderInfoBar: React.FC = () => {
               onMouseDown={(e) => e.preventDefault()}><ExternalLink size={18} /></IconButton>
           </Box>
         </Tooltip>
-        {/* Search Input Field - Same style as address bar, no border */}
-        <Box ref={searchInputContainerRef} maxW="300px" ml="auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <Input
-            ref={searchInputRef}
-            value={searchValue}
-            placeholder="Search Clients"
-            size="sm"
-            h="33px"
-            borderRadius="md"
-            bg={inputBgColor}
-            border="1px solid"
-            borderColor={inputBorderColor}
-            color={textColor}
-            fontSize="sm"
-            pl={3}
-            tabIndex={-1}
-            _placeholder={{ color: useColorModeValue('gray.500', 'gray.400') }}
-            _focus={{
-              bg: inputFocusBgColor,
-              boxShadow: 'none',
-              outline: 'none'
-            }}
-            onClick={(e) => {
-              // Only focus when clicking directly on the input
-              e.currentTarget.focus();
-            }}
-            onChange={(e) => {
-              const query = e.target.value;
-              setSearchValue(query);
-              // Filter files directly using fileSearchFilter (FileGrid handles the filtering)
-              setFileSearchFilter(query);
-              if (query.trim()) {
-                setStatus(`Filtering files...`, 'info');
-              } else {
-                setStatus('', 'info');
-              }
-            }}
-          />
-        </Box>
       </Flex>
       <Dialog.Root open={isCreateSpreadsheetOpen} placement='center' onOpenChange={e => {
         if (!e.open) {

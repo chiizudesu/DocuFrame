@@ -7,7 +7,18 @@ import { docuFramePalette as P } from './docuFrameColors';
  * - Tooltip / menu / popover surfaces matching the old light gray panels in light mode.
  */
 const docuFrameConfig = defineConfig({
+  globalCss: {
+    body: {
+      fontFamily: "'DM Sans', system-ui, sans-serif",
+    },
+  },
   theme: {
+    tokens: {
+      fonts: {
+        heading: { value: "'DM Sans', system-ui, sans-serif" },
+        body: { value: "'DM Sans', system-ui, sans-serif" },
+      },
+    },
     semanticTokens: {
       colors: {
         bg: {

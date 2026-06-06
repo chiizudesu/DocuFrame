@@ -7,9 +7,9 @@ import { useClientInfo } from '../hooks/useClientInfo';
 import { showToast } from "@/components/ui/toaster"
 
 const labelStyle = {
-  fontSize: '10px',
+  fontSize: '9px',
   fontWeight: 'semibold' as const,
-  color: 'whiteAlpha.600',
+  color: 'whiteAlpha.500',
   letterSpacing: 'wider',
   textTransform: 'uppercase' as const,
   userSelect: 'none' as const,
@@ -49,6 +49,7 @@ const Block: React.FC<{
       fontWeight={fontWeight}
       color="white"
       userSelect="none"
+      letterSpacing="0.01em"
       lineClamp={truncate ? 1 : undefined}
       overflow={truncate ? 'hidden' : undefined}
       textOverflow={truncate ? 'ellipsis' : undefined}
@@ -68,14 +69,16 @@ const Section: React.FC<{
   <Flex
     align="center"
     gap={1.5}
-    px={3}
+    px={3.5}
     py={1}
     userSelect="none"
     borderRight={hasBorder ? '1px solid' : undefined}
-    borderColor={hasBorder ? 'whiteAlpha.300' : undefined}
+    borderColor={hasBorder ? 'rgba(255,255,255,0.08)' : undefined}
     flexShrink={flexShrink}
     minW={minW ?? (flexShrink ? 0 : undefined)}
     overflow={flexShrink ? 'hidden' : undefined}
+    transition="background 0.2s ease"
+    _hover={{ bg: 'rgba(255,255,255,0.04)' }}
   >
     {children}
   </Flex>
@@ -98,11 +101,29 @@ export const ClientInfoBar: React.FC = () => {
   const noClientColor = useColorModeValue('gray.600', 'gray.300');
 
   const hasClient = !!clientInfo;
-  const clientBg = useColorModeValue('blue.600', 'blue.700');
+  const clientBg = useColorModeValue('blue.600', '#1e3a5f');
   const bg = hasClient ? clientBg : noClientBg;
   const color = hasClient ? 'white' : noClientColor;
+  const [showCopiedName, setShowCopiedName] = useState(false);
   const [showCopiedIrd, setShowCopiedIrd] = useState(false);
   const [showCopiedAddress, setShowCopiedAddress] = useState(false);
+
+  const handleCopyName = async () => {
+    const name = getClientName();
+    if (!name) return;
+    try {
+      await navigator.clipboard.writeText(name);
+      setShowCopiedName(true);
+      setTimeout(() => setShowCopiedName(false), 2000);
+    } catch {
+      showToast({
+        title: 'Failed to copy',
+        status: 'error',
+        duration: 2000,
+        position: 'bottom',
+      });
+    }
+  };
 
   const handleCopyIrd = async () => {
     const ird = getIRDNumber();
@@ -141,14 +162,15 @@ export const ClientInfoBar: React.FC = () => {
   return (
     <Flex
       align="center"
-      h="25px"
+      h="30px"
       pl={hasClient ? 0 : 3}
       pr={3}
       bg={bg}
       color={color}
       fontSize="sm"
       fontWeight="medium"
-      transition="background 0.2s, color 0.2s"
+      transition="background 0.3s ease, color 0.3s ease"
+      borderTop="1px solid rgba(255,255,255,0.06)"
       overflow="hidden"
       minW={0}
       userSelect="none"
@@ -156,13 +178,23 @@ export const ClientInfoBar: React.FC = () => {
       {hasClient ? (
         <Flex align="center" flexWrap="nowrap" minW={0} overflow="hidden" flex={1} userSelect="none">
           <Section flexShrink={0} minW="200px">
-            <Block
-              onClick={hasClientLink ? openClientLink : undefined}
-              cursor={hasClientLink ? 'pointer' : 'default'}
-              fontWeight="semibold"
+            <Tooltip
+              content="Copied to clipboard"
+              showArrow
+              open={showCopiedName}
+              disabled={!showCopiedName}
+              positioning={{ placement: 'bottom' }}
             >
-              {getClientName() || '-'}
-            </Block>
+              <Box as="span" display="inline-block">
+                <Block
+                  onClick={handleCopyName}
+                  cursor="pointer"
+                  fontWeight="semibold"
+                >
+                  {getClientName() || '-'}
+                </Block>
+              </Box>
+            </Tooltip>
           </Section>
           <Section>
             <Text {...labelStyle}>IR #</Text>
@@ -213,7 +245,7 @@ export const ClientInfoBar: React.FC = () => {
           </Flex>
         </Flex>
       ) : (
-        <Text as="span" opacity={0.8} userSelect="none">
+        <Text as="span" opacity={0.6} userSelect="none" fontStyle="italic" fontSize="xs">
           No client detected
         </Text>
       )}

@@ -868,9 +868,17 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
         )}
         
         {!loading && !error && filteredItems.length === 0 && (
-          <Text color={useColorModeValue('gray.500', 'gray.400')} textAlign="center" mt={8}>
-            {filterKeyword.trim() ? `No folders match "${filterKeyword}"` : 'This folder is empty'}
-          </Text>
+          <Flex direction="column" align="center" justify="center" py={12} gap={3} opacity={0.5}>
+            <Icon boxSize="32px" color={useColorModeValue('gray.400', 'gray.500')} asChild>
+              <FolderOpen />
+            </Icon>
+            <Text fontSize="sm" color={useColorModeValue('gray.500', 'gray.400')} fontWeight="medium">
+              {filterKeyword.trim() ? `No folders match "${filterKeyword}"` : 'This folder is empty'}
+            </Text>
+            <Text fontSize="xs" color={useColorModeValue('gray.400', 'gray.500')}>
+              {filterKeyword.trim() ? 'Try a different search term' : 'Drop files here or create a new folder'}
+            </Text>
+          </Flex>
         )}
         
         {!loading && filteredItems.map((item, index) => (
@@ -885,7 +893,7 @@ const MoveToNavigation: React.FC<MoveToNavigationProps> = ({ currentDirectory, o
             borderRadius="md"
             onClick={() => handleItemClick(item)}
           >
-            <Icon boxSize={4} color="blue.500" mr={3} asChild><FolderOpen /></Icon>
+            <Icon boxSize={4} color="blue.500" mr={3} asChild><Folder /></Icon>
             <Text fontSize="sm" flex="1" lineClamp={1}>
               {item.name}
             </Text>

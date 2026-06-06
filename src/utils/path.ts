@@ -191,14 +191,11 @@ export function getRelativePathSegments(basePath: string, targetPath: string): s
   return relative.split(separator).filter(Boolean);
 }
 
-/** Client folders live at Root/annual accounts/clientname */
-const ANNUAL_ACCOUNTS_SEGMENT = 'annual accounts';
-
 /**
  * Get the client folder path for a given path.
- * Structure: Root/annual accounts/clientname (client folder is under "annual accounts").
- * E.g. root="C:\\Work", path="C:\\Work\\annual accounts\\Acme Corp\\2025" -> "C:\\Work\\annual accounts\\Acme Corp"
- * Returns null if path is not under root/annual accounts/, or empty.
+ * Structure: Root/ClientName (client folder is a direct child of root).
+ * E.g. root="C:\\Clients", path="C:\\Clients\\Acme Corp\\2025" -> "C:\\Clients\\Acme Corp"
+ * Returns null if path is not under root, or is the root itself.
  */
 export function getClientFolderPath(path: string, rootPath: string): string | null {
   const normalized = normalizePath(path);
@@ -210,10 +207,8 @@ export function getClientFolderPath(path: string, rootPath: string): string | nu
   if (!normalized.startsWith(rootWithSep)) return null;
   const relative = normalized.slice(rootWithSep.length);
   const parts = relative.split(sep).filter(Boolean);
-  // Need at least: "annual accounts" + clientname
-  if (parts.length < 2) return null;
-  if (parts[0].toLowerCase() !== ANNUAL_ACCOUNTS_SEGMENT.toLowerCase()) return null;
-  return rootWithSep + parts[0] + sep + parts[1];
+  if (parts.length < 1) return null;
+  return rootWithSep + parts[0];
 }
 
 // Check if a path is a child of another path

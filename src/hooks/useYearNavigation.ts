@@ -21,16 +21,7 @@ export function useYearNavigation(currentDirectory: string): YearNavigationState
     }
 
     const segments = currentDirectory.replace(/\\/g, '/').split('/').filter(Boolean);
-    if (segments.length < 3) {
-      setState(null);
-      return;
-    }
-
-    // Check if path contains "annual accounts" (case insensitive)
-    const hasAnnualAccounts = segments.some(
-      (s) => s.toLowerCase().replace(/\s+/g, '') === 'annualaccounts'
-    );
-    if (!hasAnnualAccounts) {
+    if (segments.length < 2) {
       setState(null);
       return;
     }

@@ -20,8 +20,11 @@ export function useClientInfo(currentDirectory: string, rootDirectory: string) {
   const pathSegments = currentDirectory ? currentDirectory.split(/[\/\\]/).filter(segment => segment && segment !== '') : [];
   const rootSegments = rootDirectory ? rootDirectory.split(/[\/\\]/).filter(Boolean) : [];
   const rootIdx = pathSegments.findIndex(seg => seg.toLowerCase() === (rootSegments[rootSegments.length - 1] || '').toLowerCase());
-  const taxYear = rootIdx !== -1 && pathSegments.length > rootIdx + 1 ? pathSegments[rootIdx + 1] : '';
-  const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 2 ? pathSegments[rootIdx + 2] : '';
+  // New structure: Root/ClientName/subfolders — client is direct child of root
+  const clientName = rootIdx !== -1 && pathSegments.length > rootIdx + 1 ? pathSegments[rootIdx + 1] : '';
+  // Derive taxYear from path if a year-named segment exists after client
+  const yearSegment = pathSegments.find((seg, i) => i > rootIdx + 1 && /^20\d{2}$/.test(seg));
+  const taxYear = yearSegment || '';
 
   const loadClientInfo = useCallback(async () => {
     if (!clientName) {
@@ -81,8 +84,8 @@ export function useClientInfo(currentDirectory: string, rootDirectory: string) {
   const sep = typeof navigator !== 'undefined' && navigator.platform.startsWith('Win') ? '\\' : '/';
 
   const clientFolderPath =
-    clientInfo && rootIdx !== -1 && pathSegments.length > rootIdx + 2
-      ? pathSegments.slice(0, rootIdx + 3).join(sep)
+    clientInfo && rootIdx !== -1 && pathSegments.length > rootIdx + 1
+      ? pathSegments.slice(0, rootIdx + 2).join(sep)
       : null;
 
   const jobYearsWithLinks = yearsWithJobLinks(clientInfo);

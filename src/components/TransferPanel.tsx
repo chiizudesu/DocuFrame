@@ -558,7 +558,7 @@ export const TransferPanel: React.FC = () => {
         bg={panelBg}
         border="1px solid"
         borderColor={borderColor}
-        borderRadius="8px"
+        borderRadius="0"
         w="min(560px, 94vw)"
         boxShadow="0 24px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04)"
         onKeyDown={handlePanelKeyDown}

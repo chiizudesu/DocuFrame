@@ -610,7 +610,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                       ? activeBg
                       : inactiveBg
                 }
-                borderRadius={activeTabId === tab.id ? '8px 8px 0 0' : '8px 8px 0 0'}
+                borderRadius={activeTabId === tab.id ? '6px 6px 0 0' : '6px 6px 0 0'}
                 px={activeTabId === tab.id ? 4 : 3}
                 py={activeTabId === tab.id ? 2 : 1.5}
                 cursor="pointer"
@@ -638,6 +638,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                 position="relative"
                 opacity={draggedTab === tab.id ? 0.5 : 1}
                 zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
+                boxShadow={activeTabId === tab.id && fileDropTarget !== tab.id ? 'inset 0 1px 0 rgba(255,255,255,0.06), 0 -1px 3px rgba(0,0,0,0.1)' : undefined}
                 mb={activeTabId === tab.id ? '-1px' : '0'}
                 transform={
                   dragOverTab === tab.id && draggedTab !== tab.id 
@@ -664,9 +665,13 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    fontSize: 'inherit',
+                    fontSize: /^\d{4}$/.test(tab.name) ? '15px' : 'inherit',
+                    fontFamily: /^\d{4}$/.test(tab.name) ? "'Rajdhani', sans-serif" : "'Segoe UI', system-ui, sans-serif",
+                    fontWeight: /^\d{4}$/.test(tab.name) ? 600 : 'inherit',
+                    letterSpacing: /^\d{4}$/.test(tab.name) ? '0.03em' : 'inherit',
                     lineHeight: '1.3',
                     userSelect: 'none',
+                    WebkitFontSmoothing: 'antialiased',
                   }}
                 >
                   {tab.name}
