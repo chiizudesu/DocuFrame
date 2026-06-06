@@ -11,7 +11,6 @@ import { Box, Flex, Text, Input, IconButton } from '@chakra-ui/react';
 import {
   ArrowDownToLine,
   X,
-  ArrowRight,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -414,6 +413,38 @@ export const TransferPanel: React.FC = () => {
     await executeTransfer(opts);
   }, [selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
 
+  // ── Transfer + GST Rename ─────────────────────────────────────────────────
+  const handleTransferAndRename = useCallback(async () => {
+    closePanel();
+    try {
+      // Step 1: transfer latest file
+      const result = await (window.electronAPI as any).transfer({ numFiles: 1, command: 'transfer', currentDirectory });
+      if (!result?.success) {
+        addLog(result?.message || 'Transfer failed', 'error');
+        setStatus('Transfer failed', 'error');
+        return;
+      }
+      addLog(result.message, 'response');
+
+      // Step 2: run GST rename on the directory
+      const renameResult = await (window.electronAPI as any).executeCommand('gst_rename', currentDirectory);
+      if (renameResult?.success) {
+        addLog(renameResult.message, 'response');
+        setStatus('Transfer & Rename completed', 'success');
+      } else {
+        addLog(renameResult?.message || 'Rename failed', 'error');
+        setStatus('Transferred but rename failed', 'error');
+      }
+
+      // Refresh file list
+      window.dispatchEvent(new CustomEvent('directoryRefreshed', { detail: { directory: currentDirectory } }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addLog(`Transfer & Rename failed: ${msg}`, 'error');
+      setStatus('Transfer & Rename failed', 'error');
+    }
+  }, [currentDirectory, addLog, setStatus, closePanel]);
+
   // ── Filename field helpers ────────────────────────────────────────────────────
   const acceptFilenameSugg = useCallback((t: { command: string; filename: string }) => {
     setSelectedCommand(t.command);
@@ -804,6 +835,28 @@ export const TransferPanel: React.FC = () => {
               onClick={closePanel}
             >
               Cancel
+            </Box>
+            <Box
+              as="button"
+              px="14px"
+              h="32px"
+              bg="rgba(34,197,94,0.12)"
+              border="1px solid"
+              borderColor="rgba(34,197,94,0.3)"
+              borderRadius="5px"
+              fontSize="12px"
+              fontWeight="500"
+              color="#4ade80"
+              cursor="pointer"
+              display="flex"
+              alignItems="center"
+              gap="5px"
+              onClick={handleTransferAndRename}
+              _hover={{ bg: 'rgba(34,197,94,0.2)' }}
+              style={{ ...noRing, transition: 'background 0.1s' }}
+              title="Transfer latest file and rename to GST standards"
+            >
+              GST
             </Box>
             <Box
               as="button"
