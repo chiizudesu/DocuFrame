@@ -32,11 +32,11 @@ const suppressFocusRing = {
   boxShadow: 'none',
 } as const;
 
-/** Function row: ~10px shorter strip + matching icon hit targets */
-const FN_TOOLBAR_ROW_H = '40px';
-const FN_TOOLBAR_BTN = '32px';
-const FN_TOOLBAR_ICON = 18;
-const FN_TOOLBAR_SEP_H = '24px';
+/** Function row: compact strip + matching icon hit targets */
+const FN_TOOLBAR_ROW_H = '32px';
+const FN_TOOLBAR_BTN = '28px';
+const FN_TOOLBAR_ICON = 16;
+const FN_TOOLBAR_SEP_H = '18px';
 
 // Add client search shortcut functionality
 const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) => {
@@ -905,8 +905,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         borderRadius={0}
         bg="df.toolbar"
       >
-        {/* Action buttons */}
-        <Flex gap={1}>
+        {/* Action buttons — grouped with separators */}
+        <Flex gap={0} align="center">
+          {/* File operations */}
           <FunctionButton
             icon={Download}
             action="gst_transfer"
@@ -925,6 +926,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             description="Combine multiple PDF files into one document"
             color="red.400"
           />
+          {/* Separator */}
+          <Box w="1px" h={FN_TOOLBAR_SEP_H} bg={dividerColor} mx="4px" opacity={0.5} flexShrink={0} />
+          {/* Extract operations */}
           <FunctionButton
             icon={Archive}
             action="extract_zips"
@@ -937,6 +941,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             description="Extract attachments from EML files"
             color="cyan.400"
           />
+          {/* Separator */}
+          <Box w="1px" h={FN_TOOLBAR_SEP_H} bg={dividerColor} mx="4px" opacity={0.5} flexShrink={0} />
+          {/* Config */}
           <FunctionButton
             icon={Settings}
             action="transfer_mapping"
@@ -1015,7 +1022,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             onClick={handleSettingsClick}
             color={buttonColor}
             h={FN_TOOLBAR_BTN}
-            w={FN_TOOLBAR_BTN}><Settings size={15} /></IconButton>
+            w={FN_TOOLBAR_BTN}><Settings size={FN_TOOLBAR_ICON} /></IconButton>
         </Flex>
       </Flex>
       {/* Dialogs: mount only when open (or minimized for stateful AI dialogs) so navigation does not reconcile closed modal trees */}

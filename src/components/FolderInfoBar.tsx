@@ -311,8 +311,8 @@ export const FolderInfoBar: React.FC = () => {
     [hideTemporaryFiles, hideDotFiles, hideClaudeMd]
   )
 
-  // Address row: v2 FolderInfoBar — gray.700 strip, gray.600 address well
-  const bgColor = useColorModeValue('#f8fafc', P.dark.tabStrip)
+  // Address row: matches active tab so they merge seamlessly
+  const bgColor = useColorModeValue('#f8fafc', P.dark.tabActive)
   const homeIconColor = useColorModeValue(dfHomeIconColor.light, dfHomeIconColor.dark)
   /** Ghost icons on folder bar strip — same cool-gray hue as strip, lighter/darker for contrast */
   const folderBarStripHoverBg = useColorModeValue(P.light.chromeHover, P.dark.chromeHover)
@@ -1272,63 +1272,68 @@ export const FolderInfoBar: React.FC = () => {
 
   return (
     <>
-      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="33px" pl="8px" pr="15px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
+      <Flex align="center" width="100%" bg={bgColor} borderRadius="sm" h="30px" pl="8px" pr="15px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as any}>
         {/* Back/Forward to the left of Home */}
         <Box display="flex" style={{ WebkitAppRegion: 'no-drag' } as any}>
           <IconButton
             aria-label="Back"
             variant="ghost"
             size="sm"
-            minW="44px"
-            h="33px"
+            minW="36px"
+            h="30px"
             borderRadius={0}
             color={iconColor}
-            _hover={{ bg: folderBarStripHoverBg }}
+            opacity={0.6}
+            _hover={{ bg: folderBarStripHoverBg, opacity: 1 }}
             onClick={handleBackClick}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}><ArrowLeft size={18} /></IconButton>
+            onMouseDown={(e) => e.preventDefault()}><ArrowLeft size={16} /></IconButton>
           <IconButton
             aria-label="Forward"
             variant="ghost"
             size="sm"
-            minW="44px"
-            h="33px"
+            minW="36px"
+            h="30px"
             borderRadius={0}
             color={iconColor}
-            _hover={{ bg: folderBarStripHoverBg }}
+            opacity={0.6}
+            _hover={{ bg: folderBarStripHoverBg, opacity: 1 }}
             onClick={handleForwardClick}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}><ArrowRight size={18} /></IconButton>
+            onMouseDown={(e) => e.preventDefault()}><ArrowRight size={16} /></IconButton>
           <IconButton
             aria-label="Home folder"
             variant="ghost"
             size="sm"
-            minW="44px"
-            h="33px"
+            minW="36px"
+            h="30px"
             borderRadius={0}
             color={homeIconColor}
-            _hover={{ bg: folderBarStripHoverBg }}
+            opacity={0.6}
+            _hover={{ bg: folderBarStripHoverBg, opacity: 1 }}
             onClick={handleHomeClick}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}><Home size={18} /></IconButton>
+            onMouseDown={(e) => e.preventDefault()}><Home size={16} /></IconButton>
           <Tooltip content={quickAccessPaths.includes(currentDirectory) ? 'Pinned' : 'Pin to Quick Access'}>
             <IconButton
               aria-label="Pin to quick access"
               variant="ghost"
               size="sm"
-              minW="44px"
-              h="33px"
+              minW="36px"
+              h="30px"
               borderRadius={0}
               color={useColorModeValue('#f59e0b', 'yellow.300')}
+              opacity={quickAccessPaths.includes(currentDirectory) ? 1 : 0.6}
               bg={quickAccessPaths.includes(currentDirectory) ? pinActiveBg : undefined}
               _hover={{
                 bg: quickAccessPaths.includes(currentDirectory) ? pinActiveHoverBg : folderBarStripHoverBg,
+                opacity: 1,
               }}
               onClick={() => quickAccessPaths.includes(currentDirectory) ? removeQuickAccessPath(currentDirectory) : addQuickAccessPath(currentDirectory)}
               tabIndex={-1}
               onMouseDown={(e) => e.preventDefault()}>{quickAccessPaths.includes(currentDirectory)
-                ? <Star size={18} fill="currentColor" strokeWidth={0} />
-                : <Star size={18} />}</IconButton>
+                ? <Star size={16} fill="currentColor" strokeWidth={0} />
+                : <Star size={16} />}</IconButton>
           </Tooltip>
         </Box>
         {/* Address bar as breadcrumbs, starting after Home icon */}
@@ -1338,9 +1343,9 @@ export const FolderInfoBar: React.FC = () => {
           ml={2}
           mr={1}
           align="center"
-          h="33px"
-          minH="33px"
-          maxH="33px"
+          h="28px"
+          minH="28px"
+          maxH="28px"
           gap={1}
           onClick={handleClick}
           cursor="text"
@@ -1426,12 +1431,12 @@ export const FolderInfoBar: React.FC = () => {
                     }}>
                       <Box
                         as="span"
-                        px={3}
-                        py={0.9}
-                        borderRadius="4px"
+                        px={2}
+                        py={0.5}
+                        borderRadius="3px"
                         bg="blue.600"
                         color="white"
-                        fontSize="sm"
+                        fontSize="12px"
                         fontWeight="medium"
                         cursor="pointer"
                         _hover={{ bg: 'blue.500' }}
@@ -1654,7 +1659,7 @@ export const FolderInfoBar: React.FC = () => {
               />
             </Box>
           )}
-          {!isEditing && breadcrumbs.length > 0 && activeChevronIndex === null && (
+          {!isEditing && breadcrumbs.length > 1 && activeChevronIndex === null && (
             <Tooltip content="Search files and folders in this folder" showArrow openDelay={400} positioning={{
               placement: "bottom"
             }}>
@@ -1663,18 +1668,19 @@ export const FolderInfoBar: React.FC = () => {
                 variant="ghost"
                 size="sm"
                 flexShrink={0}
-                minW="32px"
-                h="28px"
+                minW="28px"
+                h="24px"
                 borderRadius="md"
                 color={iconColor}
+                opacity={0.4}
                 zIndex={2}
-                _hover={{ bg: addressBarItemHoverBg, color: textColor }}
+                _hover={{ bg: addressBarItemHoverBg, color: textColor, opacity: 1 }}
                 onClick={(e) => {
                   e.stopPropagation()
                   openMiniSearch(breadcrumbs.length - 1)
                 }}
                 tabIndex={-1}
-                onMouseDown={(ev) => ev.preventDefault()}><ChevronRight size={18} /></IconButton>
+                onMouseDown={(ev) => ev.preventDefault()}><ChevronRight size={16} /></IconButton>
             </Tooltip>
           )}
         </Flex>
@@ -1694,7 +1700,7 @@ export const FolderInfoBar: React.FC = () => {
               _hover={yearNav.hasPrevYear ? { bg: folderBarStripHoverBg } : undefined}
               onClick={() => yearNav.hasPrevYear && yearNav.prevYearPath && setCurrentDirectory(yearNav.prevYearPath)}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}><ChevronLeft size={18} /></IconButton>
+              onMouseDown={(e) => e.preventDefault()}><ChevronLeft size={16} /></IconButton>
             <Text fontSize="sm" fontWeight="medium" color={textColor} px={1} userSelect="none">
               {yearNav.currentYear}
             </Text>
@@ -1711,7 +1717,7 @@ export const FolderInfoBar: React.FC = () => {
               _hover={yearNav.hasNextYear ? { bg: folderBarStripHoverBg } : undefined}
               onClick={() => yearNav.hasNextYear && yearNav.nextYearPath && setCurrentDirectory(yearNav.nextYearPath)}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}><ChevronRight size={18} /></IconButton>
+              onMouseDown={(e) => e.preventDefault()}><ChevronRight size={16} /></IconButton>
           </HStack>
         )}
         {/* Refresh - between address bar and search */}
@@ -1723,9 +1729,10 @@ export const FolderInfoBar: React.FC = () => {
             borderRadius={0}
             onClick={handleRefresh}
             color={iconColor}
-            _hover={{ bg: folderBarStripHoverBg }}
+            opacity={0.6}
+            _hover={{ bg: folderBarStripHoverBg, opacity: 1 }}
             tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}><RefreshCw size={18} /></IconButton>
+            onMouseDown={(e) => e.preventDefault()}><RefreshCw size={16} /></IconButton>
         </Box>
         {/* Open in file explorer - right of CMD */}
         <Tooltip content="Open in file explorer" showArrow positioning={{
@@ -1739,9 +1746,10 @@ export const FolderInfoBar: React.FC = () => {
               borderRadius={0}
               onClick={handleOpenExplorer}
               color={iconColor}
-              _hover={{ bg: folderBarStripHoverBg }}
+              opacity={0.6}
+              _hover={{ bg: folderBarStripHoverBg, opacity: 1 }}
               tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}><ExternalLink size={18} /></IconButton>
+              onMouseDown={(e) => e.preventDefault()}><ExternalLink size={16} /></IconButton>
           </Box>
         </Tooltip>
       </Flex>

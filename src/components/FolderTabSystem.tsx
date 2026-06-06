@@ -430,28 +430,28 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   }, [draggedTab, tabs]);
 
   return (
-    <Box ref={tabsRef} bg={bgColor} px={0} pt="3px" pb={0} position="relative">
-      <Flex align="center" gap="0" height="34px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
+    <Box ref={tabsRef} bg={bgColor} px={0} pt="2px" pb={0} position="relative">
+      <Flex align="center" gap="0" height="30px" style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}>
         {/* App Icon - Left side */}
-        <Box 
-          display="flex" 
-          alignItems="center" 
-          h="34px" 
+        <Box
+          display="flex"
+          alignItems="center"
+          h="30px"
           px={2}
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <Box w="20px" h="20px">
-            <img src="./32.ico" alt="DocuFrame" style={{ width: '20px', height: '20px' }} />
+          <Box w="18px" h="18px">
+            <img src="./32.ico" alt="DocuFrame" style={{ width: '18px', height: '18px' }} />
           </Box>
         </Box>
         
         {/* Tab strip: flex:1 so it fills all space between the icon and window controls.
             No overflow on this container — allows bottom-corner flares to paint outside. */}
-        <Box flex="1" minW={0} pt={1}>
+        <Box flex="1" minW={0} pt={0}>
           <Flex
             align="end"
             gap="0"
-            height="34px"
+            height="30px"
             w="100%"
             style={{ WebkitAppRegion: 'drag', userSelect: 'none' } as React.CSSProperties}
           >
@@ -625,16 +625,17 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
                   content: '""',
                   position: 'absolute',
                   bottom: '-1px',
-                  left: 0,
-                  right: 0,
+                  left: '8px',
+                  right: '8px',
                   height: '2px',
-                  bg: activeBg,
+                  background: 'linear-gradient(90deg, rgba(59,130,246,0.1), rgba(59,130,246,0.7), rgba(59,130,246,0.1))',
+                  borderRadius: '1px',
                   zIndex: 10,
                 } : {}}
                 onClick={() => handleTabClick(tab.id)}
                 minW="180px"
                 maxW={activeTabId === tab.id ? '600px' : '260px'}
-                h={activeTabId === tab.id ? '33px' : '27px'}
+                h={activeTabId === tab.id ? '29px' : '24px'}
                 position="relative"
                 opacity={draggedTab === tab.id ? 0.5 : 1}
                 zIndex={activeTabId === tab.id ? 5 : fileDropTarget === tab.id ? 2 : 1}
@@ -789,16 +790,16 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
           {/* Add new tab button */}
           <Flex
             alignItems="center"
-            h="34px"
+            h="30px"
             px={2}
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <Box
               ml={0}
               p={0}
-              borderRadius="6px"
-              opacity={0.7}
-              _hover={{ 
+              borderRadius="4px"
+              opacity={0.5}
+              _hover={{
                 opacity: 1,
                 bg: addButtonHoverBg
               }}
@@ -807,8 +808,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
               justifyContent="center"
               transition="all 0.15s ease"
               color={addButtonColor}
-              h="27px"
-              w="27px"
+              h="22px"
+              w="22px"
               asChild><button onClick={() => addNewTab()}>
                 <Plus size={16} strokeWidth={2} />
               </button></Box>
@@ -819,8 +820,8 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
         {/* Window Controls - flexShrink:0 so they're never squeezed by the tab strip */}
         <Flex
           flexShrink={0}
-          height="34px" 
-          align="center" 
+          height="30px"
+          align="center"
           justify="flex-end"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
@@ -836,7 +837,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             _active={{ bg: windowControlActiveBg }}
             borderRadius={0}
             minW="46px"
-            h="34px"
+            h="30px"
             p={0}
             display="flex"
             alignItems="center"
@@ -856,7 +857,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             _active={{ bg: windowControlActiveBg }}
             borderRadius={0}
             minW="46px"
-            h="34px"
+            h="30px"
             p={0}
             display="flex"
             alignItems="center"
@@ -904,7 +905,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
             _active={{ bg: '#dc2626', color: 'white' }}
             borderRadius={0}
             minW="46px"
-            h="34px"
+            h="30px"
             p={0}
             display="flex"
             alignItems="center"

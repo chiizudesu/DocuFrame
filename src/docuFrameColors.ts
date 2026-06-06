@@ -28,10 +28,10 @@ export const docuFramePalette = {
     /** Same as canvas — list rows / header have no separate “card” fill */
     listRow: '#171923',
     sidebar: '#171923',
-    /** Tab strip — matches FolderInfoBar (gray.700) */
-    tabStrip: '#2d3748',
-    /** Function icon row — darker than folder bar (gray.900) */
-    toolbar: '#171923',
+    /** Tab strip — darkest chrome layer, sits behind tabs */
+    tabStrip: '#161d2b',
+    /** Function icon row — near-canvas, subtly lifted so it reads as chrome not content */
+    toolbar: '#1a2130',
     footer: '#171923',
     border: '#4a5568',
     tableHeader: '#171923',
@@ -44,8 +44,8 @@ export const docuFramePalette = {
     /** Hover on #4A5568 address well — lighter same cool-gray family (visible vs. well bg) */
     addressWellHover: '#6b7b90',
     rowSelected: '#1a365d',
-    tabActive: '#2d3748',
-    tabInactive: '#1e2533',
+    tabActive: '#232d3e',
+    tabInactive: '#1a2232',
     subtext: '#CBD5E0',
   },
 } as const

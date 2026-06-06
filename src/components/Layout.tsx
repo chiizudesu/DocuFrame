@@ -140,7 +140,7 @@ export const Layout: React.FC = () => {
       borderBottomColor="df.border"
     >
       <Box>
-        <Box px={2} py={2} bg="df.tabStrip">
+        <Box px={2} py={1} bg="df.tabActive">
           <FolderInfoBar />
         </Box>
       </Box>
