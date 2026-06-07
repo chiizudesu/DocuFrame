@@ -317,9 +317,10 @@ export const ClientInfoPane: React.FC = () => {
   const quickAccessPathsRef = useRef(quickAccessPaths);
   quickAccessPathsRef.current = quickAccessPaths;
 
-  // SortableJS for pinned folders
+  // SortableJS for pinned folders — re-init when the section mounts/unmounts
+  const hasPinned       = Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0;
   useEffect(() => {
-    if (!sortableListRef.current) return;
+    if (!hasPinned || !sortableListRef.current) return;
     sortableRef.current = Sortable.create(sortableListRef.current, {
       animation: 150,
       forceFallback: true,
@@ -336,9 +337,8 @@ export const ClientInfoPane: React.FC = () => {
     });
     return () => { sortableRef.current?.destroy(); sortableRef.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasPinned]);
 
-  const hasPinned       = Array.isArray(quickAccessPaths) && quickAccessPaths.length > 0;
   const hasRecent       = Array.isArray(recentClientPaths) && recentClientPaths.length > 0;
 
   const sectionProps = { containerBg, borderColor, titleColor };
