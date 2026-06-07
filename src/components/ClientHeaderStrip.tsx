@@ -139,15 +139,30 @@ export const ClientHeaderStrip: React.FC = () => {
 
         {/* Name + meta row */}
         <Flex direction="column" minW={0} gap={0.5}>
-          <Text
-            fontSize="15px"
-            fontWeight="600"
-            color={textColor}
-            lineClamp={1}
-            minW={0}
+          <Tooltip
+            content="Copied to clipboard"
+            showArrow
+            open={copiedField === 'name'}
+            disabled={copiedField !== 'name'}
+            positioning={{ placement: 'bottom' }}
           >
-            {displayName}
-          </Text>
+            <Text
+              fontSize="15px"
+              fontWeight="600"
+              color={textColor}
+              lineClamp={1}
+              minW={0}
+              cursor="pointer"
+              borderRadius="3px"
+              px="4px"
+              mx="-4px"
+              _hover={{ bg: valueHoverBg }}
+              transition="background 0.15s ease"
+              onClick={() => handleCopy(displayName, 'name')}
+            >
+              {displayName}
+            </Text>
+          </Tooltip>
           {!hasInfo ? (
             <Text fontSize="11px" color={subtextColor} fontStyle="italic">
               Client not detected

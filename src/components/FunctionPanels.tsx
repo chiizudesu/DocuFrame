@@ -12,7 +12,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FilePlus2, FileEdit, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers } from 'lucide-react';
+import { FilePlus2, FileEdit, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { MergePDFDialog } from './MergePDFDialog';
@@ -945,7 +945,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
           <Box w="1px" h={FN_TOOLBAR_SEP_H} bg={dividerColor} mx="4px" opacity={0.5} flexShrink={0} />
           {/* Config */}
           <FunctionButton
-            icon={Settings}
+            icon={Route}
             action="transfer_mapping"
             description="Edit transfer command mappings"
             color="gray.600"
