@@ -12,7 +12,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FilePlus2, FileEdit, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route } from 'lucide-react';
+import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { MergePDFDialog } from './MergePDFDialog';
@@ -664,6 +664,30 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       return;
     }
 
+    if (action === 'finals') {
+      addLog('Executing Finals rename command');
+      setStatus('Running Finals rename...', 'info');
+      try {
+        const result = await window.electronAPI.executeCommand('finals', currentDirectory);
+        if (result.success) {
+          addLog(result.message, 'response');
+          setStatus('Finals rename completed', 'success');
+          logFileOperation('Finals', `Renamed files in ${currentDirectory}`);
+          try {
+            const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
+            setFolderItems(contents);
+          } catch {}
+        } else {
+          addLog(result.message, 'error');
+          setStatus('Finals rename failed', 'error');
+        }
+      } catch (error) {
+        addLog(`Error executing Finals: ${error}`, 'error');
+        setStatus('Finals rename failed', 'error');
+      }
+      return;
+    }
+
     if (action === 'client_search') {
       console.log('[ClientSearch] Button clicked - opening client search');
       setClientSearchOpen(true);
@@ -809,6 +833,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     const functionNames: { [key: string]: string } = {
       gst_template: 'GST Template',
       gst_rename: 'GST Rename',
+      finals: 'Finals',
       gst_transfer: 'Transfer Latest',
       merge_pdfs: 'Merge PDFs',
       extract_zips: 'Extract Zips',
@@ -918,6 +943,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             icon={FileEdit}
             action="gst_rename"
             description="Rename files according to GST standards"
+            color="green.400"
+          />
+          <FunctionButton
+            icon={FileCheck2}
+            action="finals"
+            description="Rename finals files to standard format"
             color="green.400"
           />
           <FunctionButton
