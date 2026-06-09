@@ -77,7 +77,7 @@ export const TransferPanel: React.FC = () => {
 
   // Downloads
   const [downloads, setDownloads] = useState<DownloadFile[]>([]);
-  const [selectedDlIdx, setSelectedDlIdx] = useState(0);
+  const [selectedDlIdxs, setSelectedDlIdxs] = useState<Set<number>>(new Set([0]));
   const [loadingDownloads, setLoadingDownloads] = useState(false);
 
   // Index field (keyboard-first)
@@ -221,7 +221,9 @@ export const TransferPanel: React.FC = () => {
   }, [cmdQuery, transferMappings]);
 
   // Destination preview
-  const sourceFile = downloads[selectedDlIdx] ?? null;
+  const isMultiSelect = selectedDlIdxs.size > 1;
+  const primaryDlIdx = selectedDlIdxs.size > 0 ? Math.min(...Array.from(selectedDlIdxs)) : 0;
+  const sourceFile = downloads[primaryDlIdx] ?? null;
   const sourceExt  = sourceFile?.name.split('.').pop() ?? null;
 
   const destinationName = useMemo((): string | null => {
@@ -249,7 +251,7 @@ export const TransferPanel: React.FC = () => {
     setIsOpen(true);
     setXferStatus('idle');
     setStatusMsg('');
-    setSelectedDlIdx(0);
+    setSelectedDlIdxs(new Set([0]));
     setSelectedCommand(null);
     setFilename('');
     setIndexQuery('');
@@ -267,7 +269,7 @@ export const TransferPanel: React.FC = () => {
     // Load downloads
     setLoadingDownloads(true);
     try {
-      const result = await (window.electronAPI as any).transfer({ numFiles: 5, command: 'preview' });
+      const result = await (window.electronAPI as any).transfer({ numFiles: 10, command: 'preview' });
       setDownloads(result?.success && Array.isArray(result.files) ? result.files : []);
     } catch {
       setDownloads([]);
@@ -375,7 +377,7 @@ export const TransferPanel: React.FC = () => {
   };
 
   // ── Core transfer executor — accepts explicit opts to avoid stale state ──────
-  const executeTransfer = useCallback(async (opts: { numFiles: number; command?: string; newName?: string; currentDirectory: string }) => {
+  const executeTransfer = useCallback(async (opts: { numFiles: number; command?: string; newName?: string; currentDirectory: string; fileNames?: string[] }) => {
     // Close immediately — don't wait for result
     closePanel();
     try {
@@ -398,6 +400,11 @@ export const TransferPanel: React.FC = () => {
 
   // ── Execute transfer (declared before handleFilenameKeyDown) ────────────────
   const handleTransfer = useCallback(async () => {
+    if (isMultiSelect) {
+      const fileNames = Array.from(selectedDlIdxs).map(i => downloads[i]?.name).filter(Boolean) as string[];
+      await executeTransfer({ numFiles: fileNames.length, command: 'transfer', currentDirectory, fileNames });
+      return;
+    }
     const opts: { numFiles: number; command?: string; newName?: string; currentDirectory: string } = {
       numFiles: 1,
       currentDirectory,
@@ -411,7 +418,7 @@ export const TransferPanel: React.FC = () => {
       opts.command = 'transfer';
     }
     await executeTransfer(opts);
-  }, [selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
+  }, [isMultiSelect, selectedDlIdxs, downloads, selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
 
   // ── Transfer + GST Rename ─────────────────────────────────────────────────
   const handleTransferAndRename = useCallback(async () => {
@@ -642,58 +649,76 @@ export const TransferPanel: React.FC = () => {
                 <Text fontSize="12px" color={subColor}>No files in Downloads folder</Text>
               </Flex>
             ) : (
-              downloads.map((file, idx) => {
-                const badge = getExtBadge(file.name);
-                const isSel = idx === selectedDlIdx;
-                const stem = file.name.replace(/\.[^.]+$/, '');
-                const ext  = file.name.split('.').pop() ?? '';
-                return (
-                  <Flex
-                    key={idx}
-                    as="button"
-                    w="100%"
-                    align="center"
-                    px="12px"
-                    py="8px"
-                    gap="10px"
-                    bg={isSel ? selBg : 'transparent'}
-                    borderBottom={idx < downloads.length - 1 ? '1px solid' : 'none'}
-                    borderColor={borderColor}
-                    borderLeft={isSel ? '2px solid #3b82f6' : '2px solid transparent'}
-                    _hover={{ bg: isSel ? selBg : hoverBg }}
-                    cursor="pointer"
-                    onClick={() => setSelectedDlIdx(idx)}
-                    textAlign="left"
-                    transition="background 0.1s"
-                  >
-                    <Box px="5px" py="1px" borderRadius="3px" bg={badge.bg} flexShrink={0} minW="32px" textAlign="center">
-                      <Text fontSize="9.5px" fontWeight="700" color={badge.color} letterSpacing="0.04em">{badge.short || '—'}</Text>
-                    </Box>
-                    <Text
-                      fontSize="12.5px"
-                      color={isSel ? '#60a5fa' : labelColor}
-                      fontWeight={isSel ? '500' : '400'}
-                      flex={1}
-                      overflow="hidden"
-                      textOverflow="ellipsis"
-                      whiteSpace="nowrap"
-                      title={file.name}
+              <Box maxH="180px" overflowY="auto">
+                {downloads.map((file, idx) => {
+                  const badge = getExtBadge(file.name);
+                  const isSel = selectedDlIdxs.has(idx);
+                  const stem = file.name.replace(/\.[^.]+$/, '');
+                  const ext  = file.name.split('.').pop() ?? '';
+                  return (
+                    <Flex
+                      key={idx}
+                      as="button"
+                      w="100%"
+                      align="center"
+                      px="12px"
+                      py="8px"
+                      gap="10px"
+                      bg={isSel ? selBg : 'transparent'}
+                      borderBottom={idx < downloads.length - 1 ? '1px solid' : 'none'}
+                      borderColor={borderColor}
+                      borderLeft={isSel ? '2px solid #3b82f6' : '2px solid transparent'}
+                      _hover={{ bg: isSel ? selBg : hoverBg }}
+                      cursor="pointer"
+                      onClick={(e: React.MouseEvent) => {
+                        if (e.shiftKey && selectedDlIdxs.size > 0) {
+                          const anchor = Math.min(...Array.from(selectedDlIdxs));
+                          const lo = Math.min(anchor, idx);
+                          const hi = Math.max(anchor, idx);
+                          setSelectedDlIdxs(new Set(Array.from({ length: hi - lo + 1 }, (_, i) => lo + i)));
+                        } else if (e.ctrlKey || e.metaKey) {
+                          setSelectedDlIdxs(prev => {
+                            const next = new Set(prev);
+                            if (next.has(idx)) { next.delete(idx); if (next.size === 0) next.add(idx); }
+                            else next.add(idx);
+                            return next;
+                          });
+                        } else {
+                          setSelectedDlIdxs(new Set([idx]));
+                        }
+                      }}
+                      textAlign="left"
+                      transition="background 0.1s"
                     >
-                      {stem}
-                      {ext && <Box as="span" color={subColor}>.{ext}</Box>}
-                    </Text>
-                    <Flex align="center" gap="8px" flexShrink={0}>
-                      <Text fontSize="11px" color={subColor}>{formatFileSize(file.size)}</Text>
-                      {file.modified && (
-                        <>
-                          <Box w="2px" h="2px" borderRadius="50%" bg={borderColor} flexShrink={0} />
-                          <Text fontSize="11px" color={subColor}>{formatAge(file.modified)}</Text>
-                        </>
-                      )}
+                      <Box px="5px" py="1px" borderRadius="3px" bg={badge.bg} flexShrink={0} minW="32px" textAlign="center">
+                        <Text fontSize="9.5px" fontWeight="700" color={badge.color} letterSpacing="0.04em">{badge.short || '—'}</Text>
+                      </Box>
+                      <Text
+                        fontSize="12.5px"
+                        color={isSel ? '#60a5fa' : labelColor}
+                        fontWeight={isSel ? '500' : '400'}
+                        flex={1}
+                        overflow="hidden"
+                        textOverflow="ellipsis"
+                        whiteSpace="nowrap"
+                        title={file.name}
+                      >
+                        {stem}
+                        {ext && <Box as="span" color={subColor}>.{ext}</Box>}
+                      </Text>
+                      <Flex align="center" gap="8px" flexShrink={0}>
+                        <Text fontSize="11px" color={subColor}>{formatFileSize(file.size)}</Text>
+                        {file.modified && (
+                          <>
+                            <Box w="2px" h="2px" borderRadius="50%" bg={borderColor} flexShrink={0} />
+                            <Text fontSize="11px" color={subColor}>{formatAge(file.modified)}</Text>
+                          </>
+                        )}
+                      </Flex>
                     </Flex>
-                  </Flex>
-                );
-              })
+                  );
+                })}
+              </Box>
             )}
           </Box>
 
@@ -743,7 +768,7 @@ export const TransferPanel: React.FC = () => {
             <Box w="26%" flexShrink={0}>
               <Input
                 ref={indexInputRef}
-                value={indexDisplayValue}
+                value={isMultiSelect ? '' : indexDisplayValue}
                 onChange={handleIndexChange}
                 onKeyDown={handleIndexKeyDown}
                 onFocus={() => {
@@ -752,10 +777,11 @@ export const TransferPanel: React.FC = () => {
                   setShowFilenameSuggs(false);
                 }}
                 onBlur={() => setTimeout(() => setShowIndexSuggs(false), 150)}
-                placeholder="Index…"
+                placeholder={isMultiSelect ? '—' : 'Index…'}
+                disabled={isMultiSelect}
                 size="sm"
                 h="36px"
-                bg={inputBg}
+                bg={isMultiSelect ? 'transparent' : inputBg}
                 border="1px solid"
                 borderColor={showIndexSuggs ? focusBorder : borderColor}
                 borderRadius="6px"
@@ -764,6 +790,7 @@ export const TransferPanel: React.FC = () => {
                 letterSpacing="0.02em"
                 color={selectedIndex ? '#60a5fa' : labelColor}
                 _placeholder={{ color: subColor, fontWeight: '400' }}
+                opacity={isMultiSelect ? 0.4 : 1}
                 style={noRing}
                 transition="border-color 0.15s"
               />
@@ -773,7 +800,7 @@ export const TransferPanel: React.FC = () => {
             <Box flex={1} minW={0}>
               <Input
                 ref={fnInputRef}
-                value={filename}
+                value={isMultiSelect ? '' : filename}
                 onChange={handleFilenameChange}
                 onKeyDown={handleFilenameKeyDown}
                 onFocus={() => {
@@ -782,18 +809,22 @@ export const TransferPanel: React.FC = () => {
                   setShowIndexSuggs(false);
                 }}
                 onBlur={() => setTimeout(() => setShowFilenameSuggs(false), 150)}
-                placeholder={selectedIndex
-                  ? (filenameSuggestions.length > 0 ? `${filenameSuggestions[0].filename}` : 'Custom filename…')
-                  : 'Select an index first…'}
+                placeholder={isMultiSelect
+                  ? `${selectedDlIdxs.size} files selected — transfer as-is`
+                  : (selectedIndex
+                    ? (filenameSuggestions.length > 0 ? `${filenameSuggestions[0].filename}` : 'Custom filename…')
+                    : 'Select an index first…')}
+                disabled={isMultiSelect}
                 size="sm"
                 h="36px"
-                bg={inputBg}
+                bg={isMultiSelect ? 'transparent' : inputBg}
                 border="1px solid"
                 borderColor={showFilenameSuggs ? focusBorder : borderColor}
                 borderRadius="6px"
                 fontSize="12.5px"
                 color={selectedCommand ? '#60a5fa' : labelColor}
                 _placeholder={{ color: subColor, fontSize: '11.5px' }}
+                opacity={isMultiSelect ? 0.4 : 1}
                 style={noRing}
                 transition="border-color 0.15s"
               />
@@ -815,9 +846,6 @@ export const TransferPanel: React.FC = () => {
 
           {/* ── Footer ── */}
           <Flex align="center" justify="flex-end" gap="8px" pt="2px">
-            <Text fontSize="10.5px" color={subColor} mr="auto" userSelect="none" letterSpacing="0.01em">
-              {cmdMode ? '↑↓ navigate · ↵ select · Esc cancel' : '/ shortcut · Tab index→name · ↵ transfer · Esc close'}
-            </Text>
             <Box
               as="button"
               px="14px"
@@ -840,21 +868,22 @@ export const TransferPanel: React.FC = () => {
               as="button"
               px="14px"
               h="32px"
-              bg="rgba(34,197,94,0.12)"
+              bg={isMultiSelect ? 'transparent' : 'rgba(34,197,94,0.12)'}
               border="1px solid"
-              borderColor="rgba(34,197,94,0.3)"
+              borderColor={isMultiSelect ? borderColor : 'rgba(34,197,94,0.3)'}
               borderRadius="5px"
               fontSize="12px"
               fontWeight="500"
-              color="#4ade80"
-              cursor="pointer"
+              color={isMultiSelect ? subColor : '#4ade80'}
+              cursor={isMultiSelect ? 'not-allowed' : 'pointer'}
               display="flex"
               alignItems="center"
               gap="5px"
-              onClick={handleTransferAndRename}
-              _hover={{ bg: 'rgba(34,197,94,0.2)' }}
+              onClick={isMultiSelect ? undefined : handleTransferAndRename}
+              _hover={isMultiSelect ? {} : { bg: 'rgba(34,197,94,0.2)' }}
+              opacity={isMultiSelect ? 0.4 : 1}
               style={{ ...noRing, transition: 'background 0.1s' }}
-              title="Transfer latest file and rename to GST standards"
+              title={isMultiSelect ? 'Select one file to use GST rename' : 'Transfer latest file and rename to GST standards'}
             >
               GST
             </Box>

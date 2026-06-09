@@ -27,6 +27,7 @@ export interface TransferOptions {
   command?: string;
   currentDirectory?: string;
   preview?: boolean;
+  fileNames?: string[];
 }
 
 // Extend the Window interface to include our electron API

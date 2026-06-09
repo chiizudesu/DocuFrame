@@ -41,7 +41,9 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
 
     // Get number of files to transfer/preview
     const numFiles = options.numFiles || 1;
-    const filesToPreview = files.slice(0, numFiles);
+    const filesToPreview = options.fileNames && options.fileNames.length > 0
+      ? files.filter(f => options.fileNames!.includes(f.file))
+      : files.slice(0, numFiles);
 
     // Get filename template for both preview and actual transfer
     let filenameTemplate: string | undefined;
