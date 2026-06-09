@@ -649,7 +649,7 @@ export const TransferPanel: React.FC = () => {
                 <Text fontSize="12px" color={subColor}>No files in Downloads folder</Text>
               </Flex>
             ) : (
-              <Box maxH="180px" overflowY="auto">
+              <Box maxH="180px" overflowY="auto" className="enhanced-scrollbar">
                 {downloads.map((file, idx) => {
                   const badge = getExtBadge(file.name);
                   const isSel = selectedDlIdxs.has(idx);
