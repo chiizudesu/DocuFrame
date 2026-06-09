@@ -649,7 +649,7 @@ export const TransferPanel: React.FC = () => {
                 <Text fontSize="12px" color={subColor}>No files in Downloads folder</Text>
               </Flex>
             ) : (
-              <Box maxH="180px" overflowY="auto" className="enhanced-scrollbar">
+              <Box maxH="180px" overflowY="auto" className="transfer-dl-scroll">
                 {downloads.map((file, idx) => {
                   const badge = getExtBadge(file.name);
                   const isSel = selectedDlIdxs.has(idx);
@@ -915,7 +915,16 @@ export const TransferPanel: React.FC = () => {
         </Box>
       </Box>
 
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .transfer-dl-scroll::-webkit-scrollbar { width: 5px !important; height: 5px !important; }
+        .transfer-dl-scroll::-webkit-scrollbar-track { background: transparent !important; }
+        .transfer-dl-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.0) !important; border-radius: 999px !important; min-height: 24px !important; transition: background 0.2s ease !important; }
+        .transfer-dl-scroll:hover::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.35) !important; }
+        .transfer-dl-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.6) !important; }
+        .transfer-dl-scroll::-webkit-scrollbar-button { display: none !important; width: 0 !important; height: 0 !important; }
+        .transfer-dl-scroll::-webkit-scrollbar-corner { background: transparent !important; }
+      `}</style>
 
       {/* ── Index suggestion portal (fixed, escapes panel bounds) ── */}
       {showIndexSuggs && indexSuggestions.length > 0 && indexDropRect && createPortal(
