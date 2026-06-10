@@ -8,6 +8,11 @@ import {
   Folder,
   Upload,
   Plus,
+  Eye,
+  Edit2,
+  Layers,
+  FolderPlus,
+  FilterX,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { FileTableRowProps, SortColumn, setDropEffectCompatibleWithEffectAllowed } from './FileGridUtils'
@@ -171,6 +176,55 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                 >
                   {file.name}
                 </Text>
+                {isListRowHovered && file.type === 'file' && (
+                  <Flex
+                    gap={0}
+                    position="absolute"
+                    right="2px"
+                    top="50%"
+                    transform="translateY(-50%)"
+                    bg={displayBg}
+                    pl={1}
+                    align="center"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                    onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}
+                    onMouseUp={(e: React.MouseEvent) => e.stopPropagation()}
+                    onDoubleClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
+                    {file.name.toLowerCase().endsWith('.pdf') && (
+                      <IconButton
+                        aria-label="Preview"
+                        title="Preview"
+                        size="2xs"
+                        variant="ghost"
+                        minW="20px"
+                        h="20px"
+                        color={fileSubTextColor}
+                        onClick={() => rowHandlers.onQuickAction('preview', file, index)}
+                      ><Eye size={13} /></IconButton>
+                    )}
+                    <IconButton
+                      aria-label="Rename"
+                      title="Rename (F2)"
+                      size="2xs"
+                      variant="ghost"
+                      minW="20px"
+                      h="20px"
+                      color={fileSubTextColor}
+                      onClick={() => rowHandlers.onQuickAction('rename', file, index)}
+                    ><Edit2 size={13} /></IconButton>
+                    <IconButton
+                      aria-label="Apply index prefix"
+                      title="Apply index prefix"
+                      size="2xs"
+                      variant="ghost"
+                      minW="20px"
+                      h="20px"
+                      color={fileSubTextColor}
+                      onClick={() => rowHandlers.onQuickAction('prefix', file, index)}
+                    ><Layers size={13} /></IconButton>
+                  </Flex>
+                )}
               </Flex>
             </chakra.td>
           );
@@ -1172,6 +1226,16 @@ export interface FileListViewProps {
   isSelecting: boolean;
   isGroupedByIndex: boolean;
   groupedFiles: Record<string, FileItem[]> | null;
+  /** 'index' = workpaper drop-zone headers (default); 'plain' = simple label headers (type/date grouping) */
+  groupHeaderVariant?: 'index' | 'plain';
+  /** Explicit group key order for plain grouping modes (date buckets etc.) */
+  groupOrder?: string[];
+  /** Row height preset; cell padding is driven by cellStyles from FileGrid */
+  rowDensity?: 'compact' | 'default' | 'comfortable';
+  /** Search/type/date filters active — switches the empty state copy */
+  hasActiveFilters?: boolean;
+  onClearFilters?: () => void;
+  onCreateFolderRequest?: () => void;
   sortedFiles: FileItem[];
   columnOrder: string[];
   columnVisibility: { name: boolean; size: boolean; modified: boolean; type: boolean };
@@ -1252,6 +1316,7 @@ export interface FileListViewProps {
     draggable: boolean;
     onDragStart: (file: FileItem, index: number, e: React.DragEvent) => void;
     onDragEnd: (e: React.DragEvent) => void;
+    onQuickAction: (action: string, file: FileItem, index: number) => void;
   };
   createFolderDropHandlers: (file: FileItem, index: number) => any;
   observeFileElement: (element: HTMLElement | null, filePath: string) => void;
@@ -1315,6 +1380,11 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.groupedTransferTemplates !== next.groupedTransferTemplates) return false;
   if (prev.handleGroupHeaderDrop !== next.handleGroupHeaderDrop) return false;
   if (prev.onTransferFromGroupHeader !== next.onTransferFromGroupHeader) return false;
+  if (prev.cellStyles !== next.cellStyles) return false;
+  if (prev.rowDensity !== next.rowDensity) return false;
+  if (prev.groupHeaderVariant !== next.groupHeaderVariant) return false;
+  if (prev.groupOrder !== next.groupOrder) return false;
+  if (prev.hasActiveFilters !== next.hasActiveFilters) return false;
   return true;
 }
 
@@ -1407,6 +1477,12 @@ const FileListViewBody = React.memo(function FileListViewBody({
   setSelectedFile: _setSelectedFile,
   clearFolderHoverStates,
   cellStyles,
+  groupHeaderVariant = 'index',
+  groupOrder,
+  rowDensity = 'default',
+  hasActiveFilters = false,
+  onClearFilters,
+  onCreateFolderRequest,
 }: FileListViewProps) {
   const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
   const groupViewLayerHeaderBg = '#1A365D';
@@ -1421,7 +1497,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
   const tableChromeBg = showBackgroundFill ? 'transparent' : tableSurfaceBg;
   /** Match file rows: don’t paint opaque list color over background fill */
   const rowDefaultBgForFill = showBackgroundFill ? 'transparent' : rowDefaultBg;
-  const ROW_HEIGHT_ESTIMATE = 33;
+  const ROW_HEIGHT_ESTIMATE = rowDensity === 'compact' ? 29 : rowDensity === 'comfortable' ? 41 : 33;
+  const PLAIN_GROUP_HEADER_HEIGHT_ESTIMATE = 30;
   const recentlyTransferredFiles = recentlyTransferredFilesProp ?? [];
 
   const pathToGlobalIndex = useMemo(() => {
@@ -1445,6 +1522,9 @@ const FileListViewBody = React.memo(function FileListViewBody({
     const entries = Object.entries(groupedFiles)
       .filter(([k]) => k !== 'folders')
       .sort(([a], [b]) => {
+        if (groupOrder) {
+          return groupOrder.indexOf(a) - groupOrder.indexOf(b);
+        }
         if (a === 'AA') return -1;
         if (b === 'AA') return 1;
         if (a === 'Other') return 1;
@@ -1459,7 +1539,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
       }
     });
     return items;
-  }, [isGroupedByIndex, groupedFiles, pathToGlobalIndex]);
+  }, [isGroupedByIndex, groupedFiles, groupOrder, pathToGlobalIndex]);
 
   const newFileIndices = useMemo(() => {
     if (recentlyTransferredFiles.length === 0) return [] as number[];
@@ -1510,7 +1590,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
     estimateSize: (index) => {
       const item = flatGroupedItems[index];
       if (!item) return ROW_HEIGHT_ESTIMATE;
-      return item.type === 'groupHeader' ? GROUP_HEADER_HEIGHT_ESTIMATE : ROW_HEIGHT_ESTIMATE;
+      if (item.type !== 'groupHeader') return ROW_HEIGHT_ESTIMATE;
+      return groupHeaderVariant === 'plain' ? PLAIN_GROUP_HEADER_HEIGHT_ESTIMATE : GROUP_HEADER_HEIGHT_ESTIMATE;
     },
     overscan: 8,
   });
@@ -1886,6 +1967,26 @@ const FileListViewBody = React.memo(function FileListViewBody({
                         groupedFiles[item.groupKey] ?? [];
                       const mtValue =
                         item.groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 1.5;
+                      if (groupHeaderVariant === 'plain') {
+                        return (
+                          <tr key={`gh-${item.groupKey}-${virtualRow.index}`}>
+                            <td
+                              colSpan={columnOrder.length}
+                              style={{ padding: 0, background: 'transparent', verticalAlign: 'bottom' }}
+                            >
+                              <Flex align="center" gap={2} px={2} pt={item.groupIndex === 0 && !hasFolderSection ? 0.5 : 2.5} pb="2px">
+                                <Text fontSize="xs" fontWeight="semibold" color={fileTextColor} whiteSpace="nowrap">
+                                  {item.groupKey}
+                                </Text>
+                                <Text fontSize="10px" color={fileSubTextColor} whiteSpace="nowrap">
+                                  {groupFiles.length}
+                                </Text>
+                                <Box flex={1} h="1px" bg={headerDividerBg} />
+                              </Flex>
+                            </td>
+                          </tr>
+                        );
+                      }
                       return (
                         <tr key={`gh-${item.groupKey}-${virtualRow.index}`}>
                           <td
@@ -2137,6 +2238,62 @@ const FileListViewBody = React.memo(function FileListViewBody({
                   })()}
                 </tbody>
           </chakra.table>
+
+          {sortedFiles.length === 0 && !isInlineCreatingFolder && (
+            <Flex direction="column" align="center" justify="center" pt={20} pb={10} gap={2.5} userSelect="none" pointerEvents="none">
+              <Box color={fileSubTextColor} opacity={0.6}>
+                {hasActiveFilters ? <FilterX size={30} strokeWidth={1.5} /> : <FolderPlus size={30} strokeWidth={1.5} />}
+              </Box>
+              <Text fontSize="sm" color={fileSubTextColor} fontWeight="medium">
+                {hasActiveFilters ? 'No files match the current filters' : 'This folder is empty'}
+              </Text>
+              <Text fontSize="xs" color={fileSubTextColor} opacity={0.7}>
+                {hasActiveFilters ? 'Try removing a filter or clearing the search' : 'Drop files here, paste, or create something new'}
+              </Text>
+              <Flex gap={2} mt={1} pointerEvents="auto">
+                {hasActiveFilters && onClearFilters && (
+                  <Flex
+                    as="button"
+                    align="center"
+                    gap={1.5}
+                    px={3}
+                    py={1}
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor={headerDividerBg}
+                    color={fileTextColor}
+                    fontSize="xs"
+                    cursor="pointer"
+                    _hover={{ bg: rowHoverBg }}
+                    onClick={onClearFilters}
+                  >
+                    <FilterX size={13} />
+                    Clear filters
+                  </Flex>
+                )}
+                {!hasActiveFilters && onCreateFolderRequest && (
+                  <Flex
+                    as="button"
+                    align="center"
+                    gap={1.5}
+                    px={3}
+                    py={1}
+                    borderRadius="md"
+                    border="1px solid"
+                    borderColor={headerDividerBg}
+                    color={fileTextColor}
+                    fontSize="xs"
+                    cursor="pointer"
+                    _hover={{ bg: rowHoverBg }}
+                    onClick={onCreateFolderRequest}
+                  >
+                    <FolderPlus size={13} />
+                    New folder
+                  </Flex>
+                )}
+              </Flex>
+            </Flex>
+          )}
 
           {/* Drag ghost preview */}
           {draggingColumn && dragMousePos && isDragThresholdMet && (

@@ -13,7 +13,6 @@ import {
   Icon,
   Separator,
 } from '@chakra-ui/react';
-import { Tooltip } from '@/components/ui/tooltip';
 import {
   FolderOpen,
   FileText,
@@ -43,10 +42,19 @@ import {
   Link2,
   CloudUpload,
   Terminal,
+  Eye,
+  Files,
+  CalendarPlus,
+  FileDown,
+  ClipboardCopy,
+  Check,
+  List,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
 import { joinPath, normalizePath } from '../../utils/path'
+import { getIndexInfo } from '../../utils/indexPrefix'
+import { SubmenuGroup, ContextSubmenu, MenuRow, MenuSeparator, MenuSectionLabel, useMenuColors, placeMenuElement } from './menuPrimitives'
 import { docuFramePalette } from '../../docuFrameColors'
 
 // FileContextMenu Component
@@ -61,13 +69,16 @@ export interface FileContextMenuProps {
   sortedFiles: FileItem[];
   clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null };
   setClipboard: (clipboard: { files: FileItem[]; operation: 'cut' | 'copy' | null }) => void;
-  handleMenuAction: (action: string) => void;
+  handleMenuAction: (action: string, payload?: string) => void;
   handlePaste: () => void;
   handleCloseContextMenu: () => void;
   quickAccessPaths: string[];
-  setTemplates: (templates: Array<{ name: string; path: string }>) => void;
-  setTemplateSubmenuPosition: (position: { x: number; y: number } | null) => void;
-  setTemplateSubmenuOpen: (open: boolean) => void;
+  /** Last-visited client folders for the Move to ▸ submenu */
+  recentClientPaths: string[];
+  /** Workpaper index keys offered in the Apply prefix ▸ submenu */
+  activeSectionKeys: string[];
+  currentDirectory: string;
+  onCreateFromTemplate: (templatePath: string, templateName: string) => void;
   setMoveToFiles: (files: FileItem[]) => void;
   setIsMoveToDialogOpen: (open: boolean) => void;
 }
@@ -83,9 +94,10 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   handlePaste,
   handleCloseContextMenu,
   quickAccessPaths,
-  setTemplates,
-  setTemplateSubmenuPosition,
-  setTemplateSubmenuOpen,
+  recentClientPaths,
+  activeSectionKeys,
+  currentDirectory,
+  onCreateFromTemplate,
   setMoveToFiles,
   setIsMoveToDialogOpen,
 }) => {
@@ -93,11 +105,9 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
-  const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
-  const separatorColor = useColorModeValue(docuFramePalette.light.tableBorder, docuFramePalette.dark.tableBorder);
-  const tooltipBg = useColorModeValue('gray.800', 'gray.200');
-  const tooltipColor = useColorModeValue('white', 'gray.800');
+  const { shadow: menuShadow } = useMenuColors();
   const [latestFileName, setLatestFileName] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
 
   useEffect(() => {
     if (!contextMenu.isOpen || !contextMenu.fileItem || contextMenu.fileItem.type !== 'file') return;
@@ -119,21 +129,25 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
     return () => { cancelled = true; };
   }, [contextMenu.isOpen, contextMenu.fileItem?.path]);
 
+  // Preload workpaper templates for the New Template ▸ submenu (folders only)
+  useEffect(() => {
+    if (!contextMenu.isOpen || contextMenu.fileItem?.type !== 'folder') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await (window.electronAPI as any).getWorkpaperTemplates();
+        if (!cancelled) setTemplates(result?.success ? result.templates || [] : []);
+      } catch {
+        if (!cancelled) setTemplates([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [contextMenu.isOpen, contextMenu.fileItem?.path, contextMenu.fileItem?.type]);
+
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!contextMenu.isOpen || !el) return;
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let x = contextMenu.position.x;
-    let y = contextMenu.position.y;
-    if (x + rect.width > vw - 4) x = contextMenu.position.x - rect.width;
-    if (y + rect.height > vh - 4) y = contextMenu.position.y - rect.height;
-    if (x < 4) x = 4;
-    if (y < 4) y = 4;
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-    el.style.opacity = '1';
+    placeMenuElement(el, contextMenu.position);
   });
 
   if (!contextMenu.isOpen || !contextMenu.fileItem) return null;
@@ -143,6 +157,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const fileName = contextMenu.fileItem.name.toLowerCase();
   const isZipFile = fileName.endsWith('.zip');
   const isEmlFile = fileName.endsWith('.eml');
+  const isPdfFile = fileName.endsWith('.pdf');
   const selectedZipFiles = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.zip'));
   const selectedEmlFiles = selectedFiles.filter(filename => filename.toLowerCase().endsWith('.eml'));
   const showExtractZips = selectedZipFiles.length > 1 || (isZipFile && selectedZipFiles.length >= 1);
@@ -150,7 +165,16 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const isFile = contextMenu.fileItem.type === 'file';
   const isFolder = contextMenu.fileItem.type === 'folder';
   const isSingleFile = selectedFiles.length === 1;
-  const hasFileSpecific = fileName.endsWith('.pdf') || showMergePDFs || showExtractZips || showExtractEmls;
+  const isOfficeDoc = /\.(docx?|xlsx?|xlsm|csv)$/i.test(contextMenu.fileItem.name);
+  const effectiveCount = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+    ? selectedFiles.length
+    : 1;
+  // Roll forward: only offered when the filename contains a 4-digit year
+  const yearMatch = isFile && isSingleFile ? contextMenu.fileItem.name.match(/20\d{2}/) : null;
+  const nextYear = yearMatch ? String(Number(yearMatch[0]) + 1) : null;
+  const moveToRecents = recentClientPaths.filter(
+    (p) => normalizePath(p) !== normalizePath(currentDirectory)
+  ).slice(0, 5);
 
   const getClipboardFiles = () => {
     if (
@@ -167,8 +191,6 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   };
 
   const iconSz = 14;
-  const iconStyle = { marginRight: '6px', flexShrink: 0 } as const;
-  const rowProps = { align: 'center' as const, px: 2.5, py: '3px', cursor: 'pointer' as const, _hover: { bg: hoverBg } };
 
   return (
     <Box
@@ -178,198 +200,319 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
       left={contextMenu.position.x}
       opacity={0}
       bg={boxBg}
-      borderRadius="0"
+      borderRadius="8px"
+      boxShadow={menuShadow}
       zIndex="modal"
-      minW="170px"
-      maxW="260px"
+      minW="200px"
+      maxW="270px"
       border="1px solid"
       borderColor={borderCol}
     >
-      <Box py={0.5}>
-        {/* ── Open ── */}
-        <Flex {...rowProps} onClick={() => handleMenuAction('open')}>
-          <ExternalLink size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Open</Text>
-        </Flex>
-        {isFile && isSingleFile && (
-          <Flex {...rowProps} onClick={() => handleMenuAction('open_with_notepad')}>
-            <FileEdit size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Open with Notepad</Text>
-          </Flex>
-        )}
-
-        {/* ── Edit / Rename Group ── */}
-        <Separator borderColor={separatorColor} my={0.5} />
-        {isSingleFile && (
-          <Flex {...rowProps} onClick={() => handleMenuAction('rename')}>
-            <Edit2 size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Rename</Text>
-          </Flex>
-        )}
-        {isFile && isSingleFile && (
-          <>
-            <Flex {...rowProps} onClick={() => handleMenuAction('smart_rename')}>
-              <Sparkles size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Smart Rename</Text>
-            </Flex>
-            <Flex {...rowProps} onClick={() => handleMenuAction('proper_case_rename')}>
-              <Type size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Proper Case</Text>
-            </Flex>
-            <Tooltip
-              content={latestFileName ? `${latestFileName}` : 'Loading...'}
-              showArrow
-              openDelay={300}
-              positioning={{ placement: "right" }}
-              contentProps={{ bg: tooltipBg, color: tooltipColor }}
-            >
-              <Flex {...rowProps} onClick={() => handleMenuAction('replace_with_latest')}>
-                <ArrowRightLeft size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Replace with Latest File</Text>
-              </Flex>
-            </Tooltip>
-          </>
-        )}
-
-        {/* ── Index Prefix Group (files only) ── */}
-        {isFile && (
-          <>
-            <Separator borderColor={separatorColor} my={0.5} />
-            <Flex {...rowProps} onClick={() => handleMenuAction('assign_prefix')}>
-              <Layers size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Manage Index Prefix</Text>
-            </Flex>
-            <Flex {...rowProps} onClick={() => handleMenuAction('remove_prefix')}>
-              <X size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Remove Prefix</Text>
-            </Flex>
-          </>
-        )}
-
-        {/* ── Folder Actions (folders only) ── */}
-        {isFolder && (
-          <>
-            <Separator borderColor={separatorColor} my={0.5} />
-            {quickAccessPaths.includes(contextMenu.fileItem.path) ? (
-              <Flex {...rowProps} onClick={() => handleMenuAction('unpin_quick_access')}>
-                <Star size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Unpin from Quick Access</Text>
-              </Flex>
-            ) : (
-              <Flex {...rowProps} onClick={() => handleMenuAction('pin_quick_access')}>
-                <Star size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Pin to Quick Access</Text>
-              </Flex>
-            )}
-            <Flex
-              {...rowProps}
+      <SubmenuGroup>
+        <Box py="4px">
+          {/* ── Open / Preview ── */}
+          <MenuRow
+            icon={<ExternalLink size={iconSz} />}
+            label="Open"
+            hint="Enter"
+            emphasized
+            onClick={() => handleMenuAction('open')}
+          />
+          {isPdfFile && isSingleFile && (
+            <MenuRow
+              icon={<Eye size={iconSz} />}
+              label="Preview"
+              onClick={() => handleMenuAction('preview')}
+            />
+          )}
+          {isFile && isSingleFile && (
+            <ContextSubmenu id="open-with" icon={<ExternalLink size={iconSz} />} label="Open with">
+              <MenuRow
+                icon={<FileSpreadsheet size={iconSz} />}
+                label="Excel"
+                onClick={() => handleMenuAction('open_with', 'excel')}
+              />
+              <MenuRow
+                icon={<FileEdit size={iconSz} />}
+                label="Word"
+                onClick={() => handleMenuAction('open_with', 'word')}
+              />
+              <MenuRow
+                icon={<FileText size={iconSz} />}
+                label="Notepad"
+                onClick={() => handleMenuAction('open_with_notepad')}
+              />
+              <MenuSeparator />
+              <MenuRow
+                icon={<ExternalLink size={iconSz} />}
+                label="Choose another app..."
+                onClick={() => handleMenuAction('open_with', 'openas')}
+              />
+            </ContextSubmenu>
+          )}
+          {isFolder && (
+            <MenuRow
+              icon={<ExternalLink size={iconSz} />}
+              label="Open folder in new tab"
               onClick={() => handleMenuAction('open_new_tab')}
-            >
-              <ExternalLink size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Open folder in new tab</Text>
-            </Flex>
-            <Flex
-              {...rowProps}
-              position="relative"
-              onMouseEnter={async () => {
-                try {
-                  const result = await (window.electronAPI as any).getWorkpaperTemplates();
-                  if (result.success) {
-                    setTemplates(result.templates || []);
-                    setTemplateSubmenuPosition({ x: contextMenu.position.x + 170, y: contextMenu.position.y });
-                    setTemplateSubmenuOpen(true);
-                  }
-                } catch (error) {
-                  console.error('Error loading templates:', error);
-                }
-              }}
-            >
-              <FileSpreadsheet size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">New Template</Text>
-              <ChevronRight size={12} style={{ marginLeft: 'auto' }} />
-            </Flex>
-          </>
-        )}
+            />
+          )}
 
-        {/* ── File-Specific Actions ── */}
-        {hasFileSpecific && (
-          <>
-            <Separator borderColor={separatorColor} my={0.5} />
-            {fileName.endsWith('.pdf') && (
-              <Flex {...rowProps} onClick={() => handleMenuAction('extract_text')}>
-                <FileText size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Extract Text</Text>
-              </Flex>
-            )}
-            {fileName.endsWith('.pdf') && selectedPDFs.length >= 1 && (
-              <Flex {...rowProps} onClick={() => handleMenuAction('upload_to_vaults')}>
-                <CloudUpload size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Upload to Vaults Repo</Text>
-              </Flex>
-            )}
-            {showMergePDFs && (
-              <Flex {...rowProps} onClick={() => handleMenuAction('merge_pdfs')}>
-                <FilePlus2 size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Merge PDFs ({selectedPDFs.length})</Text>
-              </Flex>
-            )}
-            {showExtractZips && (
-              <Flex {...rowProps} onClick={() => handleMenuAction('extract_zip')}>
-                <Archive size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Extract ZIP{selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}</Text>
-              </Flex>
-            )}
-            {showExtractEmls && (
-              <Flex {...rowProps} onClick={() => handleMenuAction('extract_eml')}>
-                <Mail size={iconSz} style={iconStyle} />
-                <Text fontSize="xs">Extract Attachments{selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}</Text>
-              </Flex>
-            )}
-          </>
-        )}
+          {/* ── Rename ── */}
+          {isSingleFile && (
+            <>
+              <MenuSeparator />
+              {isFile && <MenuSectionLabel label="Rename" />}
+              <MenuRow
+                icon={<Edit2 size={iconSz} />}
+                label="Rename"
+                hint="F2"
+                onClick={() => handleMenuAction('rename')}
+              />
+              {isFile && (
+                <>
+                  <MenuRow
+                    icon={<Sparkles size={iconSz} />}
+                    label="Smart Rename"
+                    onClick={() => handleMenuAction('smart_rename')}
+                  />
+                  <MenuRow
+                    icon={<Type size={iconSz} />}
+                    label="Proper Case"
+                    onClick={() => handleMenuAction('proper_case_rename')}
+                  />
+                  <MenuRow
+                    icon={<ArrowRightLeft size={iconSz} />}
+                    label="Replace with Latest File"
+                    title={latestFileName ? `Latest download: ${latestFileName}` : 'Loading latest download...'}
+                    onClick={() => handleMenuAction('replace_with_latest')}
+                  />
+                </>
+              )}
+            </>
+          )}
 
-        {/* ── Clipboard ── */}
-        <Separator borderColor={separatorColor} my={0.5} />
-        <Flex {...rowProps} onClick={() => { handleMenuAction('copy_path'); handleCloseContextMenu(); }}>
-          <Link2 size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Copy Path</Text>
-        </Flex>
-        {isFile && (
-          <Flex {...rowProps} onClick={() => {
-            const filesToMove = getClipboardFiles();
-            setMoveToFiles(filesToMove);
-            addressBarJumpRef.current?.close();
-            setIsMoveToDialogOpen(true);
-            handleCloseContextMenu();
-          }}>
-            <ArrowRightLeft size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Move to...</Text>
-          </Flex>
-        )}
-        <Flex {...rowProps} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }}>
-          <Scissors size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Cut</Text>
-        </Flex>
-        <Flex {...rowProps} onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }}>
-          <Copy size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Copy</Text>
-        </Flex>
-        <Flex {...rowProps} onClick={() => { handlePaste(); handleCloseContextMenu(); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
-          <FileSymlink size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Paste</Text>
-        </Flex>
+          {/* ── Workpapers (files) ── */}
+          {isFile && (
+            <>
+              <MenuSeparator />
+              <MenuSectionLabel label="Workpapers" />
+              <ContextSubmenu id="apply-prefix" icon={<Layers size={iconSz} />} label="Apply index" flyoutMaxH="320px" flyoutMinW="200px">
+                {activeSectionKeys.map((key) => {
+                  const info = getIndexInfo(key);
+                  return (
+                    <MenuRow
+                      key={key}
+                      label={info.description ? `${key} — ${info.description}` : key}
+                      onClick={() => handleMenuAction('apply_prefix_quick', key)}
+                    />
+                  );
+                })}
+                {activeSectionKeys.length > 0 && <MenuSeparator />}
+                <MenuRow
+                  icon={<Layers size={iconSz} />}
+                  label="Manage Index Prefix..."
+                  onClick={() => handleMenuAction('assign_prefix')}
+                />
+                <MenuRow
+                  icon={<X size={iconSz} />}
+                  label="Remove Prefix"
+                  onClick={() => handleMenuAction('remove_prefix')}
+                />
+              </ContextSubmenu>
+              {isSingleFile && (
+                <MenuRow
+                  icon={<Files size={iconSz} />}
+                  label="Duplicate"
+                  onClick={() => handleMenuAction('duplicate')}
+                />
+              )}
+              {isOfficeDoc && isSingleFile && (
+                <MenuRow
+                  icon={<FileDown size={iconSz} />}
+                  label="Convert to PDF"
+                  title="Requires Microsoft Office"
+                  onClick={() => handleMenuAction('convert_to_pdf')}
+                />
+              )}
+              <MenuRow
+                icon={<Archive size={iconSz} />}
+                label={effectiveCount > 1 ? `Add to ZIP (${effectiveCount})` : 'Add to ZIP'}
+                onClick={() => handleMenuAction('zip_selection')}
+              />
+              {nextYear && (
+                <MenuRow
+                  icon={<CalendarPlus size={iconSz} />}
+                  label={`Roll Forward to ${nextYear}`}
+                  title="Copy this file with the year(s) in its name incremented"
+                  onClick={() => handleMenuAction('roll_forward')}
+                />
+              )}
+              {isPdfFile && (
+                <ContextSubmenu id="pdf-tools" icon={<FileText size={iconSz} />} label="PDF" flyoutMinW="190px">
+                  <MenuRow
+                    icon={<FileText size={iconSz} />}
+                    label="Extract Text"
+                    onClick={() => handleMenuAction('extract_text')}
+                  />
+                  <MenuRow
+                    icon={<Scissors size={iconSz} />}
+                    label="Split PDF..."
+                    onClick={() => handleMenuAction('split_pdf')}
+                  />
+                  <MenuRow
+                    icon={<CloudUpload size={iconSz} />}
+                    label="Upload to Vaults Repo"
+                    onClick={() => handleMenuAction('upload_to_vaults')}
+                  />
+                  {showMergePDFs && (
+                    <MenuRow
+                      icon={<FilePlus2 size={iconSz} />}
+                      label={`Merge PDFs (${selectedPDFs.length})`}
+                      onClick={() => handleMenuAction('merge_pdfs')}
+                    />
+                  )}
+                </ContextSubmenu>
+              )}
+              {showExtractZips && (
+                <MenuRow
+                  icon={<Archive size={iconSz} />}
+                  label={`Extract ZIP${selectedZipFiles.length > 1 ? `s (${selectedZipFiles.length})` : ''}`}
+                  onClick={() => handleMenuAction('extract_zip')}
+                />
+              )}
+              {showExtractEmls && (
+                <MenuRow
+                  icon={<Mail size={iconSz} />}
+                  label={`Extract Attachments${selectedEmlFiles.length > 1 ? ` (${selectedEmlFiles.length})` : ''}`}
+                  onClick={() => handleMenuAction('extract_eml')}
+                />
+              )}
 
-        {/* ── Destructive & Info ── */}
-        <Separator borderColor={separatorColor} my={0.5} />
-        <Flex {...rowProps} onClick={() => handleMenuAction('delete')}>
-          <Trash2 size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Delete</Text>
-        </Flex>
-        <Flex {...rowProps} onClick={() => handleMenuAction('properties')}>
-          <Info size={iconSz} style={iconStyle} />
-          <Text fontSize="xs">Properties</Text>
-        </Flex>
-      </Box>
+              {/* ── Send ── */}
+              <MenuSeparator />
+              <MenuSectionLabel label="Send" />
+              <ContextSubmenu id="move-to" icon={<ArrowRightLeft size={iconSz} />} label="Move to" flyoutMinW="200px">
+                {moveToRecents.map((path) => {
+                  const segments = path.split(/[\\/]/).filter(Boolean);
+                  const name = segments[segments.length - 1] || path;
+                  return (
+                    <MenuRow
+                      key={path}
+                      icon={<Folder size={iconSz} />}
+                      label={name}
+                      title={path}
+                      onClick={() => handleMenuAction('move_to_recent', path)}
+                    />
+                  );
+                })}
+                {moveToRecents.length > 0 && <MenuSeparator />}
+                <MenuRow
+                  icon={<FolderOpen size={iconSz} />}
+                  label="Choose folder..."
+                  onClick={() => {
+                    const filesToMove = getClipboardFiles();
+                    setMoveToFiles(filesToMove);
+                    addressBarJumpRef.current?.close();
+                    setIsMoveToDialogOpen(true);
+                    handleCloseContextMenu();
+                  }}
+                />
+              </ContextSubmenu>
+              <MenuRow
+                icon={<ClipboardCopy size={iconSz} />}
+                label={effectiveCount > 1 ? `Copy Files for Email (${effectiveCount})` : 'Copy File for Email'}
+                title="Puts the actual file on the Windows clipboard — paste into Outlook, Teams or Explorer"
+                onClick={() => handleMenuAction('copy_files_clipboard')}
+              />
+            </>
+          )}
+
+          {/* ── Folder actions ── */}
+          {isFolder && (
+            <>
+              <MenuSeparator />
+              <MenuSectionLabel label="Folder" />
+              {quickAccessPaths.includes(contextMenu.fileItem.path) ? (
+                <MenuRow
+                  icon={<Star size={iconSz} />}
+                  label="Unpin from Quick Access"
+                  onClick={() => handleMenuAction('unpin_quick_access')}
+                />
+              ) : (
+                <MenuRow
+                  icon={<Star size={iconSz} />}
+                  label="Pin to Quick Access"
+                  onClick={() => handleMenuAction('pin_quick_access')}
+                />
+              )}
+              <ContextSubmenu id="new-template" icon={<FileSpreadsheet size={iconSz} />} label="New Template" flyoutMinW="200px">
+                {templates.length === 0 ? (
+                  <MenuRow label="No templates" disabled />
+                ) : (
+                  templates.map((template) => (
+                    <MenuRow
+                      key={template.path}
+                      icon={
+                        /\.docx?$/i.test(template.name) ? <FileEdit size={12} /> :
+                        /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} /> :
+                        <FileText size={12} />
+                      }
+                      label={template.name}
+                      onClick={() => {
+                        onCreateFromTemplate(template.path, template.name);
+                        handleCloseContextMenu();
+                      }}
+                    />
+                  ))
+                )}
+              </ContextSubmenu>
+            </>
+          )}
+
+          {/* ── Clipboard ── */}
+          <MenuSeparator />
+          <MenuRow
+            icon={<Link2 size={iconSz} />}
+            label="Copy Path"
+            onClick={() => { handleMenuAction('copy_path'); handleCloseContextMenu(); }}
+          />
+          <MenuRow
+            icon={<Scissors size={iconSz} />}
+            label="Cut"
+            hint="Ctrl+X"
+            onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'cut' }); handleCloseContextMenu(); }}
+          />
+          <MenuRow
+            icon={<Copy size={iconSz} />}
+            label="Copy"
+            hint="Ctrl+C"
+            onClick={() => { setClipboard({ files: getClipboardFiles(), operation: 'copy' }); handleCloseContextMenu(); }}
+          />
+          <MenuRow
+            icon={<FileSymlink size={iconSz} />}
+            label="Paste"
+            hint="Ctrl+V"
+            disabled={clipboard.files.length === 0}
+            onClick={() => { handlePaste(); handleCloseContextMenu(); }}
+          />
+
+          {/* ── Destructive & Info ── */}
+          <MenuSeparator />
+          <MenuRow
+            icon={<Trash2 size={iconSz} />}
+            label="Delete"
+            hint="Del"
+            danger
+            onClick={() => handleMenuAction('delete')}
+          />
+          <MenuRow
+            icon={<Info size={iconSz} />}
+            label="Properties"
+            onClick={() => handleMenuAction('properties')}
+          />
+        </Box>
+      </SubmenuGroup>
     </Box>
   );
 };
@@ -393,6 +536,10 @@ export interface BlankContextMenuProps {
   onCreateFromTemplate: (templatePath: string, templateName: string) => void;
   onCopyPath: () => void;
   onOpenPowerShell: () => void;
+  groupByMode: 'auto' | 'type' | 'date';
+  onSetGroupByMode: (mode: 'auto' | 'type' | 'date') => void;
+  rowDensity: 'compact' | 'default' | 'comfortable';
+  onSetRowDensity: (d: 'compact' | 'default' | 'comfortable') => void;
 }
 
 export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
@@ -410,11 +557,16 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   onCreateFromTemplate,
   onCopyPath,
   onOpenPowerShell,
+  groupByMode,
+  onSetGroupByMode,
+  rowDensity,
+  onSetRowDensity,
 }) => {
   const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
   const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
   const separatorColor = useColorModeValue(docuFramePalette.light.tableBorder, docuFramePalette.dark.tableBorder);
+  const { shadow: menuShadow } = useMenuColors();
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const [newSubmenuOpen, setNewSubmenuOpen] = useState(false);
@@ -447,25 +599,14 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!blankContextMenu.isOpen || !el) return;
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let x = blankContextMenu.position.x;
-    let y = blankContextMenu.position.y;
-    if (x + rect.width > vw - 4) x = blankContextMenu.position.x - rect.width;
-    if (y + rect.height > vh - 4) y = blankContextMenu.position.y - rect.height;
-    if (x < 4) x = 4;
-    if (y < 4) y = 4;
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-    el.style.opacity = '1';
+    placeMenuElement(el, blankContextMenu.position);
   });
 
   if (!blankContextMenu.isOpen) return null;
   return (
     <>
-      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} opacity={0} bg={boxBg} borderRadius="0" zIndex="modal" minW="170px" maxW="240px" border="1px solid" borderColor={borderCol}>
-        <Box py={0.5}>
+      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} opacity={0} bg={boxBg} borderRadius="8px" boxShadow={menuShadow} zIndex="modal" minW="180px" maxW="240px" border="1px solid" borderColor={borderCol}>
+        <Box py="4px">
           <Flex
             {...rowProps}
             onMouseEnter={async (e) => {
@@ -509,6 +650,43 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
             <Terminal size={iconSz} style={iconStyle} />
             <Text fontSize="xs">Open PowerShell</Text>
           </Flex>
+          <Separator borderColor={separatorColor} my={0.5} />
+          <SubmenuGroup>
+            <ContextSubmenu id="group-by" icon={<Layers size={iconSz} />} label="Group by">
+              {([
+                { key: 'auto', label: 'Workpaper index' },
+                { key: 'type', label: 'File type' },
+                { key: 'date', label: 'Date modified' },
+              ] as const).map(({ key, label }) => (
+                <MenuRow
+                  key={key}
+                  icon={groupByMode === key ? <Check size={iconSz} /> : <Box w="14px" />}
+                  label={label}
+                  onClick={() => {
+                    onSetGroupByMode(key);
+                    setBlankContextMenu({ ...blankContextMenu, isOpen: false });
+                  }}
+                />
+              ))}
+            </ContextSubmenu>
+            <ContextSubmenu id="density" icon={<List size={iconSz} />} label="Density">
+              {([
+                { key: 'compact', label: 'Compact' },
+                { key: 'default', label: 'Default' },
+                { key: 'comfortable', label: 'Comfortable' },
+              ] as const).map(({ key, label }) => (
+                <MenuRow
+                  key={key}
+                  icon={rowDensity === key ? <Check size={iconSz} /> : <Box w="14px" />}
+                  label={label}
+                  onClick={() => {
+                    onSetRowDensity(key);
+                    setBlankContextMenu({ ...blankContextMenu, isOpen: false });
+                  }}
+                />
+              ))}
+            </ContextSubmenu>
+          </SubmenuGroup>
         </Box>
       </Box>
       {newSubmenuOpen && (
@@ -519,7 +697,8 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
             ? { bottom: newSubmenuPos.bottom, left: newSubmenuPos.x }
             : { top: newSubmenuPos.y, left: newSubmenuPos.x })}
           bg={boxBg}
-          borderRadius="0"
+          borderRadius="8px"
+          boxShadow={menuShadow}
           zIndex="modal"
           minW="170px"
           maxW="240px"
@@ -527,7 +706,7 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
           borderColor={borderCol}
           onMouseLeave={() => setNewSubmenuOpen(false)}
         >
-          <Box py={0.5}>
+          <Box py="4px">
             <Flex {...rowProps} onClick={() => { onCreateFolder(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
               <Folder size={iconSz} style={iconStyle} />
               <Text fontSize="xs">Folder</Text>
@@ -577,98 +756,6 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
         </Box>
       )}
     </>
-  );
-};
-
-// TemplateSubmenu Component
-export interface TemplateSubmenuProps {
-  isOpen: boolean;
-  position: { x: number; y: number } | null;
-  templates: Array<{ name: string; path: string }>;
-  folderPath: string;
-  onClose: () => void;
-  onCreateFromTemplate: (templatePath: string, templateName: string) => void;
-}
-
-export const TemplateSubmenu: React.FC<TemplateSubmenuProps> = ({
-  isOpen,
-  position,
-  templates,
-  folderPath,
-  onCreateFromTemplate,
-  onClose,
-}) => {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
-  const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
-  const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
-  const subtextColor = useColorModeValue(docuFramePalette.light.subtext, docuFramePalette.dark.subtext);
-
-  useLayoutEffect(() => {
-    const el = menuRef.current;
-    if (!isOpen || !el || !position) return;
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let x = position.x;
-    let y = position.y;
-    if (x + rect.width > vw - 4) x = position.x - rect.width - 170;
-    if (y + rect.height > vh - 4) y = vh - rect.height - 4;
-    if (x < 4) x = 4;
-    if (y < 4) y = 4;
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-    el.style.opacity = '1';
-  });
-
-  if (!isOpen || !position) return null;
-
-  return (
-    <Box
-      ref={menuRef}
-      position="fixed"
-      top={position.y}
-      left={position.x}
-      opacity={0}
-      bg={boxBg}
-      borderRadius="0"
-      zIndex="modal"
-      minW="170px"
-      maxW="240px"
-      border="1px solid"
-      borderColor={borderCol}
-      onMouseLeave={onClose}
-    >
-      <Box py={0.5}>
-        {templates.length === 0 ? (
-          <Flex align="center" px={2.5} py="3px">
-            <Text fontSize="xs" color={subtextColor}>No templates</Text>
-          </Flex>
-        ) : (
-          templates.map((template) => (
-            <Flex
-              key={template.path}
-              align="center"
-              px={2.5}
-              cursor="pointer"
-              _hover={{ bg: hoverBg }}
-              h="22px"
-              minH="22px"
-              maxH="22px"
-              overflow="hidden"
-              flexWrap="nowrap"
-              onClick={() => {
-                onCreateFromTemplate(template.path, template.name);
-                onClose();
-              }}
-            >
-              {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={{ marginRight: '6px', flexShrink: 0 }} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={{ marginRight: '6px', flexShrink: 0 }} /> : <FileText size={12} style={{ marginRight: '6px', flexShrink: 0 }} />}
-              <Text fontSize="xs" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">{template.name}</Text>
-            </Flex>
-          ))
-        )}
-      </Box>
-    </Box>
   );
 };
 
@@ -1112,6 +1199,7 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
   const menuBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const menuBorderColor = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
   const menuHoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
+  const { shadow: headerMenuShadow } = useMenuColors();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1128,18 +1216,7 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!headerContextMenu.isOpen || !el) return;
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let x = headerContextMenu.position.x;
-    let y = headerContextMenu.position.y;
-    if (x + rect.width > vw - 4) x = headerContextMenu.position.x - rect.width;
-    if (y + rect.height > vh - 4) y = headerContextMenu.position.y - rect.height;
-    if (x < 4) x = 4;
-    if (y < 4) y = 4;
-    el.style.left = `${x}px`;
-    el.style.top = `${y}px`;
-    el.style.opacity = '1';
+    placeMenuElement(el, headerContextMenu.position);
   });
 
   if (!headerContextMenu.isOpen) return null;
@@ -1157,9 +1234,10 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
         bg={menuBg}
         border="1px solid"
         borderColor={menuBorderColor}
-        borderRadius="0"
+        borderRadius="8px"
+        boxShadow={headerMenuShadow}
         minW="150px"
-        py={0.5}
+        py="4px"
       >
         {['name', 'size', 'modified', 'type'].map((column) => {
           const columnLabels: Record<string, string> = {

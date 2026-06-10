@@ -18,6 +18,7 @@ type BaseRowHandlers = {
   draggable: boolean
   onDragStart: (file: import('../../types').FileItem, index: number, e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
+  onQuickAction: (action: string, file: import('../../types').FileItem, index: number) => void
 }
 
 /** Keeps hover state here so parent FileListViewBody (memo) does not re-render on every hover tick. */

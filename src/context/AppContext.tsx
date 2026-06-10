@@ -9,6 +9,7 @@ import {
 } from '../constants/shortcutDefaults';
 import { isPlainBackspaceOnlyShortcut } from '../utils/shortcuts';
 import { extractIndexPrefix } from '../utils/indexPrefix';
+import type { DateFilterPreset } from '../utils/fileFilters';
 
 interface FileItem {
   name: string;
@@ -45,6 +46,12 @@ interface AppContextType {
   // File search filter for filtering current directory
   fileSearchFilter: string;
   setFileSearchFilter: (filter: string) => void;
+  // Extension filter (lowercase extensions, no dot) — driven by quick filter chips and the Type column menu
+  typeFilter: string[];
+  setTypeFilter: React.Dispatch<React.SetStateAction<string[]>>;
+  // Modified-date filter preset — driven by quick filter chips and the Modified column menu
+  dateFilter: DateFilterPreset | null;
+  setDateFilter: React.Dispatch<React.SetStateAction<DateFilterPreset | null>>;
   // Content search results (files that match content search)
   contentSearchResults: FileItem[];
   setContentSearchResults: React.Dispatch<React.SetStateAction<FileItem[]>>;
@@ -165,6 +172,8 @@ export const AppProvider: React.FC<{
   const [initialCommandMode, setInitialCommandMode] = useState(false);
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [fileSearchFilter, setFileSearchFilter] = useState<string>('');
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [dateFilter, setDateFilter] = useState<DateFilterPreset | null>(null);
   const [contentSearchResults, setContentSearchResults] = useState<FileItem[]>([]);
   // Footer status system
   const [statusMessage, setStatusMessage] = useState<string>('Ready');
@@ -673,6 +682,10 @@ export const AppProvider: React.FC<{
       setIsSearchMode,
       fileSearchFilter,
       setFileSearchFilter,
+      typeFilter,
+      setTypeFilter,
+      dateFilter,
+      setDateFilter,
       contentSearchResults,
       setContentSearchResults,
       searchResults,
@@ -846,6 +859,10 @@ export function useFileGridClipboardAndTransfers() {
 export function useFileGridFiltersAndVisibility() {
   const fileSearchFilter = useContextSelector(AppContext, (v) => v?.fileSearchFilter ?? '');
   const setFileSearchFilter = useContextSelector(AppContext, (v) => v?.setFileSearchFilter);
+  const typeFilter = useContextSelector(AppContext, (v) => v?.typeFilter ?? EMPTY_STRING_ARRAY);
+  const setTypeFilter = useContextSelector(AppContext, (v) => v?.setTypeFilter);
+  const dateFilter = useContextSelector(AppContext, (v) => v?.dateFilter ?? null);
+  const setDateFilter = useContextSelector(AppContext, (v) => v?.setDateFilter);
   const contentSearchResults = useContextSelector(AppContext, (v) => v?.contentSearchResults ?? []);
   const hideTemporaryFiles = useContextSelector(AppContext, (v) => v?.hideTemporaryFiles ?? true);
   const hideDotFiles = useContextSelector(AppContext, (v) => v?.hideDotFiles ?? true);
@@ -853,12 +870,16 @@ export function useFileGridFiltersAndVisibility() {
   const isGroupedByIndex = useContextSelector(AppContext, (v) => v?.isGroupedByIndex ?? false);
   const currentManualActiveSections = useContextSelector(AppContext, (v) => v?.currentManualActiveSections ?? EMPTY_STRING_ARRAY);
   const currentDeactivatedSections = useContextSelector(AppContext, (v) => v?.currentDeactivatedSections ?? EMPTY_STRING_ARRAY);
-  if (!setFileSearchFilter) {
+  if (!setFileSearchFilter || !setTypeFilter || !setDateFilter) {
     throw new Error('useFileGridFiltersAndVisibility must be used within an AppProvider');
   }
   return {
     fileSearchFilter,
     setFileSearchFilter,
+    typeFilter,
+    setTypeFilter,
+    dateFilter,
+    setDateFilter,
     contentSearchResults,
     hideTemporaryFiles,
     hideDotFiles,
@@ -871,7 +892,8 @@ export function useFileGridFiltersAndVisibility() {
 
 export function useFileGridQuickAccessPaths() {
   const quickAccessPaths = useContextSelector(AppContext, (v) => v?.quickAccessPaths ?? []);
-  return { quickAccessPaths };
+  const recentClientPaths = useContextSelector(AppContext, (v) => v?.recentClientPaths ?? EMPTY_STRING_ARRAY);
+  return { quickAccessPaths, recentClientPaths };
 }
 
 export function useFileGridActions() {
@@ -883,6 +905,7 @@ export function useFileGridActions() {
   const logFileOperation = useContextSelector(AppContext, (v) => v?.logFileOperation);
   const isCreateFolderOpen = useContextSelector(AppContext, (v) => v?.isCreateFolderOpen ?? false);
   const setIsCreateFolderOpen = useContextSelector(AppContext, (v) => v?.setIsCreateFolderOpen);
+  const setIsPreviewPaneOpen = useContextSelector(AppContext, (v) => v?.setIsPreviewPaneOpen);
   if (
     !addLog ||
     !setStatus ||
@@ -890,7 +913,8 @@ export function useFileGridActions() {
     !addQuickAccessPath ||
     !removeQuickAccessPath ||
     !logFileOperation ||
-    !setIsCreateFolderOpen
+    !setIsCreateFolderOpen ||
+    !setIsPreviewPaneOpen
   ) {
     throw new Error('useFileGridActions must be used within an AppProvider');
   }
@@ -903,6 +927,7 @@ export function useFileGridActions() {
     logFileOperation,
     isCreateFolderOpen,
     setIsCreateFolderOpen,
+    setIsPreviewPaneOpen,
   };
 }
 

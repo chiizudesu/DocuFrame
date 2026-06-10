@@ -10,7 +10,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { spawn, ChildProcess, exec } from 'child_process';
+import { spawn, ChildProcess, exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { createHash } from 'crypto';
 import { createReadStream, createWriteStream } from 'fs';
@@ -3720,6 +3720,212 @@ ipcMain.handle('search-files', async (_, options: { query: string; searchPath: s
   } catch (error) {
     console.error('[Search] Error searching files:', error);
     return [];
+  }
+});
+
+// ─── File tools: clipboard files, zip, PDF convert/split, open-with ─────────
+
+const execFileAsync = promisify(execFile);
+
+/** Runs Windows PowerShell 5.1 (NOT pwsh — Set-Clipboard -LiteralPath needs 5.1). */
+async function runPowerShell(command: string, timeoutMs = 120000): Promise<void> {
+  await execFileAsync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    { windowsHide: true, timeout: timeoutMs }
+  );
+}
+
+/** Escape a path for embedding in a single-quoted PowerShell string literal. */
+function psQuote(p: string): string {
+  return `'${p.replace(/'/g, "''")}'`;
+}
+
+function uniqueOutputPath(dir: string, baseName: string, ext: string): string {
+  let candidate = path.join(dir, `${baseName}${ext}`);
+  let n = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${baseName} (${n})${ext}`);
+    n++;
+  }
+  return candidate;
+}
+
+// Put real files on the Windows clipboard (CF_HDROP) so they paste into Outlook/Teams/Explorer
+ipcMain.handle('copy-files-to-clipboard', async (_, filePaths: string[]) => {
+  try {
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'Only supported on Windows' };
+    }
+    if (!Array.isArray(filePaths) || filePaths.length === 0) {
+      return { success: false, error: 'No files provided' };
+    }
+    const quoted = filePaths.map(psQuote).join(', ');
+    await runPowerShell(`Set-Clipboard -LiteralPath ${quoted}`, 30000);
+    return { success: true };
+  } catch (error) {
+    console.error('[copy-files-to-clipboard] failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle('zip-selection', async (_, filePaths: string[], outputPath: string) => {
+  try {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) {
+      return { success: false, error: 'No files provided' };
+    }
+    let target = outputPath;
+    if (!target.toLowerCase().endsWith('.zip')) target += '.zip';
+    const quoted = filePaths.map(psQuote).join(', ');
+    await runPowerShell(`Compress-Archive -LiteralPath ${quoted} -DestinationPath ${psQuote(target)}`, 300000);
+    return { success: true, outputName: path.basename(target) };
+  } catch (error) {
+    console.error('[zip-selection] failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Convert Word/Excel documents to PDF via Office COM automation (requires desktop Office)
+ipcMain.handle('convert-file-to-pdf', async (_, filePath: string) => {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    const dir = path.dirname(filePath);
+    const stem = path.basename(filePath, path.extname(filePath));
+    const outputPath = uniqueOutputPath(dir, stem, '.pdf');
+    const src = psQuote(filePath);
+    const out = psQuote(outputPath);
+
+    let script: string;
+    if (ext === '.doc' || ext === '.docx') {
+      script = [
+        `$ErrorActionPreference = 'Stop'`,
+        `$word = New-Object -ComObject Word.Application`,
+        `$word.Visible = $false`,
+        `$word.DisplayAlerts = 0`,
+        `try {`,
+        `  $doc = $word.Documents.Open(${src}, $false, $true)`,
+        `  $doc.ExportAsFixedFormat(${out}, 17)`,
+        `  $doc.Close($false)`,
+        `} finally {`,
+        `  $word.Quit()`,
+        `  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null`,
+        `}`,
+      ].join('\n');
+    } else if (['.xls', '.xlsx', '.xlsm', '.csv'].includes(ext)) {
+      script = [
+        `$ErrorActionPreference = 'Stop'`,
+        `$excel = New-Object -ComObject Excel.Application`,
+        `$excel.Visible = $false`,
+        `$excel.DisplayAlerts = $false`,
+        `try {`,
+        `  $wb = $excel.Workbooks.Open(${src}, 0, $true)`,
+        `  $wb.ExportAsFixedFormat(0, ${out})`,
+        `  $wb.Close($false)`,
+        `} finally {`,
+        `  $excel.Quit()`,
+        `  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null`,
+        `}`,
+      ].join('\n');
+    } else {
+      return { success: false, error: `Cannot convert ${ext || 'this'} files to PDF` };
+    }
+
+    await runPowerShell(script, 180000);
+    if (!fs.existsSync(outputPath)) {
+      return { success: false, error: 'Conversion produced no output — is Microsoft Office installed?' };
+    }
+    return { success: true, outputName: path.basename(outputPath) };
+  } catch (error) {
+    console.error('[convert-file-to-pdf] failed:', error);
+    const message = error instanceof Error ? error.message : String(error);
+    const friendly = /80040154|REGDB_E_CLASSNOTREG|New-Object/i.test(message)
+      ? 'Microsoft Office is not available on this machine.'
+      : message;
+    return { success: false, error: friendly };
+  }
+});
+
+// Split a PDF: each comma-separated range ("1-3, 5") becomes its own file; or one file per page
+ipcMain.handle('split-pdf', async (_, filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string }) => {
+  try {
+    const buf = await fsPromises.readFile(filePath);
+    const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+    const pageCount = src.getPageCount();
+    const dir = path.dirname(filePath);
+    const stem = path.basename(filePath, path.extname(filePath));
+    const outputs: string[] = [];
+
+    const writePages = async (pageIndexes: number[], label: string) => {
+      const out = await PDFDocument.create();
+      const copied = await out.copyPages(src, pageIndexes);
+      copied.forEach((p) => out.addPage(p));
+      const bytes = await out.save();
+      const outPath = uniqueOutputPath(dir, `${stem} - ${label}`, '.pdf');
+      await fsPromises.writeFile(outPath, bytes);
+      outputs.push(path.basename(outPath));
+    };
+
+    if (options.mode === 'singles') {
+      for (let i = 0; i < pageCount; i++) {
+        await writePages([i], `Page ${i + 1}`);
+      }
+    } else {
+      const segments = (options.ranges || '').split(',').map((s) => s.trim()).filter(Boolean);
+      if (segments.length === 0) {
+        return { success: false, error: 'No page ranges given' };
+      }
+      for (const seg of segments) {
+        const m = seg.match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+        if (!m) {
+          return { success: false, error: `Invalid range: "${seg}"` };
+        }
+        const start = parseInt(m[1], 10);
+        const end = m[2] ? parseInt(m[2], 10) : start;
+        if (start < 1 || end > pageCount || start > end) {
+          return { success: false, error: `Range "${seg}" is out of bounds (document has ${pageCount} page${pageCount === 1 ? '' : 's'})` };
+        }
+        const pageIndexes: number[] = [];
+        for (let p = start; p <= end; p++) pageIndexes.push(p - 1);
+        await writePages(pageIndexes, start === end ? `Page ${start}` : `Pages ${start}-${end}`);
+      }
+    }
+    return { success: true, outputFiles: outputs };
+  } catch (error) {
+    console.error('[split-pdf] failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+ipcMain.handle('open-file-with', async (_, filePath: string, appId: string) => {
+  try {
+    switch (appId) {
+      case 'excel':
+        spawn('cmd.exe', ['/c', 'start', '', 'excel', filePath], { detached: true, stdio: 'ignore', windowsHide: true });
+        break;
+      case 'word':
+        spawn('cmd.exe', ['/c', 'start', '', 'winword', filePath], { detached: true, stdio: 'ignore', windowsHide: true });
+        break;
+      case 'notepad':
+        spawn('notepad.exe', [filePath], { detached: true, stdio: 'ignore' });
+        break;
+      case 'default': {
+        const result = await shell.openPath(filePath);
+        if (result) return { success: false, error: result };
+        break;
+      }
+      case 'openas':
+        spawn('rundll32.exe', [`shell32.dll,OpenAs_RunDLL`, filePath], { detached: true, stdio: 'ignore' });
+        break;
+      default:
+        return { success: false, error: `Unknown app: ${appId}` };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[open-file-with] failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
 

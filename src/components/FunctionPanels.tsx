@@ -12,7 +12,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route, ListChecks } from 'lucide-react';
+import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route, ListChecks, Search, X } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { MergePDFDialog } from './MergePDFDialog';
@@ -72,6 +72,125 @@ const useClientSearchShortcut = (setClientSearchOpen: (open: boolean) => void) =
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [enableClientSearchShortcut, setClientSearchOpen]);
+};
+
+/** Live filename filter for the file grid. Ctrl+F focuses it; Esc clears then collapses. */
+const GridSearchBox: React.FC<{ buttonColor: string; buttonHoverBg: string }> = ({ buttonColor, buttonHoverBg }) => {
+  const { fileSearchFilter, setFileSearchFilter, folderItems } = useAppContext();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const inputBg = useColorModeValue('#ffffff', 'rgba(255,255,255,0.06)');
+  const inputBorder = useColorModeValue('#cbd5e1', 'rgba(255,255,255,0.16)');
+  const countColor = useColorModeValue('#64748b', '#94a3b8');
+  const hasFilter = Boolean(fileSearchFilter && fileSearchFilter.trim());
+
+  const matchCount = useMemo(() => {
+    if (!hasFilter) return null;
+    const q = fileSearchFilter.toLowerCase().trim();
+    return folderItems.filter((f) => f.name.toLowerCase().includes(q)).length;
+  }, [hasFilter, fileSearchFilter, folderItems]);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsExpanded(true);
+        requestAnimationFrame(() => {
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        });
+      }
+    };
+    // Capture phase so this wins over the FileGrid window handlers
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
+
+  const collapse = () => {
+    setFileSearchFilter('');
+    setIsExpanded(false);
+  };
+
+  if (!isExpanded && !hasFilter) {
+    return (
+      <Tooltip content="Filter files (Ctrl+F)" showArrow openDelay={0} closeDelay={0} positioning={{ placement: 'bottom', gutter: 8 }}>
+        <IconButton
+          aria-label="Filter files"
+          size="sm"
+          variant="ghost"
+          borderRadius={0}
+          color={buttonColor}
+          onClick={() => {
+            setIsExpanded(true);
+            requestAnimationFrame(() => inputRef.current?.focus());
+          }}
+          _hover={{ bg: buttonHoverBg }}
+          _focus={suppressFocusRing}
+          _focusVisible={suppressFocusRing}
+          h={FN_TOOLBAR_BTN}
+          w={FN_TOOLBAR_BTN}><Search size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Flex align="center" position="relative" mr={1}>
+      <Box position="absolute" left="6px" pointerEvents="none" color={countColor} lineHeight={0}>
+        <Search size={12} strokeWidth={2} />
+      </Box>
+      <Input
+        ref={inputRef}
+        size="xs"
+        h={FN_TOOLBAR_BTN}
+        w="200px"
+        pl="24px"
+        pr={hasFilter ? '58px' : '8px'}
+        fontSize="xs"
+        bg={inputBg}
+        borderColor={inputBorder}
+        borderRadius={0}
+        placeholder="Filter files"
+        value={fileSearchFilter}
+        onChange={(e) => setFileSearchFilter(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            if (hasFilter) {
+              setFileSearchFilter('');
+            } else {
+              setIsExpanded(false);
+              inputRef.current?.blur();
+            }
+          } else if (e.key === 'Enter') {
+            inputRef.current?.blur();
+          }
+        }}
+        onBlur={() => {
+          if (!fileSearchFilter) setIsExpanded(false);
+        }}
+      />
+      {hasFilter && (
+        <Flex position="absolute" right="4px" align="center" gap={0.5}>
+          <Text fontSize="10px" color={countColor} whiteSpace="nowrap">
+            {matchCount} match{matchCount === 1 ? '' : 'es'}
+          </Text>
+          <IconButton
+            aria-label="Clear filter"
+            size="2xs"
+            variant="ghost"
+            minW="16px"
+            h="16px"
+            color={countColor}
+            onClick={collapse}
+            _focus={suppressFocusRing}
+            _focusVisible={suppressFocusRing}
+          ><X size={11} /></IconButton>
+        </Flex>
+      )}
+    </Flex>
+  );
 };
 
 // Transfer dropdown (single row: 25% index | 75% template/filename)
@@ -987,7 +1106,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
         
         {/* Spacer */}
         <Box flex="1" />
-        
+
+        <GridSearchBox buttonColor={buttonColor} buttonHoverBg={buttonHoverBg} />
+
         {/* Folder Management Buttons - Same style as Settings */}
         <Flex gap={0.5} align="center">
           <Tooltip

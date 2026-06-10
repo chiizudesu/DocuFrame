@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useColorModeValue } from "./ui/color-mode";
 import { Box, Flex, Text, Icon, Input } from '@chakra-ui/react';
-import { Search, Folder, Users } from 'lucide-react';
+import { Search, Folder, Users, ExternalLink, Star, Link2, Terminal, RefreshCw, Info } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { GridBackdrop } from './GridBackdrop';
+import { FloatingMenu, MenuRow, MenuSeparator } from './FileGrid/menuPrimitives';
 import {
   findClientRow,
   getIrdNumber,
@@ -49,11 +50,31 @@ function formatDate(dateStr: string): string {
 }
 
 export const ClientListView: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory } = useAppContext();
+  const {
+    currentDirectory,
+    setCurrentDirectory,
+    setStatus,
+    addTabToCurrentWindow,
+    quickAccessPaths,
+    addQuickAccessPath,
+    removeQuickAccessPath,
+  } = useAppContext();
   const [clients, setClients] = useState<ClientEntry[]>([]);
   const [searchFilter, setSearchFilter] = useState('');
   const [csvRows, setCsvRows] = useState<ClientDbRow[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [rowMenu, setRowMenu] = useState<{ isOpen: boolean; position: { x: number; y: number }; client: ClientEntry | null }>({
+    isOpen: false,
+    position: { x: 0, y: 0 },
+    client: null,
+  });
+  const [blankMenu, setBlankMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({
+    isOpen: false,
+    position: { x: 0, y: 0 },
+  });
+  const closeRowMenu = useCallback(() => setRowMenu((m) => ({ ...m, isOpen: false })), []);
+  const closeBlankMenu = useCallback(() => setBlankMenu((m) => ({ ...m, isOpen: false })), []);
 
   // Load CSV client database for IR# lookup
   useEffect(() => {
@@ -118,7 +139,7 @@ export const ClientListView: React.FC = () => {
     };
     load();
     return () => { mounted = false; };
-  }, [currentDirectory, csvRows]);
+  }, [currentDirectory, csvRows, reloadKey]);
 
   const filtered = useMemo(() => {
     if (!searchFilter.trim()) return clients;
@@ -151,7 +172,19 @@ export const ClientListView: React.FC = () => {
   return (
     <Box h="100%" bg={bg} position="relative" overflow="hidden">
       <GridBackdrop />
-      <Box h="100%" overflow="auto" position="relative" zIndex={1} px={5} py={4}>
+      <Box
+        h="100%"
+        overflow="auto"
+        position="relative"
+        zIndex={1}
+        px={5}
+        py={4}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setRowMenu((m) => ({ ...m, isOpen: false }));
+          setBlankMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+        }}
+      >
       {/* Search */}
       <Flex align="center" mb={4} gap={2}>
         <Flex
@@ -238,6 +271,12 @@ export const ClientListView: React.FC = () => {
                   _hover={{ bg: cardHoverBg }}
                   transition="background 0.15s ease"
                   onClick={() => setCurrentDirectory(client.path)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setBlankMenu((m) => ({ ...m, isOpen: false }));
+                    setRowMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY }, client });
+                  }}
                   userSelect="none"
                 >
                   {/* Avatar */}
@@ -289,6 +328,125 @@ export const ClientListView: React.FC = () => {
         </Box>
       )}
       </Box>
+
+      {/* Client row context menu */}
+      <FloatingMenu isOpen={rowMenu.isOpen && !!rowMenu.client} position={rowMenu.position} onClose={closeRowMenu}>
+        {rowMenu.client && (
+          <>
+            <MenuRow
+              icon={<Folder size={14} />}
+              label="Open"
+              emphasized
+              onClick={() => {
+                const client = rowMenu.client!;
+                closeRowMenu();
+                setCurrentDirectory(client.path);
+              }}
+            />
+            <MenuRow
+              icon={<ExternalLink size={14} />}
+              label="Open in new tab"
+              onClick={() => {
+                const client = rowMenu.client!;
+                closeRowMenu();
+                addTabToCurrentWindow(client.path);
+                setStatus(`Opened new tab for ${client.name}`, 'info');
+              }}
+            />
+            {quickAccessPaths.includes(rowMenu.client.path) ? (
+              <MenuRow
+                icon={<Star size={14} />}
+                label="Unpin from Quick Access"
+                onClick={() => {
+                  const client = rowMenu.client!;
+                  closeRowMenu();
+                  void removeQuickAccessPath(client.path);
+                }}
+              />
+            ) : (
+              <MenuRow
+                icon={<Star size={14} />}
+                label="Pin to Quick Access"
+                onClick={() => {
+                  const client = rowMenu.client!;
+                  closeRowMenu();
+                  void addQuickAccessPath(client.path);
+                }}
+              />
+            )}
+            <MenuSeparator />
+            <MenuRow
+              icon={<Link2 size={14} />}
+              label="Copy Path"
+              onClick={() => {
+                const client = rowMenu.client!;
+                closeRowMenu();
+                void navigator.clipboard.writeText(client.path);
+                setStatus(`Copied path: ${client.path}`, 'info');
+              }}
+            />
+            {rowMenu.client.irdNumber && (
+              <MenuRow
+                icon={<Info size={14} />}
+                label={`Copy IRD ${rowMenu.client.irdNumber}`}
+                onClick={() => {
+                  const client = rowMenu.client!;
+                  closeRowMenu();
+                  void navigator.clipboard.writeText(client.irdNumber || '');
+                  setStatus(`Copied IRD number for ${client.name}`, 'info');
+                }}
+              />
+            )}
+            <MenuRow
+              icon={<Terminal size={14} />}
+              label="Open PowerShell here"
+              onClick={() => {
+                const client = rowMenu.client!;
+                closeRowMenu();
+                void (window.electronAPI as any).openCmdAtDirectory(client.path);
+              }}
+            />
+          </>
+        )}
+      </FloatingMenu>
+
+      {/* Blank-space context menu */}
+      <FloatingMenu isOpen={blankMenu.isOpen} position={blankMenu.position} onClose={closeBlankMenu}>
+        <MenuRow
+          icon={<RefreshCw size={14} />}
+          label="Refresh"
+          onClick={() => {
+            closeBlankMenu();
+            setReloadKey((k) => k + 1);
+          }}
+        />
+        <MenuSeparator />
+        <MenuRow
+          icon={<Link2 size={14} />}
+          label="Copy Path"
+          onClick={() => {
+            closeBlankMenu();
+            void navigator.clipboard.writeText(currentDirectory);
+            setStatus(`Copied path: ${currentDirectory}`, 'info');
+          }}
+        />
+        <MenuRow
+          icon={<ExternalLink size={14} />}
+          label="Open in Explorer"
+          onClick={() => {
+            closeBlankMenu();
+            void window.electronAPI.openDirectory(currentDirectory);
+          }}
+        />
+        <MenuRow
+          icon={<Terminal size={14} />}
+          label="Open PowerShell"
+          onClick={() => {
+            closeBlankMenu();
+            void (window.electronAPI as any).openCmdAtDirectory(currentDirectory);
+          }}
+        />
+      </FloatingMenu>
     </Box>
   );
 };

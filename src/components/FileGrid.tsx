@@ -11,14 +11,18 @@ import {
   useFileGridActions,
 } from '../context/AppContext'
 import { joinPath, isAbsolutePath, normalizePath } from '../utils/path'
+import { matchesTypeFilter, matchesDateFilter, typeGroupKey, dateGroupKey, DATE_GROUP_ORDER } from '../utils/fileFilters'
+import { QuickFilterChips } from './FileGrid/QuickFilterChips'
+import { undoLastOperation, pushUndoableOperation } from '../services/undoStack'
 import { settingsService } from '../services/settings'
 import type { FileItem } from '../types'
 import { FileProperties } from './CustomPropertiesDialog';
 import { extractIndexPrefix, setIndexPrefix, removeIndexPrefix, groupFilesByIndex, getIndexInfo, getAllIndexKeys, toProperCase, getMaxIndexPillWidth } from '../utils/indexPrefix';
 import { SortColumn, SortDirection, formatPathForLog, setDropEffectCompatibleWithEffectAllowed } from './FileGrid/FileGridUtils';
-import { FileContextMenu, BlankContextMenu, TemplateSubmenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
+import { FileContextMenu, BlankContextMenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
 import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog';
+import { SplitPdfDialog } from './FileGrid/SplitPdfDialog';
 import { FileListView } from './FileGrid/FileListView';
 import { docuFramePalette as P } from '../docuFrameColors';
 
@@ -81,6 +85,10 @@ export const FileGrid: React.FC = () => {
   const {
     fileSearchFilter,
     setFileSearchFilter,
+    typeFilter,
+    setTypeFilter,
+    dateFilter,
+    setDateFilter,
     contentSearchResults,
     hideTemporaryFiles,
     hideDotFiles,
@@ -89,7 +97,7 @@ export const FileGrid: React.FC = () => {
     currentManualActiveSections,
     currentDeactivatedSections,
   } = useFileGridFiltersAndVisibility()
-  const { quickAccessPaths } = useFileGridQuickAccessPaths()
+  const { quickAccessPaths, recentClientPaths } = useFileGridQuickAccessPaths()
   const {
     addLog,
     setStatus,
@@ -99,6 +107,7 @@ export const FileGrid: React.FC = () => {
     logFileOperation,
     isCreateFolderOpen,
     setIsCreateFolderOpen,
+    setIsPreviewPaneOpen,
   } = useFileGridActions()
 
   // Memoize selectedFiles as Set for O(1) lookup performance (moved early to avoid initialization errors)
@@ -269,6 +278,12 @@ export const FileGrid: React.FC = () => {
   const closeRenameIndexDialog = useCallback(() => setIsRenameIndexDialogOpen(false), [])
   const [isMoveToDialogOpen, setIsMoveToDialogOpen] = useState(false)
   const [moveToFiles, setMoveToFiles] = useState<FileItem[]>([])
+  const [isSplitPdfOpen, setIsSplitPdfOpen] = useState(false)
+  const [splitPdfFile, setSplitPdfFile] = useState<FileItem | null>(null)
+  /** Session grouping mode: 'auto' = workpaper index (layer view), or group by file type / modified date */
+  const [groupByMode, setGroupByMode] = useState<'auto' | 'type' | 'date'>('auto')
+  /** Row density preset, persisted in config as listDensity */
+  const [rowDensity, setRowDensity] = useState<'compact' | 'default' | 'comfortable'>('default')
   const [fileOpFailureDialog, setFileOpFailureDialog] = useState<{
     open: boolean
     title: string
@@ -276,9 +291,6 @@ export const FileGrid: React.FC = () => {
     operationLabel: string
   }>({ open: false, title: '', description: '', operationLabel: '' })
   const [fileOpRetrying, setFileOpRetrying] = useState(false)
-  const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
-  const [templateSubmenuOpen, setTemplateSubmenuOpen] = useState(false)
-  const [templateSubmenuPosition, setTemplateSubmenuPosition] = useState<{ x: number; y: number } | null>(null)
   const [isImagePasteOpen, setImagePasteOpen] = useState(false)
   const [fileGridBackgroundPath, setFileGridBackgroundPath] = useState<string>('')
   const [fileGridBackgroundUrl, setFileGridBackgroundUrl] = useState<string>('')
@@ -499,11 +511,19 @@ export const FileGrid: React.FC = () => {
     } else if (fileSearchFilter && fileSearchFilter.trim()) {
       // Otherwise, use filename filtering
       const normalizedFilter = fileSearchFilter.toLowerCase().trim();
-      items = items.filter(item => 
+      items = items.filter(item =>
         item.name.toLowerCase().includes(normalizedFilter)
       );
     }
-    
+
+    // Extension / modified-date filters (quick filter chips + column header menus)
+    if (typeFilter.length > 0 || dateFilter) {
+      items = items.filter(item =>
+        matchesTypeFilter(item.name, item.type, typeFilter) &&
+        matchesDateFilter(item.modified, item.type, dateFilter)
+      );
+    }
+
     if (items.length === 0) return [];
     
     // Early return for single item or no sorting needed
@@ -555,10 +575,61 @@ export const FileGrid: React.FC = () => {
     });
     
     return sortData.map(data => data.item);
-  }, [folderItems, sortColumn, sortDirection, fileSearchFilter, contentSearchPathsSet]);
+  }, [folderItems, sortColumn, sortDirection, fileSearchFilter, typeFilter, dateFilter, contentSearchPathsSet]);
 
-  // Group files by index prefix when grouping is enabled
+  // Type/date filters are per-folder intent — clear them when navigating away
+  useEffect(() => {
+    setTypeFilter(prev => (prev.length > 0 ? [] : prev));
+    setDateFilter(prev => (prev !== null ? null : prev));
+  }, [currentDirectory, setTypeFilter, setDateFilter]);
+
+  // Load persisted row density once
+  useEffect(() => {
+    let cancelled = false;
+    settingsService.getSettings().then((s) => {
+      const d = (s as any).listDensity;
+      if (!cancelled && (d === 'compact' || d === 'comfortable' || d === 'default')) {
+        setRowDensity(d);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleSetRowDensity = useCallback(async (d: 'compact' | 'default' | 'comfortable') => {
+    setRowDensity(d);
+    try {
+      const current = await settingsService.getSettings();
+      await settingsService.setSettings({ ...current, listDensity: d } as any);
+    } catch (e) {
+      console.error('Failed to persist list density:', e);
+    }
+  }, []);
+
+  const hasActiveFilters = Boolean((fileSearchFilter && fileSearchFilter.trim()) || typeFilter.length > 0 || dateFilter);
+  const handleClearAllFilters = useCallback(() => {
+    setFileSearchFilter('');
+    setTypeFilter([]);
+    setDateFilter(null);
+  }, [setFileSearchFilter, setTypeFilter, setDateFilter]);
+
+  // Group files by index prefix when grouping is enabled; type/date modes override
   const groupedFiles = useMemo(() => {
+    if (groupByMode === 'type' || groupByMode === 'date') {
+      if (sortedFiles.length === 0) return null;
+      const grouped: { folders: FileItem[]; [key: string]: FileItem[] } = { folders: [] };
+      for (const f of sortedFiles) {
+        if (f.type === 'folder') {
+          grouped.folders.push(f);
+          continue;
+        }
+        const key = groupByMode === 'type' ? typeGroupKey(f.name) : dateGroupKey(f.modified);
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(f);
+      }
+      const hasFiles = Object.keys(grouped).some(k => k !== 'folders' && grouped[k].length > 0);
+      return hasFiles ? grouped : null;
+    }
+
     if (!isGroupedByIndex) {
       return null;
     }
@@ -593,7 +664,38 @@ export const FileGrid: React.FC = () => {
     const meaningfulKeys = Object.keys(grouped).filter((k) => k !== 'folders');
     const hasContent = sortedFiles.length > 0 || meaningfulKeys.length > 0;
     return hasContent ? grouped : null;
-  }, [sortedFiles, isGroupedByIndex, currentManualActiveSections, currentDeactivatedSections, contentReady]);
+  }, [sortedFiles, isGroupedByIndex, groupByMode, currentManualActiveSections, currentDeactivatedSections, contentReady]);
+
+  // Explicit group ordering for plain (type/date) grouping; index mode sorts in FileListView
+  const groupOrder = useMemo(() => {
+    if (!groupedFiles) return undefined;
+    if (groupByMode === 'date') return DATE_GROUP_ORDER.filter(k => groupedFiles[k]);
+    if (groupByMode === 'type') {
+      return Object.keys(groupedFiles)
+        .filter(k => k !== 'folders')
+        .sort((a, b) => (a === 'No extension' ? 1 : b === 'No extension' ? -1 : a.localeCompare(b)));
+    }
+    return undefined;
+  }, [groupedFiles, groupByMode]);
+
+  const listIsGrouped = groupByMode === 'auto' ? isGroupedByIndex : true;
+  const groupHeaderVariant: 'index' | 'plain' = groupByMode === 'auto' ? 'index' : 'plain';
+
+  // Index keys offered by the context menu's Apply prefix ▸ submenu: sections present
+  // in this folder plus manually activated ones; all known keys when the folder has none.
+  const activeSectionKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const f of sortedFiles) {
+      if (f.type === 'folder') continue;
+      const k = extractIndexPrefix(f.name);
+      if (k) keys.add(k);
+    }
+    for (const k of currentManualActiveSections) {
+      if (k !== 'folders' && k !== 'Other') keys.add(k);
+    }
+    const sorted = Array.from(keys).sort();
+    return sorted.length > 0 ? sorted : getAllIndexKeys();
+  }, [sortedFiles, currentManualActiveSections]);
 
   // Pre-compute file name to path map for O(1) drag lookups (moved early to avoid initialization errors)
   const fileNameToPathMap = useMemo(() => {
@@ -1031,7 +1133,7 @@ export const FileGrid: React.FC = () => {
   }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, refreshDirectory])
 
   // In context menu, pass array for multi-select delete - OPTIMIZED with useCallback
-  const handleMenuAction = useCallback(async (action: string) => {
+  const handleMenuAction = useCallback(async (action: string, payload?: string) => {
     if (!contextMenu.fileItem) return
 
     try {
@@ -1382,16 +1484,34 @@ export const FileGrid: React.FC = () => {
                 const destPath = normalizePath(joinPath(baseDir, newName));
                 
                 await (window.electronAPI as any).moveFile(sourcePath, destPath);
-                return { file: file.name, success: true, newName };
+                return { file: file.name, success: true, newName, sourcePath, destPath };
               })
             );
-            
+
             const successful = results.filter(r => r.status === 'fulfilled' && !r.value.skipped).length;
             const failed = results.filter(r => r.status === 'rejected').length;
-            
+
             if (successful > 0) {
               setStatus(`Removed prefix from ${successful} file(s)`, 'success');
               await refreshDirectory(currentDirectory);
+              const prefixUndoMoves: Array<{ sourcePath: string; destPath: string }> = [];
+              for (const r of results) {
+                if (r.status !== 'fulfilled') continue;
+                const v = r.value as { skipped?: boolean; sourcePath?: string; destPath?: string };
+                if (!v.skipped && v.sourcePath && v.destPath) {
+                  prefixUndoMoves.push({ sourcePath: v.sourcePath, destPath: v.destPath });
+                }
+              }
+              const undoDir = currentDirectory;
+              pushUndoableOperation({
+                description: `Removed prefix from ${successful} file(s)`,
+                undo: async () => {
+                  for (const m of prefixUndoMoves) {
+                    await (window.electronAPI as any).moveFile(m.destPath, m.sourcePath);
+                  }
+                  await refreshDirectory(undoDir);
+                },
+              });
             }
             if (failed > 0) {
               setStatus(`Failed to remove prefix from ${failed} file(s)`, 'error');
@@ -1402,6 +1522,302 @@ export const FileGrid: React.FC = () => {
           }
           break;
         }
+        case 'preview':
+          if (contextMenu.fileItem.type === 'file') {
+            setSelectedFiles([contextMenu.fileItem.name]);
+            setSelectedFile(contextMenu.fileItem.name);
+            setIsPreviewPaneOpen(true);
+            setStatus(`Previewing ${contextMenu.fileItem.name}`, 'info');
+          }
+          handleCloseContextMenu();
+          break;
+        case 'apply_prefix_quick': {
+          const prefixKey = payload;
+          const filesForPrefix = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name) && f.type === 'file')
+            : contextMenu.fileItem.type === 'file'
+              ? [contextMenu.fileItem]
+              : [];
+          handleCloseContextMenu();
+          if (!prefixKey || filesForPrefix.length === 0) break;
+          const prefixDir = currentDirectory;
+          const prefixMoves: Array<{ from: string; to: string }> = [];
+          try {
+            setStatus(`Applying ${prefixKey} prefix to ${filesForPrefix.length} file(s)...`, 'info');
+            for (const file of filesForPrefix) {
+              const newName = setIndexPrefix(file.name, prefixKey);
+              if (newName === file.name) continue;
+              const newPath = joinPath(prefixDir === '/' ? '' : prefixDir, newName);
+              await (window.electronAPI as any).renameItem(file.path, newPath);
+              prefixMoves.push({ from: newPath, to: file.path });
+            }
+            await refreshDirectory(prefixDir);
+            if (prefixMoves.length > 0) {
+              addLog(`Applied ${prefixKey} prefix to ${prefixMoves.length} file(s)`);
+              setStatus(`Applied ${prefixKey} prefix to ${prefixMoves.length} file(s)`, 'success');
+              pushUndoableOperation({
+                description: `Applied ${prefixKey} prefix to ${prefixMoves.length} file(s)`,
+                undo: async () => {
+                  for (const m of prefixMoves) {
+                    await (window.electronAPI as any).renameItem(m.from, m.to);
+                  }
+                  await refreshDirectory(prefixDir);
+                },
+              });
+            } else {
+              setStatus(`File(s) already have the ${prefixKey} prefix`, 'info');
+            }
+          } catch (error) {
+            if (prefixMoves.length > 0) await refreshDirectory(prefixDir);
+            addLog(`Failed to apply prefix: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus('Failed to apply prefix', 'error');
+          }
+          break;
+        }
+        case 'duplicate': {
+          const fileToDuplicate = contextMenu.fileItem;
+          handleCloseContextMenu();
+          if (fileToDuplicate.type !== 'file') break;
+          const existingNames = new Set(folderItems.map(f => f.name.toLowerCase()));
+          const dotIdx = fileToDuplicate.name.lastIndexOf('.');
+          const stem = dotIdx > 0 ? fileToDuplicate.name.slice(0, dotIdx) : fileToDuplicate.name;
+          const ext = dotIdx > 0 ? fileToDuplicate.name.slice(dotIdx) : '';
+          let duplicateName = `${stem} - Copy${ext}`;
+          let copyN = 2;
+          while (existingNames.has(duplicateName.toLowerCase())) {
+            duplicateName = `${stem} - Copy (${copyN})${ext}`;
+            copyN++;
+          }
+          const duplicateDir = currentDirectory;
+          const duplicatePath = joinPath(duplicateDir === '/' ? '' : duplicateDir, duplicateName);
+          try {
+            setStatus(`Duplicating ${fileToDuplicate.name}...`, 'info');
+            const result = await (window.electronAPI as any).copyFileSilent(fileToDuplicate.path, duplicatePath);
+            if (result && result.success === false) {
+              throw new Error(result.error || 'Copy failed');
+            }
+            addLog(`Duplicated ${fileToDuplicate.name} as ${duplicateName}`);
+            await refreshDirectory(duplicateDir);
+            addRecentlyTransferredFiles([duplicatePath]);
+            setStatus(`Duplicated as ${duplicateName}`, 'success');
+            pushUndoableOperation({
+              description: `Duplicated "${fileToDuplicate.name}"`,
+              undo: async () => {
+                await (window.electronAPI as any).deleteItem(duplicatePath);
+                await refreshDirectory(duplicateDir);
+              },
+            });
+          } catch (error) {
+            addLog(`Failed to duplicate: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus('Failed to duplicate file', 'error');
+          }
+          break;
+        }
+        case 'roll_forward': {
+          const fileToRoll = contextMenu.fileItem;
+          handleCloseContextMenu();
+          if (fileToRoll.type !== 'file' || !/20\d{2}/.test(fileToRoll.name)) break;
+          const rolledName = fileToRoll.name.replace(/20\d{2}/g, (m) => String(Number(m) + 1));
+          if (rolledName === fileToRoll.name) break;
+          if (folderItems.some(f => f.name.toLowerCase() === rolledName.toLowerCase())) {
+            showToast({
+              title: 'Roll Forward Failed',
+              description: `"${rolledName}" already exists in this folder.`,
+              status: 'error',
+              duration: 5000,
+              isClosable: true,
+              position: 'top',
+            });
+            break;
+          }
+          const rollDir = currentDirectory;
+          const rolledPath = joinPath(rollDir === '/' ? '' : rollDir, rolledName);
+          try {
+            setStatus(`Rolling forward ${fileToRoll.name}...`, 'info');
+            const result = await (window.electronAPI as any).copyFileSilent(fileToRoll.path, rolledPath);
+            if (result && result.success === false) {
+              throw new Error(result.error || 'Copy failed');
+            }
+            addLog(`Rolled forward ${fileToRoll.name} → ${rolledName}`);
+            await refreshDirectory(rollDir);
+            addRecentlyTransferredFiles([rolledPath]);
+            setStatus(`Created ${rolledName}`, 'success');
+            pushUndoableOperation({
+              description: `Rolled forward to "${rolledName}"`,
+              undo: async () => {
+                await (window.electronAPI as any).deleteItem(rolledPath);
+                await refreshDirectory(rollDir);
+              },
+            });
+          } catch (error) {
+            addLog(`Roll forward failed: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus('Roll forward failed', 'error');
+          }
+          break;
+        }
+        case 'move_to_recent': {
+          const destDir = payload;
+          const filesToMoveQuick = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name) && f.type === 'file')
+            : contextMenu.fileItem.type === 'file'
+              ? [contextMenu.fileItem]
+              : [];
+          handleCloseContextMenu();
+          if (!destDir || filesToMoveQuick.length === 0) break;
+          const sourceDir = currentDirectory;
+          const destLabel = destDir.split(/[\\/]/).filter(Boolean).pop() || destDir;
+          try {
+            setStatus(`Moving ${filesToMoveQuick.length} file(s) to ${destLabel}...`, 'info');
+            const results = await window.electronAPI.moveFilesWithConflictResolution(
+              filesToMoveQuick.map(f => f.path),
+              destDir
+            );
+            const moved = results.filter(r => r.status === 'success' && r.path);
+            const failed = results.filter(r => r.status === 'error');
+            await refreshDirectory(sourceDir);
+            if (moved.length > 0) {
+              addLog(`Moved ${moved.length} file(s) to ${destDir}`);
+              setStatus(`Moved ${moved.length} file(s) to ${destLabel}`, 'success');
+              setSelectedFiles([]);
+              const movedPaths = moved.map(r => r.path as string);
+              pushUndoableOperation({
+                description: `Moved ${moved.length} file(s) to ${destLabel}`,
+                undo: async () => {
+                  await (window.electronAPI as any).moveFilesSilent(movedPaths, sourceDir);
+                  await refreshDirectory(sourceDir);
+                },
+              });
+            }
+            if (failed.length > 0) {
+              setStatus(`Failed to move ${failed.length} file(s)`, 'error');
+              addLog(`Failed to move ${failed.length} file(s): ${failed.map(f => f.error).join('; ')}`, 'error');
+            }
+          } catch (error) {
+            addLog(`Move failed: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus('Move failed', 'error');
+          }
+          break;
+        }
+        case 'open_with': {
+          const targetFile = contextMenu.fileItem;
+          handleCloseContextMenu();
+          if (targetFile.type !== 'file' || !payload) break;
+          try {
+            setStatus(`Opening ${targetFile.name}...`, 'info');
+            const result = await (window.electronAPI as any).openFileWith(targetFile.path, payload);
+            if (result && result.success === false) {
+              throw new Error(result.error || 'Failed to open');
+            }
+          } catch (error) {
+            addLog(`Failed to open with ${payload}: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus(`Failed to open ${targetFile.name}`, 'error');
+          }
+          break;
+        }
+        case 'copy_files_clipboard': {
+          const filesForClipboard = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name))
+            : [contextMenu.fileItem];
+          handleCloseContextMenu();
+          if (filesForClipboard.length === 0) break;
+          try {
+            const result = await (window.electronAPI as any).copyFilesToClipboard(filesForClipboard.map(f => f.path));
+            if (result && result.success === false) {
+              throw new Error(result.error || 'Clipboard copy failed');
+            }
+            setStatus(`Copied ${filesForClipboard.length} file(s) to clipboard — paste into Outlook or Explorer`, 'success');
+            addLog(`Copied ${filesForClipboard.length} file(s) to the Windows clipboard`);
+          } catch (error) {
+            addLog(`Failed to copy files to clipboard: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus('Failed to copy files to clipboard', 'error');
+          }
+          break;
+        }
+        case 'zip_selection': {
+          const filesForZip = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name))
+            : [contextMenu.fileItem];
+          handleCloseContextMenu();
+          if (filesForZip.length === 0) break;
+          const zipDir = currentDirectory;
+          const zipBase = filesForZip.length === 1
+            ? filesForZip[0].name.replace(/\.[^.]+$/, '')
+            : (zipDir.split(/[\\/]/).filter(Boolean).pop() || 'Archive');
+          const existingZipNames = new Set(folderItems.map(f => f.name.toLowerCase()));
+          let zipName = `${zipBase}.zip`;
+          let zipN = 2;
+          while (existingZipNames.has(zipName.toLowerCase())) {
+            zipName = `${zipBase} (${zipN}).zip`;
+            zipN++;
+          }
+          const zipPath = joinPath(zipDir === '/' ? '' : zipDir, zipName);
+          try {
+            setStatus(`Zipping ${filesForZip.length} item(s)...`, 'info');
+            const result = await (window.electronAPI as any).zipSelection(filesForZip.map(f => f.path), zipPath);
+            if (!result?.success) {
+              throw new Error(result?.error || 'Zip failed');
+            }
+            await refreshDirectory(zipDir);
+            addRecentlyTransferredFiles([zipPath]);
+            addLog(`Created ${zipName} from ${filesForZip.length} item(s)`);
+            setStatus(`Created ${zipName}`, 'success');
+            pushUndoableOperation({
+              description: `Created "${zipName}"`,
+              undo: async () => {
+                await (window.electronAPI as any).deleteItem(zipPath);
+                await refreshDirectory(zipDir);
+              },
+            });
+          } catch (error) {
+            addLog(`Failed to zip selection: ${getErrorMessageFromUnknown(error)}`, 'error');
+            setStatus('Failed to create ZIP', 'error');
+          }
+          break;
+        }
+        case 'convert_to_pdf': {
+          const docFile = contextMenu.fileItem;
+          handleCloseContextMenu();
+          if (docFile.type !== 'file') break;
+          const convertDir = currentDirectory;
+          try {
+            setStatus(`Converting ${docFile.name} to PDF... (this can take a few seconds)`, 'info');
+            const result = await (window.electronAPI as any).convertFileToPdf(docFile.path);
+            if (!result?.success) {
+              throw new Error(result?.error || 'Conversion failed');
+            }
+            const pdfPath = joinPath(convertDir === '/' ? '' : convertDir, result.outputName);
+            await refreshDirectory(convertDir);
+            addRecentlyTransferredFiles([pdfPath]);
+            addLog(`Converted ${docFile.name} → ${result.outputName}`);
+            setStatus(`Created ${result.outputName}`, 'success');
+            pushUndoableOperation({
+              description: `Converted "${docFile.name}" to PDF`,
+              undo: async () => {
+                await (window.electronAPI as any).deleteItem(pdfPath);
+                await refreshDirectory(convertDir);
+              },
+            });
+          } catch (error) {
+            const message = getErrorMessageFromUnknown(error);
+            addLog(`Convert to PDF failed: ${message}`, 'error');
+            setStatus('Convert to PDF failed', 'error');
+            showToast({
+              title: 'Convert to PDF Failed',
+              description: message,
+              status: 'error',
+              duration: 6000,
+              isClosable: true,
+              position: 'top',
+            });
+          }
+          break;
+        }
+        case 'split_pdf':
+          if (contextMenu.fileItem.name.toLowerCase().endsWith('.pdf')) {
+            setSplitPdfFile(contextMenu.fileItem);
+            setIsSplitPdfOpen(true);
+          }
+          break;
         case 'smart_rename':
           setSmartRenameFile(contextMenu.fileItem);
           setIsSmartRenameDialogOpen(true);
@@ -1455,7 +1871,7 @@ export const FileGrid: React.FC = () => {
     }
 
   handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, setUploadToVaultsOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, refreshDirectory])
+  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, folderItems, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, setUploadToVaultsOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, refreshDirectory, setSelectedFiles, setIsPreviewPaneOpen, addRecentlyTransferredFiles])
 
   const closeFileOpFailure = useCallback(() => {
     setFileOpFailureDialog((d) => ({ ...d, open: false }))
@@ -2001,6 +2417,16 @@ export const FileGrid: React.FC = () => {
       addLog(`Proper cased: ${file.name} → ${newName}`);
       setStatus('Filename proper cased', 'success');
       await refreshDirectory(currentDirectory);
+      {
+        const undoDir = currentDirectory;
+        pushUndoableOperation({
+          description: `Proper cased "${file.name}"`,
+          undo: async () => {
+            await (window.electronAPI as any).renameItem(newPath, oldPath);
+            await refreshDirectory(undoDir);
+          },
+        });
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addLog(`Failed to proper case filename: ${errorMessage}`, 'error');
@@ -2029,6 +2455,17 @@ export const FileGrid: React.FC = () => {
       addLog(`Smart renamed: ${smartRenameFile.name} → ${newName}`);
       setStatus('File renamed', 'success');
       await refreshDirectory(currentDirectory);
+      {
+        const undoDir = currentDirectory;
+        const oldName = smartRenameFile.name;
+        pushUndoableOperation({
+          description: `Smart renamed "${oldName}" to "${newName}"`,
+          undo: async () => {
+            await (window.electronAPI as any).renameItem(newPath, oldPath);
+            await refreshDirectory(undoDir);
+          },
+        });
+      }
       setSmartRenameFile(null);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -2046,6 +2483,30 @@ export const FileGrid: React.FC = () => {
       throw error; // Re-throw so dialog can handle it
     }
   }, [smartRenameFile, currentDirectory, addLog, setStatus, refreshDirectory]);
+
+  // Split PDF dialog confirm: write the new files, highlight them, allow undo
+  const handleSplitPdfConfirm = useCallback(async (file: FileItem, options: { mode: 'singles' | 'ranges'; ranges?: string }) => {
+    const splitDir = currentDirectory;
+    const result = await (window.electronAPI as any).splitPdf(file.path, options);
+    if (!result?.success) {
+      throw new Error(result?.error || 'Split failed');
+    }
+    const outputNames: string[] = result.outputFiles || [];
+    const fullPaths = outputNames.map((name) => joinPath(splitDir === '/' ? '' : splitDir, name));
+    await refreshDirectory(splitDir);
+    addRecentlyTransferredFiles(fullPaths);
+    addLog(`Split ${file.name} into ${outputNames.length} file(s)`);
+    setStatus(`Created ${outputNames.length} PDF(s)`, 'success');
+    pushUndoableOperation({
+      description: `Split "${file.name}" into ${outputNames.length} file(s)`,
+      undo: async () => {
+        for (const p of fullPaths) {
+          await (window.electronAPI as any).deleteItem(p);
+        }
+        await refreshDirectory(splitDir);
+      },
+    });
+  }, [currentDirectory, refreshDirectory, addRecentlyTransferredFiles, addLog, setStatus]);
 
   const handleRenameSubmit = useCallback(
     async (e?: React.FormEvent): Promise<boolean> => {
@@ -2105,6 +2566,16 @@ export const FileGrid: React.FC = () => {
         setIsRenaming(null);
         setRenameValue('');
         await refreshDirectory(currentDirectory);
+        {
+          const undoDir = currentDirectory;
+          pushUndoableOperation({
+            description: `Renamed "${isRenaming}" to "${trimmedName}"`,
+            undo: async () => {
+              await (window.electronAPI as any).renameItem(newPath, oldPath);
+              await refreshDirectory(undoDir);
+            },
+          });
+        }
         return true;
       } catch (error) {
         const errorMessage = getErrorMessageFromUnknown(error);
@@ -2846,13 +3317,12 @@ export const FileGrid: React.FC = () => {
         // Paste files or images
         e.preventDefault();
         handlePaste();
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-      // Auto-fit all columns
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      // Undo last file operation (rename/move/duplicate/prefix)
       e.preventDefault();
-      // Note: autoFitColumn function is defined later in the component
-      // This shortcut will be functional once the component is fully rendered
-      setStatus('Auto-fit shortcut: Double-click column headers or edges to auto-fit', 'info');
+      void undoLastOperation();
     }
+    // Ctrl+F is handled by GridSearchBox in FunctionPanels (capture phase)
   }, [selectedFiles, sortedFiles, clipboard, isRenaming, currentDirectory, setSelectedFiles, setStatus, addLog, setClipboard]);
 
   // Arrow navigation helper functions and variables
@@ -4206,8 +4676,21 @@ export const FileGrid: React.FC = () => {
       setDraggedFiles(new Set());
       clearFolderHoverStates();
       addLog('Drag operation ended');
+    },
+    onQuickAction: (action: string, file: FileItem, _index: number) => {
+      if (action === 'preview') {
+        setSelectedFiles([file.name]);
+        setSelectedFile(file.name);
+        setIsPreviewPaneOpen(true);
+      } else if (action === 'rename') {
+        setIsRenaming(file.name);
+        setRenameValue(file.name);
+      } else if (action === 'prefix') {
+        setPrefixDialogFiles([file]);
+        setIsIndexPrefixDialogOpen(true);
+      }
     }
-  }), [handleContextMenu, handleFileItemClick, handleFileItemMouseDown, handleFileItemMouseUp, handleFileItemDragStart, setIsDragStarted, setDraggedFiles, clearFolderHoverStates, addLog]);
+  }), [handleContextMenu, handleFileItemClick, handleFileItemMouseDown, handleFileItemMouseUp, handleFileItemDragStart, setIsDragStarted, setDraggedFiles, clearFolderHoverStates, addLog, setSelectedFiles, setIsPreviewPaneOpen]);
 
   // Cache for folder drop handlers - stable refs enable FileTableRow memo on selection change
   const folderDropHandlersCacheRef = useRef<Map<string, Record<string, any>>>(new Map());
@@ -4373,20 +4856,20 @@ export const FileGrid: React.FC = () => {
     }
   }, [sortedFiles]);
 
-  // Memoized cell styles (bg overridden per row)
+  // Memoized cell styles (bg overridden per row); vertical padding follows the density preset
   const cellStyles = useMemo(
     () => ({
       bg: 'transparent',
       transition: 'background 0.1s',
       cursor: 'default',
       px: 2,
-      py: 1,
+      py: rowDensity === 'compact' ? 0.5 : rowDensity === 'comfortable' ? 2 : 1,
       position: 'relative' as const,
       verticalAlign: 'middle' as const,
       pointerEvents: 'auto' as const,
       boxSizing: 'border-box' as const,
     }),
-    [],
+    [rowDensity],
   );
 
   // Signature for O(1) fileListViewPropsEqual when selection/hover/cut unchanged
@@ -4648,14 +5131,24 @@ export const FileGrid: React.FC = () => {
   );
 
   return (
-    <Box 
-      p={0} 
-      m={0} 
-      height="100%" 
+    <Box
+      p={0}
+      m={0}
+      height="100%"
       position="relative"
+      display="flex"
+      flexDirection="column"
       onClick={handleGridClick}
       onPointerDownCapture={handleGridPointerDownCapture}
     >
+      <QuickFilterChips
+        folderItems={folderItems}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        dateFilter={dateFilter}
+        setDateFilter={setDateFilter}
+      />
+      <Box flex="1" minH={0} position="relative">
       <FileListView
         dropAreaRef={dropAreaRef}
         gridContainerRef={gridContainerRef}
@@ -4663,7 +5156,7 @@ export const FileGrid: React.FC = () => {
         marqueeOverlayRef={marqueeOverlayRef}
         isDragOver={isDragOver}
         isSelecting={isSelecting}
-        isGroupedByIndex={isGroupedByIndex}
+        isGroupedByIndex={listIsGrouped}
         groupedFiles={groupedFiles}
         sortedFiles={sortedFiles}
         columnOrder={columnOrder}
@@ -4747,8 +5240,15 @@ export const FileGrid: React.FC = () => {
         setSelectedFile={setSelectedFile}
         clearFolderHoverStates={clearFolderHoverStates}
         cellStyles={cellStyles}
+        groupHeaderVariant={groupHeaderVariant}
+        groupOrder={groupOrder}
+        rowDensity={rowDensity}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={handleClearAllFilters}
+        onCreateFolderRequest={() => setIsCreateFolderOpen(true)}
       />
-      <FileContextMenu 
+      </Box>
+      <FileContextMenu
         contextMenu={contextMenu}
         selectedFiles={selectedFiles}
         selectedFilesSet={selectedFilesSet}
@@ -4759,9 +5259,25 @@ export const FileGrid: React.FC = () => {
         handlePaste={handlePaste}
         handleCloseContextMenu={handleCloseContextMenu}
         quickAccessPaths={quickAccessPaths}
-        setTemplates={setTemplates}
-        setTemplateSubmenuPosition={setTemplateSubmenuPosition}
-        setTemplateSubmenuOpen={setTemplateSubmenuOpen}
+        recentClientPaths={recentClientPaths}
+        activeSectionKeys={activeSectionKeys}
+        currentDirectory={currentDirectory}
+        onCreateFromTemplate={async (templatePath: string, templateName: string) => {
+          const targetFolder = contextMenu.fileItem?.type === 'folder' ? contextMenu.fileItem.path : currentDirectory;
+          try {
+            const destPath = joinPath(targetFolder, templateName);
+            await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
+            addLog(`Created ${templateName} from template`);
+            setStatus(`Created ${templateName} from template`, 'success');
+            if (targetFolder === currentDirectory) {
+              await refreshDirectory(currentDirectory);
+            }
+          } catch (error) {
+            console.error('Error creating from template:', error);
+            addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+            setStatus('Failed to create from template', 'error');
+          }
+        }}
         setMoveToFiles={setMoveToFiles}
         setIsMoveToDialogOpen={setIsMoveToDialogOpen}
       />
@@ -4875,39 +5391,11 @@ export const FileGrid: React.FC = () => {
             setStatus(`Failed to open PowerShell: ${msg}`, 'error');
           }
         }}
+        groupByMode={groupByMode}
+        onSetGroupByMode={setGroupByMode}
+        rowDensity={rowDensity}
+        onSetRowDensity={(d) => void handleSetRowDensity(d)}
       />
-      {contextMenu.fileItem?.type === 'folder' && (
-        <TemplateSubmenu
-          isOpen={templateSubmenuOpen}
-          position={templateSubmenuPosition}
-          templates={templates}
-          folderPath={contextMenu.fileItem.path}
-          onClose={() => {
-            setTemplateSubmenuOpen(false);
-            setTemplateSubmenuPosition(null);
-          }}
-          onCreateFromTemplate={async (templatePath: string, templateName: string) => {
-            try {
-              const destPath = `${contextMenu.fileItem!.path}\\${templateName}`;
-
-              await (window.electronAPI as any).copyWorkpaperTemplate(templatePath, destPath);
-
-              addLog(`Created ${templateName} from template in ${contextMenu.fileItem!.name}`);
-              setStatus(`Created ${templateName} from template`, 'success');
-              
-              if (contextMenu.fileItem!.path === currentDirectory) {
-                const contents = await (window.electronAPI as any).getDirectoryContents(currentDirectory);
-                const files = Array.isArray(contents) ? contents : (contents?.files ?? []);
-                setFolderItems(filterFiles(files));
-              }
-            } catch (error) {
-              console.error('Error creating from template:', error);
-              addLog(`Failed to create from template: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-              setStatus('Failed to create from template', 'error');
-            }
-          }}
-        />
-      )}
       {/* Header Column Visibility Menu */}
       <HeaderContextMenu
         headerContextMenu={headerContextMenu}
@@ -4961,6 +5449,15 @@ export const FileGrid: React.FC = () => {
         handleUnblockFile={handleUnblockFile}
         handleImageSaved={handleImageSaved}
         showFileOperationFailure={showFileOperationFailure}
+      />
+      <SplitPdfDialog
+        open={isSplitPdfOpen}
+        file={splitPdfFile}
+        onClose={() => {
+          setIsSplitPdfOpen(false)
+          setSplitPdfFile(null)
+        }}
+        onSplit={handleSplitPdfConfirm}
       />
       <FileOperationFailedDialog
         open={fileOpFailureDialog.open}

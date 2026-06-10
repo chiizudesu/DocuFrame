@@ -70,6 +70,12 @@ interface ElectronAPI {
     cb: (event: Electron.IpcRendererEvent, data: { step: string; message: string }) => void,
   ) => void;
   moveFilesSilent: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
+  /** Puts real files on the Windows clipboard (CF_HDROP) for pasting into Outlook/Explorer */
+  copyFilesToClipboard: (filePaths: string[]) => Promise<{ success: boolean; error?: string }>;
+  zipSelection: (filePaths: string[], outputPath: string) => Promise<{ success: boolean; outputName?: string; error?: string }>;
+  convertFileToPdf: (filePath: string) => Promise<{ success: boolean; outputName?: string; error?: string }>;
+  splitPdf: (filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string }) => Promise<{ success: boolean; outputFiles?: string[]; error?: string }>;
+  openFileWith: (filePath: string, app: string) => Promise<{ success: boolean; error?: string }>;
   readPdfText: (filePath: string) => Promise<string>;
   readPdfPagesText: (filePath: string) => Promise<string[]>;
   readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
@@ -244,6 +250,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   moveFilesSilent: async (files: string[], targetDirectory: string) => {
     return await ipcRenderer.invoke('move-files-silent', files, targetDirectory);
+  },
+  copyFilesToClipboard: async (filePaths: string[]) => {
+    return await ipcRenderer.invoke('copy-files-to-clipboard', filePaths);
+  },
+  zipSelection: async (filePaths: string[], outputPath: string) => {
+    return await ipcRenderer.invoke('zip-selection', filePaths, outputPath);
+  },
+  convertFileToPdf: async (filePath: string) => {
+    return await ipcRenderer.invoke('convert-file-to-pdf', filePath);
+  },
+  splitPdf: async (filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string }) => {
+    return await ipcRenderer.invoke('split-pdf', filePath, options);
+  },
+  openFileWith: async (filePath: string, app: string) => {
+    return await ipcRenderer.invoke('open-file-with', filePath, app);
   },
   readPdfText: async (filePath: string) => {
     return await ipcRenderer.invoke('read-pdf-text', filePath);

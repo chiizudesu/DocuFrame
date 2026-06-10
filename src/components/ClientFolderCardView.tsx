@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useColorModeValue } from './ui/color-mode';
 import { Box, Flex, Text, Input } from '@chakra-ui/react';
-import { Folder, FolderPlus, File as FileIcon, Check, X } from 'lucide-react';
+import { Folder, FolderPlus, File as FileIcon, Check, X, ExternalLink, Star, Link2, Trash2, Info, Terminal, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { GridBackdrop } from './GridBackdrop';
+import { FloatingMenu, MenuRow, MenuSeparator } from './FileGrid/menuPrimitives';
 import { joinPath } from '../utils/path';
 import { docuFramePalette } from '../docuFrameColors';
 import type { FileItem } from '../types';
@@ -29,6 +30,10 @@ export const ClientFolderCardView: React.FC = () => {
     setStatus,
     hideDotFiles,
     hideTemporaryFiles,
+    addTabToCurrentWindow,
+    quickAccessPaths,
+    addQuickAccessPath,
+    removeQuickAccessPath,
   } = useAppContext();
 
   const [items, setItems] = useState<FileItem[]>([]);
@@ -37,6 +42,17 @@ export const ClientFolderCardView: React.FC = () => {
   const [newFolderName, setNewFolderName] = useState('');
   const [creating, setCreating] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
+  const [cardMenu, setCardMenu] = useState<{ isOpen: boolean; position: { x: number; y: number }; item: FileItem | null }>({
+    isOpen: false,
+    position: { x: 0, y: 0 },
+    item: null,
+  });
+  const [blankMenu, setBlankMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({
+    isOpen: false,
+    position: { x: 0, y: 0 },
+  });
+  const closeCardMenu = useCallback(() => setCardMenu((m) => ({ ...m, isOpen: false })), []);
+  const closeBlankMenu = useCallback(() => setBlankMenu((m) => ({ ...m, isOpen: false })), []);
 
   // ── Colours ────────────────────────────────────────────────────────────────
   const bg = useColorModeValue(docuFramePalette.light.canvas, docuFramePalette.dark.canvas);
@@ -176,7 +192,19 @@ export const ClientFolderCardView: React.FC = () => {
   return (
     <Box h="100%" bg={bg} position="relative" overflow="hidden">
       <GridBackdrop />
-      <Box h="100%" overflow="auto" position="relative" zIndex={1} px={6} py={6}>
+      <Box
+        h="100%"
+        overflow="auto"
+        position="relative"
+        zIndex={1}
+        px={6}
+        py={6}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCardMenu((m) => ({ ...m, isOpen: false }));
+          setBlankMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
+        }}
+      >
         {loading ? (
           <Flex justify="center" align="center" py={16} opacity={0.5}>
             <Text fontSize="sm" color={subColor}>Loading…</Text>
@@ -218,6 +246,12 @@ export const ClientFolderCardView: React.FC = () => {
                   onClick={() => {
                     if (isFolder) setCurrentDirectory(item.path);
                     else window.electronAPI.openFile?.(item.path);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setBlankMenu((m) => ({ ...m, isOpen: false }));
+                    setCardMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY }, item });
                   }}
                 >
                   {/* subtle accent strip for themed folders */}
@@ -335,6 +369,156 @@ export const ClientFolderCardView: React.FC = () => {
           </Box>
         )}
       </Box>
+
+      {/* Card context menu */}
+      <FloatingMenu isOpen={cardMenu.isOpen && !!cardMenu.item} position={cardMenu.position} onClose={closeCardMenu}>
+        {cardMenu.item && (
+          <>
+            <MenuRow
+              icon={cardMenu.item.type === 'folder' ? <Folder size={14} /> : <ExternalLink size={14} />}
+              label="Open"
+              emphasized
+              onClick={() => {
+                const item = cardMenu.item!;
+                closeCardMenu();
+                if (item.type === 'folder') setCurrentDirectory(item.path);
+                else window.electronAPI.openFile?.(item.path);
+              }}
+            />
+            {cardMenu.item.type === 'folder' && (
+              <>
+                <MenuRow
+                  icon={<ExternalLink size={14} />}
+                  label="Open folder in new tab"
+                  onClick={() => {
+                    const item = cardMenu.item!;
+                    closeCardMenu();
+                    addTabToCurrentWindow(item.path);
+                    setStatus(`Opened new tab for ${item.name}`, 'info');
+                  }}
+                />
+                {quickAccessPaths.includes(cardMenu.item.path) ? (
+                  <MenuRow
+                    icon={<Star size={14} />}
+                    label="Unpin from Quick Access"
+                    onClick={() => {
+                      const item = cardMenu.item!;
+                      closeCardMenu();
+                      void removeQuickAccessPath(item.path);
+                    }}
+                  />
+                ) : (
+                  <MenuRow
+                    icon={<Star size={14} />}
+                    label="Pin to Quick Access"
+                    onClick={() => {
+                      const item = cardMenu.item!;
+                      closeCardMenu();
+                      void addQuickAccessPath(item.path);
+                    }}
+                  />
+                )}
+                <MenuRow
+                  icon={<Terminal size={14} />}
+                  label="Open PowerShell here"
+                  onClick={() => {
+                    const item = cardMenu.item!;
+                    closeCardMenu();
+                    void (window.electronAPI as any).openCmdAtDirectory(item.path);
+                  }}
+                />
+              </>
+            )}
+            <MenuSeparator />
+            <MenuRow
+              icon={<Link2 size={14} />}
+              label="Copy Path"
+              onClick={() => {
+                const item = cardMenu.item!;
+                closeCardMenu();
+                void navigator.clipboard.writeText(item.path);
+                setStatus(`Copied path: ${item.path}`, 'info');
+              }}
+            />
+            <MenuSeparator />
+            <MenuRow
+              icon={<Trash2 size={14} />}
+              label="Delete"
+              danger
+              onClick={async () => {
+                const item = cardMenu.item!;
+                closeCardMenu();
+                try {
+                  const confirmed = await (window.electronAPI as any).confirmDelete([item.name]);
+                  if (!confirmed) return;
+                  await window.electronAPI.deleteItem(item.path);
+                  addLog(`Deleted ${item.name}`);
+                  setStatus(`Deleted ${item.name}`, 'success');
+                  await loadContents();
+                } catch (error) {
+                  addLog(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+                  setStatus(`Failed to delete ${item.name}`, 'error');
+                }
+              }}
+            />
+            <MenuRow
+              icon={<Info size={14} />}
+              label="Properties"
+              onClick={() => {
+                const item = cardMenu.item!;
+                closeCardMenu();
+                void window.electronAPI.showProperties(item.path);
+              }}
+            />
+          </>
+        )}
+      </FloatingMenu>
+
+      {/* Blank-space context menu */}
+      <FloatingMenu isOpen={blankMenu.isOpen} position={blankMenu.position} onClose={closeBlankMenu}>
+        <MenuRow
+          icon={<FolderPlus size={14} />}
+          label="New Folder"
+          onClick={() => {
+            closeBlankMenu();
+            startAdding();
+          }}
+        />
+        <MenuRow
+          icon={<RefreshCw size={14} />}
+          label="Refresh"
+          onClick={() => {
+            closeBlankMenu();
+            void loadContents();
+          }}
+        />
+        <MenuSeparator />
+        <MenuRow
+          icon={<Link2 size={14} />}
+          label="Copy Path"
+          onClick={() => {
+            closeBlankMenu();
+            void navigator.clipboard.writeText(currentDirectory);
+            setStatus(`Copied path: ${currentDirectory}`, 'info');
+          }}
+        />
+        <MenuRow
+          icon={<ExternalLink size={14} />}
+          label="Open in Explorer"
+          onClick={() => {
+            closeBlankMenu();
+            void window.electronAPI.openDirectory(currentDirectory);
+          }}
+        />
+        <MenuRow
+          icon={<Terminal size={14} />}
+          label="Open PowerShell"
+          onClick={() => {
+            closeBlankMenu();
+            void (window.electronAPI as any).openCmdAtDirectory(currentDirectory);
+          }}
+        />
+      </FloatingMenu>
     </Box>
   );
 };

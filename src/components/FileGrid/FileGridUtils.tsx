@@ -79,6 +79,8 @@ export interface FileTableRowProps {
     draggable: boolean;
     onDragStart: (file: FileItem, index: number, e: React.DragEvent) => void;
     onDragEnd: (e: React.DragEvent) => void;
+    /** Hover quick-action buttons in the name cell: 'preview' | 'rename' | 'prefix' */
+    onQuickAction: (action: string, file: FileItem, index: number) => void;
   };
   folderDropHandlers: Record<string, any> | {};
 }
