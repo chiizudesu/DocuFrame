@@ -44,6 +44,9 @@ interface ElectronAPI {
   onChromeBridgePdfResult: (
     cb: (event: Electron.IpcRendererEvent, data: { ok: true; filename: string } | { ok: false; error: string }) => void
   ) => void;
+  onChromeBridgeActivateSections: (
+    cb: (event: Electron.IpcRendererEvent, data: { sections: string[] }) => void
+  ) => void;
   removeAllListeners: (channel: string) => void;
   readCsv: (filePath: string) => Promise<any[]>;
   moveFiles: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
@@ -215,6 +218,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onWindowUnmaximize: (cb) => ipcRenderer.on('window-unmaximized', cb),
   onFolderContentsChanged: (cb) => ipcRenderer.on('folderContentsChanged', cb),
   onChromeBridgePdfResult: (cb) => ipcRenderer.on('chromeBridgePdfResult', cb),
+  onChromeBridgeActivateSections: (cb) => ipcRenderer.on('chromeBridgeActivateSections', cb),
   onVaultUploadProgress: (cb) => ipcRenderer.on('vault-upload-progress', cb),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
   readCsv: async (filePath: string) => {

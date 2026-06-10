@@ -3,10 +3,12 @@ import { useColorModeValue } from "./ui/color-mode";
 import { Grid, GridItem, Box } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
 import { PreviewPane } from './PreviewPane';
+import { SectionChecklistPane } from './SectionChecklistPane';
 import { JobContextPane } from './JobContextPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
 import { FileGrid } from './FileGrid';
+import { ClientFolderCardView } from './ClientFolderCardView';
 import { FolderTabSystem } from './FolderTabSystem';
 import { Footer } from './Footer';
 import { useAppContext } from '../context/AppContext';
@@ -15,10 +17,10 @@ import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 import { TransferPanel } from './TransferPanel';
 import { ClientHeaderStrip } from './ClientHeaderStrip';
 import { ClientListView } from './ClientListView';
-import { normalizePath } from '../utils/path';
+import { normalizePath, getParentPath } from '../utils/path';
 
 export const Layout: React.FC = () => {
-  const { isPreviewPaneOpen, isJobContextOpen, currentDirectory, rootDirectory } = useAppContext();
+  const { isPreviewPaneOpen, isJobContextOpen, isSectionPaneOpen, currentDirectory, rootDirectory } = useAppContext();
   const [sidebarWidth, setSidebarWidth] = useState(200);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [minimizedDialogs, setMinimizedDialogs] = useState<MinimizedDialog[]>([]);
@@ -122,11 +124,11 @@ export const Layout: React.FC = () => {
   return (
     <>
     <Grid templateAreas={`
-        "tabs tabs tabs tabs"
-        "header header header header"
-        "sidebar main preview jobContext"
-        "status status status status"
-      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isPreviewPaneOpen ? '700px' : '0px'} ${isJobContextOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
+        "tabs tabs tabs tabs tabs"
+        "header header header header header"
+        "sidebar main sections preview jobContext"
+        "status status status status status"
+      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isSectionPaneOpen ? '420px' : '0px'} ${isPreviewPaneOpen ? '700px' : '0px'} ${isJobContextOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
     <GridItem
       area="header"
@@ -218,6 +220,14 @@ export const Layout: React.FC = () => {
         <Box flex="1" minH={0} overflow="auto">
           <ClientListView />
         </Box>
+      ) : rootDirectory && normalizePath(getParentPath(currentDirectory)) === normalizePath(rootDirectory) ? (
+        // One level into a client folder — show the big-card folder view
+        <>
+          <ClientHeaderStrip />
+          <Box flex="1" minH={0} overflow="hidden">
+            <ClientFolderCardView />
+          </Box>
+        </>
       ) : (
         <>
           <ClientHeaderStrip />
@@ -227,9 +237,25 @@ export const Layout: React.FC = () => {
         </>
       )}
     </GridItem>
+    {/* Workpaper Section Checklist Pane — mount only when open (mutually exclusive with preview) */}
+    <GridItem
+      area="sections"
+      bg="df.toolbar"
+      overflow="hidden"
+      display="flex"
+      flexDirection="column"
+      boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
+      borderLeftWidth="1px"
+      borderLeftStyle="solid"
+      borderLeftColor="df.border"
+      visibility={isSectionPaneOpen ? 'visible' : 'hidden'}
+      width={isSectionPaneOpen ? 'auto' : '0px'}
+    >
+      {isSectionPaneOpen && <SectionChecklistPane />}
+    </GridItem>
     {/* Preview Pane */}
-    <GridItem 
-      area="preview" 
+    <GridItem
+      area="preview"
       bg="df.toolbar" 
       overflow="hidden" 
       display="flex" 

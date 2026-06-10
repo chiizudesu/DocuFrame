@@ -44,6 +44,8 @@ export interface AppSettings {
   isGroupedByIndex?: boolean; // Deprecated - use groupViewAlwaysEnabled and groupViewBlacklist
   groupViewAlwaysEnabled?: boolean; // When true, group view on for all except blacklist (default true)
   groupViewBlacklist?: string[]; // Exact folder paths where group view is off (subfolders still group)
+  /** Per-folder workpaper sections the user manually activated (shown as empty headers even with no file). Keyed by normalized folder path. */
+  manualActiveSections?: Record<string, string[]>;
   // Pomodoro timer settings
   pomodoroSessionMinutes?: number; // Session duration in minutes (default 25)
   pomodoroBreakMinutes?: number; // Break duration in minutes (default 5)

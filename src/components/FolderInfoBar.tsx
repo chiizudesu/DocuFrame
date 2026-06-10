@@ -221,7 +221,7 @@ const MiniSearchDropdown: React.FC<{
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setIsSectionPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   const yearNav = useYearNavigation(currentDirectory)
   
@@ -603,6 +603,7 @@ export const FolderInfoBar: React.FC = () => {
   const handlePreviewPaneToggle = () => {
     const newState = !isPreviewPaneOpen
     setIsPreviewPaneOpen(newState)
+    if (newState) setIsSectionPaneOpen(false)
     addLog(`Preview pane ${newState ? 'opened' : 'closed'}`)
     setStatus(`Preview pane ${newState ? 'opened' : 'closed'}`, 'info')
   }

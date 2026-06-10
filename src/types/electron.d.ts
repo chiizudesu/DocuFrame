@@ -72,6 +72,9 @@ interface ElectronAPI {
   onChromeBridgePdfResult: (
     callback: (event: any, data: { ok: true; filename: string } | { ok: false; error: string }) => void
   ) => void;
+  onChromeBridgeActivateSections: (
+    callback: (event: any, data: { sections: string[] }) => void
+  ) => void;
   removeAllListeners: (channel: string) => void;
   startDrag: (filePath: string) => void;
   

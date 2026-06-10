@@ -12,7 +12,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route } from 'lucide-react';
+import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route, ListChecks } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
 import { MergePDFDialog } from './MergePDFDialog';
@@ -575,6 +575,8 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     setIsSettingsOpen,
     isPreviewPaneOpen,
     setIsPreviewPaneOpen,
+    isSectionPaneOpen,
+    setIsSectionPaneOpen,
     sessionLayerViewEnabled,
     setSessionLayerViewEnabled,
     addRecentlyTransferredFiles,
@@ -1030,15 +1032,45 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
               bg={isPreviewPaneOpen ? toggleActiveBg : undefined}
               color={isPreviewPaneOpen ? "white" : buttonColor}
               onClick={() => {
-                setIsPreviewPaneOpen(!isPreviewPaneOpen);
-                addLog(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`);
-                setStatus(`Preview pane ${!isPreviewPaneOpen ? 'opened' : 'closed'}`, 'info');
+                const next = !isPreviewPaneOpen;
+                setIsPreviewPaneOpen(next);
+                if (next) setIsSectionPaneOpen(false);
+                addLog(`Preview pane ${next ? 'opened' : 'closed'}`);
+                setStatus(`Preview pane ${next ? 'opened' : 'closed'}`, 'info');
               }}
               _hover={{ bg: isPreviewPaneOpen ? toggleActiveHoverBg : buttonHoverBg }}
               _focus={suppressFocusRing}
               _focusVisible={suppressFocusRing}
               h={FN_TOOLBAR_BTN}
               w={FN_TOOLBAR_BTN}><Columns2 size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
+          </Tooltip>
+
+          <Tooltip
+            content={isSectionPaneOpen ? 'Hide workpaper sections' : 'Show workpaper sections'}
+            showArrow
+            openDelay={0}
+            closeDelay={0}
+            positioning={{ placement: 'bottom', gutter: 8 }}
+          >
+            <IconButton
+              aria-label="Workpaper sections"
+              size="sm"
+              variant={isSectionPaneOpen ? 'solid' : 'ghost'}
+              borderRadius={0}
+              bg={isSectionPaneOpen ? toggleActiveBg : undefined}
+              color={isSectionPaneOpen ? 'white' : buttonColor}
+              onClick={() => {
+                const next = !isSectionPaneOpen;
+                setIsSectionPaneOpen(next);
+                if (next) setIsPreviewPaneOpen(false);
+                addLog(`Workpaper sections ${next ? 'opened' : 'closed'}`);
+                setStatus(`Workpaper sections ${next ? 'opened' : 'closed'}`, 'info');
+              }}
+              _hover={{ bg: isSectionPaneOpen ? toggleActiveHoverBg : buttonHoverBg }}
+              _focus={suppressFocusRing}
+              _focusVisible={suppressFocusRing}
+              h={FN_TOOLBAR_BTN}
+              w={FN_TOOLBAR_BTN}><ListChecks size={FN_TOOLBAR_ICON} strokeWidth={2} /></IconButton>
           </Tooltip>
 
         </Flex>

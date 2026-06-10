@@ -211,6 +211,15 @@ function broadcastChromeBridgePdfResult(payload: { ok: true; filename: string } 
   });
 }
 
+/** Ask renderer(s) to activate the given workpaper sections in the section checklist pane. */
+function broadcastChromeBridgeActivateSections(sections: string[]) {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('chromeBridgeActivateSections', { sections });
+    }
+  });
+}
+
 async function startChromeExtensionBridgeServer(cfg: Config): Promise<void> {
   stopChromeExtensionBridgeServer();
   if (!cfg.chromeExtensionBridgeEnabled) return;
@@ -527,6 +536,34 @@ async function startChromeExtensionBridgeServer(cfg: Config): Promise<void> {
       const err = error?.message ?? 'Transfer failed';
       broadcastChromeBridgePdfResult({ ok: false, error: err });
       return res.status(500).json({ error: err });
+    }
+  });
+
+  /** Activate workpaper sections in DocuFrame's section checklist pane (additive — never deactivates). */
+  appBridge.post('/activate-sections', requireAuth, express.json({ limit: '256kb' }), async (req, res) => {
+    try {
+      const raw = req.body?.sections;
+      if (!Array.isArray(raw)) {
+        return res.status(400).json({ error: 'sections must be an array of index keys' });
+      }
+      // Normalize: uppercase, trim, drop blanks/placeholders, dedupe.
+      const seen = new Set<string>();
+      const sections: string[] = [];
+      for (const s of raw) {
+        if (typeof s !== 'string') continue;
+        const key = s.trim().toUpperCase();
+        if (!key || key === '—' || key === '-') continue;
+        if (!/^[A-Z]+\d*$/.test(key)) continue;
+        if (!seen.has(key)) {
+          seen.add(key);
+          sections.push(key);
+        }
+      }
+      broadcastChromeBridgeActivateSections(sections);
+      return res.json({ success: true, currentDirectory: currentDirectoryPath || null, sections });
+    } catch (error: any) {
+      console.error('[ChromeBridge] activate-sections error:', error);
+      return res.status(500).json({ error: error?.message ?? 'Activate failed' });
     }
   });
 

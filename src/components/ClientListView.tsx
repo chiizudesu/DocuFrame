@@ -3,6 +3,7 @@ import { useColorModeValue } from "./ui/color-mode";
 import { Box, Flex, Text, Icon, Input } from '@chakra-ui/react';
 import { Search, Folder, Users } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { GridBackdrop } from './GridBackdrop';
 import {
   findClientRow,
   getIrdNumber,
@@ -148,7 +149,9 @@ export const ClientListView: React.FC = () => {
   const irdColor = useColorModeValue('#64748b', '#566478');
 
   return (
-    <Box h="100%" overflow="auto" bg={bg} px={5} py={4}>
+    <Box h="100%" bg={bg} position="relative" overflow="hidden">
+      <GridBackdrop />
+      <Box h="100%" overflow="auto" position="relative" zIndex={1} px={5} py={4}>
       {/* Search */}
       <Flex align="center" mb={4} gap={2}>
         <Flex
@@ -285,6 +288,7 @@ export const ClientListView: React.FC = () => {
           ))}
         </Box>
       )}
+      </Box>
     </Box>
   );
 };

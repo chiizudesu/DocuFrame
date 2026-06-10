@@ -86,6 +86,8 @@ export const FileGrid: React.FC = () => {
     hideDotFiles,
     hideClaudeMd,
     isGroupedByIndex,
+    currentManualActiveSections,
+    currentDeactivatedSections,
   } = useFileGridFiltersAndVisibility()
   const { quickAccessPaths } = useFileGridQuickAccessPaths()
   const {
@@ -204,6 +206,9 @@ export const FileGrid: React.FC = () => {
   
   // All useState hooks next
   const [isLoading, setIsLoading] = useState(false)
+  /** False from the moment we navigate until the new directory's contents have loaded.
+   *  Gates manual empty-section headers so they don't flash before the files arrive. */
+  const [contentReady, setContentReady] = useState(false)
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean
     position: {
@@ -557,15 +562,38 @@ export const FileGrid: React.FC = () => {
     if (!isGroupedByIndex) {
       return null;
     }
-    if (sortedFiles.length === 0) {
-      return null;
-    }
 
     const grouped = groupFilesByIndex(sortedFiles);
-    const groupKeys = Object.keys(grouped);
-    const ok = groupKeys.length > 0;
-    return ok ? grouped : null;
-  }, [sortedFiles, isGroupedByIndex]);
+
+    // Deactivated sections: demote their files to "Other" and drop the header (visual only).
+    if (currentDeactivatedSections.length > 0) {
+      for (const key of currentDeactivatedSections) {
+        if (key === 'folders' || key === 'Other') continue;
+        const files = grouped[key];
+        if (files && files.length > 0) {
+          grouped.Other = [...(grouped.Other ?? []), ...files];
+        }
+        delete grouped[key];
+      }
+    }
+
+    // Manually activated sections: show an empty header even when no file exists yet.
+    // Only once the directory has finished loading — otherwise these phantom headers
+    // would flash on screen before the folder's real files arrive.
+    if (contentReady) {
+      for (const key of currentManualActiveSections) {
+        if (key === 'folders' || key === 'Other') continue;
+        if (currentDeactivatedSections.includes(key)) continue;
+        if (!grouped[key]) grouped[key] = [];
+      }
+    }
+
+    // Return grouped whenever there is anything to render: real items (files/folders)
+    // OR a manually-activated empty section header. Only a truly empty folder yields null.
+    const meaningfulKeys = Object.keys(grouped).filter((k) => k !== 'folders');
+    const hasContent = sortedFiles.length > 0 || meaningfulKeys.length > 0;
+    return hasContent ? grouped : null;
+  }, [sortedFiles, isGroupedByIndex, currentManualActiveSections, currentDeactivatedSections, contentReady]);
 
   // Pre-compute file name to path map for O(1) drag lookups (moved early to avoid initialization errors)
   const fileNameToPathMap = useMemo(() => {
@@ -646,6 +674,7 @@ export const FileGrid: React.FC = () => {
         setStatus(`Failed to load directory: ${errorMessage}`, 'error')
       } finally {
         setIsLoading(false)
+        setContentReady(true)
         isLoadingRef.current = false
       }
     },
@@ -658,6 +687,8 @@ export const FileGrid: React.FC = () => {
 
     // Clear immediately to prevent showing OLD folder's items with NEW folder's sort/group
     setFolderItems([]);
+    // Suppress manual empty-section headers until the new folder's files have arrived
+    setContentReady(false);
 
     const timeoutId = setTimeout(() => {
       debouncedLoadDirectory(currentDirectory);

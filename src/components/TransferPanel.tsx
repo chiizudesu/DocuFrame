@@ -207,16 +207,20 @@ export const TransferPanel: React.FC = () => {
     ).slice(0, 3);
   }, [selectedIndex, groupedTemplates, filename]);
 
-  // "/" command shortcut suggestions
+  // "/" command shortcut suggestions — match against the command only,
+  // ranking prefix matches ahead of mid-string matches (so "ar" → AR before FAR)
   const cmdSuggestions = useMemo(() => {
     const q = cmdQuery.trim().toLowerCase();
     if (!q) return [];
     return Object.entries(transferMappings)
-      .filter(([cmd, fn]) =>
-        cmd.toLowerCase().includes(q) ||
-        (fn as string).toLowerCase().includes(q)
-      )
+      .filter(([cmd]) => cmd.toLowerCase().includes(q))
       .map(([cmd, fn]) => ({ command: cmd, filename: fn as string }))
+      .sort((a, b) => {
+        const aStarts = a.command.toLowerCase().startsWith(q);
+        const bStarts = b.command.toLowerCase().startsWith(q);
+        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+        return a.command.localeCompare(b.command);
+      })
       .slice(0, 3);
   }, [cmdQuery, transferMappings]);
 
@@ -565,6 +569,19 @@ export const TransferPanel: React.FC = () => {
 
   // Panel-level "/" key detection — activate cmd mode
   const handlePanelKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Escape always closes the whole panel immediately (field handlers run first but
+    // don't stop propagation, so this single press wins regardless of focus/mode).
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closePanel();
+      return;
+    }
+    // Ctrl/Cmd+Enter triggers the primary Transfer action from anywhere in the panel.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      handleTransfer();
+      return;
+    }
     if (cmdMode) return;
     if (e.key === '/' && !e.ctrlKey && !e.altKey && !e.metaKey) {
       const target = e.target as HTMLElement;
@@ -575,7 +592,7 @@ export const TransferPanel: React.FC = () => {
         enterCmdMode();
       }
     }
-  }, [cmdMode, enterCmdMode]);
+  }, [cmdMode, enterCmdMode, closePanel, handleTransfer]);
 
   if (!isOpen) return null;
 

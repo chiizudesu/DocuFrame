@@ -8,6 +8,7 @@ import {
   DEFAULT_BACKSPACE_NAVIGATION_SHORTCUT,
 } from '../constants/shortcutDefaults';
 import { isPlainBackspaceOnlyShortcut } from '../utils/shortcuts';
+import { extractIndexPrefix } from '../utils/indexPrefix';
 
 interface FileItem {
   name: string;
@@ -136,7 +137,20 @@ interface AppContextType {
   /** Session-only: when false, flat list regardless of group-view settings (not persisted). */
   sessionLayerViewEnabled: boolean;
   setSessionLayerViewEnabled: (value: boolean) => void;
+  // ── Workpaper section checklist (layer-view section management) ──────────────
+  /** Section checklist side pane open state. */
+  isSectionPaneOpen: boolean;
+  setIsSectionPaneOpen: (value: boolean) => void;
+  /** Sections manually activated for the current folder (empty headers shown even with no file). */
+  currentManualActiveSections: string[];
+  /** Sections deactivated for the current folder (session-only; files demoted to "Other"). */
+  currentDeactivatedSections: string[];
+  /** Activate/deactivate a workpaper section for the current folder. `hasFiles` = section currently has files. */
+  setSectionActive: (key: string, active: boolean, hasFiles: boolean) => void;
 }
+
+/** Stable empty-array reference so context-selector fallbacks don't trigger re-renders. */
+const EMPTY_STRING_ARRAY: string[] = [];
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -207,6 +221,15 @@ export const AppProvider: React.FC<{
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
   const [sessionLayerViewEnabled, setSessionLayerViewEnabled] = useState<boolean>(true);
+  // Workpaper section checklist state
+  const [isSectionPaneOpen, setIsSectionPaneOpen] = useState<boolean>(false);
+  /** Per-folder manually activated sections (persisted). path -> index keys */
+  const [manualActiveSections, setManualActiveSections] = useState<Record<string, string[]>>({});
+  /** Per-folder deactivated sections (session-only, not persisted). path -> index keys */
+  const [deactivatedSections, setDeactivatedSections] = useState<Record<string, string[]>>({});
+  /** After first settings load: allows persisting manualActiveSections without clobbering disk before hydrate */
+  const manualActiveSectionsPersistReadyRef = useRef(false);
+  const prevManualActiveSectionsRef = useRef<string>('');
   /** No-op: FileGrid still calls this after loads; group view uses currentDirectory only */
   const setDisplayedDirectory = useCallback((_path: string) => {}, []);
   
@@ -299,6 +322,16 @@ export const AppProvider: React.FC<{
       setShowClientInfoBar(settings.showClientInfoBar !== false);
       setGroupViewAlwaysEnabled(settings.groupViewAlwaysEnabled !== false);
       setGroupViewBlacklist(Array.isArray(settings.groupViewBlacklist) ? settings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
+      // Load per-folder manually activated workpaper sections (normalize keys)
+      if (settings.manualActiveSections && typeof settings.manualActiveSections === 'object') {
+        const normalized: Record<string, string[]> = {};
+        for (const [path, keys] of Object.entries(settings.manualActiveSections)) {
+          const nk = normalizePath(path);
+          if (nk && Array.isArray(keys)) normalized[nk] = keys.filter((k) => typeof k === 'string');
+        }
+        setManualActiveSections(normalized);
+        prevManualActiveSectionsRef.current = JSON.stringify(normalized);
+      }
 
       // Load quick access pinned paths
       if (Array.isArray(settings.quickAccessPaths)) {
@@ -315,8 +348,20 @@ export const AppProvider: React.FC<{
       console.error('Error loading settings:', error);
     } finally {
       recentClientPathsPersistReadyRef.current = true;
+      manualActiveSectionsPersistReadyRef.current = true;
     }
   }, []);
+
+  // Persist manually-activated sections (skip until first load to avoid clobbering disk)
+  useEffect(() => {
+    if (!manualActiveSectionsPersistReadyRef.current) return;
+    const serialized = JSON.stringify(manualActiveSections);
+    if (prevManualActiveSectionsRef.current === serialized) return;
+    prevManualActiveSectionsRef.current = serialized;
+    settingsService.getSettings().then((current) => {
+      settingsService.setSettings({ ...current, manualActiveSections }).catch(() => {});
+    });
+  }, [manualActiveSections]);
 
   // Load settings on mount
   useEffect(() => {
@@ -387,6 +432,39 @@ export const AppProvider: React.FC<{
 
   const isGroupedByIndex = sessionLayerViewEnabled && isGroupedByIndexFromSettings;
 
+  // Current-folder section overrides (derived from the per-folder maps)
+  const currentFolderSectionKey = normalizePath(currentDirectory || '');
+  const currentManualActiveSections = useMemo(
+    () => manualActiveSections[currentFolderSectionKey] ?? [],
+    [manualActiveSections, currentFolderSectionKey],
+  );
+  const currentDeactivatedSections = useMemo(
+    () => deactivatedSections[currentFolderSectionKey] ?? [],
+    [deactivatedSections, currentFolderSectionKey],
+  );
+
+  // Activate/deactivate a workpaper section for the current folder.
+  // active=true → show the section (clears deactivation; adds an empty header when no files exist).
+  // active=false → hide it (removes manual activation; demotes existing files to "Other" for this session).
+  const setSectionActive = useCallback((key: string, active: boolean, hasFiles: boolean) => {
+    const folderKey = normalizePath(currentDirectory || '');
+    if (!folderKey || !key || key === 'folders' || key === 'Other') return;
+    setManualActiveSections((prev) => {
+      const cur = new Set(prev[folderKey] ?? []);
+      if (active && !hasFiles) cur.add(key);
+      else if (!active) cur.delete(key);
+      else return prev;
+      return { ...prev, [folderKey]: Array.from(cur) };
+    });
+    setDeactivatedSections((prev) => {
+      const cur = new Set(prev[folderKey] ?? []);
+      if (!active && hasFiles) cur.add(key);
+      else if (active) cur.delete(key);
+      else return prev;
+      return { ...prev, [folderKey]: Array.from(cur) };
+    });
+  }, [currentDirectory]);
+
   // Wrapper functions to save to localStorage when settings change (stable ref for context consumers)
   const setRootDirectory = useCallback((path: string) => {
     setRootDirectoryState(path);
@@ -415,6 +493,42 @@ export const AppProvider: React.FC<{
   const setStatus = useCallback((message: string, type: 'info' | 'success' | 'error' | 'default' = 'default') => {
     setStatusMessage(message);
     setStatusType(type);
+  }, []);
+
+  // Additively activate workpaper sections (used by the Chrome/Auxor bridge "index sync").
+  // Only turns sections ON — never deactivates anything already active.
+  const activateSections = useCallback((keys: string[]) => {
+    if (!Array.isArray(keys) || keys.length === 0) return;
+    const present = new Set<string>();
+    (folderItems || []).forEach((it) => {
+      if (it.type === 'folder') return;
+      const p = extractIndexPrefix(it.name);
+      if (p) present.add(p);
+    });
+    let count = 0;
+    for (const raw of keys) {
+      const key = String(raw).trim().toUpperCase();
+      if (!key || key === 'FOLDERS' || key === 'OTHER') continue;
+      setSectionActive(key, true, present.has(key));
+      count++;
+    }
+    setIsSectionPaneOpen(true);
+    setIsPreviewPaneOpen(false);
+    setStatus(`Synced ${count} workpaper section${count !== 1 ? 's' : ''} from Auxor`, 'success');
+    addLog(`Workpaper index sync from Auxor: ${keys.join(', ')}`);
+  }, [folderItems, setSectionActive, setStatus, addLog]);
+
+  // Listen for bridge-driven section activation (subscribe once; call the latest closure via ref).
+  const activateSectionsRef = useRef(activateSections);
+  activateSectionsRef.current = activateSections;
+  useEffect(() => {
+    const api = window.electronAPI as any;
+    if (!api?.onChromeBridgeActivateSections) return;
+    const handler = (_e: unknown, data: { sections?: string[] }) => {
+      if (data && Array.isArray(data.sections)) activateSectionsRef.current(data.sections);
+    };
+    api.onChromeBridgeActivateSections(handler);
+    return () => { api.removeAllListeners?.('chromeBridgeActivateSections'); };
   }, []);
 
   // Wrapper for settings open/close with status updates
@@ -632,6 +746,11 @@ export const AppProvider: React.FC<{
       isGroupedByIndex,
       sessionLayerViewEnabled,
       setSessionLayerViewEnabled,
+      isSectionPaneOpen,
+      setIsSectionPaneOpen,
+      currentManualActiveSections,
+      currentDeactivatedSections,
+      setSectionActive,
       // Document insights properties removed
     }}>
       {children}
@@ -732,6 +851,8 @@ export function useFileGridFiltersAndVisibility() {
   const hideDotFiles = useContextSelector(AppContext, (v) => v?.hideDotFiles ?? true);
   const hideClaudeMd = useContextSelector(AppContext, (v) => v?.hideClaudeMd ?? true);
   const isGroupedByIndex = useContextSelector(AppContext, (v) => v?.isGroupedByIndex ?? false);
+  const currentManualActiveSections = useContextSelector(AppContext, (v) => v?.currentManualActiveSections ?? EMPTY_STRING_ARRAY);
+  const currentDeactivatedSections = useContextSelector(AppContext, (v) => v?.currentDeactivatedSections ?? EMPTY_STRING_ARRAY);
   if (!setFileSearchFilter) {
     throw new Error('useFileGridFiltersAndVisibility must be used within an AppProvider');
   }
@@ -743,6 +864,8 @@ export function useFileGridFiltersAndVisibility() {
     hideDotFiles,
     hideClaudeMd,
     isGroupedByIndex,
+    currentManualActiveSections,
+    currentDeactivatedSections,
   };
 }
 
