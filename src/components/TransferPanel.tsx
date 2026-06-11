@@ -629,10 +629,13 @@ export const TransferPanel: React.FC = () => {
       await executeTransfer({ numFiles: fileNames.length, command: 'transfer', currentDirectory, fileNames });
       return;
     }
-    const opts: { numFiles: number; command?: string; newName?: string; currentDirectory: string } = {
+    const opts: { numFiles: number; command?: string; newName?: string; currentDirectory: string; fileNames?: string[] } = {
       numFiles: 1,
       currentDirectory,
     };
+    if (sourceFile?.name) {
+      opts.fileNames = [sourceFile.name];
+    }
     if (selectedCommand) {
       opts.command = selectedCommand;
     } else if (filename.trim()) {
@@ -642,14 +645,19 @@ export const TransferPanel: React.FC = () => {
       opts.command = 'transfer';
     }
     await executeTransfer(opts);
-  }, [replaceMode, handleReplaceExecute, isMultiSelect, selectedDlIdxs, downloads, selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
+  }, [replaceMode, handleReplaceExecute, isMultiSelect, selectedDlIdxs, downloads, sourceFile, selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
 
   // ── Transfer + GST Rename ─────────────────────────────────────────────────
   const handleTransferAndRename = useCallback(async () => {
     closePanel();
     try {
-      // Step 1: transfer latest file
-      const result = await (window.electronAPI as any).transfer({ numFiles: 1, command: 'transfer', currentDirectory });
+      // Step 1: transfer selected download
+      const result = await (window.electronAPI as any).transfer({
+        numFiles: 1,
+        command: 'transfer',
+        currentDirectory,
+        ...(sourceFile?.name ? { fileNames: [sourceFile.name] } : {}),
+      });
       if (!result?.success) {
         addLog(result?.message || 'Transfer failed', 'error');
         setStatus('Transfer failed', 'error');
@@ -674,7 +682,7 @@ export const TransferPanel: React.FC = () => {
       addLog(`Transfer & Rename failed: ${msg}`, 'error');
       setStatus('Transfer & Rename failed', 'error');
     }
-  }, [currentDirectory, addLog, setStatus, closePanel]);
+  }, [currentDirectory, sourceFile, addLog, setStatus, closePanel]);
 
   // ── Filename field helpers ────────────────────────────────────────────────────
   const acceptFilenameSugg = useCallback((t: { command: string; filename: string }) => {
@@ -759,8 +767,13 @@ export const TransferPanel: React.FC = () => {
     setIndexQuery('');
     setShowFilenameSuggs(false);
     // Execute immediately with the command directly (bypasses stale state)
-    void executeTransfer({ numFiles: 1, command: cmd, currentDirectory });
-  }, [transferMappings, executeTransfer, currentDirectory]);
+    void executeTransfer({
+      numFiles: 1,
+      command: cmd,
+      currentDirectory,
+      ...(sourceFile?.name ? { fileNames: [sourceFile.name] } : {}),
+    });
+  }, [transferMappings, executeTransfer, currentDirectory, sourceFile]);
 
   const handleCmdKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') { e.preventDefault(); exitCmdMode(); return; }
@@ -1287,7 +1300,7 @@ export const TransferPanel: React.FC = () => {
                 _hover={isMultiSelect ? {} : { bg: 'rgba(34,197,94,0.2)' }}
                 opacity={isMultiSelect ? 0.4 : 1}
                 style={{ ...noRing, transition: 'background 0.1s' }}
-                title={isMultiSelect ? 'Select one file to use GST rename' : 'Transfer latest file and rename to GST standards'}
+                title={isMultiSelect ? 'Select one file to use GST rename' : 'Transfer selected file and rename to GST standards'}
               >
                 GST
               </Box>
