@@ -147,6 +147,8 @@ interface ElectronAPI {
   onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
+  // Replace an existing file with a specific (named) Downloads file
+  replaceFileFromDownloads: (downloadFileName: string, targetFilePath: string) => Promise<{ success: boolean; message: string; downloadName?: string }>;
   // Root path git integration (footer status indicator)
   rootGitStatus: (options?: { fetch?: boolean }) => Promise<{
     isRepo: boolean;
@@ -469,6 +471,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: async (targetFilePath: string) => {
     return await ipcRenderer.invoke('replace-with-latest-file', targetFilePath);
+  },
+  // Replace an existing file with a specific (named) Downloads file
+  replaceFileFromDownloads: async (downloadFileName: string, targetFilePath: string) => {
+    return await ipcRenderer.invoke('replace-file-from-downloads', downloadFileName, targetFilePath);
   },
   selectPasteValue: async (value: string) => {
     return await ipcRenderer.invoke('select-paste-value', value);

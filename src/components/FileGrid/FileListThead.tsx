@@ -1,7 +1,8 @@
 import React, { useMemo, useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Box, Flex, Text, Portal } from '@chakra-ui/react';
 import { ChevronUp, ChevronDown, Filter, Check } from 'lucide-react'
-import type { SortColumn } from './FileGridUtils'
+import type { SortColumn, ColumnVisibility } from './FileGridUtils'
+import { COLUMN_LABELS } from './FileGridUtils'
 import { useFileGridFiltersAndVisibility, useFileGridDirectoryState } from '../../context/AppContext'
 import { getExtension, DATE_FILTER_LABELS, type DateFilterPreset } from '../../utils/fileFilters'
 import { useMenuColors } from './menuPrimitives'
@@ -211,7 +212,7 @@ const HeaderFilterButton: React.FC<{ column: 'type' | 'modified' }> = ({ column 
 
 export type FileListTheadProps = {
   columnOrder: string[]
-  columnVisibility: { name: boolean; size: boolean; modified: boolean; type: boolean }
+  columnVisibility: ColumnVisibility
   sortColumn: SortColumn
   sortDirection: 'asc' | 'desc'
   tableHeadTextColor: string
@@ -323,12 +324,10 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
     <Box as="thead" pointerEvents={suppressPointerEventsForFileDrag ? 'none' : undefined}>
       <Box as="tr">
         {columnOrder.map((column) => {
-          const isName = column === 'name'
-          const isSize = column === 'size'
           const isModified = column === 'modified'
           const isType = column === 'type'
 
-          if (!columnVisibility[column as keyof typeof columnVisibility]) {
+          if (!columnVisibility[column]) {
             return null
           }
 
@@ -360,7 +359,7 @@ export const FileListTheadRow = React.memo(function FileListTheadRow({
               transition="all 0.2s ease"
             >
               <Flex alignItems="center">
-                {isName ? 'Name' : isSize ? 'Size' : isModified ? 'Modified' : isType ? 'Type' : ''}
+                {COLUMN_LABELS[column] ?? ''}
                 {sortColumn === column && (
                   <Box as="span" display="inline-flex" ml={1} lineHeight={0} color="#4F46E5">
                     {sortDirection === 'asc' ? (

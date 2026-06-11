@@ -2,8 +2,47 @@ import type { FileItem } from '../../types'
 import type { DragEvent } from 'react'
 
 // Sort types for list view
-export type SortColumn = 'name' | 'size' | 'modified'
+export type SortColumn = 'name' | 'size' | 'modified' | 'type' | 'age' | 'period' | 'version'
 export type SortDirection = 'asc' | 'desc'
+
+// ── Column registry ───────────────────────────────────────────────────────────
+// Single source of truth for grid columns. Age/Period/Version are optional
+// columns, hidden by default; Period only surfaces inside GST folders.
+export const ALL_COLUMN_IDS = ['name', 'type', 'modified', 'size', 'age', 'period', 'version'] as const
+export type ColumnId = (typeof ALL_COLUMN_IDS)[number]
+
+export const COLUMN_LABELS: Record<string, string> = {
+  name: 'Name',
+  type: 'Type',
+  modified: 'Modified',
+  size: 'Size',
+  age: 'Age',
+  period: 'Period',
+  version: 'Version',
+}
+
+export const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+  name: 400,
+  size: 100,
+  modified: 180,
+  type: 100,
+  age: 110,
+  period: 120,
+  version: 90,
+}
+
+export const DEFAULT_COLUMN_VISIBILITY: Record<string, boolean> = {
+  name: true,
+  type: true,
+  modified: true,
+  size: true,
+  age: false,
+  period: false,
+  version: false,
+}
+
+export type ColumnVisibility = Record<string, boolean>
+export type ColumnWidths = Record<string, number>
 
 // Utility to format paths for logging (Windows vs others)
 export function formatPathForLog(path: string) {
@@ -45,12 +84,9 @@ export interface FileTableRowProps {
   rowHoverBg: string;
   isFolderDropHovered: boolean;
   columnOrder: string[];
-  columnVisibility: {
-    name: boolean;
-    size: boolean;
-    modified: boolean;
-    type: boolean;
-  };
+  columnVisibility: ColumnVisibility;
+  /** Current version of the file (1 unless replaced); shown in the optional Version column */
+  fileVersion?: number;
   cellStyles: {
     bg: string;
     transition: string;

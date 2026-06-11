@@ -14,6 +14,8 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  Repeat2,
+  ArrowRight,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import {
@@ -21,6 +23,7 @@ import {
   extractIndexPrefix,
   WORKPAPER_DESCRIPTIONS,
 } from '../utils/indexPrefix';
+import { versionStore } from '../services/versionStore';
 import { docuFramePalette as P } from '../docuFrameColors';
 
 const noRing = { outline: 'none', boxShadow: 'none' } as const;
@@ -29,6 +32,19 @@ interface DownloadFile {
   name: string;
   size: number;
   modified?: string;
+}
+
+/** Pending name conflict from a transfer — resolved via the inline conflict card */
+interface TransferConflict {
+  /** Original filename still sitting in Downloads */
+  downloadName: string;
+  targetPath: string;
+  targetName: string;
+}
+
+interface ReplaceTarget {
+  name: string;
+  path: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -99,6 +115,17 @@ export const TransferPanel: React.FC = () => {
   const [xferStatus, setXferStatus] = useState<'idle' | 'transferring' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
 
+  // Name-conflict interception (single-file transfers)
+  const [conflict, setConflict] = useState<TransferConflict | null>(null);
+
+  // Replace mode — overwrite an existing file in the current folder as a new version
+  const [replaceMode, setReplaceMode] = useState(false);
+  const [targetQuery, setTargetQuery] = useState('');
+  const [selectedTarget, setSelectedTarget] = useState<ReplaceTarget | null>(null);
+  const [targetHighlight, setTargetHighlight] = useState(0);
+  const [showTargetSuggs, setShowTargetSuggs] = useState(false);
+  const [targetDropRect, setTargetDropRect] = useState<DOMRect | null>(null);
+
   // "/" command shortcut mode
   const [cmdMode, setCmdMode] = useState(false);
   const [cmdQuery, setCmdQuery] = useState('');
@@ -109,9 +136,11 @@ export const TransferPanel: React.FC = () => {
   const indexInputRef   = useRef<HTMLInputElement>(null);
   const fnInputRef      = useRef<HTMLInputElement>(null);
   const cmdInputRef     = useRef<HTMLInputElement>(null);
+  const targetInputRef  = useRef<HTMLInputElement>(null);
   const indexDropRef    = useRef<HTMLDivElement>(null);
   const fnDropRef       = useRef<HTMLDivElement>(null);
   const cmdDropRef      = useRef<HTMLDivElement>(null);
+  const targetDropRef   = useRef<HTMLDivElement>(null);
   const isOpenRef       = useRef(false);
   isOpenRef.current     = isOpen;
 
@@ -265,6 +294,12 @@ export const TransferPanel: React.FC = () => {
     setCmdMode(false);
     setCmdQuery('');
     setCmdHighlight(0);
+    setConflict(null);
+    setReplaceMode(false);
+    setSelectedTarget(null);
+    setTargetQuery('');
+    setShowTargetSuggs(false);
+    setTargetHighlight(0);
 
     // Start with no index selected (NIL)
     setSelectedIndex(null);
@@ -297,6 +332,8 @@ export const TransferPanel: React.FC = () => {
     setShowFilenameSuggs(false);
     setCmdMode(false);
     setCmdQuery('');
+    setConflict(null);
+    setShowTargetSuggs(false);
   }, []);
 
   // ── Global Ctrl+Space ────────────────────────────────────────────────────────
@@ -321,7 +358,8 @@ export const TransferPanel: React.FC = () => {
       const insideIndexDrop  = indexDropRef.current?.contains(target) ?? false;
       const insideFnDrop     = fnDropRef.current?.contains(target) ?? false;
       const insideCmdDrop    = cmdDropRef.current?.contains(target) ?? false;
-      if (!insidePanel && !insideIndexDrop && !insideFnDrop && !insideCmdDrop) closePanel();
+      const insideTargetDrop = targetDropRef.current?.contains(target) ?? false;
+      if (!insidePanel && !insideIndexDrop && !insideFnDrop && !insideCmdDrop && !insideTargetDrop) closePanel();
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -381,29 +419,211 @@ export const TransferPanel: React.FC = () => {
   };
 
   // ── Core transfer executor — accepts explicit opts to avoid stale state ──────
+  // Local file copies are near-instant, so the panel stays open just long enough
+  // to intercept a name conflict and offer Replace / Keep both instead of failing.
   const executeTransfer = useCallback(async (opts: { numFiles: number; command?: string; newName?: string; currentDirectory: string; fileNames?: string[] }) => {
-    // Close immediately — don't wait for result
-    closePanel();
+    setXferStatus('transferring');
     try {
       const result = await (window.electronAPI as any).transfer(opts);
       if (result?.success) {
+        // Command-mapping transfers silently overwrite — record those as new versions
+        for (const p of (result.overwrites ?? []) as string[]) {
+          const v = versionStore.bump(p);
+          addLog(`Overwrote existing file — now v${v}: ${p}`, 'response');
+        }
+        closePanel();
         addLog(result.message, 'response');
         setStatus('Transfer completed', 'success');
         // Trigger FileGrid's filtered reload rather than setting raw contents directly
         window.dispatchEvent(new CustomEvent('directoryRefreshed', { detail: { directory: opts.currentDirectory } }));
       } else {
-        addLog(result.message, 'error');
+        const conflictFailure = Array.isArray(result?.failures)
+          ? result.failures.find((f: { file: string; conflict?: boolean; destinationPath?: string }) => f.conflict && f.destinationPath)
+          : null;
+        if (conflictFailure && (!opts.fileNames || opts.fileNames.length <= 1)) {
+          // Keep the panel open and let the user decide
+          const targetPath = String(conflictFailure.destinationPath);
+          setConflict({
+            downloadName: String(conflictFailure.file),
+            targetPath,
+            targetName: targetPath.split(/[\\/]/).pop() ?? targetPath,
+          });
+          setXferStatus('idle');
+          setStatusMsg('');
+          return;
+        }
+        closePanel();
+        addLog(result?.message ?? 'Transfer failed', 'error');
         setStatus('Transfer failed', 'error');
       }
     } catch (err) {
+      closePanel();
       const msg = err instanceof Error ? err.message : String(err);
       addLog(`Transfer failed: ${msg}`, 'error');
       setStatus('Transfer failed', 'error');
     }
   }, [addLog, setStatus, closePanel]);
 
+  // ── Replace-as-new-version executor (shared by Replace mode + conflict card) ──
+  const executeReplace = useCallback(async (downloadName: string, targetPath: string, targetName: string) => {
+    setXferStatus('transferring');
+    try {
+      const res = await (window.electronAPI as any).replaceFileFromDownloads(downloadName, targetPath);
+      if (res?.success) {
+        const v = versionStore.bump(targetPath);
+        closePanel();
+        addLog(res.message, 'response');
+        setStatus(`Replaced ${targetName} — now v${v}`, 'success');
+        window.dispatchEvent(new CustomEvent('directoryRefreshed', { detail: { directory: currentDirectory } }));
+      } else {
+        setConflict(null);
+        setXferStatus('error');
+        setStatusMsg(res?.message ?? 'Replace failed');
+      }
+    } catch (err) {
+      setConflict(null);
+      setXferStatus('error');
+      setStatusMsg(err instanceof Error ? err.message : String(err));
+    }
+  }, [closePanel, addLog, setStatus, currentDirectory]);
+
+  // ── Conflict card actions ────────────────────────────────────────────────────
+  const handleConflictReplace = useCallback(async () => {
+    if (!conflict) return;
+    await executeReplace(conflict.downloadName, conflict.targetPath, conflict.targetName);
+  }, [conflict, executeReplace]);
+
+  const handleConflictKeepBoth = useCallback(async () => {
+    if (!conflict) return;
+    // Auto-suffix: "Name (2).pdf", first free slot wins
+    const dot = conflict.targetName.lastIndexOf('.');
+    const stem = dot === -1 ? conflict.targetName : conflict.targetName.slice(0, dot);
+    const ext = dot === -1 ? '' : conflict.targetName.slice(dot);
+    const taken = new Set((folderItems || []).map((f: { name: string }) => f.name.toLowerCase()));
+    let n = 2;
+    let candidate = `${stem} (${n})${ext}`;
+    while (taken.has(candidate.toLowerCase()) && n < 100) {
+      n += 1;
+      candidate = `${stem} (${n})${ext}`;
+    }
+    const downloadName = conflict.downloadName;
+    setConflict(null);
+    await executeTransfer({ numFiles: 1, command: 'transfer', newName: candidate, currentDirectory, fileNames: [downloadName] });
+  }, [conflict, folderItems, executeTransfer, currentDirectory]);
+
+  // ── Replace mode ─────────────────────────────────────────────────────────────
+  const targetSuggestions = useMemo(() => {
+    if (!replaceMode) return [] as Array<{ name: string; path: string; modified?: string }>;
+    const q = targetQuery.trim().toLowerCase();
+    const files = (folderItems || []).filter((f: { type?: string }) => f.type !== 'folder');
+    const filtered = q ? files.filter((f: { name: string }) => f.name.toLowerCase().includes(q)) : files;
+    return filtered
+      .slice()
+      .sort((a: { modified?: string }, b: { modified?: string }) =>
+        new Date(b.modified ?? 0).getTime() - new Date(a.modified ?? 0).getTime())
+      .slice(0, 6);
+  }, [replaceMode, targetQuery, folderItems]);
+
+  const currentTargetVersion = selectedTarget ? versionStore.getVersion(selectedTarget.path) : 1;
+
+  const toggleReplaceMode = useCallback(() => {
+    setReplaceMode(v => {
+      const next = !v;
+      if (next) {
+        setConflict(null);
+        setShowIndexSuggs(false);
+        setShowFilenameSuggs(false);
+        setTimeout(() => {
+          targetInputRef.current?.focus();
+          if (targetInputRef.current) setTargetDropRect(targetInputRef.current.getBoundingClientRect());
+        }, 30);
+      } else {
+        setSelectedTarget(null);
+        setTargetQuery('');
+        setShowTargetSuggs(false);
+      }
+      return next;
+    });
+  }, []);
+
+  // Replace works one source → one target; leaving multi-select re-arms normal transfer
+  useEffect(() => {
+    if (isMultiSelect && replaceMode) {
+      setReplaceMode(false);
+      setSelectedTarget(null);
+      setTargetQuery('');
+      setShowTargetSuggs(false);
+    }
+  }, [isMultiSelect, replaceMode]);
+
+  const acceptTarget = useCallback((t: { name: string; path: string }) => {
+    setSelectedTarget({ name: t.name, path: t.path });
+    setTargetQuery(t.name);
+    setShowTargetSuggs(false);
+  }, []);
+
+  const handleReplaceExecute = useCallback(async () => {
+    if (!selectedTarget || !sourceFile) return;
+    await executeReplace(sourceFile.name, selectedTarget.path, selectedTarget.name);
+  }, [selectedTarget, sourceFile, executeReplace]);
+
+  const handleTargetKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' && targetSuggestions.length > 0) {
+      e.preventDefault();
+      setTargetHighlight(h => Math.min(h + 1, targetSuggestions.length - 1));
+      setShowTargetSuggs(true);
+      return;
+    }
+    if (e.key === 'ArrowUp' && targetSuggestions.length > 0) {
+      e.preventDefault();
+      setTargetHighlight(h => Math.max(h - 1, 0));
+      return;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      if (showTargetSuggs && targetSuggestions.length > 0) {
+        acceptTarget(targetSuggestions[Math.max(0, Math.min(targetHighlight, targetSuggestions.length - 1))]);
+        return;
+      }
+      if (e.key === 'Enter' && selectedTarget) {
+        void handleReplaceExecute();
+      }
+    }
+  }, [targetSuggestions, showTargetSuggs, targetHighlight, acceptTarget, selectedTarget, handleReplaceExecute]);
+
+  const handleTargetChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTargetQuery(e.target.value);
+    setSelectedTarget(null);
+    setTargetHighlight(0);
+    setShowTargetSuggs(true);
+  };
+
+  // ── Pre-armed replace from the file context menu ─────────────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { targetPath?: string; targetName?: string } | undefined;
+      if (!detail?.targetPath || !detail?.targetName) return;
+      void (async () => {
+        await openPanel();
+        setReplaceMode(true);
+        setSelectedTarget({ name: detail.targetName!, path: detail.targetPath! });
+        setTargetQuery(detail.targetName!);
+        setTimeout(() => {
+          targetInputRef.current?.focus();
+          if (targetInputRef.current) setTargetDropRect(targetInputRef.current.getBoundingClientRect());
+        }, 80);
+      })();
+    };
+    window.addEventListener('openTransferReplace', handler);
+    return () => window.removeEventListener('openTransferReplace', handler);
+  }, [openPanel]);
+
   // ── Execute transfer (declared before handleFilenameKeyDown) ────────────────
   const handleTransfer = useCallback(async () => {
+    if (replaceMode) {
+      await handleReplaceExecute();
+      return;
+    }
     if (isMultiSelect) {
       const fileNames = Array.from(selectedDlIdxs).map(i => downloads[i]?.name).filter(Boolean) as string[];
       await executeTransfer({ numFiles: fileNames.length, command: 'transfer', currentDirectory, fileNames });
@@ -422,7 +642,7 @@ export const TransferPanel: React.FC = () => {
       opts.command = 'transfer';
     }
     await executeTransfer(opts);
-  }, [isMultiSelect, selectedDlIdxs, downloads, selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
+  }, [replaceMode, handleReplaceExecute, isMultiSelect, selectedDlIdxs, downloads, selectedCommand, filename, destinationWithExt, currentDirectory, executeTransfer]);
 
   // ── Transfer + GST Rename ─────────────────────────────────────────────────
   const handleTransferAndRename = useCallback(async () => {
@@ -739,14 +959,38 @@ export const TransferPanel: React.FC = () => {
             )}
           </Box>
 
-          {/* ── Rename As / Command Mode ── */}
+          {/* ── Rename As / Replace / Command Mode ── */}
           <Flex align="center" gap={2} mb="8px">
-            <Text fontSize="10px" fontWeight="700" color={subColor} letterSpacing="0.08em" userSelect="none">
-              {cmdMode ? 'SHORTCUT' : 'RENAME AS'}
+            <Text fontSize="10px" fontWeight="700" color={replaceMode && !cmdMode ? '#f59e0b' : subColor} letterSpacing="0.08em" userSelect="none">
+              {cmdMode ? 'SHORTCUT' : replaceMode ? 'REPLACE TARGET' : 'RENAME AS'}
             </Text>
             <Box flex={1} h="1px" bg={borderColor} />
-            {!cmdMode && (
+            {!cmdMode && !replaceMode && (
               <Text fontSize="9.5px" color={subColor} userSelect="none" opacity={0.6}>/ for commands</Text>
+            )}
+            {!cmdMode && (
+              <Flex
+                as="button"
+                align="center"
+                gap="4px"
+                px="7px"
+                h="19px"
+                borderRadius="4px"
+                border="1px solid"
+                borderColor={replaceMode ? 'rgba(245,158,11,0.5)' : borderColor}
+                bg={replaceMode ? 'rgba(245,158,11,0.12)' : 'transparent'}
+                color={replaceMode ? '#f59e0b' : subColor}
+                cursor={isMultiSelect ? 'not-allowed' : 'pointer'}
+                opacity={isMultiSelect ? 0.4 : 1}
+                onClick={isMultiSelect ? undefined : toggleReplaceMode}
+                title={isMultiSelect
+                  ? 'Select a single download to use Replace'
+                  : 'Replace an existing file in this folder with the selected download (bumps its version)'}
+                style={{ ...noRing, transition: 'background 0.12s, color 0.12s, border-color 0.12s' }}
+              >
+                <Repeat2 size={10} strokeWidth={2.5} />
+                <Text fontSize="9px" fontWeight="700" letterSpacing="0.06em" userSelect="none">REPLACE</Text>
+              </Flex>
             )}
           </Flex>
 
@@ -778,8 +1022,64 @@ export const TransferPanel: React.FC = () => {
             </Box>
           )}
 
-          {/* Normal rename fields — hidden in cmd mode */}
-          {!cmdMode && <Flex gap="8px" mb={xferStatus === 'success' || xferStatus === 'error' ? '10px' : '14px'}>
+          {/* Replace mode — target picker + preview strip */}
+          {!cmdMode && replaceMode && (
+            <Box mb={xferStatus === 'success' || xferStatus === 'error' ? '10px' : '14px'}>
+              <Input
+                ref={targetInputRef}
+                value={targetQuery}
+                onChange={handleTargetChange}
+                onKeyDown={handleTargetKeyDown}
+                onFocus={() => {
+                  if (targetInputRef.current) setTargetDropRect(targetInputRef.current.getBoundingClientRect());
+                  setShowTargetSuggs(true);
+                }}
+                onBlur={() => setTimeout(() => setShowTargetSuggs(false), 150)}
+                placeholder="Search file in this folder to replace…"
+                size="sm"
+                h="36px"
+                bg={inputBg}
+                border="1px solid"
+                borderColor={showTargetSuggs ? focusBorder : selectedTarget ? 'rgba(245,158,11,0.5)' : borderColor}
+                borderRadius="6px"
+                fontSize="12.5px"
+                color={selectedTarget ? '#f59e0b' : labelColor}
+                _placeholder={{ color: subColor, fontSize: '11.5px' }}
+                style={noRing}
+                transition="border-color 0.15s"
+              />
+              {selectedTarget && sourceFile && (
+                <Flex
+                  align="center"
+                  gap="8px"
+                  mt="8px"
+                  px="10px"
+                  py="7px"
+                  bg="rgba(245,158,11,0.07)"
+                  border="1px solid rgba(245,158,11,0.25)"
+                  borderRadius="6px"
+                >
+                  <Text fontSize="11.5px" color={subColor} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" maxW="42%" title={sourceFile.name}>
+                    {sourceFile.name}
+                  </Text>
+                  <Box flexShrink={0} color="#f59e0b" lineHeight={0}>
+                    <ArrowRight size={11} strokeWidth={2.5} />
+                  </Box>
+                  <Text fontSize="11.5px" fontWeight="600" color={labelColor} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" flex={1} title={selectedTarget.name}>
+                    {selectedTarget.name}
+                  </Text>
+                  <Box px="6px" py="1px" borderRadius="3px" bg="rgba(234,179,8,0.12)" border="1px solid rgba(234,179,8,0.45)" flexShrink={0}>
+                    <Text fontSize="10px" fontWeight="700" color="#eab308" letterSpacing="0.03em">
+                      v{currentTargetVersion} → v{currentTargetVersion + 1}
+                    </Text>
+                  </Box>
+                </Flex>
+              )}
+            </Box>
+          )}
+
+          {/* Normal rename fields — hidden in cmd + replace modes */}
+          {!cmdMode && !replaceMode && <Flex gap="8px" mb={xferStatus === 'success' || xferStatus === 'error' ? '10px' : '14px'}>
 
             {/* Index field — 26% */}
             <Box w="26%" flexShrink={0}>
@@ -848,6 +1148,92 @@ export const TransferPanel: React.FC = () => {
             </Box>
           </Flex>}
 
+          {/* ── Name conflict card — Replace / Keep both / Cancel ── */}
+          {conflict && (
+            <Box
+              px="12px"
+              py="10px"
+              mb="10px"
+              bg="rgba(245,158,11,0.07)"
+              border="1px solid rgba(245,158,11,0.35)"
+              borderRadius="6px"
+            >
+              <Flex align="center" gap="8px" mb="5px">
+                <AlertCircle size={14} color="#f59e0b" />
+                <Text fontSize="12px" fontWeight="600" color={labelColor} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                  “{conflict.targetName}” already exists
+                </Text>
+              </Flex>
+              <Text fontSize="11.5px" color={subColor} mb="10px">
+                Replace it with “{conflict.downloadName}”? The file keeps its name and becomes{' '}
+                <Box as="span" fontWeight="700" color="#eab308">
+                  v{versionStore.getVersion(conflict.targetPath) + 1}
+                </Box>.
+              </Text>
+              <Flex align="center" justify="flex-end" gap="8px">
+                <Box
+                  as="button"
+                  px="12px"
+                  h="28px"
+                  bg="transparent"
+                  border="1px solid"
+                  borderColor={borderColor}
+                  borderRadius="5px"
+                  fontSize="12px"
+                  color={subColor}
+                  cursor="pointer"
+                  display="flex"
+                  alignItems="center"
+                  _hover={{ bg: hoverBg }}
+                  style={{ ...noRing, transition: 'background 0.1s' }}
+                  onClick={() => setConflict(null)}
+                >
+                  Cancel
+                </Box>
+                <Box
+                  as="button"
+                  px="12px"
+                  h="28px"
+                  bg="transparent"
+                  border="1px solid"
+                  borderColor={borderColor}
+                  borderRadius="5px"
+                  fontSize="12px"
+                  color={labelColor}
+                  cursor="pointer"
+                  display="flex"
+                  alignItems="center"
+                  _hover={{ bg: hoverBg }}
+                  style={{ ...noRing, transition: 'background 0.1s' }}
+                  onClick={handleConflictKeepBoth}
+                  title="Transfer with an auto-numbered name instead"
+                >
+                  Keep both
+                </Box>
+                <Box
+                  as="button"
+                  px="14px"
+                  h="28px"
+                  bg="#d97706"
+                  borderRadius="5px"
+                  fontSize="12px"
+                  fontWeight="600"
+                  color="white"
+                  cursor="pointer"
+                  display="flex"
+                  alignItems="center"
+                  gap="5px"
+                  _hover={{ bg: '#b45309' }}
+                  style={{ ...noRing, transition: 'background 0.1s' }}
+                  onClick={handleConflictReplace}
+                >
+                  <Repeat2 size={12} strokeWidth={2.5} />
+                  Replace (v{versionStore.getVersion(conflict.targetPath) + 1})
+                </Box>
+              </Flex>
+            </Box>
+          )}
+
           {/* ── Status ── */}
           {(xferStatus === 'success' || xferStatus === 'error') && statusMsg && (
             <Flex align="center" gap="8px" px="12px" py="8px" mb="10px"
@@ -861,8 +1247,8 @@ export const TransferPanel: React.FC = () => {
             </Flex>
           )}
 
-          {/* ── Footer ── */}
-          <Flex align="center" justify="flex-end" gap="8px" pt="2px">
+          {/* ── Footer (hidden while a conflict decision is pending) ── */}
+          {!conflict && <Flex align="center" justify="flex-end" gap="8px" pt="2px">
             <Box
               as="button"
               px="14px"
@@ -881,54 +1267,70 @@ export const TransferPanel: React.FC = () => {
             >
               Cancel
             </Box>
-            <Box
-              as="button"
-              px="14px"
-              h="32px"
-              bg={isMultiSelect ? 'transparent' : 'rgba(34,197,94,0.12)'}
-              border="1px solid"
-              borderColor={isMultiSelect ? borderColor : 'rgba(34,197,94,0.3)'}
-              borderRadius="5px"
-              fontSize="12px"
-              fontWeight="500"
-              color={isMultiSelect ? subColor : '#4ade80'}
-              cursor={isMultiSelect ? 'not-allowed' : 'pointer'}
-              display="flex"
-              alignItems="center"
-              gap="5px"
-              onClick={isMultiSelect ? undefined : handleTransferAndRename}
-              _hover={isMultiSelect ? {} : { bg: 'rgba(34,197,94,0.2)' }}
-              opacity={isMultiSelect ? 0.4 : 1}
-              style={{ ...noRing, transition: 'background 0.1s' }}
-              title={isMultiSelect ? 'Select one file to use GST rename' : 'Transfer latest file and rename to GST standards'}
-            >
-              GST
-            </Box>
-            <Box
-              as="button"
-              px="16px"
-              h="32px"
-              bg={xferStatus === 'transferring' ? '#1d4ed8' : '#2563eb'}
-              borderRadius="5px"
-              fontSize="12.5px"
-              fontWeight="600"
-              color="white"
-              cursor={xferStatus === 'transferring' ? 'not-allowed' : 'pointer'}
-              display="flex"
-              alignItems="center"
-              gap="6px"
-              onClick={handleTransfer}
-              opacity={xferStatus === 'transferring' ? 0.85 : 1}
-              style={{ ...noRing, transition: 'background 0.1s, opacity 0.1s', letterSpacing: '-0.01em' }}
-            >
-              {xferStatus === 'transferring' ? (
-                <>
-                  <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                  Transferring…
-                </>
-              ) : 'Transfer'}
-            </Box>
-          </Flex>
+            {!replaceMode && (
+              <Box
+                as="button"
+                px="14px"
+                h="32px"
+                bg={isMultiSelect ? 'transparent' : 'rgba(34,197,94,0.12)'}
+                border="1px solid"
+                borderColor={isMultiSelect ? borderColor : 'rgba(34,197,94,0.3)'}
+                borderRadius="5px"
+                fontSize="12px"
+                fontWeight="500"
+                color={isMultiSelect ? subColor : '#4ade80'}
+                cursor={isMultiSelect ? 'not-allowed' : 'pointer'}
+                display="flex"
+                alignItems="center"
+                gap="5px"
+                onClick={isMultiSelect ? undefined : handleTransferAndRename}
+                _hover={isMultiSelect ? {} : { bg: 'rgba(34,197,94,0.2)' }}
+                opacity={isMultiSelect ? 0.4 : 1}
+                style={{ ...noRing, transition: 'background 0.1s' }}
+                title={isMultiSelect ? 'Select one file to use GST rename' : 'Transfer latest file and rename to GST standards'}
+              >
+                GST
+              </Box>
+            )}
+            {(() => {
+              const replaceDisabled = replaceMode && (!selectedTarget || !sourceFile);
+              const busy = xferStatus === 'transferring';
+              return (
+                <Box
+                  as="button"
+                  px="16px"
+                  h="32px"
+                  bg={replaceMode
+                    ? (replaceDisabled ? 'rgba(217,119,6,0.4)' : busy ? '#b45309' : '#d97706')
+                    : (busy ? '#1d4ed8' : '#2563eb')}
+                  borderRadius="5px"
+                  fontSize="12.5px"
+                  fontWeight="600"
+                  color="white"
+                  cursor={busy || replaceDisabled ? 'not-allowed' : 'pointer'}
+                  display="flex"
+                  alignItems="center"
+                  gap="6px"
+                  onClick={busy || replaceDisabled ? undefined : handleTransfer}
+                  opacity={busy ? 0.85 : 1}
+                  title={replaceDisabled ? 'Pick a file to replace first' : undefined}
+                  style={{ ...noRing, transition: 'background 0.1s, opacity 0.1s', letterSpacing: '-0.01em' }}
+                >
+                  {busy ? (
+                    <>
+                      <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                      {replaceMode ? 'Replacing…' : 'Transferring…'}
+                    </>
+                  ) : replaceMode ? (
+                    <>
+                      <Repeat2 size={12} strokeWidth={2.5} />
+                      {selectedTarget ? `Replace → v${currentTargetVersion + 1}` : 'Replace'}
+                    </>
+                  ) : 'Transfer'}
+                </Box>
+              );
+            })()}
+          </Flex>}
         </Box>
       </Box>
 
@@ -1033,6 +1435,72 @@ export const TransferPanel: React.FC = () => {
               </Text>
             </Flex>
           ))}
+        </Box>,
+        document.body
+      )}
+      {/* ── Replace target suggestion portal ── */}
+      {replaceMode && showTargetSuggs && targetSuggestions.length > 0 && targetDropRect && createPortal(
+        <Box
+          ref={targetDropRef}
+          onMouseDown={(e) => e.stopPropagation()}
+          position="fixed"
+          top={`${targetDropRect.bottom + 3}px`}
+          left={`${targetDropRect.left}px`}
+          w={`${targetDropRect.width}px`}
+          maxH="220px"
+          overflowY="auto"
+          bg={suggBg}
+          border="1px solid"
+          borderColor={borderColor}
+          borderRadius="6px"
+          zIndex={20000}
+          py="3px"
+          boxShadow="0 8px 24px rgba(0,0,0,0.3)"
+        >
+          {targetSuggestions.map((t, i) => {
+            const badge = getExtBadge(t.name);
+            const v = versionStore.getVersion(t.path);
+            return (
+              <Flex
+                key={t.path}
+                as="button"
+                w="100%"
+                align="center"
+                px="10px"
+                py="6px"
+                gap="8px"
+                cursor="pointer"
+                bg={i === targetHighlight ? suggActiveBg : 'transparent'}
+                _hover={{ bg: suggActiveBg }}
+                textAlign="left"
+                onMouseDown={() => acceptTarget(t)}
+                onMouseEnter={() => setTargetHighlight(i)}
+              >
+                <Box px="5px" py="1px" borderRadius="3px" bg={badge.bg} flexShrink={0} minW="32px" textAlign="center">
+                  <Text fontSize="9px" fontWeight="700" color={badge.color} letterSpacing="0.04em">{badge.short || '—'}</Text>
+                </Box>
+                <Text
+                  fontSize="11.5px"
+                  color={i === targetHighlight ? labelColor : subColor}
+                  overflow="hidden"
+                  textOverflow="ellipsis"
+                  whiteSpace="nowrap"
+                  flex={1}
+                  title={t.name}
+                >
+                  {t.name}
+                </Text>
+                {v > 1 && (
+                  <Box px="4px" py="0px" borderRadius="3px" bg="rgba(234,179,8,0.12)" border="1px solid rgba(234,179,8,0.45)" flexShrink={0}>
+                    <Text fontSize="9px" fontWeight="700" color="#eab308">v{v}</Text>
+                  </Box>
+                )}
+                {t.modified && (
+                  <Text fontSize="10.5px" color={subColor} flexShrink={0}>{formatAge(t.modified)}</Text>
+                )}
+              </Flex>
+            );
+          })}
         </Box>,
         document.body
       )}

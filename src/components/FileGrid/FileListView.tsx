@@ -13,10 +13,13 @@ import {
   Layers,
   FolderPlus,
   FilterX,
+  Inbox,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
-import { FileTableRowProps, SortColumn, setDropEffectCompatibleWithEffectAllowed } from './FileGridUtils'
+import { FileTableRowProps, SortColumn, setDropEffectCompatibleWithEffectAllowed, COLUMN_LABELS, type ColumnVisibility, type ColumnWidths } from './FileGridUtils'
 import { getIndexInfo } from '../../utils/indexPrefix'
+import { parsePeriodFromName } from '../../utils/period'
+import { getAgeInfo } from '../../utils/fileAge'
 import { DF_GROUP_HEADER_GAP_BG, DF_GROUP_HEADER_LAYER_TEXT, docuFramePalette } from '../../docuFrameColors'
 
 /** Match function-row transfer popovers — flat chrome, no blue ring */
@@ -40,13 +43,16 @@ const fileGridTableStyles = {
 /** List row index for inline “new folder” ghost row; must not overlap real file indices (0..n-1). */
 const NEW_FOLDER_GHOST_ROW_INDEX = -1
 
-/** Flat list for grouped-mode virtualization: folder rows + group headers + file rows. */
+/** Flat list for grouped-mode virtualization: folder rows + group headers + file rows + empty-section hints. */
 type GroupedVirtualRowItem =
   | { type: 'groupHeader'; groupKey: string; groupIndex: number }
   | { type: 'fileRow'; file: FileItem; globalIndex: number }
+  | { type: 'emptyHint'; groupKey: string }
 
 /** Estimated height for a group header row (divider + pb gap below + optional wrap); slight over-estimate avoids virtual list overlap. */
 const GROUP_HEADER_HEIGHT_ESTIMATE = 70
+/** Estimated height for the empty-section hint row under a fileless custom header. */
+const EMPTY_HINT_HEIGHT_ESTIMATE = 34
 
 // FileTableRow Component (extracted from FileGrid.tsx)
 const FileTableRow = React.memo<FileTableRowProps>(({
@@ -68,6 +74,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
   unobserveFileElement,
   rowHandlers,
   folderDropHandlers,
+  fileVersion,
 }) => {
   const isListRowHovered = useListRowIsHovered(index);
   const displayBg = isListRowHovered && !isFolderDropHovered ? rowHoverBg : finalBg;
@@ -117,7 +124,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
         const isModified = column === 'modified';
         const isType = column === 'type';
 
-        if (!columnVisibility[column as keyof typeof columnVisibility]) {
+        if (!columnVisibility[column]) {
           return null;
         }
 
@@ -275,7 +282,98 @@ const FileTableRow = React.memo<FileTableRowProps>(({
             </chakra.td>
           );
         }
-        return null;
+        if (column === 'age') {
+          const age = file.type === 'folder' ? null : getAgeInfo(file.modified);
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              {age ? (
+                <Flex align="center" gap={1.5} style={{ opacity: fileState.isFileCut ? 0.5 : 1 }}>
+                  <Box
+                    w="36px"
+                    h="5px"
+                    borderRadius="full"
+                    bg="rgba(127,127,127,0.18)"
+                    overflow="hidden"
+                    flexShrink={0}
+                    title={`Modified ${age.label} ago`}
+                  >
+                    <Box
+                      h="100%"
+                      borderRadius="full"
+                      style={{
+                        width: `${Math.max(8, Math.round(age.heat * 100))}%`,
+                        background: age.color,
+                        boxShadow: age.glow,
+                        transition: 'width 0.3s ease',
+                      }}
+                    />
+                  </Box>
+                  <Text fontSize="10px" color={fileSubTextColor} style={{ userSelect: 'none', fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: '0.03em' }}>
+                    {age.label}
+                  </Text>
+                </Flex>
+              ) : (
+                <Text fontSize="xs" color={fileSubTextColor} style={{ userSelect: 'none' }}>-</Text>
+              )}
+            </chakra.td>
+          );
+        }
+        if (column === 'period') {
+          const period = parsePeriodFromName(file.name);
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              {period ? (
+                <Box
+                  as="span"
+                  display="inline-block"
+                  px={1.5}
+                  py="1px"
+                  borderRadius="3px"
+                  border="1px solid rgba(114,205,244,0.35)"
+                  fontSize="10px"
+                  color={fileTextColor}
+                  title={period.fullLabel}
+                  style={{ userSelect: 'none', fontFamily: "'Rajdhani', sans-serif", fontWeight: 600, letterSpacing: '0.04em', opacity: fileState.isFileCut ? 0.5 : 1 }}
+                >
+                  {period.label}
+                </Box>
+              ) : (
+                <Text fontSize="xs" color={fileSubTextColor} style={{ userSelect: 'none' }}>-</Text>
+              )}
+            </chakra.td>
+          );
+        }
+        if (column === 'version') {
+          const v = file.type === 'folder' ? null : (fileVersion ?? 1);
+          return (
+            <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow}>
+              {v === null ? (
+                <Text fontSize="xs" color={fileSubTextColor} style={{ userSelect: 'none' }}>-</Text>
+              ) : v > 1 ? (
+                <Box
+                  as="span"
+                  display="inline-block"
+                  px={1.5}
+                  py="1px"
+                  borderRadius="3px"
+                  bg="rgba(234,179,8,0.12)"
+                  border="1px solid rgba(234,179,8,0.45)"
+                  fontSize="10px"
+                  color="#eab308"
+                  title={`Replaced ${v - 1} time${v - 1 === 1 ? '' : 's'}`}
+                  style={{ userSelect: 'none', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, letterSpacing: '0.05em', opacity: fileState.isFileCut ? 0.5 : 1 }}
+                >
+                  v{v}
+                </Box>
+              ) : (
+                <Text fontSize="xs" color={fileSubTextColor} opacity={0.7} style={{ userSelect: 'none', fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}>
+                  v1
+                </Text>
+              )}
+            </chakra.td>
+          );
+        }
+        return <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow} />;
       })}
     </chakra.tr>
   );
@@ -300,10 +398,10 @@ const FileTableRow = React.memo<FileTableRowProps>(({
     prevProps.rowHandlers === nextProps.rowHandlers &&
     prevProps.folderDropHandlers === nextProps.folderDropHandlers &&
     prevProps.nativeIcons.has(prevProps.file.path) === nextProps.nativeIcons.has(nextProps.file.path) &&
-    prevProps.columnVisibility.name === nextProps.columnVisibility.name &&
-    prevProps.columnVisibility.size === nextProps.columnVisibility.size &&
-    prevProps.columnVisibility.modified === nextProps.columnVisibility.modified &&
-    prevProps.columnVisibility.type === nextProps.columnVisibility.type &&
+    prevProps.fileVersion === nextProps.fileVersion &&
+    Object.keys(nextProps.columnVisibility).every(
+      (k) => prevProps.columnVisibility[k] === nextProps.columnVisibility[k]
+    ) &&
     !columnOrderChanged
   );
 });
@@ -397,7 +495,7 @@ function FileRenameTableRow({
         const isModified = column === 'modified';
         const isType = column === 'type';
 
-        if (!columnVisibility[column as keyof typeof columnVisibility]) {
+        if (!columnVisibility[column]) {
           return null;
         }
 
@@ -559,7 +657,7 @@ function FileRenameTableRow({
             </chakra.td>
           );
         }
-        return null;
+        return <chakra.td key={cellKey} {...cellStylesDisplay} boxShadow={selectionShadow} />;
       })}
     </chakra.tr>
   );
@@ -567,7 +665,7 @@ function FileRenameTableRow({
 
 type NewFolderGhostTableRowProps = {
   columnOrder: string[];
-  columnVisibility: { name: boolean; size: boolean; modified: boolean; type: boolean };
+  columnVisibility: ColumnVisibility;
   cellStyles: FileRenameTableRowProps['cellStyles'];
   rowDefaultBg: string;
   rowHoverBg: string;
@@ -629,7 +727,7 @@ function NewFolderGhostTableRow({
         const isModified = column === 'modified';
         const isType = column === 'type';
 
-        if (!columnVisibility[column as keyof typeof columnVisibility]) {
+        if (!columnVisibility[column]) {
           return null;
         }
 
@@ -749,7 +847,7 @@ function NewFolderGhostTableRow({
             </chakra.td>
           );
         }
-        return null;
+        return <chakra.td key={cellKey} {...cellStylesDisplay} />;
       })}
     </chakra.tr>
   );
@@ -760,6 +858,8 @@ interface GroupHeaderDropZoneProps {
   groupKey: string;
   indexInfo: ReturnType<typeof getIndexInfo>;
   fileCount: number;
+  /** Rich header metadata: newest file's modified date, e.g. "11 March" (year appended when not current) */
+  latestFileLabel?: string | null;
   /** Second arg is true when Ctrl was held during drag-over or at drop (drop often loses ctrlKey after key-up). */
   onDrop: (e: React.DragEvent, copyModifierActive: boolean) => void;
   transferTemplates: Array<{ command: string; filename: string }>;
@@ -776,6 +876,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   groupKey,
   indexInfo,
   fileCount,
+  latestFileLabel,
   onDrop,
   transferTemplates,
   onTransfer,
@@ -996,6 +1097,21 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
               ? `📋 Copy to ${groupKey}${indexInfo.description ? ` — ${indexInfo.description}` : ''}`
               : indexInfo.description || ''}
           </Text>
+          {latestFileLabel && !isDraggingOver && (
+            <Text
+              as="span"
+              flexShrink={0}
+              fontSize="10px"
+              color={pillText}
+              opacity={0.75}
+              whiteSpace="nowrap"
+              letterSpacing="0.02em"
+              title={`Newest file in ${groupKey} was modified ${latestFileLabel}`}
+              style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}
+            >
+              Latest file: {latestFileLabel}
+            </Text>
+          )}
           <Box
             as="span"
             flexShrink={0}
@@ -1212,6 +1328,21 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
 
 const GroupHeaderDropZone = React.memo(GroupHeaderDropZoneInner);
 
+/** "11 March" (year appended when not the current year) for the newest file in a section. */
+function formatLatestFileLabel(files: FileItem[]): string | null {
+  let max = -Infinity;
+  for (const f of files) {
+    if (!f.modified) continue;
+    const t = new Date(f.modified).getTime();
+    if (!isNaN(t) && t > max) max = t;
+  }
+  if (max === -Infinity) return null;
+  const d = new Date(max);
+  const label = `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'long' })}`;
+  return d.getFullYear() === new Date().getFullYear() ? label : `${label} ${d.getFullYear()}`;
+}
+
+
 // FileListView Component (replaces renderListView function)
 export interface FileListViewProps {
   // Refs
@@ -1238,8 +1369,12 @@ export interface FileListViewProps {
   onCreateFolderRequest?: () => void;
   sortedFiles: FileItem[];
   columnOrder: string[];
-  columnVisibility: { name: boolean; size: boolean; modified: boolean; type: boolean };
-  columnWidths: { name: number; size: number; modified: number; type: number };
+  columnVisibility: ColumnVisibility;
+  columnWidths: ColumnWidths;
+  /** Lookup for the optional Version column; files default to v1 */
+  getFileVersion?: (path: string) => number;
+  /** Bumps whenever any file version changes so memoized rows refresh */
+  fileVersionsEpoch?: number;
   sortColumn: SortColumn;
   sortDirection: 'asc' | 'desc';
   draggingColumn: string | null;
@@ -1385,6 +1520,8 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.groupHeaderVariant !== next.groupHeaderVariant) return false;
   if (prev.groupOrder !== next.groupOrder) return false;
   if (prev.hasActiveFilters !== next.hasActiveFilters) return false;
+  if (prev.getFileVersion !== next.getFileVersion) return false;
+  if (prev.fileVersionsEpoch !== next.fileVersionsEpoch) return false;
   return true;
 }
 
@@ -1483,6 +1620,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
   hasActiveFilters = false,
   onClearFilters,
   onCreateFolderRequest,
+  getFileVersion,
+  fileVersionsEpoch: _fileVersionsEpoch,
 }: FileListViewProps) {
   const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
   const groupViewLayerHeaderBg = '#1A365D';
@@ -1533,7 +1672,12 @@ const FileListViewBody = React.memo(function FileListViewBody({
       });
     entries.forEach(([groupKey, groupFiles], groupIndex) => {
       items.push({ type: 'groupHeader', groupKey, groupIndex });
-      for (const f of groupFiles ?? []) {
+      if (!groupFiles || groupFiles.length === 0) {
+        // Manually-activated section with no files yet: show an empty-state hint under the header
+        items.push({ type: 'emptyHint', groupKey });
+        return;
+      }
+      for (const f of groupFiles) {
         const gi = pathToGlobalIndex.get(f.path);
         items.push({ type: 'fileRow', file: f, globalIndex: gi !== undefined ? gi : 0 });
       }
@@ -1590,6 +1734,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
     estimateSize: (index) => {
       const item = flatGroupedItems[index];
       if (!item) return ROW_HEIGHT_ESTIMATE;
+      if (item.type === 'emptyHint') return EMPTY_HINT_HEIGHT_ESTIMATE;
       if (item.type !== 'groupHeader') return ROW_HEIGHT_ESTIMATE;
       return groupHeaderVariant === 'plain' ? PLAIN_GROUP_HEADER_HEIGHT_ESTIMATE : GROUP_HEADER_HEIGHT_ESTIMATE;
     },
@@ -2025,6 +2170,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                               groupKey={item.groupKey}
                               indexInfo={indexInfo}
                               fileCount={groupFiles.length}
+                              latestFileLabel={formatLatestFileLabel(groupFiles)}
                               onDrop={(e, copyMod) => handleGroupHeaderDrop(e, item.groupKey, copyMod)}
                               transferTemplates={groupedTransferTemplates[item.groupKey] ?? []}
                               onTransfer={onTransferFromGroupHeader}
@@ -2035,6 +2181,35 @@ const FileListViewBody = React.memo(function FileListViewBody({
                               mt={mtValue}
                               clearFolderHoverStates={clearFolderHoverStates}
                             />
+                          </td>
+                        </tr>
+                      );
+                    }
+                    if (item.type === 'emptyHint') {
+                      return (
+                        <tr key={`empty-${item.groupKey}-${virtualRow.index}`}>
+                          <td colSpan={columnOrder.length} style={{ padding: 0, background: 'transparent' }}>
+                            <Flex
+                              align="center"
+                              gap={2}
+                              mx={0}
+                              mt="2px"
+                              px={2.5}
+                              py={1.5}
+                              borderLeft="2px solid rgba(114,205,244,0.25)"
+                              border="1px dashed rgba(114,205,244,0.18)"
+                              borderLeftWidth="2px"
+                              borderLeftStyle="solid"
+                              userSelect="none"
+                              pointerEvents="none"
+                            >
+                              <Box color={fileSubTextColor} opacity={0.55} lineHeight={0}>
+                                <Inbox size={13} strokeWidth={1.75} />
+                              </Box>
+                              <Text fontSize="11px" color={fileSubTextColor} opacity={0.75} fontStyle="italic">
+                                No files yet — drop a file on the header above, or use ＋ to transfer one in
+                              </Text>
+                            </Flex>
                           </td>
                         </tr>
                       );
@@ -2097,6 +2272,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                         unobserveFileElement={unobserveFileElement}
                         rowHandlers={rowHandlers}
                         folderDropHandlers={folderDropHandlers}
+                        fileVersion={getFileVersion ? getFileVersion(file.path) : undefined}
                       />
                     );
                   })}
@@ -2235,6 +2411,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                         unobserveFileElement={unobserveFileElement}
                         rowHandlers={rowHandlers}
                         folderDropHandlers={folderDropHandlers}
+                        fileVersion={getFileVersion ? getFileVersion(file.path) : undefined}
                       />
                     );
                   })}
@@ -2333,7 +2510,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
               pointerEvents="none"
               boxShadow="lg"
             >
-              {draggingColumn === 'name' ? 'Name' : draggingColumn === 'size' ? 'Size' : draggingColumn === 'modified' ? 'Modified' : ''}
+              {COLUMN_LABELS[draggingColumn] ?? ''}
               <Box
                 position="absolute"
                 left={0}

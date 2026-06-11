@@ -1442,7 +1442,14 @@ ipcMain.handle('root-git-discard', async () => {
   return await rootGitDiscard(await getRootPathForGit());
 });
 
-ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string) => {
+/**
+ * Replace an existing file's content with a file from Downloads (target keeps its name).
+ * downloadFileName null → use the most recently modified download (legacy "latest" behavior).
+ */
+async function performReplaceFromDownloads(
+  downloadFileName: string | null,
+  targetFilePath: string
+): Promise<{ success: boolean; message: string; downloadName?: string }> {
   try {
     if (!targetFilePath || typeof targetFilePath !== 'string') {
       return {
@@ -1458,20 +1465,29 @@ ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string
       return { success: false, message: `Downloads directory not found: ${downloadsPath}` };
     }
 
-    const files = fs.readdirSync(downloadsPath)
-      .map(file => {
-        const filePath = path.join(downloadsPath, file);
-        const stats = fs.statSync(filePath);
-        return { file, filePath, mtime: stats.mtime, stats };
-      })
-      .filter(f => f.stats.isFile())
-      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+    let source: { file: string; filePath: string } | null = null;
+    if (downloadFileName) {
+      const filePath = path.join(downloadsPath, downloadFileName);
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        return { success: false, message: `Download not found: ${downloadFileName}` };
+      }
+      source = { file: downloadFileName, filePath };
+    } else {
+      const files = fs.readdirSync(downloadsPath)
+        .map(file => {
+          const filePath = path.join(downloadsPath, file);
+          const stats = fs.statSync(filePath);
+          return { file, filePath, mtime: stats.mtime, stats };
+        })
+        .filter(f => f.stats.isFile())
+        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
-    if (files.length === 0) {
-      return { success: false, message: 'No files found in Downloads folder' };
+      if (files.length === 0) {
+        return { success: false, message: 'No files found in Downloads folder' };
+      }
+      source = files[0];
     }
 
-    const latest = files[0];
     const targetDir = path.dirname(targetFilePath);
     const targetName = path.basename(targetFilePath);
 
@@ -1479,15 +1495,15 @@ ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string
       return { success: false, message: `Target directory does not exist: ${targetDir}` };
     }
 
-    // Copy latest download over the target file (overwrite) then delete original
-    fs.copyFileSync(latest.filePath, targetFilePath);
+    // Copy the download over the target file (overwrite) then delete original
+    fs.copyFileSync(source.filePath, targetFilePath);
 
     if (!fs.existsSync(targetFilePath)) {
       return { success: false, message: 'File replace failed - destination file not found after copy' };
     }
 
     try {
-      fs.unlinkSync(latest.filePath);
+      fs.unlinkSync(source.filePath);
     } catch (error) {
       console.warn('[Main] Failed to delete original downloads file after replace:', error);
     }
@@ -1503,15 +1519,24 @@ ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string
 
     return {
       success: true,
-      message: `Replaced ${targetName} with latest file from Downloads (${latest.file})`
+      message: `Replaced ${targetName} with ${source.file} from Downloads`,
+      downloadName: source.file
     };
   } catch (error) {
-    console.error('[Main] Error in replace-with-latest-file:', error);
+    console.error('[Main] Error replacing file from Downloads:', error);
     return {
       success: false,
       message: `Error replacing file: ${getFileOperationErrorMessage(error)}`
     };
   }
+}
+
+ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string) => {
+  return performReplaceFromDownloads(null, targetFilePath);
+});
+
+ipcMain.handle('replace-file-from-downloads', async (_event, downloadFileName: string, targetFilePath: string) => {
+  return performReplaceFromDownloads(downloadFileName || null, targetFilePath);
 });
 
 ipcMain.handle('get-config', async () => {

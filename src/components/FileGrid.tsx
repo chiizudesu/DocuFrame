@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useColorModeValue } from "./ui/color-mode";
 import { Box } from '@chakra-ui/react';
 import { showToast, getErrorMessageFromUnknown } from "@/components/ui/toaster"
@@ -18,7 +18,9 @@ import { settingsService } from '../services/settings'
 import type { FileItem } from '../types'
 import { FileProperties } from './CustomPropertiesDialog';
 import { extractIndexPrefix, setIndexPrefix, removeIndexPrefix, groupFilesByIndex, getIndexInfo, getAllIndexKeys, toProperCase, getMaxIndexPillWidth } from '../utils/indexPrefix';
-import { SortColumn, SortDirection, formatPathForLog, setDropEffectCompatibleWithEffectAllowed } from './FileGrid/FileGridUtils';
+import { SortColumn, SortDirection, formatPathForLog, setDropEffectCompatibleWithEffectAllowed, ALL_COLUMN_IDS, DEFAULT_COLUMN_WIDTHS, DEFAULT_COLUMN_VISIBILITY } from './FileGrid/FileGridUtils';
+import { isGstDirectory, parsePeriodFromName } from '../utils/period';
+import { versionStore } from '../services/versionStore';
 import { FileContextMenu, BlankContextMenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
 import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog';
@@ -171,6 +173,12 @@ export const FileGrid: React.FC = () => {
       return dateString; // Fallback to original string if parsing fails
     }
   }, []);
+  // File version registry (Version column); epoch changes whenever a replace bumps a version
+  const fileVersionsEpoch = useSyncExternalStore(versionStore.subscribe, versionStore.getEpoch);
+  useEffect(() => {
+    void versionStore.init();
+  }, []);
+
   // Per-directory sort preferences (remembered when navigating, persisted across restarts)
   const sortPrefsRef = useRef<Map<string, { sortColumn: SortColumn; sortDirection: SortDirection }>>(new Map())
   const [sortColumn, setSortColumn] = useState<SortColumn>('name')
@@ -544,38 +552,54 @@ export const FileGrid: React.FC = () => {
       nameValue: item.name.toLowerCase(), // Use lowercase for consistent sorting
       sizeValue: typeof item.size === 'string' ? parseFloat(item.size) || 0 : 0,
       modifiedValue: item.modified ? new Date(item.modified).getTime() : 0,
-      typeValue: getFileExtension(item.name, item.type).toLowerCase()
+      typeValue: getFileExtension(item.name, item.type).toLowerCase(),
+      // Period: parsed from "01 - March 2025"-style names; unparsed items sort last
+      periodValue: sortColumn === 'period' ? (parsePeriodFromName(item.name)?.sortKey ?? null) : null,
+      versionValue: sortColumn === 'version' ? versionStore.getVersion(item.path) : 1,
     }));
-    
+
     // Sort with optimized comparison
     sortData.sort((a, b) => {
       // Always sort folders first
       if (a.item.type === 'folder' && b.item.type !== 'folder') return -1;
       if (a.item.type !== 'folder' && b.item.type === 'folder') return 1;
-      
+
       // Then sort by the selected column
       if (sortColumn === 'name') {
-        return sortDirection === 'asc' 
+        return sortDirection === 'asc'
           ? a.nameValue.localeCompare(b.nameValue)
           : b.nameValue.localeCompare(a.nameValue);
       } else if (sortColumn === 'size') {
-        return sortDirection === 'asc' 
+        return sortDirection === 'asc'
           ? a.sizeValue - b.sizeValue
           : b.sizeValue - a.sizeValue;
-      } else if (sortColumn === 'modified') {
-        return sortDirection === 'asc' 
+      } else if (sortColumn === 'modified' || sortColumn === 'age') {
+        // Age is the inverse presentation of modified; same underlying order
+        return sortDirection === 'asc'
           ? a.modifiedValue - b.modifiedValue
           : b.modifiedValue - a.modifiedValue;
       } else if (sortColumn === 'type') {
-        return sortDirection === 'asc' 
+        return sortDirection === 'asc'
           ? a.typeValue.localeCompare(b.typeValue)
           : b.typeValue.localeCompare(a.typeValue);
+      } else if (sortColumn === 'period') {
+        // Items without a parsable period always sink to the bottom
+        if (a.periodValue === null && b.periodValue === null) return a.nameValue.localeCompare(b.nameValue);
+        if (a.periodValue === null) return 1;
+        if (b.periodValue === null) return -1;
+        return sortDirection === 'asc'
+          ? a.periodValue - b.periodValue
+          : b.periodValue - a.periodValue;
+      } else if (sortColumn === 'version') {
+        return sortDirection === 'asc'
+          ? a.versionValue - b.versionValue
+          : b.versionValue - a.versionValue;
       }
       return 0;
     });
-    
+
     return sortData.map(data => data.item);
-  }, [folderItems, sortColumn, sortDirection, fileSearchFilter, typeFilter, dateFilter, contentSearchPathsSet]);
+  }, [folderItems, sortColumn, sortDirection, fileSearchFilter, typeFilter, dateFilter, contentSearchPathsSet, fileVersionsEpoch]);
 
   // Type/date filters are per-folder intent — clear them when navigating away
   useEffect(() => {
@@ -1832,8 +1856,9 @@ export const FileGrid: React.FC = () => {
             try {
               const result = await (window.electronAPI as any).replaceWithLatestFile(contextMenu.fileItem.path);
               if (result && result.success) {
+                const newVersion = versionStore.bump(contextMenu.fileItem.path);
                 addLog(result.message || `Replaced ${contextMenu.fileItem.name} with latest file from Downloads`, 'response');
-                setStatus('File replaced with latest download', 'success');
+                setStatus(`File replaced with latest download (now v${newVersion})`, 'success');
                 await refreshDirectory(currentDirectory);
               } else {
                 const message = result?.message || 'Replace with latest file failed';
@@ -1861,6 +1886,14 @@ export const FileGrid: React.FC = () => {
                 position: 'top',
               });
             }
+          }
+          break;
+        case 'replace_via_transfer':
+          if (contextMenu.fileItem.type === 'file') {
+            // TransferPanel listens for this and opens pre-armed in Replace mode
+            window.dispatchEvent(new CustomEvent('openTransferReplace', {
+              detail: { targetPath: contextMenu.fileItem.path, targetName: contextMenu.fileItem.name },
+            }));
           }
           break;
         default:
@@ -1949,16 +1982,26 @@ export const FileGrid: React.FC = () => {
       }
       const result = await (window.electronAPI as any).transfer(transferOptions);
       if (result.success) {
+        // Template transfers overwrite silently — record those as new versions
+        for (const p of (result.overwrites ?? []) as string[]) {
+          const v = versionStore.bump(p);
+          addLog(`Overwrote existing file — now v${v}: ${p}`, 'response');
+        }
         addLog(result.message, 'response');
         setStatus('Transfer completed', 'success');
         window.dispatchEvent(new CustomEvent('folderRefresh'));
         await refreshDirectory(currentDirectory);
       } else {
+        const conflictFailure = Array.isArray(result.failures)
+          ? result.failures.find((f: { conflict?: boolean }) => f.conflict)
+          : null;
         addLog(result.message, 'error');
         setStatus('Transfer failed', 'error');
         showToast({
-          title: 'Transfer Failed',
-          description: result.message,
+          title: conflictFailure ? 'File Already Exists' : 'Transfer Failed',
+          description: conflictFailure
+            ? `${result.message}\nUse the Transfer Panel (Ctrl+Space) → REPLACE to replace it as a new version.`
+            : result.message,
           status: 'error',
           duration: 5000,
           isClosable: true,
@@ -3897,14 +3940,9 @@ export const FileGrid: React.FC = () => {
   }, [refreshDirectory, currentDirectory, addLog, setStatus]);
 
   // Column management state - load from config (persisted) or localStorage fallback
-  const [columnWidths, setColumnWidths] = useState<{ name: number; size: number; modified: number; type: number }>({
-    name: 400,
-    size: 100,
-    modified: 180,
-    type: 100
-  });
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...DEFAULT_COLUMN_WIDTHS });
   const columnWidthsLoadedRef = useRef(false);
-  
+
   useEffect(() => {
     if (columnWidthsLoadedRef.current) return;
     (async () => {
@@ -3912,22 +3950,13 @@ export const FileGrid: React.FC = () => {
         const config = await (window.electronAPI as any).getConfig();
         const saved = config?.fileGridColumnWidths;
         if (saved && typeof saved.name === 'number' && typeof saved.size === 'number') {
-          setColumnWidths({
-            name: saved.name || 400,
-            size: saved.size || 100,
-            modified: saved.modified || 180,
-            type: saved.type || 100
-          });
+          // Merge over defaults so newly-added columns (age/period/version) get widths
+          setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS, ...saved });
         } else {
           const local = localStorage.getItem('fileGrid_columnWidths');
           if (local) {
             const parsed = JSON.parse(local);
-            const widths = {
-              name: parsed.name || 400,
-              size: parsed.size || 100,
-              modified: parsed.modified || 180,
-              type: parsed.type || 100
-            };
+            const widths = { ...DEFAULT_COLUMN_WIDTHS, ...parsed };
             setColumnWidths(widths);
             await (window.electronAPI as any).setConfig({ ...config, fileGridColumnWidths: widths });
           }
@@ -3939,52 +3968,53 @@ export const FileGrid: React.FC = () => {
       }
     })();
   }, []);
-  
-  const [columnOrder, setColumnOrder] = useState(() => {
+
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('fileGrid_columnOrder');
       if (saved) {
         const parsed = JSON.parse(saved);
         // Validate that it's an array with valid column names
-        if (Array.isArray(parsed) && parsed.every((col: string) => ['name', 'size', 'modified', 'type'].includes(col))) {
-          return parsed;
+        if (Array.isArray(parsed) && parsed.every((col: string) => (ALL_COLUMN_IDS as readonly string[]).includes(col))) {
+          // Append any columns introduced after the order was saved
+          const missing = ALL_COLUMN_IDS.filter((col) => !parsed.includes(col));
+          return [...parsed, ...missing];
         }
       }
     } catch (e) {
       console.error('Error loading column order:', e);
     }
-    return ['name', 'type', 'modified', 'size'];
+    return [...ALL_COLUMN_IDS];
   });
-  
-  const [columnVisibility, setColumnVisibility] = useState(() => {
+
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('fileGrid_columnVisibility');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Ensure all columns have visibility settings
-        return {
-          name: parsed.name !== undefined ? parsed.name : true,
-          size: parsed.size !== undefined ? parsed.size : true,
-          modified: parsed.modified !== undefined ? parsed.modified : true,
-          type: parsed.type !== undefined ? parsed.type : true
-        };
+        // Defaults fill in newly-added columns (age/period/version start hidden)
+        return { ...DEFAULT_COLUMN_VISIBILITY, ...parsed };
       }
     } catch (e) {
       console.error('Error loading column visibility:', e);
     }
-    return {
-      name: true,
-      size: true,
-      modified: true,
-      type: true
-    };
+    return { ...DEFAULT_COLUMN_VISIBILITY };
   });
   const [headerContextMenu, setHeaderContextMenu] = useState<{ isOpen: boolean; position: { x: number; y: number } }>({ isOpen: false, position: { x: 0, y: 0 } });
-  
+
+  // Period column only applies inside GST folders (Root\Client\GST with "01 - March 2025" period subfolders)
+  const isGstFolder = useMemo(() => isGstDirectory(currentDirectory), [currentDirectory]);
+
+  // Effective visibility: user preference, with Period force-hidden outside GST folders
+  const effectiveColumnVisibility = useMemo(() => {
+    if (isGstFolder || !columnVisibility.period) return columnVisibility;
+    return { ...columnVisibility, period: false };
+  }, [columnVisibility, isGstFolder]);
+
   // Filter columnOrder based on visibility
   const visibleColumns = useMemo(() => {
-    return columnOrder.filter(col => columnVisibility[col as keyof typeof columnVisibility]);
-  }, [columnOrder, columnVisibility]);
+    return columnOrder.filter(col => effectiveColumnVisibility[col]);
+  }, [columnOrder, effectiveColumnVisibility]);
   const [resizingColumn, setResizingColumn] = useState<string | null>(null);
   const [draggingColumn, setDraggingColumn] = useState<string | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
@@ -4089,8 +4119,10 @@ export const FileGrid: React.FC = () => {
     } else if (column === 'type') {
       // For type column, use fixed width
       optimalWidth = 80; // Fixed width for type column
+    } else if (column === 'age' || column === 'period' || column === 'version') {
+      optimalWidth = DEFAULT_COLUMN_WIDTHS[column];
     }
-    
+
     // Apply the optimal width
     setColumnWidths(prev => ({
       ...prev,
@@ -4102,7 +4134,7 @@ export const FileGrid: React.FC = () => {
 
   // Auto-fit all columns at once - OPTIMIZED with useCallback
   const autoFitAllColumns = useCallback(() => {
-    ['name', 'size', 'modified', 'type'].forEach(col => autoFitColumn(col));
+    ALL_COLUMN_IDS.forEach(col => autoFitColumn(col));
     addLog('Auto-fitted all columns');
   }, [autoFitColumn, addLog]);
   
@@ -5160,8 +5192,10 @@ export const FileGrid: React.FC = () => {
         groupedFiles={groupedFiles}
         sortedFiles={sortedFiles}
         columnOrder={columnOrder}
-        columnVisibility={columnVisibility}
+        columnVisibility={effectiveColumnVisibility}
         columnWidths={columnWidths}
+        getFileVersion={versionStore.getVersion}
+        fileVersionsEpoch={fileVersionsEpoch}
         sortColumn={sortColumn}
         sortDirection={sortDirection}
         draggingColumn={draggingColumn}
@@ -5402,6 +5436,7 @@ export const FileGrid: React.FC = () => {
         columnVisibility={columnVisibility}
         toggleColumnVisibility={toggleColumnVisibility}
         closeHeaderContextMenu={closeHeaderContextMenu}
+        periodAvailable={isGstFolder}
       />
       <FileGridDialogs
         currentDirectory={currentDirectory}

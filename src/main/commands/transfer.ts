@@ -13,7 +13,23 @@ interface FileInfo {
   originalName?: string;
 }
 
-export async function transferFiles(options: TransferOptions): Promise<{ success: boolean; message: string; files?: FileItem[] }> {
+export interface TransferFailure {
+  /** Original filename in Downloads (still there — failed transfers are not deleted) */
+  file: string;
+  error: string;
+  destinationPath?: string;
+  /** True when the failure was a name conflict at the destination */
+  conflict: boolean;
+}
+
+export async function transferFiles(options: TransferOptions): Promise<{
+  success: boolean;
+  message: string;
+  files?: FileItem[];
+  /** Destination paths that were silently overwritten (command-mapping transfers) */
+  overwrites?: string[];
+  failures?: TransferFailure[];
+}> {
   try {
     
     // Get downloads folder path
@@ -123,6 +139,8 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
       }
 
       const destPath = path.join(targetDirectory, destName);
+      let destAlreadyExists = false;
+      let copiedThisTransfer = false;
 
       try {
         // First check if destination directory exists
@@ -133,13 +151,15 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
         // Check if destination file already exists
         // For command mappings (like 'far'), allow overwriting
         // For manual transfers, preserve safety check
-        if (fs.existsSync(destPath) && !filenameTemplate) {
+        destAlreadyExists = fs.existsSync(destPath);
+        if (destAlreadyExists && !filenameTemplate) {
           throw new Error(`File already exists at destination: ${destPath}`);
         }
 
         // Copy the file first
         fs.copyFileSync(srcPath, destPath);
-        
+        copiedThisTransfer = true;
+
         // Verify the copy was successful
         if (!fs.existsSync(destPath)) {
           throw new Error('File copy failed - destination file not found after copy');
@@ -147,12 +167,13 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
 
         // Delete the original file
         fs.unlinkSync(srcPath);
-        
-        return { success: true, file: destName };
+
+        return { success: true, file: destName, destPath, overwrote: destAlreadyExists };
       } catch (error: any) {
         console.error(`Failed to transfer ${file}:`, error);
-        // If copy succeeded but delete failed, try to clean up
-        if (fs.existsSync(destPath)) {
+        // Clean up a partially-copied destination — but never delete a file that
+        // already existed before this transfer (e.g. the name-conflict safety throw).
+        if (copiedThisTransfer && !destAlreadyExists && fs.existsSync(destPath)) {
           try {
             fs.unlinkSync(destPath);
           } catch (cleanupError) {
@@ -173,10 +194,11 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
           default:
             friendlyError = error?.message ?? String(error);
         }
-        return { 
-          success: false, 
-          file, 
+        return {
+          success: false,
+          file,
           error: friendlyError,
+          conflict: destAlreadyExists && !filenameTemplate,
           details: {
             sourcePath: srcPath,
             destinationPath: destPath,
@@ -214,7 +236,14 @@ export async function transferFiles(options: TransferOptions): Promise<{ success
     return {
       success: failed.length === 0,
       message,
-      files: previewFiles
+      files: previewFiles,
+      overwrites: successful.filter((r: any) => r.overwrote && r.destPath).map((r: any) => r.destPath as string),
+      failures: failed.map((f: any) => ({
+        file: f.file,
+        error: f.error,
+        destinationPath: f.details?.destinationPath,
+        conflict: !!f.conflict,
+      })),
     };
   } catch (error: any) {
     console.error('Error during transfer:', error);

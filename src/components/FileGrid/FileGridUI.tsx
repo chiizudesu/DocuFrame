@@ -47,6 +47,7 @@ import {
   ClipboardCopy,
   Check,
   List,
+  Repeat2,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
@@ -54,6 +55,7 @@ import { joinPath, normalizePath } from '../../utils/path'
 import { getIndexInfo } from '../../utils/indexPrefix'
 import { SubmenuGroup, ContextSubmenu, MenuRow, MenuSeparator, MenuSectionLabel, useMenuColors, placeMenuElement } from './menuPrimitives'
 import { docuFramePalette } from '../../docuFrameColors'
+import { ALL_COLUMN_IDS, COLUMN_LABELS } from './FileGridUtils'
 
 // FileContextMenu Component
 export interface FileContextMenuProps {
@@ -288,6 +290,12 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
                     label="Replace with Latest File"
                     title={latestFileName ? `Latest download: ${latestFileName}` : 'Loading latest download...'}
                     onClick={() => handleMenuAction('replace_with_latest')}
+                  />
+                  <MenuRow
+                    icon={<Repeat2 size={iconSz} />}
+                    label="Replace via Transfer Panel…"
+                    title="Pick which download replaces this file (bumps its version)"
+                    onClick={() => handleMenuAction('replace_via_transfer')}
                   />
                 </>
               )}
@@ -1144,14 +1152,11 @@ export interface HeaderContextMenuProps {
     isOpen: boolean;
     position: { x: number; y: number };
   };
-  columnVisibility: {
-    name: boolean;
-    size: boolean;
-    modified: boolean;
-    type: boolean;
-  };
+  columnVisibility: Record<string, boolean>;
   toggleColumnVisibility: (column: string) => void;
   closeHeaderContextMenu: () => void;
+  /** Period column only applies inside GST folders; hide the toggle elsewhere */
+  periodAvailable?: boolean;
 }
 
 export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
@@ -1159,6 +1164,7 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
   columnVisibility,
   toggleColumnVisibility,
   closeHeaderContextMenu,
+  periodAvailable = false,
 }) => {
   const menuBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const menuBorderColor = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
@@ -1206,14 +1212,9 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
         className="enhanced-scrollbar"
         py="4px"
       >
-        {['name', 'size', 'modified', 'type'].map((column) => {
-          const columnLabels: Record<string, string> = {
-            name: 'Name',
-            size: 'Size',
-            modified: 'Modified',
-            type: 'Type'
-          };
-          const isChecked = columnVisibility[column as keyof typeof columnVisibility];
+        {ALL_COLUMN_IDS.filter((column) => column !== 'period' || periodAvailable).map((column) => {
+          const isChecked = columnVisibility[column];
+          const isGstOnly = column === 'period';
           return (
             <Flex
               key={column}
@@ -1234,8 +1235,13 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
                 pointerEvents="none"
                 size="sm"
               ><Checkbox.HiddenInput /><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control><Checkbox.Label>
-                <Text fontSize="xs">{columnLabels[column]}</Text>
+                <Text fontSize="xs">{COLUMN_LABELS[column]}</Text>
               </Checkbox.Label></Checkbox.Root>
+              {isGstOnly && (
+                <Text fontSize="9px" ml="auto" pl={2} opacity={0.55} letterSpacing="0.04em">
+                  GST
+                </Text>
+              )}
             </Flex>
           );
         })}
