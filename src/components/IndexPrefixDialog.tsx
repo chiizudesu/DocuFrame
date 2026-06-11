@@ -1,8 +1,10 @@
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, memo } from 'react';
 import { useColorModeValue } from "./ui/color-mode";
 import { useDialogChrome } from './ui/dialog-chrome';
-import { Button, VStack, Box, Text, Flex, Grid, Badge, Dialog, Portal } from '@chakra-ui/react';
-import { getAllIndexKeys, getIndexInfo, WORKPAPER_DESCRIPTIONS } from '../utils/indexPrefix';
+import { Button, Box, Text, Flex, Input, Dialog, Portal, chakra } from '@chakra-ui/react';
+import { Search } from 'lucide-react';
+import { getAllIndexKeys, getIndexInfo, extractIndexPrefix } from '../utils/indexPrefix';
+import { useAppContext } from '../context/AppContext';
 import type { FileItem } from '../types';
 
 interface IndexPrefixDialogProps {
@@ -24,9 +26,13 @@ const IndexPrefixDialogInner: React.FC<IndexPrefixDialogProps> = ({
   files = [],
   allowCopy = false,
 }) => {
+  const { folderItems } = useAppContext();
   const [selectedIndex, setSelectedIndex] = useState<string | null>(currentPrefix || null);
-  const [isCopyMode, setIsCopyMode] = useState(false);
-  
+  const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
   const {
     surfaceBg: bgColor,
     titleBarBg,
@@ -36,160 +42,291 @@ const IndexPrefixDialogInner: React.FC<IndexPrefixDialogProps> = ({
     secondaryTextColor: descColor,
   } = useDialogChrome();
   const hoverBg = useColorModeValue('gray.50', 'df.rowHover');
-  const infoBg = useColorModeValue('blue.50', 'blue.900');
-  const infoText = useColorModeValue('blue.800', 'blue.100');
-  const infoBorder = useColorModeValue('blue.200', 'blue.700');
+  const keyColor = useColorModeValue('blue.600', 'blue.300');
+  const countBg = useColorModeValue('gray.100', 'whiteAlpha.200');
+  const sectionLabelColor = useColorModeValue('gray.500', 'gray.400');
+  const currentMarker = useColorModeValue('blue.500', 'blue.300');
 
-  const indexKeys = useMemo(() => getAllIndexKeys(), []);
+  const allKeys = useMemo(() => getAllIndexKeys(), []);
 
-  const handleConfirm = (forceCopyMode?: boolean) => {
-    // If removing prefix (selectedIndex is null), never use copy mode
-    const copyMode = selectedIndex === null ? false : (forceCopyMode !== undefined ? forceCopyMode : isCopyMode);
-    onSelect(selectedIndex, copyMode);
+  // How many files in the current folder carry each prefix — "active" sections
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of folderItems || []) {
+      if (item.type === 'folder') continue;
+      const prefix = extractIndexPrefix(item.name);
+      if (prefix) map[prefix] = (map[prefix] || 0) + 1;
+    }
+    return map;
+  }, [folderItems]);
+
+  const activeKeys = useMemo(
+    () => allKeys.filter(k => counts[k] > 0 || k === currentPrefix),
+    [allKeys, counts, currentPrefix]
+  );
+
+  const query = search.trim().toLowerCase();
+
+  // Searching always covers every section; otherwise active-first with opt-in "show all"
+  const visibleKeys = useMemo(() => {
+    if (query) {
+      const keyHits = allKeys.filter(k => k.toLowerCase().startsWith(query));
+      const descHits = allKeys.filter(
+        k => !k.toLowerCase().startsWith(query) && getIndexInfo(k).description.toLowerCase().includes(query)
+      );
+      return [...keyHits, ...descHits];
+    }
+    if (activeKeys.length === 0) return allKeys;
+    if (showAll) return [...activeKeys, ...allKeys.filter(k => !activeKeys.includes(k))];
+    return activeKeys;
+  }, [query, showAll, activeKeys, allKeys]);
+
+  const restKeys = useMemo(
+    () => (showAll && !query ? allKeys.filter(k => !activeKeys.includes(k)) : []),
+    [showAll, query, allKeys, activeKeys]
+  );
+
+  const applySelection = (key: string | null, isCopy: boolean) => {
+    onSelect(key, key === null ? false : isCopy);
     onClose();
   };
 
-  // Reset copy mode when dialog closes
-  React.useEffect(() => {
+  const moveSelection = (delta: number) => {
+    if (visibleKeys.length === 0) return;
+    const current = selectedIndex && visibleKeys.includes(selectedIndex) ? visibleKeys.indexOf(selectedIndex) : -1;
+    const next = current === -1
+      ? (delta > 0 ? 0 : visibleKeys.length - 1)
+      : Math.min(Math.max(current + delta, 0), visibleKeys.length - 1);
+    const key = visibleKeys[next];
+    setSelectedIndex(key);
+    listRef.current
+      ?.querySelector(`[data-index-key="${key}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveSelection(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveSelection(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = selectedIndex && visibleKeys.includes(selectedIndex) ? selectedIndex : visibleKeys[0];
+      if (target) applySelection(target, false);
+    }
+  };
+
+  // Reset transient state when dialog closes
+  useEffect(() => {
     if (!isOpen) {
-      setIsCopyMode(false);
       setSelectedIndex(currentPrefix || null);
+      setSearch('');
+      setShowAll(false);
     }
   }, [isOpen, currentPrefix]);
 
-  return (
-    <Dialog.Root open={isOpen} size='md' placement='center' onOpenChange={e => {
-      if (!e.open) {
-        onClose();
-      }
-    }}>
-      <Portal>
+  const renderRow = (indexKey: string) => {
+    const info = getIndexInfo(indexKey);
+    const isSelected = selectedIndex === indexKey;
+    const isCurrent = currentPrefix === indexKey;
+    const count = counts[indexKey] || 0;
+    return (
+      <Flex
+        key={indexKey}
+        data-index-key={indexKey}
+        align="center"
+        gap={2}
+        px={2}
+        py="5px"
+        cursor="pointer"
+        bg={isSelected ? selectedBg : undefined}
+        borderLeftWidth="2px"
+        borderLeftColor={isSelected ? 'blue.400' : 'transparent'}
+        onClick={() => setSelectedIndex(indexKey)}
+        onDoubleClick={() => applySelection(indexKey, false)}
+        _hover={{ bg: isSelected ? selectedBg : hoverBg }}
+        transition="background 0.1s ease"
+        userSelect="none"
+      >
+        <Text
+          fontWeight="bold"
+          fontSize="sm"
+          color={keyColor}
+          w="30px"
+          flexShrink={0}
+          fontVariantNumeric="tabular-nums"
+        >
+          {indexKey}
+        </Text>
+        <Text fontSize="sm" color={textColor} truncate flex="1">
+          {info.description}
+        </Text>
+        {isCurrent && (
+          <Text fontSize="10px" fontWeight={600} color={currentMarker} flexShrink={0}>
+            current
+          </Text>
+        )}
+        {count > 0 && (
+          <Text
+            fontSize="11px"
+            fontWeight={600}
+            color={descColor}
+            bg={countBg}
+            px="6px"
+            py="1px"
+            borderRadius="full"
+            flexShrink={0}
+            fontVariantNumeric="tabular-nums"
+          >
+            {count}
+          </Text>
+        )}
+      </Flex>
+    );
+  };
 
+  const sectionLabel = (label: string) => (
+    <Text
+      fontSize="9px"
+      fontWeight={700}
+      letterSpacing="0.1em"
+      color={sectionLabelColor}
+      px={2}
+      pt={2}
+      pb={1}
+      userSelect="none"
+    >
+      {label}
+    </Text>
+  );
+
+  const hasActiveView = !query && activeKeys.length > 0;
+
+  return (
+    <Dialog.Root
+      open={isOpen}
+      size='md'
+      placement='center'
+      initialFocusEl={() => searchRef.current}
+      onOpenChange={e => {
+        if (!e.open) onClose();
+      }}
+    >
+      <Portal>
         <Dialog.Backdrop bg="blackAlpha.600" backdropFilter="blur(4px)" />
         <Dialog.Positioner>
-          <Dialog.Content bg={bgColor} borderRadius="lg" maxW="520px">
+          <Dialog.Content bg={bgColor} borderRadius="lg" maxW="480px">
             <Dialog.Header fontSize="lg" pb={2} bg={titleBarBg} borderBottomWidth="1px" borderColor={borderColor}>
-              {title}
+              <Flex align="baseline" gap={2} w="100%" minW={0}>
+                <Text>{title}</Text>
+                {files.length > 0 && (
+                  <Text fontSize="xs" color={descColor} fontWeight="normal" truncate>
+                    {files.length === 1 ? files[0].name : `${files.length} files · ${files[0].name} +${files.length - 1}`}
+                  </Text>
+                )}
+              </Flex>
             </Dialog.Header>
             <Dialog.CloseTrigger />
-            <Dialog.Body pt={0}>
-              {/* File indicator */}
-              {files.length > 0 && (
-                <Box
-                  mb={3}
-                  p={2}
-                  bg={infoBg}
-                  borderRadius="md"
-                  borderWidth="1px"
-                  borderColor={infoBorder}
-                >
-                  <Flex align="center" gap={2}>
-                    <Badge colorPalette="blue" fontSize="xs">
-                      {files.length} {files.length === 1 ? 'file' : 'files'} selected
-                    </Badge>
-                    <Text fontSize="sm" color={infoText} fontWeight="medium">
-                      {files.length === 1 
-                        ? files[0].name 
-                        : `${files[0].name}${files.length > 1 ? ` and ${files.length - 1} more` : ''}`
-                      }
-                    </Text>
-                  </Flex>
-                </Box>
-              )}
-              <VStack gap={1} align="stretch" maxH="360px" overflowY="auto">
-                <Grid templateColumns="repeat(2, 1fr)" gap={1} width="100%">
-                  {indexKeys.map((indexKey, index) => {
-                    const info = getIndexInfo(indexKey);
-                    const isSelected = selectedIndex === indexKey;
-                    
-                    // Calculate row and column for row-first layout
-                    const row = Math.floor(index / 2);
-                    const col = index % 2;
-                    
-                    return (
-                      <Box
-                        key={indexKey}
-                        p={2}
-                        borderRadius={0}
-                        borderWidth="1px"
-                        borderColor={isSelected ? 'blue.400' : borderColor}
-                        bg={isSelected ? selectedBg : bgColor}
-                        cursor="pointer"
-                        onClick={() => setSelectedIndex(indexKey)}
-                        _hover={{ bg: hoverBg }}
-                        transition="all 0.2s"
-                        gridColumn={col + 1}
-                        gridRow={row + 1}
-                      >
-                        <Flex align="center" gap={2}>
-                          <Text fontWeight="semibold" fontSize="sm" color={textColor}>
-                            {indexKey}
-                          </Text>
-                          {info.description && (
-                            <Text fontSize="sm" color={descColor}>
-                              - {info.description}
-                            </Text>
-                          )}
-                        </Flex>
-                      </Box>
-                    );
-                  })}
-                </Grid>
-                {/* Option to remove prefix */}
-                <Box
-                  p={2}
-                  borderRadius={0}
-                  borderWidth="1px"
-                  borderColor={selectedIndex === null ? 'blue.400' : borderColor}
-                  bg={selectedIndex === null ? selectedBg : bgColor}
-                  cursor="pointer"
-                  onClick={() => setSelectedIndex(null)}
-                  _hover={{ bg: hoverBg }}
-                  transition="all 0.2s"
-                  mt={1}
-                >
-                  <Flex align="center" justify="space-between">
-                    <Text fontWeight="semibold" fontSize="sm" color={textColor}>
-                      Remove Prefix
-                    </Text>
-                  </Flex>
-                </Box>
-              </VStack>
+            <Dialog.Body pt={3} pb={2} px={3}>
+              <Flex
+                align="center"
+                gap={2}
+                px={2}
+                mb={2}
+                borderWidth="1px"
+                borderColor={borderColor}
+                borderRadius="md"
+              >
+                <Search size={13} color="var(--chakra-colors-gray-400)" />
+                <Input
+                  ref={searchRef}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Type to filter sections… ↑↓ to move, Enter to apply"
+                  size="sm"
+                  variant="outline"
+                  border="none"
+                  px={0}
+                  _focus={{ boxShadow: 'none', outline: 'none' }}
+                  _focusVisible={{ boxShadow: 'none', outline: 'none' }}
+                />
+              </Flex>
+              <Box ref={listRef} maxH="340px" overflowY="auto" mx={-1} px={1}>
+                {visibleKeys.length === 0 && (
+                  <Text fontSize="sm" color={descColor} px={2} py={4} textAlign="center">
+                    No sections match “{search.trim()}”
+                  </Text>
+                )}
+                {hasActiveView && sectionLabel(`IN THIS FOLDER · ${activeKeys.length}`)}
+                {(hasActiveView ? activeKeys : visibleKeys).map(renderRow)}
+                {restKeys.length > 0 && (
+                  <>
+                    {sectionLabel('ALL SECTIONS')}
+                    {restKeys.map(renderRow)}
+                  </>
+                )}
+                {hasActiveView && (
+                  <chakra.button
+                    display="block"
+                    w="100%"
+                    textAlign="left"
+                    px={2}
+                    py="6px"
+                    mt={1}
+                    fontSize="xs"
+                    fontWeight={600}
+                    color={keyColor}
+                    cursor="pointer"
+                    _hover={{ bg: hoverBg }}
+                    _focus={{ outline: 'none' }}
+                    onClick={() => setShowAll(v => !v)}
+                  >
+                    {showAll ? '− Show active only' : `+ Show all ${allKeys.length} sections`}
+                  </chakra.button>
+                )}
+              </Box>
             </Dialog.Body>
-            <Dialog.Footer pt={2}>
-              <Button variant="ghost" mr={3} onClick={onClose} size="sm">
+            <Dialog.Footer pt={2} gap={2} flexWrap="wrap">
+              {currentPrefix && (
+                <Button
+                  variant="ghost"
+                  colorPalette="red"
+                  size="sm"
+                  mr="auto"
+                  onClick={() => applySelection(null, false)}
+                >
+                  Remove
+                </Button>
+              )}
+              <Button variant="ghost" onClick={onClose} size="sm">
                 Cancel
               </Button>
               {allowCopy && selectedIndex && (
-                <Button 
-                  colorPalette="green" 
-                  onClick={() => {
-                    setIsCopyMode(true);
-                    handleConfirm(true);
-                  }}
-                  disabled={selectedIndex === null} 
+                <Button
+                  colorPalette="green"
                   size="sm"
-                  mr={3}
+                  onClick={() => applySelection(selectedIndex, true)}
                 >
-                  Add a Copy
+                  Add Copy
                 </Button>
               )}
-              <Button 
-                colorPalette="blue" 
-                onClick={() => handleConfirm(false)} 
-                disabled={selectedIndex === null && !currentPrefix} 
+              <Button
+                colorPalette="blue"
                 size="sm"
+                disabled={!selectedIndex}
+                onClick={() => selectedIndex && applySelection(selectedIndex, false)}
               >
-                {selectedIndex === null ? 'Remove Prefix' : currentPrefix ? 'Change Prefix' : 'Change Prefix'}
+                {currentPrefix ? 'Change Prefix' : 'Apply Prefix'}
               </Button>
             </Dialog.Footer>
           </Dialog.Content>
         </Dialog.Positioner>
-
       </Portal>
     </Dialog.Root>
   );
 };
 
 export const IndexPrefixDialog = memo(IndexPrefixDialogInner);
-
