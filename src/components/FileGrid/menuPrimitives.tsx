@@ -26,10 +26,14 @@ export const MENU_SURFACE_PROPS = {
 } as const
 
 /**
- * Position a fixed-position menu at an anchor point, sliding (not mirror-flipping)
- * to fit the viewport: prefer below/right of the anchor; flip above only when the
- * whole menu fits there; otherwise slide up/left just enough. Never goes negative,
- * so menus can't spill past the top of the window.
+ * Position a fixed-position menu at an anchor point with three-tier vertical math:
+ * 1. fits below the cursor → open below (normal case);
+ * 2. overflows below → slide up just enough to fit, unless that would bury the
+ *    cursor more than halfway down the menu AND the menu fits fully above, in
+ *    which case mirror-flip above (classic Windows behaviour);
+ * 3. taller than the viewport either way → pin to the viewport with margins and
+ *    let the menu's own maxH + scroll take over.
+ * Never produces a negative coordinate, so menus can't spill past the top.
  */
 export function placeMenuElement(el: HTMLElement, anchor: { x: number; y: number }): void {
   const rect = el.getBoundingClientRect()
@@ -44,9 +48,16 @@ export function placeMenuElement(el: HTMLElement, anchor: { x: number; y: number
   }
 
   let y = anchor.y
-  if (y + rect.height > vh - margin) {
-    const flippedY = anchor.y - rect.height
-    y = flippedY >= margin ? flippedY : Math.max(margin, vh - rect.height - margin)
+  const overflowBelow = anchor.y + rect.height - (vh - margin)
+  if (overflowBelow > 0) {
+    const fitsFullyAbove = anchor.y - rect.height >= margin
+    if (fitsFullyAbove && overflowBelow > rect.height / 2) {
+      // Sliding would cover the click point past the menu's midpoint — flip above
+      y = anchor.y - rect.height
+    } else {
+      // Middleground: slide up only as far as needed, clamped to the top margin
+      y = Math.max(margin, anchor.y - overflowBelow)
+    }
   }
 
   el.style.left = `${Math.max(margin, x)}px`

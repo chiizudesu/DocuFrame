@@ -1621,6 +1621,20 @@ const FileListViewBody = React.memo(function FileListViewBody({
     });
   }, [sortedFiles]);
 
+  // Density change: cached cell styles bake in the old padding (keyed by path+bg
+  // only), so drop them in the same render pass that received the new cellStyles…
+  const prevCellStylesRef = useRef(cellStyles);
+  if (prevCellStylesRef.current !== cellStyles) {
+    prevCellStylesRef.current = cellStyles;
+    cellStylesCacheRef.current.clear();
+  }
+  // …and re-measure both virtualizers so row offsets update immediately instead
+  // of only after navigating out of the folder.
+  useEffect(() => {
+    rowVirtualizerRef.current?.measure();
+    groupedVirtualizerRef.current?.measure();
+  }, [rowDensity]);
+
   const getRowProps = useCallback((file: FileItem, index: number) => {
     const baseState = getFileStateForIndex(file, index);
     const cachedState = fileStateCacheRef.current.get(file.path);

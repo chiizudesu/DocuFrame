@@ -35,9 +35,9 @@ const Chip: React.FC<ChipProps & { activeBg: string; activeColor: string; inacti
   <Flex
     as="button"
     align="center"
-    gap={1}
-    px={2}
-    h="18px"
+    gap="5px"
+    px="10px"
+    h="21px"
     borderRadius="full"
     fontSize="11px"
     cursor="pointer"
@@ -47,10 +47,11 @@ const Chip: React.FC<ChipProps & { activeBg: string; activeColor: string; inacti
     onClick={onClick}
     flexShrink={0}
     userSelect="none"
+    transition="background 0.12s ease"
   >
-    <Text fontSize="11px" lineHeight={1}>{label}</Text>
+    <Text fontSize="11px" lineHeight="21px" fontWeight="medium">{label}</Text>
     {count !== undefined && (
-      <Text fontSize="10px" lineHeight={1} opacity={0.75}>{count}</Text>
+      <Text fontSize="10px" lineHeight="21px" opacity={active ? 0.85 : 0.6}>{count}</Text>
     )}
   </Flex>
 )
@@ -112,7 +113,7 @@ export const QuickFilterChips: React.FC<QuickFilterChipsProps> = ({
   }
 
   return (
-    <Flex align="center" gap={1.5} px={2} py="3px" bg={barBg} flexShrink={0} overflowX="hidden">
+    <Flex align="center" gap="6px" px="10px" py="6px" bg={barBg} flexShrink={0} overflowX="hidden">
       {visibleGroups.map((group) => (
         <Chip
           key={group.key}
@@ -144,9 +145,9 @@ export const QuickFilterChips: React.FC<QuickFilterChipsProps> = ({
         <Flex
           as="button"
           align="center"
-          gap={0.5}
-          px={1.5}
-          h="18px"
+          gap="4px"
+          px="8px"
+          h="21px"
           borderRadius="full"
           cursor="pointer"
           color={inactiveColor}
@@ -158,7 +159,7 @@ export const QuickFilterChips: React.FC<QuickFilterChipsProps> = ({
           flexShrink={0}
         >
           <X size={11} />
-          <Text fontSize="11px" lineHeight={1}>Clear</Text>
+          <Text fontSize="11px" lineHeight="21px">Clear</Text>
         </Flex>
       )}
       <Box flex={1} />

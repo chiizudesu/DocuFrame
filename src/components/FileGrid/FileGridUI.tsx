@@ -11,7 +11,6 @@ import {
   Badge,
   Checkbox,
   Icon,
-  Separator,
 } from '@chakra-ui/react';
 import {
   FolderOpen,
@@ -23,7 +22,6 @@ import {
   Scissors,
   FileSymlink,
   ChevronUp,
-  ChevronRight,
   FilePlus2,
   Archive,
   Mail,
@@ -205,6 +203,10 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
       zIndex="modal"
       minW="200px"
       maxW="270px"
+      maxH="calc(100vh - 12px)"
+      overflowY="auto"
+      overflowX="hidden"
+      className="enhanced-scrollbar"
       border="1px solid"
       borderColor={borderCol}
     >
@@ -297,7 +299,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
             <>
               <MenuSeparator />
               <MenuSectionLabel label="Workpapers" />
-              <ContextSubmenu id="apply-prefix" icon={<Layers size={iconSz} />} label="Apply index" flyoutMaxH="320px" flyoutMinW="200px">
+              <ContextSubmenu id="apply-prefix" icon={<Layers size={iconSz} />} label="Apply index" flyoutMaxH="min(72vh, 560px)" flyoutMinW="210px">
                 {activeSectionKeys.map((key) => {
                   const info = getIndexInfo(key);
                   return (
@@ -564,27 +566,17 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
 }) => {
   const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
-  const hoverBg = useColorModeValue(docuFramePalette.light.rowHover, docuFramePalette.dark.rowHover);
-  const separatorColor = useColorModeValue(docuFramePalette.light.tableBorder, docuFramePalette.dark.tableBorder);
   const { shadow: menuShadow } = useMenuColors();
   const menuRef = useRef<HTMLDivElement>(null);
-  const submenuRef = useRef<HTMLDivElement>(null);
-  const [newSubmenuOpen, setNewSubmenuOpen] = useState(false);
-  const [newSubmenuPos, setNewSubmenuPos] = useState<{ x: number; y?: number; bottom?: number; flowUp: boolean }>({ x: 0, flowUp: false });
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
 
-  const SUBMENU_EST_HEIGHT = 420;
   const iconSz = 14;
-  const iconStyle = { marginRight: '6px', flexShrink: 0 } as const;
-  const rowProps = { align: 'center' as const, px: 2.5, py: '3px', cursor: 'pointer' as const, _hover: { bg: hoverBg } };
 
   useEffect(() => {
     if (!blankContextMenu.isOpen) return;
     const handleClick = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const inMenu = menuRef.current?.contains(target);
-      const inSubmenu = submenuRef.current?.contains(target);
-      if (!inMenu && !inSubmenu) {
+      // ContextSubmenu flyouts render inside menuRef, so one containment check covers them
+      if (!menuRef.current?.contains(e.target as Node)) {
         setBlankContextMenu({ ...blankContextMenu, isOpen: false });
       }
     };
@@ -592,8 +584,19 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [blankContextMenu, setBlankContextMenu]);
 
+  // Preload workpaper templates for the New ▸ submenu
   useEffect(() => {
-    if (!blankContextMenu.isOpen) setNewSubmenuOpen(false);
+    if (!blankContextMenu.isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await (window.electronAPI as any).getWorkpaperTemplates();
+        if (!cancelled) setTemplates(result?.success ? result.templates || [] : []);
+      } catch {
+        if (!cancelled) setTemplates([]);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [blankContextMenu.isOpen]);
 
   useLayoutEffect(() => {
@@ -605,53 +608,80 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
   if (!blankContextMenu.isOpen) return null;
   return (
     <>
-      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} opacity={0} bg={boxBg} borderRadius="8px" boxShadow={menuShadow} zIndex="modal" minW="180px" maxW="240px" border="1px solid" borderColor={borderCol}>
+      <Box ref={menuRef} position="fixed" top={blankContextMenu.position.y} left={blankContextMenu.position.x} opacity={0} bg={boxBg} borderRadius="8px" boxShadow={menuShadow} zIndex="modal" minW="180px" maxW="240px" maxH="calc(100vh - 12px)" overflowY="auto" overflowX="hidden" className="enhanced-scrollbar" border="1px solid" borderColor={borderCol}>
         <Box py="4px">
-          <Flex
-            {...rowProps}
-            onMouseEnter={async (e) => {
-              const el = e.currentTarget as HTMLElement;
-              const rect = el.getBoundingClientRect();
-              const flowUp = rect.top + SUBMENU_EST_HEIGHT > window.innerHeight;
-              const flowLeft = rect.right + 180 > window.innerWidth;
-              setNewSubmenuPos(
-                flowUp
-                  ? { x: flowLeft ? rect.left - 180 : rect.right + 2, bottom: window.innerHeight - rect.bottom + 3, flowUp: true }
-                  : { x: flowLeft ? rect.left - 180 : rect.right + 1, y: rect.top - 5, flowUp: false }
-              );
-              setNewSubmenuOpen(true);
-              try {
-                const result = await (window.electronAPI as any).getWorkpaperTemplates();
-                if (result.success) setTemplates(result.templates || []);
-              } catch {
-                setTemplates([]);
-              }
-            }}
-          >
-            <FolderPlus size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">New</Text>
-            <ChevronRight size={12} style={{ marginLeft: 'auto' }} />
-          </Flex>
-          <Separator borderColor={separatorColor} my={0.5} />
-          <Flex {...rowProps} onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }} opacity={clipboard.files.length > 0 ? 1 : 0.5} pointerEvents={clipboard.files.length > 0 ? 'auto' : 'none'}>
-            <FileSymlink size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Paste</Text>
-          </Flex>
-          <Flex {...rowProps} onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
-            <ImageIcon size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Paste Image</Text>
-          </Flex>
-          <Separator borderColor={separatorColor} my={0.5} />
-          <Flex {...rowProps} onClick={() => { onCopyPath(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
-            <Link2 size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Copy Path</Text>
-          </Flex>
-          <Flex {...rowProps} onClick={() => { onOpenPowerShell(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}>
-            <Terminal size={iconSz} style={iconStyle} />
-            <Text fontSize="xs">Open PowerShell</Text>
-          </Flex>
-          <Separator borderColor={separatorColor} my={0.5} />
           <SubmenuGroup>
+            <ContextSubmenu id="new" icon={<FolderPlus size={iconSz} />} label="New" flyoutMinW="190px" flyoutMaxH="min(70vh, 480px)">
+              <MenuRow
+                icon={<Folder size={iconSz} />}
+                label="Folder"
+                onClick={() => { onCreateFolder(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+              />
+              <MenuRow
+                icon={<FileText size={iconSz} />}
+                label="Text File"
+                onClick={() => { onCreateTextFile(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+              />
+              <MenuRow
+                icon={<FileSpreadsheet size={iconSz} />}
+                label="Excel File"
+                onClick={() => { onCreateSpreadsheet(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+              />
+              <MenuRow
+                icon={<FileEdit size={iconSz} />}
+                label="Word Document"
+                onClick={() => { onCreateWordDoc(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+              />
+              <MenuRow
+                icon={<Link2 size={iconSz} />}
+                label="New Shortcut"
+                onClick={() => { onCreateShortcut(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+              />
+              {templates.length > 0 && (
+                <>
+                  <MenuSeparator />
+                  {templates.map((template) => (
+                    <MenuRow
+                      key={template.path}
+                      icon={
+                        /\.docx?$/i.test(template.name) ? <FileEdit size={12} /> :
+                        /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} /> :
+                        <FileText size={12} />
+                      }
+                      label={template.name}
+                      onClick={() => {
+                        onCreateFromTemplate(template.path, template.name);
+                        setBlankContextMenu({ ...blankContextMenu, isOpen: false });
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            </ContextSubmenu>
+            <MenuSeparator />
+            <MenuRow
+              icon={<FileSymlink size={iconSz} />}
+              label="Paste"
+              disabled={clipboard.files.length === 0}
+              onClick={() => { handlePaste(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+            />
+            <MenuRow
+              icon={<ImageIcon size={iconSz} />}
+              label="Paste Image"
+              onClick={() => { onPasteImage(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+            />
+            <MenuSeparator />
+            <MenuRow
+              icon={<Link2 size={iconSz} />}
+              label="Copy Path"
+              onClick={() => { onCopyPath(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+            />
+            <MenuRow
+              icon={<Terminal size={iconSz} />}
+              label="Open PowerShell"
+              onClick={() => { onOpenPowerShell(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); }}
+            />
+            <MenuSeparator />
             <ContextSubmenu id="group-by" icon={<Layers size={iconSz} />} label="Group by">
               {([
                 { key: 'auto', label: 'Workpaper index' },
@@ -689,72 +719,6 @@ export const BlankContextMenu: React.FC<BlankContextMenuProps> = ({
           </SubmenuGroup>
         </Box>
       </Box>
-      {newSubmenuOpen && (
-        <Box
-          ref={submenuRef}
-          position="fixed"
-          {...(newSubmenuPos.flowUp
-            ? { bottom: newSubmenuPos.bottom, left: newSubmenuPos.x }
-            : { top: newSubmenuPos.y, left: newSubmenuPos.x })}
-          bg={boxBg}
-          borderRadius="8px"
-          boxShadow={menuShadow}
-          zIndex="modal"
-          minW="170px"
-          maxW="240px"
-          border="1px solid"
-          borderColor={borderCol}
-          onMouseLeave={() => setNewSubmenuOpen(false)}
-        >
-          <Box py="4px">
-            <Flex {...rowProps} onClick={() => { onCreateFolder(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <Folder size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Folder</Text>
-            </Flex>
-            <Flex {...rowProps} onClick={() => { onCreateTextFile(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <FileText size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Text File</Text>
-            </Flex>
-            <Flex {...rowProps} onClick={() => { onCreateSpreadsheet(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <FileSpreadsheet size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Excel File</Text>
-            </Flex>
-            <Flex {...rowProps} onClick={() => { onCreateWordDoc(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <FileEdit size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">Word Document</Text>
-            </Flex>
-            <Flex {...rowProps} onClick={() => { onCreateShortcut(); setBlankContextMenu({ ...blankContextMenu, isOpen: false }); setNewSubmenuOpen(false); }}>
-              <Link2 size={iconSz} style={iconStyle} />
-              <Text fontSize="xs">New Shortcut</Text>
-            </Flex>
-            {templates.length > 0 && (
-              <>
-                <Separator borderColor={separatorColor} my={0.5} />
-                {templates.map((template) => (
-                  <Flex
-                    key={template.path}
-                    {...rowProps}
-                    h="22px"
-                    minH="22px"
-                    maxH="22px"
-                    overflow="hidden"
-                    align="center"
-                    flexWrap="nowrap"
-                    onClick={() => {
-                      onCreateFromTemplate(template.path, template.name);
-                      setBlankContextMenu({ ...blankContextMenu, isOpen: false });
-                      setNewSubmenuOpen(false);
-                    }}
-                  >
-                    {/\.docx?$/i.test(template.name) ? <FileEdit size={12} style={iconStyle} /> : /\.xlsx?$/i.test(template.name) ? <FileSpreadsheet size={12} style={iconStyle} /> : <FileText size={12} style={iconStyle} />}
-                    <Text fontSize="xs" whiteSpace="nowrap" overflow="hidden" textOverflow="ellipsis">{template.name}</Text>
-                  </Flex>
-                ))}
-              </>
-            )}
-          </Box>
-        </Box>
-      )}
     </>
   );
 };
@@ -1237,6 +1201,9 @@ export const HeaderContextMenu: React.FC<HeaderContextMenuProps> = ({
         borderRadius="8px"
         boxShadow={headerMenuShadow}
         minW="150px"
+        maxH="calc(100vh - 12px)"
+        overflowY="auto"
+        className="enhanced-scrollbar"
         py="4px"
       >
         {['name', 'size', 'modified', 'type'].map((column) => {
