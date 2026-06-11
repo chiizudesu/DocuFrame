@@ -3,7 +3,7 @@ import { useColorModeValue } from "../ui/color-mode";
 import { ListRowHoverProvider, useListRowIsHovered } from './ListRowHoverContext'
 import { FileListTheadRow } from './FileListThead'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Box, Text, Icon, Flex, Input, Image, Popover, IconButton, Portal, Separator, chakra } from '@chakra-ui/react';
+import { Box, Text, Icon, Flex, Input, Image, Popover, IconButton, Portal, chakra } from '@chakra-ui/react';
 import {
   Folder,
   Upload,
@@ -14,13 +14,16 @@ import {
   FolderPlus,
   FilterX,
   Inbox,
+  ArrowRight,
+  CornerDownLeft,
+  FileInput,
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { FileTableRowProps, SortColumn, setDropEffectCompatibleWithEffectAllowed, COLUMN_LABELS, type ColumnVisibility, type ColumnWidths } from './FileGridUtils'
 import { getIndexInfo } from '../../utils/indexPrefix'
 import { parsePeriodFromName } from '../../utils/period'
 import { getAgeInfo } from '../../utils/fileAge'
-import { DF_GROUP_HEADER_GAP_BG, DF_GROUP_HEADER_LAYER_TEXT, docuFramePalette } from '../../docuFrameColors'
+import { docuFramePalette } from '../../docuFrameColors'
 
 /** Match function-row transfer popovers — flat chrome, no blue ring */
 const suppressFocusRing = {
@@ -49,8 +52,8 @@ type GroupedVirtualRowItem =
   | { type: 'fileRow'; file: FileItem; globalIndex: number }
   | { type: 'emptyHint'; groupKey: string }
 
-/** Estimated height for a group header row (divider + pb gap below + optional wrap); slight over-estimate avoids virtual list overlap. */
-const GROUP_HEADER_HEIGHT_ESTIMATE = 70
+/** Estimated height for a group header row (tinted band + section spacing above). */
+const GROUP_HEADER_HEIGHT_ESTIMATE = 40
 /** Estimated height for the empty-section hint row under a fileless custom header. */
 const EMPTY_HINT_HEIGHT_ESTIMATE = 34
 
@@ -854,36 +857,33 @@ function NewFolderGhostTableRow({
 }
 
 // GroupHeaderDropZone Component (extracted from FileGrid.tsx)
+// PERF: every prop must stay referentially stable across scroll renders — the
+// virtualizer re-renders the body each frame, and a broken memo here re-renders
+// each visible header's Popover machine, which makes grouped scrolling sluggish.
 interface GroupHeaderDropZoneProps {
   groupKey: string;
-  indexInfo: ReturnType<typeof getIndexInfo>;
   fileCount: number;
   /** Rich header metadata: newest file's modified date, e.g. "11 March" (year appended when not current) */
   latestFileLabel?: string | null;
-  /** Second arg is true when Ctrl was held during drag-over or at drop (drop often loses ctrlKey after key-up). */
-  onDrop: (e: React.DragEvent, copyModifierActive: boolean) => void;
+  /** Last arg is true when Ctrl was held during drag-over or at drop (drop often loses ctrlKey after key-up). */
+  onDrop: (e: React.DragEvent, groupKey: string, copyModifierActive?: boolean) => void | Promise<void>;
   transferTemplates: Array<{ command: string; filename: string }>;
   onTransfer: (opts: { command?: string; newName?: string }) => Promise<void>;
-  pillBg: string;
-  pillText: string;
-  dividerColor: string;
-  dropZoneBg: string;
+  headerTextColor: string;
+  headerSubTextColor: string;
   mt: number;
   clearFolderHoverStates: () => void;
 }
 
 const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   groupKey,
-  indexInfo,
   fileCount,
   latestFileLabel,
   onDrop,
   transferTemplates,
   onTransfer,
-  pillBg,
-  pillText,
-  dividerColor,
-  dropZoneBg,
+  headerTextColor,
+  headerSubTextColor,
   mt,
   clearFolderHoverStates,
 }) => {
@@ -892,32 +892,29 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   const copyModifierDuringOverRef = useRef(false);
   const [manualFilename, setManualFilename] = useState('');
   const [isTransferMenuOpen, setIsTransferMenuOpen] = useState(false);
-  const headerRowRef = useRef<HTMLDivElement>(null);
-  const [squareSide, setSquareSide] = useState(22);
-
-  useLayoutEffect(() => {
-    const el = headerRowRef.current;
-    if (!el) return;
-    const update = () => {
-      const cs = getComputedStyle(el);
-      const pt = parseFloat(cs.paddingTop) || 0;
-      const pb = parseFloat(cs.paddingBottom) || 0;
-      const innerCross = el.clientHeight - pt - pb;
-      setSquareSide(Math.max(Math.round(innerCross), 20));
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  // Derived locally from the stable groupKey string so the parent never has to pass a fresh object
+  const indexInfo = getIndexInfo(groupKey);
   const p = docuFramePalette;
+  /** Index key accent — the one visual cue that distinguishes layered headers from plain ones */
+  const keyColor = useColorModeValue('#2b6cb0', '#72cdf4');
+  /** Whisper of the old #1A365D header bar — enough tint to read as a section lid, not a file row */
+  const bandBg = useColorModeValue('rgba(43,108,176,0.08)', 'rgba(26,54,93,0.5)');
+  const bandAccent = useColorModeValue('rgba(43,108,176,0.5)', 'rgba(114,205,244,0.55)');
+  /** Soft key-tinted fill — count badge + popover header chip */
+  const keyTintBg = useColorModeValue('rgba(43,108,176,0.10)', 'rgba(114,205,244,0.12)');
+  const keyTintBorder = useColorModeValue('rgba(43,108,176,0.28)', 'rgba(114,205,244,0.30)');
   const panelBg = useColorModeValue(p.light.toolbar, p.dark.tabStrip);
-  const menuListBg = useColorModeValue(p.light.listRow, p.dark.tabStrip);
   const menuListBorder = useColorModeValue(p.light.border, p.dark.border);
   const menuHoverBg = useColorModeValue(p.light.rowHover, p.dark.chromeHover);
   const menuPlaceholderColor = useColorModeValue(p.light.subtext, p.dark.subtext);
   const inputBg = useColorModeValue(p.light.listRow, p.dark.listRow);
   const labelColor = useColorModeValue('gray.800', 'gray.100');
+  /** Popover depth — lifts the dialog off the band without a hard border line */
+  const popoverShadow = useColorModeValue(
+    '0 10px 30px -8px rgba(15,23,42,0.35), 0 2px 8px -2px rgba(15,23,42,0.20)',
+    '0 14px 40px -10px rgba(0,0,0,0.70), 0 2px 10px -2px rgba(0,0,0,0.55)',
+  );
 
   const handleTransferTemplate = (command: string) => {
     onTransfer({ command });
@@ -935,8 +932,8 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     }
   };
 
-  const indexPillLabel = groupKey === 'Other' ? '-' : groupKey;
-  const indexPillTitle =
+  const indexKeyLabel = groupKey === 'Other' ? 'Other' : groupKey;
+  const indexKeyTitle =
     groupKey === 'Other'
       ? 'Other — non-indexed files'
       : indexInfo.description
@@ -976,7 +973,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     <Box
       mb={0.75}
       mt={mt}
-      pb={1.5}
+      pb={0.5}
       position="relative"
       data-group-drop-zone="true"
       onDragEnter={e => {
@@ -1025,7 +1022,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         
         const copyModifierActive = e.ctrlKey || copyModifierDuringOverRef.current;
         if (isInternal || isExternal) {
-          onDrop(e, copyModifierActive);
+          void onDrop(e, groupKey, copyModifierActive);
         }
         
         setIsDraggingOver(false);
@@ -1036,123 +1033,85 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
     >
       <Box position="relative">
       <Flex
-        ref={headerRowRef}
-        align="stretch"
-        px={0}
-        py={0}
-        gap={0}
-        minHeight="26px"
-        bg={isDraggingOver ? dropZoneBg : pillBg}
-        style={isDraggingOver ? undefined : { background: `linear-gradient(135deg, ${pillBg} 0%, color-mix(in srgb, ${pillBg} 85%, #4a7ab5) 50%, ${pillBg} 100%)` }}
-        borderTop="1px solid rgba(255,255,255,0.06)"
-        boxShadow="0 1px 3px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.05)"
-        transition="background 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease"
-        _hover={isDraggingOver ? undefined : { filter: 'brightness(1.06)' }}
-        borderRadius={0}
+        align="center"
+        gap={2}
+        px={2}
+        py="3px"
+        minHeight="25px"
+        role="group"
+        bg={bandBg}
+        borderLeft="2px solid"
+        borderLeftColor={bandAccent}
+        borderRadius="0 4px 4px 0"
         cursor={isDraggingOver ? 'copy' : 'default'}
       >
-        <Box
-          flexShrink={0}
-          alignSelf="stretch"
-          w={`${squareSide}px`}
-          minW={`${squareSide}px`}
-          maxW={`${squareSide}px`}
-          boxSizing="border-box"
-          bg={pillBg}
-          color={pillText}
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
+        <Text
           fontSize="xs"
-          fontWeight="semibold"
-          title={indexPillTitle}
-          overflow="hidden"
-          py={0.5}
-          borderLeft="2px solid rgba(114, 205, 244, 0.5)"
-          style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}
-        >
-          <Text as="span" lineClamp={1} px={1} textAlign="center" w="100%">
-            {indexPillLabel}
-          </Text>
-        </Box>
-        <Box
+          color={keyColor}
           flexShrink={0}
-          w="2px"
-          minW="2px"
-          alignSelf="stretch"
-          bg="rgba(0,0,0,0.3)"
-          aria-hidden
-        />
-        <Flex
-          flex="1"
-          minW={0}
-          align="center"
-          gap={2}
-          px={2}
-          py={0.5}
-          color={pillText}
+          whiteSpace="nowrap"
+          title={indexKeyTitle}
+          style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, letterSpacing: '0.05em' }}
         >
-          <Text flex="1" fontSize="xs" fontWeight="medium" lineClamp={2} minW={0} letterSpacing="0.01em">
-            {isDraggingOver && isCopyMode
-              ? `📋 Copy to ${groupKey}${indexInfo.description ? ` — ${indexInfo.description}` : ''}`
-              : indexInfo.description || ''}
-          </Text>
-          {latestFileLabel && !isDraggingOver && (
-            <Text
-              as="span"
-              flexShrink={0}
-              fontSize="10px"
-              color={pillText}
-              opacity={0.75}
-              whiteSpace="nowrap"
-              letterSpacing="0.02em"
-              title={`Newest file in ${groupKey} was modified ${latestFileLabel}`}
-              style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}
-            >
-              Latest file: {latestFileLabel}
-            </Text>
-          )}
-          <Box
-            as="span"
-            flexShrink={0}
-            px={2}
-            py={0.5}
-            bg="rgba(255,255,255,0.08)"
-            color={pillText}
-            borderRadius="3px"
-            border="1px solid rgba(255,255,255,0.1)"
+          {indexKeyLabel}
+        </Text>
+        {indexInfo.description && (
+          <Text
             fontSize="xs"
             fontWeight="semibold"
-            minW="32px"
-            textAlign="center"
-            style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}
+            color={headerTextColor}
+            whiteSpace="nowrap"
+            overflow="hidden"
+            textOverflow="ellipsis"
+            minW={0}
+            flexShrink={1}
           >
-            {fileCount}
-          </Box>
-        </Flex>
+            {indexInfo.description}
+          </Text>
+        )}
         <Box
+          as="span"
           flexShrink={0}
-          w="2px"
-          minW="2px"
-          alignSelf="stretch"
-          bg="rgba(0,0,0,0.3)"
-          aria-hidden
-        />
-        <Box
-          flexShrink={0}
-          alignSelf="stretch"
-          w={`${squareSide}px`}
-          minW={`${squareSide}px`}
-          maxW={`${squareSide}px`}
-          boxSizing="border-box"
-          bg={pillBg}
-          display="flex"
+          display="inline-flex"
           alignItems="center"
-          justifyContent="center"
-          py={0.5}
+          h="15px"
+          minW="15px"
+          px="5px"
+          borderRadius="full"
+          bg="rgba(127,127,127,0.14)"
+          color={headerSubTextColor}
+          title={`${fileCount} file${fileCount === 1 ? '' : 's'}`}
+          style={{ fontSize: '10px', fontWeight: 600, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}
         >
+          {fileCount}
+        </Box>
+        <Box flex={1} minW="12px" />
+        {latestFileLabel && (
+          <Flex
+            align="center"
+            gap="5px"
+            flexShrink={0}
+            color={headerSubTextColor}
+            title={`Newest file in ${groupKey} was modified ${latestFileLabel}`}
+          >
+            <Box
+              as="span"
+              w="5px"
+              h="5px"
+              borderRadius="full"
+              bg={bandAccent}
+              flexShrink={0}
+            />
+            <Text fontSize="10px" whiteSpace="nowrap" style={{ letterSpacing: '0.01em' }}>
+              Latest file <Box as="span" color={headerTextColor} style={{ fontWeight: 600 }}>{latestFileLabel}</Box>
+            </Text>
+          </Flex>
+        )}
+        <Box flexShrink={0} lineHeight={0}>
           <Popover.Root
             open={isTransferMenuOpen}
+            lazyMount
+            unmountOnExit
             closeOnInteractOutside
             onOpenChange={({ open }) => {
               if (!open) setManualFilename('');
@@ -1166,126 +1125,246 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
             <Popover.Trigger asChild>
               <IconButton
                 aria-label="Transfer to this group"
-                size="xs"
+                title={`Transfer a download into ${groupKey}`}
+                size="2xs"
                 variant="ghost"
-                minW={8}
-                minH={8}
-                w={8}
-                h={8}
-                color={pillText}
-                bg="transparent"
-                borderRadius={0}
-                _hover={{ bg: 'rgba(255,255,255,0.14)' }}
+                minW="20px"
+                minH="20px"
+                w="20px"
+                h="20px"
+                color={isTransferMenuOpen ? keyColor : headerSubTextColor}
+                bg={isTransferMenuOpen ? keyTintBg : 'transparent'}
+                borderWidth="1px"
+                borderStyle="solid"
+                borderColor={isTransferMenuOpen ? keyTintBorder : 'transparent'}
+                borderRadius="5px"
+                opacity={isTransferMenuOpen ? 1 : 0.5}
+                transition="opacity 0.12s ease, background 0.12s ease, color 0.12s ease, transform 0.12s ease"
+                css={{ '[role=group]:hover &': { opacity: 1 } }}
+                _hover={{ bg: keyTintBg, color: keyColor, borderColor: keyTintBorder }}
                 _focus={suppressFocusRing}
                 _focusVisible={suppressFocusRing}
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
               >
-                <Plus size={12} />
+                <Plus size={13} strokeWidth={2.5} />
               </IconButton>
             </Popover.Trigger>
             <Portal>
               <Popover.Positioner>
                 <Popover.Content
-                  minW="260px"
+                  minW="272px"
                   maxW="min(90vw, 420px)"
                   borderWidth="1px"
                   borderStyle="solid"
                   borderColor={menuListBorder}
                   bg={panelBg}
+                  borderRadius="8px"
+                  overflow="hidden"
+                  boxShadow={popoverShadow}
                   zIndex={10000}
                   _focus={suppressFocusRing}
                   _focusVisible={suppressFocusRing}
-                  p={2}
+                  p={0}
                 >
-                  <Box
-                    maxH="240px"
-                    overflowY="auto"
-                    borderWidth="1px"
-                    borderStyle="solid"
-                    borderColor={menuListBorder}
-                    bg={menuListBg}
+                  {/* Header — names the destination layer so the dialog has context */}
+                  <Flex
+                    align="center"
+                    gap={2}
+                    px="10px"
+                    py="8px"
+                    borderBottomWidth="1px"
+                    borderBottomStyle="solid"
+                    borderBottomColor={menuListBorder}
                   >
-                    {transferTemplates.length === 0 ? (
-                      <Box py={2} px={3}>
-                        <Text fontSize="sm" color={menuPlaceholderColor}>
-                          No templates
-                        </Text>
-                      </Box>
-                    ) : (
-                      <Box display="flex" flexDirection="column" py={1}>
-                        {transferTemplates.map((t) => {
-                          const displayText =
-                            t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
-                          return (
-                            <Box
-                              key={t.command}
-                              w="100%"
-                              maxH="50px"
-                              minH={0}
-                              textAlign="left"
-                              py={1}
-                              px={3}
-                              fontSize="sm"
-                              color={labelColor}
-                              bg="transparent"
-                              cursor="pointer"
-                              border="none"
-                              display="flex"
-                              alignItems="center"
-                              _hover={{ bg: menuHoverBg }}
-                              _focus={suppressFocusRing}
-                              _focusVisible={{ ...suppressFocusRing, bg: menuHoverBg }}
-                              title={t.filename}
-                              asChild
-                            >
-                              <button type="button" onClick={() => handleTransferTemplate(t.command)}>
-                                <Text
-                                  as="span"
-                                  lineClamp={1}
-                                  fontSize="sm"
-                                  textAlign="left"
-                                  color={labelColor}
-                                  overflow="hidden"
-                                  textOverflow="ellipsis"
-                                  w="100%"
-                                >
-                                  {displayText}
-                                </Text>
-                              </button>
-                            </Box>
-                          );
-                        })}
-                      </Box>
-                    )}
-                  </Box>
-                  <Separator borderColor={menuListBorder} my={2} />
-                  <Box w="100%" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                    <Input
-                      size="sm"
-                      w="100%"
-                      h="40px"
-                      minH="40px"
-                      py={2}
-                      px={3}
-                      fontSize="sm"
-                      borderRadius={0}
-                      bg={inputBg}
+                    <Box
+                      as="span"
+                      flexShrink={0}
+                      display="inline-flex"
+                      alignItems="center"
+                      h="18px"
+                      px="7px"
+                      borderRadius="3px"
+                      bg={keyTintBg}
                       border="1px solid"
-                      borderColor={menuListBorder}
-                      placeholder="New filename to transfer..."
-                      value={manualFilename}
-                      onChange={(e) => setManualFilename(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleTransferManual();
-                        }
-                      }}
-                      _placeholder={{ color: menuPlaceholderColor }}
-                      _hover={{ borderColor: menuListBorder }}
-                      _focus={suppressFocusRing}
-                      _focusVisible={suppressFocusRing}
-                    />
+                      borderColor={keyTintBorder}
+                      color={keyColor}
+                      style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: '12px', letterSpacing: '0.06em', lineHeight: 1 }}
+                    >
+                      {indexKeyLabel}
+                    </Box>
+                    <Box minW={0} flex={1}>
+                      <Text fontSize="11px" color={menuPlaceholderColor} lineHeight={1.1} style={{ letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                        Transfer into
+                      </Text>
+                      {indexInfo.description && (
+                        <Text fontSize="xs" fontWeight="semibold" color={labelColor} lineClamp={1} title={indexInfo.description}>
+                          {indexInfo.description}
+                        </Text>
+                      )}
+                    </Box>
+                  </Flex>
+
+                  {/* Template list */}
+                  {transferTemplates.length === 0 ? (
+                    <Flex direction="column" align="center" justify="center" py={5} px={4} gap={1.5}>
+                      <Box color={menuPlaceholderColor} opacity={0.6} lineHeight={0}>
+                        <FileInput size={18} />
+                      </Box>
+                      <Text fontSize="xs" color={menuPlaceholderColor} textAlign="center">
+                        No saved templates — name a new file below
+                      </Text>
+                    </Flex>
+                  ) : (
+                    <Box maxH="240px" overflowY="auto" py="4px">
+                      {transferTemplates.map((t) => {
+                        const displayText =
+                          t.filename.length > 50 ? t.filename.slice(0, 47) + '...' : t.filename;
+                        return (
+                          <Box
+                            key={t.command}
+                            w="100%"
+                            textAlign="left"
+                            position="relative"
+                            py="7px"
+                            pl="12px"
+                            pr="10px"
+                            fontSize="sm"
+                            color={labelColor}
+                            bg="transparent"
+                            cursor="pointer"
+                            border="none"
+                            display="flex"
+                            alignItems="center"
+                            gap={2}
+                            transition="background 0.1s ease"
+                            _hover={{ bg: menuHoverBg }}
+                            _focus={suppressFocusRing}
+                            _focusVisible={{ ...suppressFocusRing, bg: menuHoverBg }}
+                            css={{
+                              '&::before': {
+                                content: '""',
+                                position: 'absolute',
+                                left: 0,
+                                top: '4px',
+                                bottom: '4px',
+                                width: '2px',
+                                borderRadius: '0 2px 2px 0',
+                                background: keyColor,
+                                opacity: 0,
+                                transition: 'opacity 0.1s ease',
+                              },
+                              '&:hover::before, &:focus-visible::before': { opacity: 1 },
+                              '&:hover .df-transfer-arrow, &:focus-visible .df-transfer-arrow': { opacity: 1, transform: 'translateX(0)' },
+                            }}
+                            title={t.filename}
+                            asChild
+                          >
+                            <button type="button" onClick={() => handleTransferTemplate(t.command)}>
+                              <Text
+                                as="span"
+                                lineClamp={1}
+                                fontSize="sm"
+                                textAlign="left"
+                                color={labelColor}
+                                overflow="hidden"
+                                textOverflow="ellipsis"
+                                flex={1}
+                                minW={0}
+                              >
+                                {displayText}
+                              </Text>
+                              <Box
+                                as="span"
+                                className="df-transfer-arrow"
+                                flexShrink={0}
+                                lineHeight={0}
+                                color={keyColor}
+                                opacity={0}
+                                style={{ transform: 'translateX(-3px)', transition: 'opacity 0.1s ease, transform 0.1s ease' }}
+                              >
+                                <ArrowRight size={14} />
+                              </Box>
+                            </button>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  )}
+
+                  {/* New-filename footer */}
+                  <Box
+                    px="10px"
+                    py="10px"
+                    borderTopWidth="1px"
+                    borderTopStyle="solid"
+                    borderTopColor={menuListBorder}
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
+                    <Flex
+                      align="center"
+                      gap={2}
+                      h="38px"
+                      px="10px"
+                      borderRadius="6px"
+                      bg={inputBg}
+                      borderWidth="1px"
+                      borderStyle="solid"
+                      borderColor={isInputFocused ? keyColor : menuListBorder}
+                      transition="border-color 0.12s ease, box-shadow 0.12s ease"
+                      boxShadow={isInputFocused ? `0 0 0 3px ${keyTintBg}` : 'none'}
+                    >
+                      <Box as="span" flexShrink={0} lineHeight={0} color={isInputFocused ? keyColor : menuPlaceholderColor} transition="color 0.12s ease">
+                        <FileInput size={15} />
+                      </Box>
+                      <Input
+                        size="sm"
+                        flex={1}
+                        minW={0}
+                        h="100%"
+                        py={0}
+                        px={0}
+                        fontSize="sm"
+                        border="none"
+                        borderRadius={0}
+                        bg="transparent"
+                        color={labelColor}
+                        placeholder="New filename to transfer…"
+                        value={manualFilename}
+                        onChange={(e) => setManualFilename(e.target.value)}
+                        onFocus={() => setIsInputFocused(true)}
+                        onBlur={() => setIsInputFocused(false)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleTransferManual();
+                          }
+                        }}
+                        _placeholder={{ color: menuPlaceholderColor }}
+                        _focus={suppressFocusRing}
+                        _focusVisible={suppressFocusRing}
+                      />
+                      <IconButton
+                        aria-label="Transfer new filename"
+                        title="Transfer (Enter)"
+                        size="2xs"
+                        variant="ghost"
+                        flexShrink={0}
+                        minW="22px"
+                        h="22px"
+                        borderRadius="4px"
+                        color={manualFilename.trim() ? keyColor : menuPlaceholderColor}
+                        opacity={manualFilename.trim() ? 1 : 0.45}
+                        bg={manualFilename.trim() ? keyTintBg : 'transparent'}
+                        transition="opacity 0.12s ease, background 0.12s ease, color 0.12s ease"
+                        _hover={{ bg: keyTintBg, color: keyColor }}
+                        _focus={suppressFocusRing}
+                        _focusVisible={suppressFocusRing}
+                        disabled={!manualFilename.trim()}
+                        onClick={handleTransferManual}
+                      >
+                        <CornerDownLeft size={13} />
+                      </IconButton>
+                    </Flex>
                   </Box>
                 </Popover.Content>
               </Popover.Positioner>
@@ -1293,13 +1372,6 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           </Popover.Root>
         </Box>
       </Flex>
-      <Box
-        h="1px"
-        w="100%"
-        flexShrink={0}
-        aria-hidden
-        style={{ background: 'linear-gradient(90deg, transparent, rgba(114,205,244,0.15) 20%, rgba(114,205,244,0.15) 80%, transparent)' }}
-      />
       {isDraggingOver && (
         <Flex
           position="absolute"
@@ -1308,8 +1380,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
           align="center"
           justify="center"
           bg="rgba(59,130,246,0.08)"
-          border="none"
-          borderRadius={0}
+          borderRadius="4px"
           style={{
             outline: '1px dashed var(--chakra-colors-blue-400, #60a5fa)',
             outlineOffset: '-1px',
@@ -1317,7 +1388,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
         >
           <Icon boxSize={3.5} color="blue.400" mr={2} asChild><Upload /></Icon>
           <Text fontSize="xs" fontWeight="semibold" color="blue.400">
-            Drop to assign
+            {isCopyMode ? `Copy to ${groupKey}` : `Drop to assign to ${groupKey}`}
           </Text>
         </Flex>
       )}
@@ -1327,6 +1398,9 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
 };
 
 const GroupHeaderDropZone = React.memo(GroupHeaderDropZoneInner);
+
+/** Stable empty array so groups without templates don't break the header memo each render. */
+const EMPTY_TRANSFER_TEMPLATES: Array<{ command: string; filename: string }> = [];
 
 /** "11 March" (year appended when not the current year) for the newest file in a section. */
 function formatLatestFileLabel(files: FileItem[]): string | null {
@@ -1624,11 +1698,6 @@ const FileListViewBody = React.memo(function FileListViewBody({
   fileVersionsEpoch: _fileVersionsEpoch,
 }: FileListViewProps) {
   const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
-  const groupViewLayerHeaderBg = '#1A365D';
-  const pillBg = groupViewLayerHeaderBg;
-  const pillText = DF_GROUP_HEADER_LAYER_TEXT;
-  const dividerColor = 'rgba(255,255,255,0.22)';
-  const dropZoneBg = '#2C5282';
   const bgFillOpacity = useColorModeValue(0.05, 0.10); // Light: subtler; dark: unchanged
   /** Scroll + table must not paint opaque over the absolute background layer (v3 forwards `bg` reliably). */
   const showBackgroundFill =
@@ -1747,6 +1816,19 @@ const FileListViewBody = React.memo(function FileListViewBody({
   rowVirtualizerRef.current = rowVirtualizer;
   const groupedVirtualizerRef = useRef(groupedRowVirtualizer);
   groupedVirtualizerRef.current = groupedRowVirtualizer;
+
+  // Latest-file label per group, computed once per data change — NOT per scroll
+  // frame (date-parsing every file in every visible group each frame is what
+  // made grouped scrolling feel sluggish).
+  const latestLabelByGroup = useMemo(() => {
+    const out: Record<string, string | null> = {};
+    if (!isGroupedByIndex || !groupedFiles) return out;
+    for (const [key, files] of Object.entries(groupedFiles)) {
+      if (key === 'folders') continue;
+      out[key] = formatLatestFileLabel(files ?? []);
+    }
+    return out;
+  }, [isGroupedByIndex, groupedFiles]);
 
   // Per-row caches for referential stability - only ~visible rows touched, so selection change re-renders only 2 rows
   const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean }>>(new Map());
@@ -2120,12 +2202,11 @@ const FileListViewBody = React.memo(function FileListViewBody({
                     const item = flatGroupedItems[virtualRow.index];
                     if (!item) return null;
                     if (item.type === 'groupHeader') {
-                      const indexInfo = getIndexInfo(item.groupKey);
                       const hasFolderSection = Boolean(groupedFiles.folders && groupedFiles.folders.length);
                       const groupFiles =
                         groupedFiles[item.groupKey] ?? [];
                       const mtValue =
-                        item.groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 1.5;
+                        item.groupIndex === 0 ? (hasFolderSection ? 0.5 : 0) : 2.5;
                       if (groupHeaderVariant === 'plain') {
                         return (
                           <tr key={`gh-${item.groupKey}-${virtualRow.index}`}>
@@ -2168,16 +2249,13 @@ const FileListViewBody = React.memo(function FileListViewBody({
                           >
                             <GroupHeaderDropZone
                               groupKey={item.groupKey}
-                              indexInfo={indexInfo}
                               fileCount={groupFiles.length}
-                              latestFileLabel={formatLatestFileLabel(groupFiles)}
-                              onDrop={(e, copyMod) => handleGroupHeaderDrop(e, item.groupKey, copyMod)}
-                              transferTemplates={groupedTransferTemplates[item.groupKey] ?? []}
+                              latestFileLabel={latestLabelByGroup[item.groupKey] ?? null}
+                              onDrop={handleGroupHeaderDrop}
+                              transferTemplates={groupedTransferTemplates[item.groupKey] ?? EMPTY_TRANSFER_TEMPLATES}
                               onTransfer={onTransferFromGroupHeader}
-                              pillBg={pillBg}
-                              pillText={pillText}
-                              dividerColor={dividerColor}
-                              dropZoneBg={dropZoneBg}
+                              headerTextColor={fileTextColor}
+                              headerSubTextColor={fileSubTextColor}
                               mt={mtValue}
                               clearFolderHoverStates={clearFolderHoverStates}
                             />
@@ -2192,14 +2270,13 @@ const FileListViewBody = React.memo(function FileListViewBody({
                             <Flex
                               align="center"
                               gap={2}
-                              mx={0}
+                              mx={2}
                               mt="2px"
                               px={2.5}
                               py={1.5}
-                              borderLeft="2px solid rgba(114,205,244,0.25)"
-                              border="1px dashed rgba(114,205,244,0.18)"
-                              borderLeftWidth="2px"
-                              borderLeftStyle="solid"
+                              border="1px dashed"
+                              borderColor={headerDividerBg}
+                              borderRadius="4px"
                               userSelect="none"
                               pointerEvents="none"
                             >
