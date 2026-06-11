@@ -13,6 +13,14 @@ interface Settings {
 
 let configCache: { [key: string]: any } = {};
 
+// Clear the in-memory cache so the next getConfig() re-reads config.json.
+// Must be called whenever config is written outside this module (e.g. the
+// set-config IPC handler in electron/main.ts), otherwise reads here serve
+// stale values until the app restarts.
+export function invalidateConfigCache(): void {
+  configCache = {};
+}
+
 export async function getConfig(key: string): Promise<any> {
   try {
     // Return from cache if available

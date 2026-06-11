@@ -24,6 +24,8 @@ import { findClientRow, getIrdNumber } from '../src/services/clientDatabaseCsv';
 import type { Config } from '../src/services/config';
 import { handleCommand } from '../src/main/commandHandler';
 import { transferFiles } from '../src/main/commands/transfer';
+import { invalidateConfigCache } from '../src/main/config';
+import { getRootGitStatus, rootGitPush, rootGitPull, rootGitDiscard } from '../src/main/rootGit';
 import { uploadClientPdfsToVaults } from '../src/main/vaultsClientPdfUpload';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
@@ -969,6 +971,9 @@ async function saveConfigInternal(config: Config) {
       console.warn('[Main] Config pre-save backup (config.json.bak) failed:', e);
     }
     await withFileIoRetry(() => fsPromises.writeFile(configPath, configData, 'utf8'));
+    // src/main/config.ts keeps its own in-memory cache of config.json;
+    // without this, transfer mappings saved here aren't seen until restart.
+    invalidateConfigCache();
   } catch (error) {
     console.error('[Main] Error in saveConfig:', error);
     throw error;
@@ -1408,6 +1413,33 @@ ipcMain.handle('transfer-files', async (_, options: { numFiles?: number; newName
     console.error('[Main] Error transferring files:', error);
     throw error;
   }
+});
+
+// Root path git integration (footer status indicator)
+async function getRootPathForGit(): Promise<string> {
+  const config = await loadConfig();
+  return (config as { rootPath?: string }).rootPath || '';
+}
+
+ipcMain.handle('root-git-status', async (_, options?: { fetch?: boolean }) => {
+  try {
+    return await getRootGitStatus(await getRootPathForGit(), options);
+  } catch (error) {
+    console.error('[Main] Error getting root git status:', error);
+    throw error;
+  }
+});
+
+ipcMain.handle('root-git-push', async () => {
+  return await rootGitPush(await getRootPathForGit());
+});
+
+ipcMain.handle('root-git-pull', async () => {
+  return await rootGitPull(await getRootPathForGit());
+});
+
+ipcMain.handle('root-git-discard', async () => {
+  return await rootGitDiscard(await getRootPathForGit());
 });
 
 ipcMain.handle('replace-with-latest-file', async (_event, targetFilePath: string) => {

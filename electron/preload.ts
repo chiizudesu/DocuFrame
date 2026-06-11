@@ -147,6 +147,21 @@ interface ElectronAPI {
   onCurrentDirectoryChanged: (callback: (directory: string) => void) => void;
   // Replace selected file with latest Downloads file
   replaceWithLatestFile: (targetFilePath: string) => Promise<{ success: boolean; message: string }>;
+  // Root path git integration (footer status indicator)
+  rootGitStatus: (options?: { fetch?: boolean }) => Promise<{
+    isRepo: boolean;
+    gitRoot?: string;
+    branch?: string;
+    upstream?: string;
+    ahead: number;
+    behind: number;
+    changedCount: number;
+    untrackedCount: number;
+    fetchFailed?: boolean;
+  }>;
+  rootGitPush: () => Promise<{ success: boolean; message: string }>;
+  rootGitPull: () => Promise<{ success: boolean; message: string }>;
+  rootGitDiscard: () => Promise<{ success: boolean; message: string }>;
 }
 
 // Expose protected methods that allow the renderer process to use
@@ -163,6 +178,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Transfer command
   transfer: async (options: TransferOptions) => {
     return await ipcRenderer.invoke('transfer-files', options);
+  },
+
+  // Root path git integration (footer status indicator)
+  rootGitStatus: async (options?: { fetch?: boolean }) => {
+    return await ipcRenderer.invoke('root-git-status', options);
+  },
+  rootGitPush: async () => {
+    return await ipcRenderer.invoke('root-git-push');
+  },
+  rootGitPull: async () => {
+    return await ipcRenderer.invoke('root-git-pull');
+  },
+  rootGitDiscard: async () => {
+    return await ipcRenderer.invoke('root-git-discard');
   },
   
   // Config management

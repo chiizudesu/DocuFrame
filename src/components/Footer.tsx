@@ -3,6 +3,7 @@ import { useColorModeValue } from "./ui/color-mode";
 import { Flex, Text, Box } from '@chakra-ui/react';
 import { useAppContext } from '../context/AppContext';
 import { docuFramePalette as P } from '../docuFrameColors';
+import { GitStatusIndicator } from './GitStatusIndicator';
 
 export const Footer: React.FC = () => {
   const {
@@ -72,9 +73,7 @@ export const Footer: React.FC = () => {
         {getFolderInfo()}
       </Text>
       <Flex align="center">
-        <Text fontSize="10px" color={textColor} userSelect="none">
-          developed by Matty
-        </Text>
+        <GitStatusIndicator />
       </Flex>
     </Flex>
   );
