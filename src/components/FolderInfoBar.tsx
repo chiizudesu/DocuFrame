@@ -8,7 +8,6 @@ import {
   Box,
   HStack,
   Button,
-  Menu,
   Portal,
   Field,
   Dialog,
@@ -25,7 +24,9 @@ import {
   ExternalLink,
   File,
   Folder,
+  PencilLine,
 } from 'lucide-react'
+import { FloatingMenu, MenuRow } from './FileGrid/menuPrimitives'
 import { useAppContext } from '../context/AppContext'
 import { useClientInfo } from '../hooks/useClientInfo'
 import { useYearNavigation } from '../hooks/useYearNavigation'
@@ -87,6 +88,36 @@ function computeMiniJumpUiMinWidthPx(
   const dropdownMin = results.length > 0 ? MINI_DROPDOWN_ROW_EXTRAS_PX + textW : pillMin
   return Math.max(pillMin, dropdownMin, 80)
 }
+
+type BreadcrumbEntry = { label: string; path: string; isClientPill?: boolean }
+
+/** Breadcrumb row item — a visible crumb, or a folded "…" run of middle crumbs */
+type CrumbDisplayItem =
+  | { kind: 'crumb'; crumb: BreadcrumbEntry; idx: number }
+  | { kind: 'ellipsis'; hidden: { crumb: BreadcrumbEntry; idx: number }[] }
+
+/** Crumb count at which middle crumbs fold into a "…" menu (root, client pill, last 3 stay) */
+const CRUMB_COLLAPSE_MIN = 6
+
+/** Tiny keycap for inline keyboard hints (jump dropdown footer, edit-mode hint) */
+const KeyCap: React.FC<{ label: string; borderColor: string; color?: string }> = ({ label, borderColor, color }) => (
+  <Box
+    as="kbd"
+    fontSize="9px"
+    fontWeight="600"
+    fontFamily="inherit"
+    lineHeight="1"
+    px="4px"
+    py="2px"
+    border="1px solid"
+    borderColor={borderColor}
+    borderRadius="3px"
+    color={color}
+    flexShrink={0}
+  >
+    {label}
+  </Box>
+)
 
 /** Result label with fuzzy-matched characters highlighted */
 const MiniSearchResultLabel: React.FC<{ name: string; filterText: string }> = ({ name, filterText }) => {
@@ -259,6 +290,33 @@ const MiniSearchDropdown: React.FC<{
               <MiniSearchResultLabel name={item.name} filterText={filterText} />
             </Flex>
           ))}
+          <Flex
+            align="center"
+            gap={2.5}
+            px={3}
+            py="5px"
+            borderTop="1px solid"
+            borderColor={dropdownBorderColor}
+            position="sticky"
+            bottom={0}
+            bg={dropdownBg}
+            opacity={0.6}
+            userSelect="none"
+            whiteSpace="nowrap"
+          >
+            <Flex align="center" gap={1}>
+              <KeyCap label="Tab" borderColor={dropdownBorderColor} />
+              <Text fontSize="10px">dive in</Text>
+            </Flex>
+            <Flex align="center" gap={1}>
+              <KeyCap label="↵" borderColor={dropdownBorderColor} />
+              <Text fontSize="10px">go</Text>
+            </Flex>
+            <Flex align="center" gap={1}>
+              <KeyCap label="⌫" borderColor={dropdownBorderColor} />
+              <Text fontSize="10px">up a level</Text>
+            </Flex>
+          </Flex>
         </Box>
       </Box>
     </Portal>
@@ -291,6 +349,8 @@ export const FolderInfoBar: React.FC = () => {
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([])
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false)
   const [activeChevronIndex, setActiveChevronIndex] = useState<number | null>(null)
+  /** Folded "…" crumb menu — anchored under the ellipsis, lists the hidden middle crumbs */
+  const [foldedCrumbsMenu, setFoldedCrumbsMenu] = useState<{ x: number; y: number; crumbs: BreadcrumbEntry[] } | null>(null)
   const [miniSearchPath, setMiniSearchPath] = useState<string>('')
   const [miniAnchorPath, setMiniAnchorPath] = useState<string>('')
   /** First parent-shortcut shows pill ring; second applies (search path up, or lift jump anchor on main crumbs) */
@@ -390,11 +450,13 @@ export const FolderInfoBar: React.FC = () => {
   const miniTypePillPlaceholder = useColorModeValue('blue.400', 'blue.300')
   const miniDropdownBorderColor = useColorModeValue('gray.300', 'whiteAlpha.300')
   const miniJumpPreviewRing = useColorModeValue('0 0 0 2px #3b82f6', '0 0 0 2px #90cdf4')
-  const addressBarJumpGlow = useColorModeValue(
-    '0 0 0 1px rgba(59, 130, 246, 0.45), 0 0 16px rgba(59, 130, 246, 0.22)',
-    '0 0 0 1px rgba(147, 197, 253, 0.5), 0 0 22px rgba(59, 130, 246, 0.32)',
-  )
   const addressBarJumpBorderColor = useColorModeValue('blue.400', 'blue.300')
+  /** Raw-text edit mode gets a softer version of the jump border treatment */
+  const addressBarEditBorderColor = useColorModeValue('blue.300', 'blue.400')
+  /** Ancestor crumbs sit back; the current crumb and hover targets carry full contrast */
+  const breadcrumbAncestorColor = useColorModeValue('#64748b', '#cbd5e0')
+  /** Chevron hover tint — signals "jump search opens below here" */
+  const jumpAccentColor = useColorModeValue('#2563eb', '#90cdf4')
   /** Bright blue sweep — clean 6-stop gradient, leading edge slightly sharper */
   const addressRefreshSweepGradient = useColorModeValue(
     'linear-gradient(90deg, rgba(37,99,235,0) 0%, rgba(29,78,216,0.45) 20%, rgba(29,78,216,0.9) 42%, #2563eb 52%, rgba(59,130,246,0.55) 72%, rgba(96,165,250,0) 100%)',
@@ -785,6 +847,50 @@ export const FolderInfoBar: React.FC = () => {
   }
 
   const breadcrumbs = getBreadcrumbs()
+
+  /** Validate + navigate to a crumb target (breadcrumb, client pill, or folded-crumb menu row) */
+  const navigateToCrumb = async (crumb: { label: string; path: string }) => {
+    const normalizedPath = normalizePath(crumb.path);
+    try {
+      const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
+      if (isValid) {
+        setCurrentDirectory(normalizedPath);
+        addLog(`Changed directory to: ${normalizedPath}`);
+        setStatus(`Navigated to ${crumb.label}`, 'info');
+      } else {
+        addLog(`Cannot access path: ${crumb.path}`, 'error');
+        setStatus(`Cannot access ${crumb.label}`, 'error');
+      }
+    } catch (error) {
+      addLog(`Failed to navigate to ${crumb.path}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus(`Navigation failed`, 'error');
+    }
+  }
+
+  /** Deep paths fold middle crumbs into a "…" menu; root, client pill, and the last 3 stay visible.
+   * Never folds while the jump UI is anchored — anchor indices must match what is on screen. */
+  const crumbDisplayItems: CrumbDisplayItem[] = (() => {
+    const source = activeChevronIndex !== null ? breadcrumbs.slice(0, activeChevronIndex + 1) : breadcrumbs
+    const asItems = source.map((crumb, idx) => ({ kind: 'crumb' as const, crumb, idx }))
+    if (activeChevronIndex !== null || source.length < CRUMB_COLLAPSE_MIN) return asItems
+    const keep = new Set([0, source.length - 3, source.length - 2, source.length - 1])
+    const pillIdx = source.findIndex((c) => c.isClientPill)
+    if (pillIdx >= 0) keep.add(pillIdx)
+    const items: CrumbDisplayItem[] = []
+    let run: { crumb: BreadcrumbEntry; idx: number }[] = []
+    for (const it of asItems) {
+      if (keep.has(it.idx)) {
+        if (run.length > 0) {
+          items.push({ kind: 'ellipsis', hidden: run })
+          run = []
+        }
+        items.push(it)
+      } else {
+        run.push({ crumb: it.crumb, idx: it.idx })
+      }
+    }
+    return items
+  })()
 
   /** Root level is the client list — typing there is a client finder: fuzzy across all
    * clients, recent clients first, longer suggestion/result lists. Deeper levels keep
@@ -1415,10 +1521,10 @@ export const FolderInfoBar: React.FC = () => {
           overflow="hidden"
           minW={0}
           style={{ WebkitAppRegion: 'no-drag', pointerEvents: 'auto' } as any}
+          role="group"
           border="1px solid"
-          borderColor={activeChevronIndex !== null ? addressBarJumpBorderColor : inputBorderColor}
-          boxShadow={activeChevronIndex !== null ? addressBarJumpGlow : undefined}
-          transition="box-shadow 0.2s ease, border-color 0.2s ease"
+          borderColor={activeChevronIndex !== null ? addressBarJumpBorderColor : isEditing ? addressBarEditBorderColor : inputBorderColor}
+          transition="border-color 0.2s ease"
           {...(activeChevronIndex !== null && { borderBottom: 'none' })}
         >
           {isRefreshing && (
@@ -1458,31 +1564,93 @@ export const FolderInfoBar: React.FC = () => {
             overflow="hidden"
           >
             {isEditing ? (
-              <Input
-                ref={inputRef}
-                value={editValue}
-                onChange={e => setEditValue(e.target.value)}
-                onBlur={handleBlur}
-                onKeyDown={handleKeyDown}
-                size="sm"
-                variant="flushed"
-                borderBottomWidth={0}
-                bg={inputBgColor}
-                color={textColor}
-                px={0}
-                autoFocus
-                flex={1}
-                minW={0}
-                width="100%"
-                height="28px"
-                borderRadius="md"
-                style={{ fontFamily: 'monospace', fontSize: '14px' }}
-              />
+              <>
+                <Input
+                  ref={inputRef}
+                  value={editValue}
+                  onChange={e => setEditValue(e.target.value)}
+                  onBlur={handleBlur}
+                  onKeyDown={handleKeyDown}
+                  size="sm"
+                  variant="flushed"
+                  borderBottomWidth={0}
+                  bg={inputBgColor}
+                  color={textColor}
+                  px={0}
+                  autoFocus
+                  flex={1}
+                  minW={0}
+                  width="100%"
+                  height="28px"
+                  borderRadius="md"
+                  style={{ fontFamily: 'monospace', fontSize: '14px' }}
+                />
+                <Flex align="center" gap={1} flexShrink={0} pl={1} opacity={0.65} pointerEvents="none" userSelect="none">
+                  <KeyCap label="↵" borderColor={separatorColor} color={iconColor} />
+                  <Text fontSize="10px" color={iconColor} mr={1}>go</Text>
+                  <KeyCap label="esc" borderColor={separatorColor} color={iconColor} />
+                  <Text fontSize="10px" color={iconColor}>cancel</Text>
+                </Flex>
+              </>
             ) : (
-              (activeChevronIndex !== null
-                ? breadcrumbs.slice(0, activeChevronIndex + 1)
-                : breadcrumbs
-              ).map((crumb, idx) => (
+              crumbDisplayItems.map((item) => {
+                if (item.kind === 'ellipsis') {
+                  const lastHidden = item.hidden[item.hidden.length - 1]
+                  return (
+                    <Flex key={`fold-${lastHidden.idx}`} align="center" flexShrink={0}>
+                      <Tooltip
+                        content={item.hidden.map((h) => h.crumb.label).join('  ›  ')}
+                        showArrow
+                        openDelay={400}
+                        positioning={{ placement: 'bottom' }}
+                      >
+                        <Box
+                          as="span"
+                          px={1.5}
+                          py="1px"
+                          borderRadius="4px"
+                          fontSize="sm"
+                          lineHeight="1.4"
+                          cursor="pointer"
+                          color={breadcrumbAncestorColor}
+                          userSelect="none"
+                          transition="background 0.15s ease, color 0.15s ease"
+                          _hover={{ bg: addressBarItemHoverBg, color: textColor }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                            setFoldedCrumbsMenu({ x: r.left, y: r.bottom + 6, crumbs: item.hidden.map((h) => h.crumb) })
+                          }}
+                        >
+                          …
+                        </Box>
+                      </Tooltip>
+                      <Tooltip content={`Search inside ${lastHidden.crumb.label}`} showArrow positioning={{ placement: 'bottom' }}>
+                        <Box
+                          as="span"
+                          display="inline-flex"
+                          alignItems="center"
+                          mx={0.5}
+                          opacity={0.5}
+                          color={textColor}
+                          cursor="pointer"
+                          borderRadius="3px"
+                          p={0.5}
+                          transition="opacity 0.15s ease, background 0.15s ease, color 0.15s ease"
+                          _hover={{ bg: addressBarItemHoverBg, opacity: 1, color: jumpAccentColor }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openMiniSearch(lastHidden.idx)
+                          }}
+                        >
+                          <ChevronRight size={14} />
+                        </Box>
+                      </Tooltip>
+                    </Flex>
+                  )
+                }
+                const { crumb, idx } = item
+                return (
                 <Flex key={crumb.path} align="center" flexShrink={crumb.isClientPill ? 1 : 0}>
                   {crumb.isClientPill ? (
                     <Tooltip content={hasClientLink ? `${getClientName() || crumb.label} — Ctrl+click to open client page` : getClientName() || crumb.label} showArrow openDelay={400} positioning={{
@@ -1501,21 +1669,16 @@ export const FolderInfoBar: React.FC = () => {
                         _hover={{ bg: 'blue.500' }}
                         transition="background 0.15s ease, transform 0.1s ease"
                         userSelect="none"
-                        onClick={async (e) => {
+                        whiteSpace="nowrap"
+                        overflow="hidden"
+                        textOverflow="ellipsis"
+                        onClick={(e) => {
                           e.stopPropagation();
                           if ((e.ctrlKey || e.metaKey) && hasClientLink) {
                             openClientLink();
                             return;
                           }
-                          const normalizedPath = normalizePath(crumb.path);
-                          try {
-                            const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
-                            if (isValid) {
-                              setCurrentDirectory(normalizedPath);
-                              addLog(`Changed directory to: ${normalizedPath}`);
-                              setStatus(`Navigated to ${crumb.label}`, 'info');
-                            }
-                          } catch {}
+                          void navigateToCrumb(crumb);
                         }}
                       >
                         {crumb.label}
@@ -1528,36 +1691,23 @@ export const FolderInfoBar: React.FC = () => {
                       py="1px"
                       cursor={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'default' : 'pointer'}
                       bg={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonBg : 'transparent'}
+                      color={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonColor : breadcrumbAncestorColor}
                       borderRadius="4px"
-                      _hover={idx !== breadcrumbs.length - 1 || activeChevronIndex !== null ? { bg: addressBarItemHoverBg } : undefined}
-                      transition="background 0.15s ease"
+                      _hover={idx !== breadcrumbs.length - 1 || activeChevronIndex !== null ? { bg: addressBarItemHoverBg, color: textColor } : undefined}
+                      transition="background 0.15s ease, color 0.15s ease"
                       position="relative"
                       zIndex={1}
-                      onClick={async (e) => {
+                      onClick={(e) => {
                         e.stopPropagation();
                         if (idx !== breadcrumbs.length - 1 || activeChevronIndex !== null) {
-                          const normalizedPath = normalizePath(crumb.path);
-                          try {
-                            const isValid = await (window.electronAPI as any).validatePath(normalizedPath);
-                            if (isValid) {
-                              setCurrentDirectory(normalizedPath);
-                              addLog(`Changed directory to: ${normalizedPath}`);
-                              setStatus(`Navigated to ${crumb.label}`, 'info');
-                            } else {
-                              addLog(`Cannot access path: ${crumb.path}`, 'error');
-                              setStatus(`Cannot access ${crumb.label}`, 'error');
-                            }
-                          } catch (error) {
-                            addLog(`Failed to navigate to ${crumb.path}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-                            setStatus(`Navigation failed`, 'error');
-                          }
+                          void navigateToCrumb(crumb);
                         }
                       }}
                     >
                       <Text
                         fontSize="sm"
                         fontWeight={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'medium' : 'normal'}
-                        color={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? activeButtonColor : textColor}
+                        color="inherit"
                         userSelect="none"
                       >
                         {crumb.label}
@@ -1566,7 +1716,7 @@ export const FolderInfoBar: React.FC = () => {
                   )}
                   {(activeChevronIndex !== null || idx < breadcrumbs.length - 1) && (
                     activeChevronIndex === null ? (
-                      <Tooltip content="Click to search at this level" showArrow positioning={{
+                      <Tooltip content={`Search inside ${crumb.label}`} showArrow positioning={{
                         placement: "bottom"
                       }}>
                         <Box
@@ -1579,8 +1729,8 @@ export const FolderInfoBar: React.FC = () => {
                           cursor="pointer"
                           borderRadius="3px"
                           p={0.5}
-                          transition="opacity 0.15s ease, background 0.15s ease"
-                          _hover={{ bg: addressBarItemHoverBg, opacity: 1 }}
+                          transition="opacity 0.15s ease, background 0.15s ease, color 0.15s ease"
+                          _hover={{ bg: addressBarItemHoverBg, opacity: 1, color: jumpAccentColor }}
                           onClick={(e) => {
                             e.stopPropagation()
                             openMiniSearch(idx)
@@ -1596,7 +1746,8 @@ export const FolderInfoBar: React.FC = () => {
                     )
                   )}
                 </Flex>
-              ))
+                )
+              })
             )}
           </Box>
           {activeChevronIndex !== null && (
@@ -1665,7 +1816,13 @@ export const FolderInfoBar: React.FC = () => {
                     fontWeight="medium"
                     fontFamily="inherit"
                     color={miniTypingPillIsCurrentSegment ? activeButtonColor : miniTypePillFg}
-                    placeholder={miniTypingPillIsCurrentSegment ? getDirectoryName(miniSearchPath) : '…'}
+                    placeholder={
+                      miniTypingPillIsCurrentSegment
+                        ? isJumpAtRoot
+                          ? 'Find a client…'
+                          : getDirectoryName(miniSearchPath)
+                        : '…'
+                    }
                     _placeholder={{
                       color: miniTypingPillIsCurrentSegment ? activeButtonColor : miniTypePillPlaceholder,
                       opacity: miniTypingPillIsCurrentSegment ? 0.72 : 0.85,
@@ -1735,13 +1892,44 @@ export const FolderInfoBar: React.FC = () => {
                 color={iconColor}
                 opacity={0.4}
                 zIndex={2}
-                _hover={{ bg: addressBarItemHoverBg, color: textColor, opacity: 1 }}
+                _hover={{ bg: addressBarItemHoverBg, color: jumpAccentColor, opacity: 1 }}
                 onClick={(e) => {
                   e.stopPropagation()
                   openMiniSearch(breadcrumbs.length - 1)
                 }}
                 tabIndex={-1}
                 onMouseDown={(ev) => ev.preventDefault()}><ChevronRight size={16} /></IconButton>
+            </Tooltip>
+          )}
+          {!isEditing && activeChevronIndex === null && (
+            <Tooltip content="Edit path as text — or click any empty space" showArrow openDelay={400} positioning={{
+              placement: "bottom"
+            }}>
+              <IconButton
+                aria-label="Edit path as text"
+                variant="ghost"
+                size="sm"
+                flexShrink={0}
+                ml="auto"
+                minW="26px"
+                h="22px"
+                borderRadius="md"
+                color={iconColor}
+                zIndex={2}
+                css={{
+                  opacity: 0,
+                  transition: 'opacity 0.15s ease',
+                  '[role=group]:hover &': { opacity: 0.45 },
+                  '&:hover': { opacity: '1 !important' },
+                }}
+                _hover={{ bg: addressBarItemHoverBg, color: textColor }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsEditing(true)
+                  setTimeout(() => inputRef.current?.focus(), 0)
+                }}
+                tabIndex={-1}
+                onMouseDown={(ev) => ev.preventDefault()}><PencilLine size={13} /></IconButton>
             </Tooltip>
           )}
         </Flex>
@@ -1814,6 +2002,25 @@ export const FolderInfoBar: React.FC = () => {
           </Box>
         </Tooltip>
       </Flex>
+      <FloatingMenu
+        isOpen={foldedCrumbsMenu !== null}
+        position={foldedCrumbsMenu ? { x: foldedCrumbsMenu.x, y: foldedCrumbsMenu.y } : { x: 0, y: 0 }}
+        onClose={() => setFoldedCrumbsMenu(null)}
+        minW="180px"
+      >
+        {foldedCrumbsMenu?.crumbs.map((crumb) => (
+          <MenuRow
+            key={crumb.path}
+            icon={<Folder size={13} color={folderIconColor} />}
+            label={crumb.label}
+            title={crumb.path}
+            onClick={() => {
+              setFoldedCrumbsMenu(null)
+              void navigateToCrumb(crumb)
+            }}
+          />
+        ))}
+      </FloatingMenu>
       <Dialog.Root open={isCreateSpreadsheetOpen} placement='center' onOpenChange={e => {
         if (!e.open) {
           setIsCreateSpreadsheetOpen(false);

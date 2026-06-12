@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useColorModeValue } from "./ui/color-mode";
 import { Box, Flex, Text, Icon, Input } from '@chakra-ui/react';
-import { Search, Folder, Users, ExternalLink, Star, Link2, Terminal, RefreshCw, Info } from 'lucide-react';
+import { Search, Folder, Users, ExternalLink, Star, Link2, Terminal, RefreshCw, Info, UserPlus, Trash2, Plus } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { GridBackdrop } from './GridBackdrop';
 import { FloatingMenu, MenuRow, MenuSeparator } from './FileGrid/menuPrimitives';
+import { joinPath } from '../utils/path';
+import { isDragAccepted, readDragPayload, clearInternalDrag, partitionDropPaths } from '../utils/dragDrop';
 import {
   findClientRow,
+  getClientName,
   getIrdNumber,
   type ClientDbRow,
 } from '../services/clientDatabaseCsv';
@@ -19,6 +22,9 @@ interface ClientEntry {
   modified: string;
   irdNumber: string | null;
 }
+
+const ACCENT = '#3b82f6';
+const AZ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 // Deterministic avatar color from name
 const AVATAR_COLORS = [
@@ -49,11 +55,369 @@ function formatDate(dateStr: string): string {
   } catch { return dateStr; }
 }
 
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, '');
+}
+
+/**
+ * Self-contained alphabet rail: owns the active-letter tracking so scroll
+ * events never re-render the client list itself. The scroll listener is
+ * passive and rAF-throttled (one offset sweep per frame at most).
+ */
+const AlphabetRail = React.memo(function AlphabetRail({
+  letters,
+  presentLetters,
+  orderedPresent,
+  scrollRef,
+  sectionRefs,
+}: {
+  letters: string[];
+  presentLetters: Set<string>;
+  /** Present letters in document order (same order as the rendered sections) */
+  orderedPresent: string[];
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  sectionRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+}) {
+  const [activeLetter, setActiveLetter] = useState<string | null>(null);
+  const railBg = useColorModeValue('rgba(248,250,252,0.92)', 'rgba(23,25,35,0.9)');
+  const railBorder = useColorModeValue('#e2e8f0', '#2a3347');
+  const railLetterColor = useColorModeValue('#64748b', '#8b97ab');
+
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      const probe = container.scrollTop + 80;
+      let current: string | null = null;
+      // Sections appear in document order, so offsetTop is ascending — bail early
+      for (const letter of orderedPresent) {
+        const el = sectionRefs.current[letter];
+        if (!el) continue;
+        if (el.offsetTop <= probe) current = letter;
+        else break;
+      }
+      setActiveLetter(current ?? orderedPresent[0] ?? null);
+    };
+    compute();
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(compute);
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [orderedPresent, scrollRef, sectionRefs]);
+
+  const scrollToLetter = useCallback((letter: string) => {
+    const el = sectionRefs.current[letter];
+    const container = scrollRef.current;
+    if (el && container) {
+      container.scrollTo({ top: Math.max(0, el.offsetTop - 8), behavior: 'smooth' });
+    }
+  }, [scrollRef, sectionRefs]);
+
+  return (
+    <Flex
+      position="absolute"
+      right="5px"
+      top="50%"
+      transform="translateY(-50%)"
+      direction="column"
+      align="center"
+      zIndex={5}
+      gap="0px"
+      py="6px"
+      px="2px"
+      borderRadius="full"
+      bg={railBg}
+      border="1px solid"
+      borderColor={railBorder}
+      userSelect="none"
+    >
+      {letters.map((letter) => {
+        const present = presentLetters.has(letter);
+        const isActive = activeLetter === letter;
+        return (
+          <Flex
+            key={letter}
+            w="18px"
+            h="15.5px"
+            align="center"
+            justify="center"
+            borderRadius="4px"
+            cursor={present ? 'pointer' : 'default'}
+            bg={isActive ? ACCENT : 'transparent'}
+            color={isActive ? 'white' : present ? railLetterColor : undefined}
+            opacity={present || isActive ? 1 : 0.22}
+            fontSize="9px"
+            fontWeight="700"
+            lineHeight="1"
+            transition="color 0.12s ease, background 0.12s ease, transform 0.12s ease"
+            _hover={present && !isActive ? { color: ACCENT, transform: 'scale(1.25)' } : undefined}
+            style={{ fontFamily: "'Rajdhani', sans-serif" }}
+            onClick={() => { if (present) scrollToLetter(letter); }}
+          >
+            {letter}
+          </Flex>
+        );
+      })}
+    </Flex>
+  );
+});
+
+/**
+ * "New client" button + typeahead panel. Memoized and self-contained: typing
+ * and hover-highlighting are local state here, so they re-render only this
+ * panel's handful of rows — never the client list behind it.
+ */
+const NewClientPanel = React.memo(function NewClientPanel({
+  isOpen,
+  setOpen,
+  csvRows,
+  existingNameKeys,
+  creating,
+  onCreate,
+}: {
+  isOpen: boolean;
+  setOpen: (open: boolean) => void;
+  csvRows: ClientDbRow[] | null;
+  existingNameKeys: Set<string>;
+  creating: boolean;
+  onCreate: (name: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [highlight, setHighlight] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const cardBg = useColorModeValue('#ffffff', '#1c2233');
+  const cardBorder = useColorModeValue('#e2e8f0', '#2a3347');
+  const cardHoverBg = useColorModeValue('#f1f5f9', '#242d42');
+  const textColor = useColorModeValue('#1a202c', '#e2e8f0');
+  const subtextColor = useColorModeValue('#64748b', '#7a8699');
+  const sectionColor = useColorModeValue('#94a3b8', '#566478');
+  const irdColor = useColorModeValue('#64748b', '#566478');
+  const panelShadow = useColorModeValue('0 14px 40px rgba(15, 23, 42, 0.16)', '0 14px 40px rgba(0, 0, 0, 0.5)');
+
+  // Reset + focus whenever the panel opens
+  useEffect(() => {
+    if (!isOpen) return;
+    setValue('');
+    setHighlight(0);
+    const t = setTimeout(() => inputRef.current?.focus(), 30);
+    return () => clearTimeout(t);
+  }, [isOpen]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [isOpen, setOpen]);
+
+  const suggestions = useMemo(() => {
+    if (!isOpen || !csvRows) return [];
+    const q = value.trim().toLowerCase();
+    const seen = new Set<string>();
+    const out: { name: string; ird: string | null }[] = [];
+    for (const row of csvRows) {
+      const name = getClientName(row);
+      if (!name) continue;
+      const key = normalizeName(name);
+      if (seen.has(key) || existingNameKeys.has(key)) continue;
+      if (q && !name.toLowerCase().includes(q)) continue;
+      seen.add(key);
+      out.push({ name, ird: getIrdNumber(row) });
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [isOpen, csvRows, value, existingNameKeys]);
+
+  const customName = value.trim();
+  const showCustomOption =
+    customName.length > 0 &&
+    !existingNameKeys.has(normalizeName(customName)) &&
+    !suggestions.some(s => normalizeName(s.name) === normalizeName(customName));
+  const options = useMemo(
+    () => [
+      ...suggestions.map(s => ({ kind: 'db' as const, name: s.name, ird: s.ird })),
+      ...(showCustomOption ? [{ kind: 'custom' as const, name: customName, ird: null }] : []),
+    ],
+    [suggestions, showCustomOption, customName]
+  );
+
+  useEffect(() => { setHighlight(0); }, [value]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight(h => Math.min(h + 1, Math.max(0, options.length - 1)));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight(h => Math.max(0, h - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const option = options[highlight] ?? options[0];
+      if (option) onCreate(option.name);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  }, [options, highlight, onCreate, setOpen]);
+
+  return (
+    <Box position="relative" ml="auto" ref={wrapRef}>
+      <Flex
+        as="button"
+        align="center"
+        gap={2}
+        h="34px"
+        px="14px"
+        borderRadius="6px"
+        bg={ACCENT}
+        color="white"
+        fontSize="13px"
+        fontWeight="600"
+        cursor="pointer"
+        userSelect="none"
+        transition="background 0.15s ease, transform 0.15s ease"
+        _hover={{ bg: '#2f6fd8' }}
+        _active={{ transform: 'scale(0.97)' }}
+        onClick={() => setOpen(!isOpen)}
+      >
+        <UserPlus size={15} />
+        New client
+      </Flex>
+
+      {isOpen && (
+        <Box
+          position="absolute"
+          top="40px"
+          right={0}
+          w="340px"
+          bg={cardBg}
+          border="1px solid"
+          borderColor={cardBorder}
+          borderRadius="10px"
+          boxShadow={panelShadow}
+          zIndex={20}
+          overflow="hidden"
+        >
+          <Box px={3} pt={3} pb={2}>
+            <Text
+              fontSize="10px"
+              fontWeight="700"
+              letterSpacing="0.08em"
+              textTransform="uppercase"
+              color={sectionColor}
+              mb={2}
+              userSelect="none"
+            >
+              Add new client
+            </Text>
+            <Input
+              ref={inputRef}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Client name…"
+              h="32px"
+              fontSize="13px"
+              color={textColor}
+              bg={cardBg}
+              borderColor={cardBorder}
+              _placeholder={{ color: subtextColor }}
+              _focus={{ outline: 'none', boxShadow: `0 0 0 1px ${ACCENT}`, borderColor: ACCENT }}
+              _focusVisible={{ outline: 'none', boxShadow: `0 0 0 1px ${ACCENT}`, borderColor: ACCENT }}
+            />
+          </Box>
+          <Box maxH="264px" overflowY="auto" pb={2} className="enhanced-scrollbar">
+            {options.length === 0 && (
+              <Text px={3} py={2} fontSize="12px" color={subtextColor}>
+                {csvRows ? 'Type a client name…' : 'Type a name to create a client folder'}
+              </Text>
+            )}
+            {options.map((option, i) => (
+              <Flex
+                key={`${option.kind}:${option.name}`}
+                align="center"
+                gap={2.5}
+                mx={2}
+                px={2}
+                py="6px"
+                borderRadius="6px"
+                cursor="pointer"
+                bg={i === highlight ? cardHoverBg : 'transparent'}
+                boxShadow={i === highlight ? `inset 2px 0 0 0 ${ACCENT}` : undefined}
+                opacity={creating ? 0.6 : 1}
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => onCreate(option.name)}
+              >
+                {option.kind === 'db' ? (
+                  <Flex
+                    flexShrink={0}
+                    w="22px"
+                    h="22px"
+                    borderRadius="4px"
+                    bg={getAvatarColor(option.name)}
+                    color="white"
+                    fontSize="9px"
+                    fontWeight="700"
+                    align="center"
+                    justify="center"
+                    style={{ fontFamily: "'Rajdhani', sans-serif" }}
+                  >
+                    {getInitials(option.name)}
+                  </Flex>
+                ) : (
+                  <Flex
+                    flexShrink={0}
+                    w="22px"
+                    h="22px"
+                    borderRadius="4px"
+                    border="1.5px dashed"
+                    borderColor={ACCENT}
+                    color={ACCENT}
+                    align="center"
+                    justify="center"
+                  >
+                    <Plus size={12} strokeWidth={2.5} />
+                  </Flex>
+                )}
+                <Flex direction="column" flex={1} minW={0}>
+                  <Text fontSize="12.5px" fontWeight="500" color={option.kind === 'custom' ? ACCENT : textColor} lineClamp={1}>
+                    {option.kind === 'custom' ? `Create "${option.name}"` : option.name}
+                  </Text>
+                  {option.kind === 'custom' && (
+                    <Text fontSize="10.5px" color={subtextColor}>Not in client database</Text>
+                  )}
+                </Flex>
+                {option.ird && (
+                  <Text fontSize="10.5px" color={irdColor} flexShrink={0} style={{ fontFamily: "'Rajdhani', sans-serif" }}>
+                    {option.ird}
+                  </Text>
+                )}
+              </Flex>
+            ))}
+          </Box>
+        </Box>
+      )}
+    </Box>
+  );
+});
+
 export const ClientListView: React.FC = () => {
   const {
     currentDirectory,
     setCurrentDirectory,
     setStatus,
+    addLog,
     addTabToCurrentWindow,
     quickAccessPaths,
     addQuickAccessPath,
@@ -75,6 +439,24 @@ export const ClientListView: React.FC = () => {
   });
   const closeRowMenu = useCallback(() => setRowMenu((m) => ({ ...m, isOpen: false })), []);
   const closeBlankMenu = useCallback(() => setBlankMenu((m) => ({ ...m, isOpen: false })), []);
+
+  // Drag-and-drop onto client rows
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
+
+  // "New client" typeahead panel
+  const [addOpen, setAddOpen] = useState(false);
+  const [addValue, setAddValue] = useState('');
+  const [addHighlight, setAddHighlight] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const addWrapRef = useRef<HTMLDivElement>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
+
+  // Alphabet rail + flash-highlight of a freshly created client
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [flashPath, setFlashPath] = useState<string | null>(null);
+  const pendingFlashName = useRef<string | null>(null);
 
   // Load CSV client database for IR# lookup
   useEffect(() => {
@@ -141,6 +523,21 @@ export const ClientListView: React.FC = () => {
     return () => { mounted = false; };
   }, [currentDirectory, csvRows, reloadKey]);
 
+  // After a new client is created, scroll to it and flash the row
+  useEffect(() => {
+    const name = pendingFlashName.current;
+    if (!name) return;
+    const target = clients.find(c => c.name === name);
+    if (!target) return;
+    pendingFlashName.current = null;
+    setFlashPath(target.path);
+    requestAnimationFrame(() => {
+      rowRefs.current[target.path]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+    const t = setTimeout(() => setFlashPath(null), 2400);
+    return () => clearTimeout(t);
+  }, [clients]);
+
   const filtered = useMemo(() => {
     if (!searchFilter.trim()) return clients;
     const q = searchFilter.toLowerCase();
@@ -158,6 +555,166 @@ export const ClientListView: React.FC = () => {
     return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
 
+  // ── Alphabet rail ───────────────────────────────────────────────────────────
+  const presentLetters = useMemo(() => new Set(grouped.map(([l]) => l)), [grouped]);
+  const orderedPresent = useMemo(() => grouped.map(([l]) => l), [grouped]);
+  const railLetters = useMemo(() => {
+    const extras = orderedPresent.filter(l => !AZ.includes(l));
+    return [...extras, ...AZ];
+  }, [orderedPresent]);
+
+  // ── New client creation ─────────────────────────────────────────────────────
+  const existingNameKeys = useMemo(() => new Set(clients.map(c => normalizeName(c.name))), [clients]);
+
+  const suggestions = useMemo(() => {
+    if (!addOpen || !csvRows) return [];
+    const q = addValue.trim().toLowerCase();
+    const seen = new Set<string>();
+    const out: { name: string; ird: string | null }[] = [];
+    for (const row of csvRows) {
+      const name = getClientName(row);
+      if (!name) continue;
+      const key = normalizeName(name);
+      if (seen.has(key) || existingNameKeys.has(key)) continue;
+      if (q && !name.toLowerCase().includes(q)) continue;
+      seen.add(key);
+      out.push({ name, ird: getIrdNumber(row) });
+      if (out.length >= 8) break;
+    }
+    return out;
+  }, [addOpen, csvRows, addValue, existingNameKeys]);
+
+  const customName = addValue.trim();
+  const showCustomOption =
+    customName.length > 0 &&
+    !existingNameKeys.has(normalizeName(customName)) &&
+    !suggestions.some(s => normalizeName(s.name) === normalizeName(customName));
+  const addOptions = useMemo(
+    () => [
+      ...suggestions.map(s => ({ kind: 'db' as const, name: s.name, ird: s.ird })),
+      ...(showCustomOption ? [{ kind: 'custom' as const, name: customName, ird: null }] : []),
+    ],
+    [suggestions, showCustomOption, customName]
+  );
+
+  useEffect(() => { setAddHighlight(0); }, [addValue, addOpen]);
+
+  // Close the panel on outside click
+  useEffect(() => {
+    if (!addOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (addWrapRef.current && !addWrapRef.current.contains(e.target as Node)) setAddOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [addOpen]);
+
+  const openAddPanel = useCallback(() => {
+    setAddOpen(true);
+    setAddValue('');
+    setAddHighlight(0);
+    setTimeout(() => addInputRef.current?.focus(), 30);
+  }, []);
+
+  const createClient = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || creating) return;
+    if (/[\\/:*?"<>|]/.test(trimmed)) {
+      setStatus('Client name contains invalid characters', 'error');
+      return;
+    }
+    if (clients.some(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      setStatus(`"${trimmed}" already exists`, 'error');
+      return;
+    }
+    setCreating(true);
+    try {
+      await window.electronAPI.createDirectory(joinPath(currentDirectory, trimmed));
+      addLog(`Created client folder: ${trimmed}`);
+      setStatus(`Created client "${trimmed}"`, 'success');
+      pendingFlashName.current = trimmed;
+      setAddOpen(false);
+      setAddValue('');
+      setSearchFilter('');
+      setReloadKey(k => k + 1);
+    } catch (error) {
+      addLog(`Failed to create client folder: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus('Failed to create client folder', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, clients, currentDirectory, addLog, setStatus]);
+
+  const handleAddKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setAddHighlight(h => Math.min(h + 1, Math.max(0, addOptions.length - 1)));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setAddHighlight(h => Math.max(0, h - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const option = addOptions[addHighlight] ?? addOptions[0];
+      if (option) void createClient(option.name);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setAddOpen(false);
+    }
+  }, [addOptions, addHighlight, createClient]);
+
+  // ── Delete client folder ────────────────────────────────────────────────────
+  const deleteClient = useCallback(async (client: ClientEntry) => {
+    try {
+      const confirmed = await (window.electronAPI as any).confirmDelete([client.name]);
+      if (!confirmed) return;
+      await window.electronAPI.deleteItem(client.path);
+      addLog(`Deleted client folder: ${client.name}`);
+      setStatus(`Deleted "${client.name}"`, 'success');
+      setReloadKey(k => k + 1);
+    } catch (error) {
+      addLog(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+      setStatus(`Failed to delete ${client.name}`, 'error');
+    }
+  }, [addLog, setStatus]);
+
+  // ── Drop onto a client row ──────────────────────────────────────────────────
+  const handleDropOnClient = useCallback(async (e: React.DragEvent, client: ClientEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropTargetPath(null);
+    const { paths, isInternal } = readDragPayload(e);
+    clearInternalDrag();
+    if (paths.length === 0) return;
+
+    const { movable, droppedSelf, allAlreadyInTarget } = partitionDropPaths(paths, client.path);
+    if (movable.length === 0) {
+      if (droppedSelf) setStatus("Can't move a folder into itself", 'error');
+      return;
+    }
+    if (allAlreadyInTarget) {
+      setStatus(`Items are already in ${client.name}`, 'info');
+      return;
+    }
+
+    const copy = !isInternal || e.ctrlKey;
+    try {
+      const results = copy
+        ? await window.electronAPI.copyFilesWithConflictResolution(movable, client.path)
+        : await window.electronAPI.moveFilesWithConflictResolution(movable, client.path);
+      const ok = results.filter((r: any) => r.status === 'success').length;
+      const failed = results.filter((r: any) => r.status === 'error').length;
+      let message = `${copy ? 'Copied' : 'Moved'} ${ok} item${ok !== 1 ? 's' : ''} to ${client.name}`;
+      if (failed > 0) message += `, ${failed} failed`;
+      addLog(message, failed > 0 ? 'error' : undefined);
+      setStatus(message, failed > 0 ? 'error' : 'success');
+      setReloadKey(k => k + 1);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`${copy ? 'Copy' : 'Move'} to ${client.name} failed: ${msg}`, 'error');
+      setStatus(`${copy ? 'Copy' : 'Move'} failed`, 'error');
+    }
+  }, [addLog, setStatus]);
+
   const bg = useColorModeValue('#f8fafc', '#171923');
   const cardBg = useColorModeValue('#ffffff', '#1c2233');
   const cardHoverBg = useColorModeValue('#f1f5f9', '#242d42');
@@ -168,16 +725,22 @@ export const ClientListView: React.FC = () => {
   const searchBg = useColorModeValue('#ffffff', '#1c2233');
   const searchBorder = useColorModeValue('#e2e8f0', '#2a3347');
   const irdColor = useColorModeValue('#64748b', '#566478');
+  const dropBg = useColorModeValue('rgba(59,130,246,0.08)', 'rgba(59,130,246,0.16)');
+  const flashBg = useColorModeValue('rgba(59,130,246,0.12)', 'rgba(59,130,246,0.22)');
+  const panelShadow = useColorModeValue('0 14px 40px rgba(15, 23, 42, 0.16)', '0 14px 40px rgba(0, 0, 0, 0.5)');
+  const buttonHoverBg = '#2f6fd8';
 
   return (
     <Box h="100%" bg={bg} position="relative" overflow="hidden">
       <GridBackdrop />
       <Box
+        ref={scrollRef}
         h="100%"
         overflow="auto"
         position="relative"
         zIndex={1}
-        px={5}
+        pl={5}
+        pr="44px"
         py={4}
         onContextMenu={(e) => {
           e.preventDefault();
@@ -185,8 +748,8 @@ export const ClientListView: React.FC = () => {
           setBlankMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY } });
         }}
       >
-      {/* Search */}
-      <Flex align="center" mb={4} gap={2}>
+      {/* Search + New client */}
+      <Flex align="center" mb={4} gap={3}>
         <Flex
           align="center"
           flex={1}
@@ -219,6 +782,145 @@ export const ClientListView: React.FC = () => {
         <Text fontSize="12px" color={subtextColor}>
           {clients.length} client{clients.length !== 1 ? 's' : ''}
         </Text>
+
+        {/* New client button + typeahead panel */}
+        <Box position="relative" ml="auto" ref={addWrapRef}>
+          <Flex
+            as="button"
+            align="center"
+            gap={2}
+            h="34px"
+            px="14px"
+            borderRadius="6px"
+            bg={ACCENT}
+            color="white"
+            fontSize="13px"
+            fontWeight="600"
+            cursor="pointer"
+            userSelect="none"
+            transition="background 0.15s ease, transform 0.15s ease"
+            _hover={{ bg: buttonHoverBg }}
+            _active={{ transform: 'scale(0.97)' }}
+            onClick={() => (addOpen ? setAddOpen(false) : openAddPanel())}
+          >
+            <UserPlus size={15} />
+            New client
+          </Flex>
+
+          {addOpen && (
+            <Box
+              position="absolute"
+              top="40px"
+              right={0}
+              w="340px"
+              bg={cardBg}
+              border="1px solid"
+              borderColor={cardBorder}
+              borderRadius="10px"
+              boxShadow={panelShadow}
+              zIndex={20}
+              overflow="hidden"
+            >
+              <Box px={3} pt={3} pb={2}>
+                <Text
+                  fontSize="10px"
+                  fontWeight="700"
+                  letterSpacing="0.08em"
+                  textTransform="uppercase"
+                  color={sectionColor}
+                  mb={2}
+                  userSelect="none"
+                >
+                  Add new client
+                </Text>
+                <Input
+                  ref={addInputRef}
+                  value={addValue}
+                  onChange={(e) => setAddValue(e.target.value)}
+                  onKeyDown={handleAddKeyDown}
+                  placeholder="Client name…"
+                  h="32px"
+                  fontSize="13px"
+                  color={textColor}
+                  bg={searchBg}
+                  borderColor={searchBorder}
+                  _placeholder={{ color: subtextColor }}
+                  _focus={{ outline: 'none', boxShadow: `0 0 0 1px ${ACCENT}`, borderColor: ACCENT }}
+                  _focusVisible={{ outline: 'none', boxShadow: `0 0 0 1px ${ACCENT}`, borderColor: ACCENT }}
+                />
+              </Box>
+              <Box maxH="264px" overflowY="auto" pb={2} className="enhanced-scrollbar">
+                {addOptions.length === 0 && (
+                  <Text px={3} py={2} fontSize="12px" color={subtextColor}>
+                    {csvRows ? 'Type a client name…' : 'Type a name to create a client folder'}
+                  </Text>
+                )}
+                {addOptions.map((option, i) => (
+                  <Flex
+                    key={`${option.kind}:${option.name}`}
+                    align="center"
+                    gap={2.5}
+                    mx={2}
+                    px={2}
+                    py="6px"
+                    borderRadius="6px"
+                    cursor="pointer"
+                    bg={i === addHighlight ? cardHoverBg : 'transparent'}
+                    boxShadow={i === addHighlight ? `inset 2px 0 0 0 ${ACCENT}` : undefined}
+                    opacity={creating ? 0.6 : 1}
+                    onMouseEnter={() => setAddHighlight(i)}
+                    onClick={() => void createClient(option.name)}
+                  >
+                    {option.kind === 'db' ? (
+                      <Flex
+                        flexShrink={0}
+                        w="22px"
+                        h="22px"
+                        borderRadius="4px"
+                        bg={getAvatarColor(option.name)}
+                        color="white"
+                        fontSize="9px"
+                        fontWeight="700"
+                        align="center"
+                        justify="center"
+                        style={{ fontFamily: "'Rajdhani', sans-serif" }}
+                      >
+                        {getInitials(option.name)}
+                      </Flex>
+                    ) : (
+                      <Flex
+                        flexShrink={0}
+                        w="22px"
+                        h="22px"
+                        borderRadius="4px"
+                        border="1.5px dashed"
+                        borderColor={ACCENT}
+                        color={ACCENT}
+                        align="center"
+                        justify="center"
+                      >
+                        <Plus size={12} strokeWidth={2.5} />
+                      </Flex>
+                    )}
+                    <Flex direction="column" flex={1} minW={0}>
+                      <Text fontSize="12.5px" fontWeight="500" color={option.kind === 'custom' ? ACCENT : textColor} lineClamp={1}>
+                        {option.kind === 'custom' ? `Create "${option.name}"` : option.name}
+                      </Text>
+                      {option.kind === 'custom' && (
+                        <Text fontSize="10.5px" color={subtextColor}>Not in client database</Text>
+                      )}
+                    </Flex>
+                    {option.ird && (
+                      <Text fontSize="10.5px" color={irdColor} flexShrink={0} style={{ fontFamily: "'Rajdhani', sans-serif" }}>
+                        {option.ird}
+                      </Text>
+                    )}
+                  </Flex>
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Box>
       </Flex>
 
       {/* Client list */}
@@ -235,13 +937,13 @@ export const ClientListView: React.FC = () => {
             {searchFilter.trim() ? `No clients match "${searchFilter}"` : 'No clients found'}
           </Text>
           <Text fontSize="xs" color={subtextColor}>
-            {searchFilter.trim() ? 'Try a different search term' : 'Add client folders to get started'}
+            {searchFilter.trim() ? 'Try a different search term' : 'Use "New client" to add your first client folder'}
           </Text>
         </Flex>
       ) : (
         <Box>
           {grouped.map(([letter, groupClients]) => (
-            <Box key={letter} mb={1}>
+            <Box key={letter} mb={1} ref={(el: HTMLDivElement | null) => { sectionRefs.current[letter] = el; }}>
               {/* Section letter */}
               <Text
                 fontSize="11px"
@@ -257,9 +959,13 @@ export const ClientListView: React.FC = () => {
                 {letter}
               </Text>
               {/* Client rows */}
-              {groupClients.map((client) => (
+              {groupClients.map((client) => {
+                const isDropTarget = dropTargetPath === client.path;
+                const isFlashing = flashPath === client.path;
+                return (
                 <Flex
                   key={client.path}
+                  ref={(el: HTMLDivElement | null) => { rowRefs.current[client.path] = el; }}
                   align="center"
                   gap={3}
                   px={3}
@@ -267,9 +973,10 @@ export const ClientListView: React.FC = () => {
                   mx={0}
                   borderRadius="4px"
                   cursor="pointer"
-                  bg="transparent"
-                  _hover={{ bg: cardHoverBg }}
-                  transition="background 0.15s ease"
+                  bg={isDropTarget ? dropBg : isFlashing ? flashBg : 'transparent'}
+                  boxShadow={isDropTarget ? `inset 0 0 0 1.5px ${ACCENT}` : undefined}
+                  _hover={{ bg: isDropTarget ? dropBg : cardHoverBg }}
+                  transition="background 0.15s ease, box-shadow 0.15s ease"
                   onClick={() => setCurrentDirectory(client.path)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -277,6 +984,16 @@ export const ClientListView: React.FC = () => {
                     setBlankMenu((m) => ({ ...m, isOpen: false }));
                     setRowMenu({ isOpen: true, position: { x: e.clientX, y: e.clientY }, client });
                   }}
+                  onDragOver={(e) => {
+                    if (!isDragAccepted(e)) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const internal = e.dataTransfer.types.includes('application/x-docuframe-files') || !!(window as any).__docuframeInternalDrag;
+                    e.dataTransfer.dropEffect = internal ? (e.ctrlKey ? 'copy' : 'move') : 'copy';
+                    setDropTargetPath(client.path);
+                  }}
+                  onDragLeave={() => setDropTargetPath(p => (p === client.path ? null : p))}
+                  onDrop={(e) => void handleDropOnClient(e, client)}
                   userSelect="none"
                 >
                   {/* Avatar */}
@@ -322,12 +1039,24 @@ export const ClientListView: React.FC = () => {
                     </Text>
                   )}
                 </Flex>
-              ))}
+                );
+              })}
             </Box>
           ))}
         </Box>
       )}
       </Box>
+
+      {/* Alphabet rail */}
+      {!loading && grouped.length > 0 && (
+        <AlphabetRail
+          letters={railLetters}
+          presentLetters={presentLetters}
+          orderedPresent={orderedPresent}
+          scrollRef={scrollRef}
+          sectionRefs={sectionRefs}
+        />
+      )}
 
       {/* Client row context menu */}
       <FloatingMenu isOpen={rowMenu.isOpen && !!rowMenu.client} position={rowMenu.position} onClose={closeRowMenu}>
@@ -406,12 +1135,31 @@ export const ClientListView: React.FC = () => {
                 void (window.electronAPI as any).openCmdAtDirectory(client.path);
               }}
             />
+            <MenuSeparator />
+            <MenuRow
+              icon={<Trash2 size={14} />}
+              label="Delete client folder"
+              danger
+              onClick={() => {
+                const client = rowMenu.client!;
+                closeRowMenu();
+                void deleteClient(client);
+              }}
+            />
           </>
         )}
       </FloatingMenu>
 
       {/* Blank-space context menu */}
       <FloatingMenu isOpen={blankMenu.isOpen} position={blankMenu.position} onClose={closeBlankMenu}>
+        <MenuRow
+          icon={<UserPlus size={14} />}
+          label="New client"
+          onClick={() => {
+            closeBlankMenu();
+            openAddPanel();
+          }}
+        />
         <MenuRow
           icon={<RefreshCw size={14} />}
           label="Refresh"
