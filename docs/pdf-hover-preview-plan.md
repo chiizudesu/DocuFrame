@@ -1,8 +1,12 @@
 # Plan: Interactive PDF Hover Preview Popup
 
-> **Status: planned.** Separate feature from the Preview Pane — a floating,
-> interactive popup that appears when hovering a PDF row, with zoom, drag-to-pan,
-> and page navigation. The Preview Pane stays as-is for "pinned" previews.
+> **Status: implemented, with a design change** — per Edward's feedback the
+> popup opens from the row's **Eye (preview) button click**, not on hover dwell
+> (the dwell machinery described below was built, then removed). Loading uses
+> the `readFileAsBuffer` IPC rather than the Express HTTP URL, because that
+> route only serves a hard-coded `Documents\Clients` path. Shared loader:
+> `src/pdf/pdfDocument.ts` + `src/pdf/PdfPageCanvas.tsx`; popup:
+> `src/components/FileGrid/HoverPdfPreview.tsx` (exports `openPdfPreviewPopup`).
 
 Goal: hovering a PDF file row (after a short intent delay) shows a floating
 popup rendering the first page. The popup is itself hoverable — the user can

@@ -74,7 +74,9 @@ interface ElectronAPI {
   copyFilesToClipboard: (filePaths: string[]) => Promise<{ success: boolean; error?: string }>;
   zipSelection: (filePaths: string[], outputPath: string) => Promise<{ success: boolean; outputName?: string; error?: string }>;
   convertFileToPdf: (filePath: string) => Promise<{ success: boolean; outputName?: string; error?: string }>;
-  splitPdf: (filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string }) => Promise<{ success: boolean; outputFiles?: string[]; error?: string }>;
+  splitPdf: (filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string } | { segments: Array<{ pages: number[]; name: string }> }) => Promise<{ success: boolean; outputFiles?: string[]; error?: string }>;
+  editPdf: (filePath: string, options: { pages: number[]; outputName: string }) => Promise<{ success: boolean; outputFile?: string; overwritten?: boolean; backupPath?: string; error?: string }>;
+  restoreFileBackup: (backupPath: string, targetPath: string) => Promise<{ success: boolean; error?: string }>;
   openFileWith: (filePath: string, app: string) => Promise<{ success: boolean; error?: string }>;
   readPdfText: (filePath: string) => Promise<string>;
   readPdfPagesText: (filePath: string) => Promise<string[]>;
@@ -291,8 +293,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   convertFileToPdf: async (filePath: string) => {
     return await ipcRenderer.invoke('convert-file-to-pdf', filePath);
   },
-  splitPdf: async (filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string }) => {
+  splitPdf: async (filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string } | { segments: Array<{ pages: number[]; name: string }> }) => {
     return await ipcRenderer.invoke('split-pdf', filePath, options);
+  },
+  editPdf: async (filePath: string, options: { pages: number[]; outputName: string }) => {
+    return await ipcRenderer.invoke('edit-pdf', filePath, options);
+  },
+  restoreFileBackup: async (backupPath: string, targetPath: string) => {
+    return await ipcRenderer.invoke('restore-file-backup', backupPath, targetPath);
   },
   openFileWith: async (filePath: string, app: string) => {
     return await ipcRenderer.invoke('open-file-with', filePath, app);

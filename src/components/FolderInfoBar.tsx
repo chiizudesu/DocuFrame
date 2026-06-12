@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { useColorModeValue } from "./ui/color-mode";
 import {
   Flex,
@@ -29,7 +29,7 @@ import {
 import { useAppContext } from '../context/AppContext'
 import { useClientInfo } from '../hooks/useClientInfo'
 import { useYearNavigation } from '../hooks/useYearNavigation'
-import { useDirectorySearch } from '../hooks/useDirectorySearch'
+import { useDirectorySearch, getFuzzyMatchIndices, type DirectorySearchRankOptions } from '../hooks/useDirectorySearch'
 import { joinPath, getParentPath, normalizePath, isChildPath, getRelativePathSegments, pathsEqualForJump, resolveJumpTargetInBreadcrumbs } from '../utils/path'
 import { eventMatchesShortcut } from '../utils/shortcuts'
 import { getErrorMessageFromUnknown } from '@/components/ui/toaster'
@@ -88,6 +88,32 @@ function computeMiniJumpUiMinWidthPx(
   return Math.max(pillMin, dropdownMin, 80)
 }
 
+/** Result label with fuzzy-matched characters highlighted */
+const MiniSearchResultLabel: React.FC<{ name: string; filterText: string }> = ({ name, filterText }) => {
+  const matched = filterText.trim() ? getFuzzyMatchIndices(name, filterText) : null
+  if (!matched) {
+    return (
+      <Text fontSize="sm" fontWeight="medium">
+        {name}
+      </Text>
+    )
+  }
+  const matchedSet = new Set(matched)
+  return (
+    <Text fontSize="sm" fontWeight="medium" whiteSpace="pre">
+      {[...name].map((ch, i) =>
+        matchedSet.has(i) ? (
+          <Box as="span" key={i} color="blue.400" fontWeight="700">
+            {ch}
+          </Box>
+        ) : (
+          <React.Fragment key={i}>{ch}</React.Fragment>
+        )
+      )}
+    </Text>
+  )
+}
+
 const MiniSearchDropdown: React.FC<{
   pillRef: React.RefObject<HTMLElement | null>
   /** Bumps when address bar layout may shift (e.g. trailing chevron hides) — RO does not fire on position-only moves */
@@ -96,6 +122,10 @@ const MiniSearchDropdown: React.FC<{
   contentMinWidthPx: number
   results: FileItem[]
   selectedIndex: number
+  /** Current filter text — matched characters are highlighted in result names */
+  filterText?: string
+  /** Optional section label above the results (e.g. "Recent clients" at root) */
+  headerLabel?: string
   dropdownBg: string
   dropdownHighlightBg: string
   dropdownHoverBg: string
@@ -109,6 +139,8 @@ const MiniSearchDropdown: React.FC<{
   contentMinWidthPx,
   results,
   selectedIndex,
+  filterText = '',
+  headerLabel,
   dropdownBg,
   dropdownHighlightBg,
   dropdownHoverBg,
@@ -179,7 +211,7 @@ const MiniSearchDropdown: React.FC<{
         borderColor={dropdownBorderColor}
         borderRadius="md"
         boxShadow="lg"
-        maxH="200px"
+        maxH={results.length > 3 ? '320px' : '200px'}
         overflowY="auto"
         overflowX={needsScrollX ? 'auto' : 'hidden'}
         zIndex={9999}
@@ -190,6 +222,21 @@ const MiniSearchDropdown: React.FC<{
         maxW={`${wPx}px`}
       >
         <Box minW={`${naturalW}px`} w="max-content">
+          {headerLabel && (
+            <Text
+              px={3}
+              pt={1.5}
+              pb={0.5}
+              fontSize="10px"
+              fontWeight="700"
+              letterSpacing="0.06em"
+              textTransform="uppercase"
+              opacity={0.55}
+              userSelect="none"
+            >
+              {headerLabel}
+            </Text>
+          )}
           {results.map((item, i) => (
             <Flex
               key={item.path}
@@ -209,9 +256,7 @@ const MiniSearchDropdown: React.FC<{
               ) : (
                 <File size={14} color={fileIconColor} />
               )}
-              <Text fontSize="sm" fontWeight="medium">
-                {item.name}
-              </Text>
+              <MiniSearchResultLabel name={item.name} filterText={filterText} />
             </Flex>
           ))}
         </Box>
@@ -221,7 +266,7 @@ const MiniSearchDropdown: React.FC<{
 }
 
 export const FolderInfoBar: React.FC = () => {
-  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setIsSectionPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut } = useAppContext()
+  const { currentDirectory, setCurrentDirectory, addLog, rootDirectory, setStatus, setFolderItems, addTabToCurrentWindow, setIsQuickNavigating, setIsSearchMode, isPreviewPaneOpen, setIsPreviewPaneOpen, setIsSectionPaneOpen, setSelectedFiles, setClipboard, quickAccessPaths, addQuickAccessPath, removeQuickAccessPath, hideTemporaryFiles, hideDotFiles, hideClaudeMd, setFileSearchFilter, setIsCreateFolderOpen, addressBarJumpRef, jumpModeOnParentShortcut, backspaceNavigationShortcut, enableBackspaceNavigationShortcut, recentClientPaths } = useAppContext()
   const { clientFolderPath, getClientName, openClientLink, hasClientLink } = useClientInfo(currentDirectory, rootDirectory)
   const yearNav = useYearNavigation(currentDirectory)
   
@@ -741,10 +786,25 @@ export const FolderInfoBar: React.FC = () => {
 
   const breadcrumbs = getBreadcrumbs()
 
+  /** Root level is the client list — typing there is a client finder: fuzzy across all
+   * clients, recent clients first, longer suggestion/result lists. Deeper levels keep
+   * the compact 3-row jump dropdown. */
+  const isJumpAtRoot =
+    activeChevronIndex !== null && !!miniSearchPath && !!rootDirectory && pathsEqualForJump(miniSearchPath, rootDirectory)
+  const jumpRankOptions = useMemo<DirectorySearchRankOptions | undefined>(
+    () =>
+      isJumpAtRoot
+        ? { recentPaths: recentClientPaths, emptyQuerySuggestions: 5, maxResults: 20 }
+        : undefined,
+    [isJumpAtRoot, recentClientPaths]
+  )
+  const miniMaxResults = isJumpAtRoot ? 8 : 3
+
   const directorySearch = useDirectorySearch({
     directoryPath: miniSearchPath,
     isActive: activeChevronIndex !== null && !!miniSearchPath,
     itemPredicate: jumpSearchItemInclude,
+    rankOptions: jumpRankOptions,
   })
   const {
     searchText: miniSearchText,
@@ -991,10 +1051,8 @@ export const FolderInfoBar: React.FC = () => {
     }
   }, [addressBarJumpRef, activeChevronIndex, breadcrumbs, currentDirectory, rootDirectory])
 
-  const MINI_SEARCH_MAX_RESULTS = 3
-
   const handleMiniSearchKeyDown = (e: React.KeyboardEvent) => {
-    const maxIdx = Math.min(miniSearchResults.length, MINI_SEARCH_MAX_RESULTS) - 1
+    const maxIdx = Math.min(miniSearchResults.length, miniMaxResults) - 1
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setMiniSelectedIndex(Math.min(miniSelectedIndex + 1, maxIdx))
@@ -1073,8 +1131,8 @@ export const FolderInfoBar: React.FC = () => {
 
   const jumpUiMinWidthPx = React.useMemo(() => {
     const anchorLabel = miniTypingPillIsCurrentSegment ? getDirectoryName(miniSearchPath) : null
-    return computeMiniJumpUiMinWidthPx(miniSearchText, miniSearchResults.slice(0, 3), anchorLabel)
-  }, [miniSearchText, miniSearchResults, miniTypingPillIsCurrentSegment, miniSearchPath])
+    return computeMiniJumpUiMinWidthPx(miniSearchText, miniSearchResults.slice(0, miniMaxResults), anchorLabel)
+  }, [miniSearchText, miniSearchResults, miniTypingPillIsCurrentSegment, miniSearchPath, miniMaxResults])
 
   const jumpUiDisplayWidthPx = React.useMemo(() => {
     if (typeof window === 'undefined') return jumpUiMinWidthPx
@@ -1639,8 +1697,10 @@ export const FolderInfoBar: React.FC = () => {
                 pillRef={miniTypingPillRef}
                 contentMinWidthPx={jumpUiDisplayWidthPx}
                 layoutSyncKey={`${activeChevronIndex ?? ''}-${normalizePath(miniSearchPath)}-${miniCommittedSegs.join('|')}-${miniSearchResults.length}-${miniSearchText}-${jumpUiDisplayWidthPx}`}
-                results={miniSearchResults.slice(0, 3)}
-                selectedIndex={Math.min(miniSelectedIndex, 2)}
+                results={miniSearchResults.slice(0, miniMaxResults)}
+                selectedIndex={Math.min(miniSelectedIndex, miniMaxResults - 1)}
+                filterText={miniSearchText}
+                headerLabel={isJumpAtRoot && !miniSearchText.trim() && recentClientPaths.length > 0 ? 'Recent clients' : undefined}
                 dropdownBg={dropdownBg}
                 dropdownHighlightBg={dropdownHighlightBg}
                 dropdownHoverBg={dropdownHoverBg}

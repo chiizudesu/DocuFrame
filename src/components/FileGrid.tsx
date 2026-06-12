@@ -25,6 +25,7 @@ import { FileContextMenu, BlankContextMenu, MoveToDialogWrapper, HeaderContextMe
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
 import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog';
 import { SplitPdfDialog } from './FileGrid/SplitPdfDialog';
+import { EditPdfDialog } from './FileGrid/EditPdfDialog';
 import { FileListView } from './FileGrid/FileListView';
 import { docuFramePalette as P } from '../docuFrameColors';
 
@@ -288,6 +289,8 @@ export const FileGrid: React.FC = () => {
   const [moveToFiles, setMoveToFiles] = useState<FileItem[]>([])
   const [isSplitPdfOpen, setIsSplitPdfOpen] = useState(false)
   const [splitPdfFile, setSplitPdfFile] = useState<FileItem | null>(null)
+  const [isEditPdfOpen, setIsEditPdfOpen] = useState(false)
+  const [editPdfFile, setEditPdfFile] = useState<FileItem | null>(null)
   /** Session grouping mode: 'auto' = workpaper index (layer view), or group by file type / modified date */
   const [groupByMode, setGroupByMode] = useState<'auto' | 'type' | 'date'>('auto')
   /** Row density preset, persisted in config as listDensity */
@@ -1842,6 +1845,12 @@ export const FileGrid: React.FC = () => {
             setIsSplitPdfOpen(true);
           }
           break;
+        case 'edit_pdf':
+          if (contextMenu.fileItem.name.toLowerCase().endsWith('.pdf')) {
+            setEditPdfFile(contextMenu.fileItem);
+            setIsEditPdfOpen(true);
+          }
+          break;
         case 'smart_rename':
           setSmartRenameFile(contextMenu.fileItem);
           setIsSmartRenameDialogOpen(true);
@@ -2528,7 +2537,7 @@ export const FileGrid: React.FC = () => {
   }, [smartRenameFile, currentDirectory, addLog, setStatus, refreshDirectory]);
 
   // Split PDF dialog confirm: write the new files, highlight them, allow undo
-  const handleSplitPdfConfirm = useCallback(async (file: FileItem, options: { mode: 'singles' | 'ranges'; ranges?: string }) => {
+  const handleSplitPdfConfirm = useCallback(async (file: FileItem, options: { segments: Array<{ pages: number[]; name: string }> }) => {
     const splitDir = currentDirectory;
     const result = await (window.electronAPI as any).splitPdf(file.path, options);
     if (!result?.success) {
@@ -2549,6 +2558,44 @@ export const FileGrid: React.FC = () => {
         await refreshDirectory(splitDir);
       },
     });
+  }, [currentDirectory, refreshDirectory, addRecentlyTransferredFiles, addLog, setStatus]);
+
+  // Edit PDF dialog confirm: reorder/delete pages, overwrite (with backup undo) or save as new
+  const handleEditPdfConfirm = useCallback(async (file: FileItem, options: { pages: number[]; outputName: string }) => {
+    const editDir = currentDirectory;
+    const result = await (window.electronAPI as any).editPdf(file.path, options);
+    if (!result?.success) {
+      throw new Error(result?.error || 'Edit failed');
+    }
+    const outputName: string = result.outputFile || file.name;
+    const outputPath = joinPath(editDir === '/' ? '' : editDir, outputName);
+    await refreshDirectory(editDir);
+    addRecentlyTransferredFiles([outputPath]);
+    if (result.overwritten) {
+      const newVersion = versionStore.bump(file.path);
+      addLog(`Edited ${file.name} (${options.pages.length} pages, now v${newVersion})`);
+      setStatus(`Saved ${file.name}`, 'success');
+      const backupPath: string | undefined = result.backupPath;
+      if (backupPath) {
+        pushUndoableOperation({
+          description: `Edit "${file.name}" (reorder/delete pages)`,
+          undo: async () => {
+            await (window.electronAPI as any).restoreFileBackup(backupPath, file.path);
+            await refreshDirectory(editDir);
+          },
+        });
+      }
+    } else {
+      addLog(`Saved edited copy of ${file.name} as ${outputName}`);
+      setStatus(`Created ${outputName}`, 'success');
+      pushUndoableOperation({
+        description: `Save edited copy "${outputName}"`,
+        undo: async () => {
+          await (window.electronAPI as any).deleteItem(outputPath);
+          await refreshDirectory(editDir);
+        },
+      });
+    }
   }, [currentDirectory, refreshDirectory, addRecentlyTransferredFiles, addLog, setStatus]);
 
   const handleRenameSubmit = useCallback(
@@ -5493,6 +5540,15 @@ export const FileGrid: React.FC = () => {
           setSplitPdfFile(null)
         }}
         onSplit={handleSplitPdfConfirm}
+      />
+      <EditPdfDialog
+        open={isEditPdfOpen}
+        file={editPdfFile}
+        onClose={() => {
+          setIsEditPdfOpen(false)
+          setEditPdfFile(null)
+        }}
+        onSave={handleEditPdfConfirm}
       />
       <FileOperationFailedDialog
         open={fileOpFailureDialog.open}

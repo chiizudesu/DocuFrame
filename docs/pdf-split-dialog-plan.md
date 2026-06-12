@@ -1,8 +1,10 @@
 # Plan: Visual Split-PDF Dialog (page thumbnails + filename control)
 
-> **Status: planned.** Replaces the text-input range dialog with a thumbnail
-> grid where the user *sees* the pages they're splitting, and names the output
-> files (sensible default, fully editable).
+> **Status: implemented** (phases 1–2, plus the enlarged page peek and the
+> name-pattern field from phase 3; drag-rubber-band selection and last-used-mode
+> memory remain future work). The dialog was rewritten in place
+> (`src/components/FileGrid/SplitPdfDialog.tsx`); the `split-pdf` IPC now also
+> accepts `{ segments: [{ pages, name }] }`.
 
 Goal: right-click → PDF → Split PDF… opens a dialog showing every page as a
 thumbnail. The user selects pages (or split points), sees exactly which output

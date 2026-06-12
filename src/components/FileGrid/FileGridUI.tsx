@@ -366,6 +366,12 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
                     onClick={() => handleMenuAction('extract_text')}
                   />
                   <MenuRow
+                    icon={<FileEdit size={iconSz} />}
+                    label="Edit PDF..."
+                    title="Reorder or delete pages, then save"
+                    onClick={() => handleMenuAction('edit_pdf')}
+                  />
+                  <MenuRow
                     icon={<Scissors size={iconSz} />}
                     label="Split PDF..."
                     onClick={() => handleMenuAction('split_pdf')}

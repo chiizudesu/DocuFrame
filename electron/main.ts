@@ -3905,8 +3905,28 @@ ipcMain.handle('convert-file-to-pdf', async (_, filePath: string) => {
   }
 });
 
-// Split a PDF: each comma-separated range ("1-3, 5") becomes its own file; or one file per page
-ipcMain.handle('split-pdf', async (_, filePath: string, options: { mode: 'singles' | 'ranges'; ranges?: string }) => {
+/** Sanitize a user-provided split output base name (no extension). */
+function sanitizeSplitOutputName(raw: string, fallback: string): string {
+  let s = (raw || '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '');
+  if (!s) s = fallback;
+  if (s.length > 150) s = s.slice(0, 150).trim();
+  return s;
+}
+
+// Split a PDF. Two option shapes:
+//  - { segments: [{ pages: [1-based...], name }] } — explicit pages + custom output names (thumbnail dialog)
+//  - legacy { mode: 'singles' | 'ranges', ranges? } — kept for compatibility
+ipcMain.handle('split-pdf', async (
+  _,
+  filePath: string,
+  options:
+    | { mode: 'singles' | 'ranges'; ranges?: string }
+    | { segments: Array<{ pages: number[]; name: string }> }
+) => {
   try {
     const buf = await fsPromises.readFile(filePath);
     const src = await PDFDocument.load(buf, { ignoreEncryption: true });
@@ -3915,22 +3935,43 @@ ipcMain.handle('split-pdf', async (_, filePath: string, options: { mode: 'single
     const stem = path.basename(filePath, path.extname(filePath));
     const outputs: string[] = [];
 
-    const writePages = async (pageIndexes: number[], label: string) => {
+    const writePagesNamed = async (pageIndexes: number[], baseName: string) => {
       const out = await PDFDocument.create();
       const copied = await out.copyPages(src, pageIndexes);
       copied.forEach((p) => out.addPage(p));
       const bytes = await out.save();
-      const outPath = uniqueOutputPath(dir, `${stem} - ${label}`, '.pdf');
+      const outPath = uniqueOutputPath(dir, baseName, '.pdf');
       await fsPromises.writeFile(outPath, bytes);
       outputs.push(path.basename(outPath));
     };
+    const writePages = (pageIndexes: number[], label: string) => writePagesNamed(pageIndexes, `${stem} - ${label}`);
 
-    if (options.mode === 'singles') {
+    if ('segments' in options && Array.isArray(options.segments)) {
+      if (options.segments.length === 0) {
+        return { success: false, error: 'No pages selected' };
+      }
+      for (let i = 0; i < options.segments.length; i++) {
+        const seg = options.segments[i];
+        if (!Array.isArray(seg?.pages) || seg.pages.length === 0) {
+          return { success: false, error: `Output ${i + 1} has no pages` };
+        }
+        const pages = seg.pages.map((p) => Math.trunc(p));
+        if (pages.some((p) => !Number.isFinite(p) || p < 1 || p > pageCount)) {
+          return { success: false, error: `Output ${i + 1} references pages outside 1–${pageCount}` };
+        }
+        const name = sanitizeSplitOutputName(seg.name, `${stem} - Part ${i + 1}`);
+        await writePagesNamed(pages.map((p) => p - 1), name);
+      }
+      return { success: true, outputFiles: outputs };
+    }
+
+    const legacy = options as { mode: 'singles' | 'ranges'; ranges?: string };
+    if (legacy.mode === 'singles') {
       for (let i = 0; i < pageCount; i++) {
         await writePages([i], `Page ${i + 1}`);
       }
     } else {
-      const segments = (options.ranges || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const segments = (legacy.ranges || '').split(',').map((s) => s.trim()).filter(Boolean);
       if (segments.length === 0) {
         return { success: false, error: 'No page ranges given' };
       }
@@ -3952,6 +3993,63 @@ ipcMain.handle('split-pdf', async (_, filePath: string, options: { mode: 'single
     return { success: true, outputFiles: outputs };
   } catch (error) {
     console.error('[split-pdf] failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Edit a PDF: rebuild it with the given 1-based pages in the given order (reorder/delete).
+// outputName === original stem → overwrite in place (original backed up to temp for undo);
+// otherwise a new file is written next to the original.
+ipcMain.handle('edit-pdf', async (_, filePath: string, options: { pages: number[]; outputName: string }) => {
+  try {
+    const buf = await fsPromises.readFile(filePath);
+    const src = await PDFDocument.load(buf, { ignoreEncryption: true });
+    const pageCount = src.getPageCount();
+    const dir = path.dirname(filePath);
+    const stem = path.basename(filePath, path.extname(filePath));
+
+    if (!Array.isArray(options?.pages) || options.pages.length === 0) {
+      return { success: false, error: 'No pages left — a PDF needs at least one page' };
+    }
+    const pages = options.pages.map((p) => Math.trunc(p));
+    if (pages.some((p) => !Number.isFinite(p) || p < 1 || p > pageCount)) {
+      return { success: false, error: `Pages outside 1–${pageCount}` };
+    }
+
+    const out = await PDFDocument.create();
+    const copied = await out.copyPages(src, pages.map((p) => p - 1));
+    copied.forEach((p) => out.addPage(p));
+    const bytes = await out.save();
+
+    const name = sanitizeSplitOutputName(options.outputName, stem);
+    const overwrite = name.toLowerCase() === stem.toLowerCase();
+    if (overwrite) {
+      const backupDir = path.join(app.getPath('temp'), 'docuframe-pdf-backups');
+      await fsPromises.mkdir(backupDir, { recursive: true });
+      const backupPath = path.join(backupDir, `${stem}-${Date.now()}.pdf`);
+      await fsPromises.copyFile(filePath, backupPath);
+      await fsPromises.writeFile(filePath, bytes);
+      return { success: true, outputFile: path.basename(filePath), overwritten: true, backupPath };
+    }
+    const outPath = uniqueOutputPath(dir, name, '.pdf');
+    await fsPromises.writeFile(outPath, bytes);
+    return { success: true, outputFile: path.basename(outPath), overwritten: false };
+  } catch (error) {
+    console.error('[edit-pdf] failed:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// Restore a file from a backup created by edit-pdf (undo support)
+ipcMain.handle('restore-file-backup', async (_, backupPath: string, targetPath: string) => {
+  try {
+    if (!fs.existsSync(backupPath)) {
+      return { success: false, error: 'Backup no longer exists' };
+    }
+    await fsPromises.copyFile(backupPath, targetPath);
+    return { success: true };
+  } catch (error) {
+    console.error('[restore-file-backup] failed:', error);
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 });
@@ -4159,6 +4257,12 @@ ipcMain.handle('read-image-as-data-url', async (_, filePath: string) => {
       mimeType = 'image/gif';
     } else if (ext === '.webp') {
       mimeType = 'image/webp';
+    } else if (ext === '.bmp') {
+      mimeType = 'image/bmp';
+    } else if (ext === '.svg') {
+      mimeType = 'image/svg+xml';
+    } else if (ext === '.ico') {
+      mimeType = 'image/x-icon';
     }
     
     // Convert buffer to base64

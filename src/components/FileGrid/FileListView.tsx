@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useColorModeValue } from "../ui/color-mode";
 import { ListRowHoverProvider, useListRowIsHovered } from './ListRowHoverContext'
+import { HoverPdfPreview, openPdfPreviewPopup, POPUP_PREVIEWABLE_RE } from './HoverPdfPreview'
 import { FileListTheadRow } from './FileListThead'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Box, Text, Icon, Flex, Input, Image, Popover, IconButton, Portal, chakra } from '@chakra-ui/react';
@@ -201,7 +202,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                     onMouseUp={(e: React.MouseEvent) => e.stopPropagation()}
                     onDoubleClick={(e: React.MouseEvent) => e.stopPropagation()}
                   >
-                    {file.name.toLowerCase().endsWith('.pdf') && (
+                    {POPUP_PREVIEWABLE_RE.test(file.name) && (
                       <IconButton
                         aria-label="Preview"
                         title="Preview"
@@ -210,7 +211,12 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                         minW="20px"
                         h="20px"
                         color={fileSubTextColor}
-                        onClick={() => rowHandlers.onQuickAction('preview', file, index)}
+                        onClick={(e: React.MouseEvent) => {
+                          // Floating interactive popup; fall back to the preview pane if unmounted
+                          if (!openPdfPreviewPopup(file, (e.currentTarget as Element).closest('tr'))) {
+                            rowHandlers.onQuickAction('preview', file, index);
+                          }
+                        }}
                       ><Eye size={13} /></IconButton>
                     )}
                     <IconButton
@@ -2621,7 +2627,12 @@ function FileListViewInner(props: FileListViewProps) {
   const { rowHandlers: baseRowHandlers } = props;
   return (
     <ListRowHoverProvider baseRowHandlers={baseRowHandlers}>
-      {(merged) => <FileListViewBody {...props} rowHandlers={merged} />}
+      {(merged) => (
+        <>
+          <FileListViewBody {...props} rowHandlers={merged} />
+          <HoverPdfPreview files={props.sortedFiles ?? []} />
+        </>
+      )}
     </ListRowHoverProvider>
   );
 }
