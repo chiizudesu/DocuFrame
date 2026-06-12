@@ -54,21 +54,17 @@ const SectionContainer: React.FC<SectionContainerProps> = ({
     <Flex
       align="center"
       px="9px"
-      pl="14px"
       h="28px"
       flexShrink={0}
-      position="relative"
-      _before={{
-        content: '""',
-        position: 'absolute',
-        left: 0,
-        top: '5px',
-        bottom: '5px',
-        width: '2px',
-        bg: 'blue.400',
-        borderRadius: '1px',
-      }}
+      gap="6px"
     >
+      <Box
+        w="2px"
+        h="10px"
+        bg="blue.400"
+        borderRadius="full"
+        flexShrink={0}
+      />
       <Text
         fontSize="10.5px"
         fontWeight="700"
@@ -168,6 +164,7 @@ const RecentClientRow: React.FC<RecentClientRowProps> = ({
   onNavigate,
 }) => {
   const [subfolders, setSubfolders] = useState<Array<{ name: string; path: string }>>([]);
+  const { currentDirectory } = useAppContext();
   const clientName = clientPath.split(/[/\\]/).filter(Boolean).pop() ?? clientPath;
   const avatarColor = getAvatarColor(clientName);
   const initials = getInitials(clientName);
@@ -196,7 +193,7 @@ const RecentClientRow: React.FC<RecentClientRowProps> = ({
     };
     load();
     return () => { mounted = false; };
-  }, [clientPath]);
+  }, [clientPath, currentDirectory]);
 
   const isYearPill = (name: string) => /^20\d{2}$/.test(name);
 
@@ -244,6 +241,9 @@ const RecentClientRow: React.FC<RecentClientRowProps> = ({
             overflow="hidden"
             textOverflow="ellipsis"
             whiteSpace="nowrap"
+            cursor="pointer"
+            _hover={{ textDecoration: 'underline' }}
+            onClick={() => onNavigate(clientPath)}
           >
             {clientName}
           </Text>

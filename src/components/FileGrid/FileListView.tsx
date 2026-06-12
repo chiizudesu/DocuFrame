@@ -369,9 +369,20 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                   v{v}
                 </Box>
               ) : (
-                <Text fontSize="xs" color={fileSubTextColor} opacity={0.7} style={{ userSelect: 'none', fontFamily: "'Rajdhani', sans-serif", fontWeight: 600 }}>
+                <Box
+                  as="span"
+                  display="inline-block"
+                  px={1.5}
+                  py="1px"
+                  borderRadius="3px"
+                  bg="rgba(148,163,184,0.10)"
+                  border="1px solid rgba(148,163,184,0.35)"
+                  fontSize="10px"
+                  color={fileSubTextColor}
+                  style={{ userSelect: 'none', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, letterSpacing: '0.05em', opacity: fileState.isFileCut ? 0.5 : 0.85 }}
+                >
                   v1
-                </Text>
+                </Box>
               )}
             </chakra.td>
           );
@@ -1310,8 +1321,8 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
                       borderWidth="1px"
                       borderStyle="solid"
                       borderColor={isInputFocused ? keyColor : menuListBorder}
-                      transition="border-color 0.12s ease, box-shadow 0.12s ease"
-                      boxShadow={isInputFocused ? `0 0 0 3px ${keyTintBg}` : 'none'}
+                      transition="border-color 0.12s ease"
+                      boxShadow="none"
                     >
                       <Box as="span" flexShrink={0} lineHeight={0} color={isInputFocused ? keyColor : menuPlaceholderColor} transition="color 0.12s ease">
                         <FileInput size={15} />
