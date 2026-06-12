@@ -42,9 +42,9 @@ import {
   DF_TOOLBAR_TOGGLE_ACTIVE_HOVER_BG,
 } from '../docuFrameColors'
 
-/** Matches jump UI `fontSize="sm"` + `fontWeight="medium"` for width measurement */
+/** Matches jump UI `fontSize="13px"` + `fontWeight="medium"` for width measurement */
 const MINI_JUMP_UI_FONT =
-  '500 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  '500 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 
 function measureJumpUiTextWidthPx(text: string): number {
   if (!text) return 0
@@ -61,7 +61,7 @@ const MINI_DROPDOWN_ROW_EXTRAS_PX = 24 + 14 + 8
 /** Typing pill outer `px={2}` horizontal + small cushion */
 const MINI_PILL_BOX_HPAD_PX = 16 + 8
 /** Minimum visible width in “character units” (measured at jump UI font) */
-const MINI_JUMP_MIN_WIDTH_CHAR_COUNT = 30
+const MINI_JUMP_MIN_WIDTH_CHAR_COUNT = 20
 
 function computeMiniJumpLongestLabel(
   filterText: string,
@@ -124,14 +124,14 @@ const MiniSearchResultLabel: React.FC<{ name: string; filterText: string }> = ({
   const matched = filterText.trim() ? getFuzzyMatchIndices(name, filterText) : null
   if (!matched) {
     return (
-      <Text fontSize="sm" fontWeight="medium">
+      <Text fontSize="12.5px" fontWeight="medium">
         {name}
       </Text>
     )
   }
   const matchedSet = new Set(matched)
   return (
-    <Text fontSize="sm" fontWeight="medium" whiteSpace="pre">
+    <Text fontSize="12.5px" fontWeight="medium" whiteSpace="pre">
       {[...name].map((ch, i) =>
         matchedSet.has(i) ? (
           <Box as="span" key={i} color="blue.400" fontWeight="700">
@@ -451,6 +451,11 @@ export const FolderInfoBar: React.FC = () => {
   const miniDropdownBorderColor = useColorModeValue('gray.300', 'whiteAlpha.300')
   const miniJumpPreviewRing = useColorModeValue('0 0 0 2px #3b82f6', '0 0 0 2px #90cdf4')
   const addressBarJumpBorderColor = useColorModeValue('blue.400', 'blue.300')
+  /** Inset so the glow stays fully visible — an outer glow gets painted over by the toolbar below the 30px header row */
+  const addressBarJumpGlow = useColorModeValue(
+    'inset 0 0 10px rgba(59, 130, 246, 0.14)',
+    'inset 0 0 10px rgba(99, 179, 237, 0.2)'
+  )
   /** Raw-text edit mode gets a softer version of the jump border treatment */
   const addressBarEditBorderColor = useColorModeValue('blue.300', 'blue.400')
   /** Ancestor crumbs sit back; the current crumb and hover targets carry full contrast */
@@ -1263,8 +1268,8 @@ export const FolderInfoBar: React.FC = () => {
                   color={miniCurrentFolderColor}
                   px={2}
                   py="2px"
-                  minH="26px"
-                  fontSize="sm"
+                  minH="22px"
+                  fontSize="13px"
                   fontWeight="medium"
                   borderRadius="lg"
                   display="inline-flex"
@@ -1276,7 +1281,7 @@ export const FolderInfoBar: React.FC = () => {
                   {segment}
                 </Box>
               ) : (
-                <Text as="span" display="inline-block" fontSize="sm" mr={1} whiteSpace="nowrap" flexShrink={0}>
+                <Text as="span" display="inline-block" fontSize="13px" mr={1} whiteSpace="nowrap" flexShrink={0}>
                   {segment}
                 </Text>
               )}
@@ -1524,8 +1529,8 @@ export const FolderInfoBar: React.FC = () => {
           role="group"
           border="1px solid"
           borderColor={activeChevronIndex !== null ? addressBarJumpBorderColor : isEditing ? addressBarEditBorderColor : inputBorderColor}
-          transition="border-color 0.2s ease"
-          {...(activeChevronIndex !== null && { borderBottom: 'none' })}
+          boxShadow={activeChevronIndex !== null ? addressBarJumpGlow : undefined}
+          transition="border-color 0.2s ease, box-shadow 0.2s ease"
         >
           {isRefreshing && (
             <div
@@ -1638,6 +1643,10 @@ export const FolderInfoBar: React.FC = () => {
                           p={0.5}
                           transition="opacity 0.15s ease, background 0.15s ease, color 0.15s ease"
                           _hover={{ bg: addressBarItemHoverBg, opacity: 1, color: jumpAccentColor }}
+                          css={{
+                            '& > svg': { transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)' },
+                            '&:hover > svg': { transform: 'rotate(90deg)' },
+                          }}
                           onClick={(e) => {
                             e.stopPropagation()
                             openMiniSearch(lastHidden.idx)
@@ -1706,7 +1715,8 @@ export const FolderInfoBar: React.FC = () => {
                     >
                       <Text
                         fontSize="sm"
-                        fontWeight={idx === breadcrumbs.length - 1 && activeChevronIndex === null ? 'medium' : 'normal'}
+                        // weight stays constant in jump mode — medium→normal narrows the text and shifts crumbs
+                        fontWeight={idx === breadcrumbs.length - 1 ? 'medium' : 'normal'}
                         color="inherit"
                         userSelect="none"
                       >
@@ -1731,6 +1741,10 @@ export const FolderInfoBar: React.FC = () => {
                           p={0.5}
                           transition="opacity 0.15s ease, background 0.15s ease, color 0.15s ease"
                           _hover={{ bg: addressBarItemHoverBg, opacity: 1, color: jumpAccentColor }}
+                          css={{
+                            '& > svg': { transition: 'transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)' },
+                            '&:hover > svg': { transform: 'rotate(90deg)' },
+                          }}
                           onClick={(e) => {
                             e.stopPropagation()
                             openMiniSearch(idx)
@@ -1740,7 +1754,8 @@ export const FolderInfoBar: React.FC = () => {
                         </Box>
                       </Tooltip>
                     ) : (
-                      <Box as="span" mx={0.5} display="inline-flex" alignItems="center" flexShrink={0} opacity={0.5} color={textColor}>
+                      // p must match the clickable variant above or crumbs shift when jump mode toggles
+                      <Box as="span" mx={0.5} p={0.5} display="inline-flex" alignItems="center" flexShrink={0} opacity={0.5} color={textColor}>
                         <ChevronRight size={14} />
                       </Box>
                     )
@@ -1799,7 +1814,7 @@ export const FolderInfoBar: React.FC = () => {
                   borderRadius={miniTypingPillIsCurrentSegment ? 'lg' : 'md'}
                   px={2}
                   py="2px"
-                  minH="26px"
+                  minH="22px"
                   w={`${jumpUiDisplayWidthPx}px`}
                   minW={`${jumpUiDisplayWidthPx}px`}
                   flexShrink={0}
@@ -1812,7 +1827,7 @@ export const FolderInfoBar: React.FC = () => {
                     onKeyDown={handleMiniSearchKeyDown}
                     variant="flushed"
                     borderBottomWidth={0}
-                    fontSize="sm"
+                    fontSize="13px"
                     fontWeight="medium"
                     fontFamily="inherit"
                     color={miniTypingPillIsCurrentSegment ? activeButtonColor : miniTypePillFg}
@@ -1831,7 +1846,7 @@ export const FolderInfoBar: React.FC = () => {
                     minW={0}
                     w="100%"
                     h="auto"
-                    minH="22px"
+                    minH="18px"
                     lineHeight="1.4"
                     py={0}
                     px={0}

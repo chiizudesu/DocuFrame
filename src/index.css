@@ -1,86 +1,52 @@
-/* Custom Scrollbar Styling with higher specificity */
-.enhanced-scrollbar {
-  scrollbar-width: thin !important;
-  scrollbar-color: transparent transparent !important;
-  transition: scrollbar-color 0.3s ease !important;
-}
-
-.enhanced-scrollbar:hover {
-  scrollbar-color: rgba(156, 163, 175, 0.5) transparent !important;
-}
-
-/* Webkit Scrollbar Styling with higher specificity */
+/* .enhanced-scrollbar: hover-reveal rounded pill for compact containers
+   (dropdowns, panes). Webkit pseudo-elements only — never set the standard
+   `scrollbar-width`/`scrollbar-color` properties here: in Chromium 121+ they
+   disable all ::-webkit-scrollbar styling (see src/styles/scrollbar.css). */
 .enhanced-scrollbar::-webkit-scrollbar {
-  width: 6px !important;
-  height: 6px !important;
+  width: 8px;
+  height: 8px;
 }
 
 .enhanced-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
-  border-radius: 10px !important;
+  background: transparent;
 }
 
 .enhanced-scrollbar::-webkit-scrollbar-thumb {
-  background: transparent !important;
-  border-radius: 8px !important;
-  border: 2px solid transparent !important;
-  background-clip: content-box !important;
-  transition: background-color 0.3s ease !important;
+  background-color: transparent;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 24px;
+  min-height: 24px;
+  transition: background-color 0.3s ease;
 }
 
 .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.5) !important;
-  background-clip: content-box !important;
+  background-color: rgba(156, 163, 175, 0.5);
 }
 
 .enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.8) !important;
-  background-clip: content-box !important;
+  background-color: rgba(156, 163, 175, 0.8);
 }
 
 .enhanced-scrollbar::-webkit-scrollbar-corner {
-  background: transparent !important;
+  background: transparent;
 }
 
 .enhanced-scrollbar::-webkit-scrollbar-button {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-/* Dark mode scrollbar */
-[data-theme="dark"] .enhanced-scrollbar:hover {
-  scrollbar-color: rgba(107, 114, 128, 0.5) transparent !important;
+/* Dark mode (next-themes sets class="dark" on <html>) */
+.dark .enhanced-scrollbar:hover::-webkit-scrollbar-thumb,
+[data-theme='dark'] .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.45);
 }
 
-[data-theme="dark"] .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: rgba(107, 114, 128, 0.5) !important;
-  background-clip: content-box !important;
-}
-
-[data-theme="dark"] .enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(107, 114, 128, 0.8) !important;
-  background-clip: content-box !important;
-}
-
-/* Global override for any conflicting scrollbar styles */
-* .enhanced-scrollbar::-webkit-scrollbar {
-  width: 6px !important;
-  height: 6px !important;
-}
-
-* .enhanced-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-
-* .enhanced-scrollbar::-webkit-scrollbar-thumb {
-  background: transparent !important;
-  border-radius: 8px !important;
-  transition: background-color 0.3s ease !important;
-}
-
-* .enhanced-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.5) !important;
+.dark .enhanced-scrollbar::-webkit-scrollbar-thumb:hover,
+[data-theme='dark'] .enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.7);
 }
 
 /* AI File Manager — plain CSS keyframes (Chakra v3 style resolver cannot merge emotion keyframes with animation prop) */

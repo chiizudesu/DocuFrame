@@ -1,7 +1,16 @@
-/* Modern Minimal Scrollbars - Electron/Chakra UI Compatible */
+/* ============================================================================
+   Modern rounded scrollbars — Electron (Chromium 122)
+
+   IMPORTANT: Do NOT set the standard `scrollbar-width` or `scrollbar-color`
+   properties anywhere in this app. Since Chromium 121, setting either one on
+   an element makes Chromium IGNORE every `::-webkit-scrollbar*` rule for it
+   and fall back to the legacy native scrollbar (square thumb + arrow
+   buttons). That was the "override" that kept defeating custom styling.
+   ========================================================================== */
 
 /* Prevent body scrollbars when tooltips extend beyond viewport - tooltips use fixed positioning */
-html, body {
+html,
+body {
   overflow: hidden;
 }
 
@@ -12,185 +21,60 @@ html, body {
   overflow: visible !important;
 }
 
-html, body, .chakra-ui-portal, .chakra-ui-light, .chakra-ui-dark, * {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(80, 80, 80, 0.7) transparent !important;
-  /* For legacy Electron/Chromium */
-  scrollbar-base-color: #444 !important;
-  scrollbar-face-color: #444 !important;
-  scrollbar-track-color: transparent !important;
+/* ── Global scrollbar: floating rounded pill, no track, no arrows ────────── */
+/* 12px gutter with a 3px transparent border → 6px visible pill, inset from
+   the edge so it reads as an overlay rather than a docked bar. */
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
 }
 
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-.chakra-ui-portal::-webkit-scrollbar,
-.chakra-ui-light::-webkit-scrollbar,
-.chakra-ui-dark::-webkit-scrollbar,
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar {
-  width: 12px !important;
-  height: 12px !important;
-  background: transparent !important;
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-html::-webkit-scrollbar-thumb,
-body::-webkit-scrollbar-thumb,
-.chakra-ui-portal::-webkit-scrollbar-thumb,
-.chakra-ui-light::-webkit-scrollbar-thumb,
-.chakra-ui-dark::-webkit-scrollbar-thumb,
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb {
-  background: rgba(120, 120, 120, 0.7) !important;
-  border-radius: 6px !important;
-  min-height: 20px !important;
-  border: none !important;
-  transition: background 0.2s;
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.4);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 24px;
+  min-height: 32px;
 }
 
-html::-webkit-scrollbar-thumb:hover,
-body::-webkit-scrollbar-thumb:hover,
-.chakra-ui-portal::-webkit-scrollbar-thumb:hover,
-.chakra-ui-light::-webkit-scrollbar-thumb:hover,
-.chakra-ui-dark::-webkit-scrollbar-thumb:hover,
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:hover {
-  background: rgba(120, 120, 120, 0.9) !important;
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.6);
 }
 
-html::-webkit-scrollbar-thumb:active,
-body::-webkit-scrollbar-thumb:active,
-.chakra-ui-portal::-webkit-scrollbar-thumb:active,
-.chakra-ui-light::-webkit-scrollbar-thumb:active,
-.chakra-ui-dark::-webkit-scrollbar-thumb:active,
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:active {
-  background: rgba(120, 120, 120, 1) !important;
+*::-webkit-scrollbar-thumb:active {
+  background-color: rgba(100, 116, 139, 0.75);
 }
 
-html::-webkit-scrollbar-button,
-body::-webkit-scrollbar-button,
-.chakra-ui-portal::-webkit-scrollbar-button,
-.chakra-ui-light::-webkit-scrollbar-button,
-.chakra-ui-dark::-webkit-scrollbar-button,
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-button {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
+/* No up/down arrow buttons, anywhere */
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-html::-webkit-scrollbar-corner,
-body::-webkit-scrollbar-corner,
-.chakra-ui-portal::-webkit-scrollbar-corner,
-.chakra-ui-light::-webkit-scrollbar-corner,
-.chakra-ui-dark::-webkit-scrollbar-corner,
 *::-webkit-scrollbar-corner {
-  background: transparent !important;
+  background: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  html::-webkit-scrollbar-thumb,
-  body::-webkit-scrollbar-thumb,
-  .chakra-ui-portal::-webkit-scrollbar-thumb,
-  .chakra-ui-light::-webkit-scrollbar-thumb,
-  .chakra-ui-dark::-webkit-scrollbar-thumb,
-  *:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb {
-    background: rgba(200, 200, 200, 0.5) !important;
-  }
-  html::-webkit-scrollbar-thumb:hover,
-  body::-webkit-scrollbar-thumb:hover,
-  .chakra-ui-portal::-webkit-scrollbar-thumb:hover,
-  .chakra-ui-light::-webkit-scrollbar-thumb:hover,
-  .chakra-ui-dark::-webkit-scrollbar-thumb:hover,
-  *:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.7) !important;
-  }
-  html::-webkit-scrollbar-thumb:active,
-  body::-webkit-scrollbar-thumb:active,
-  .chakra-ui-portal::-webkit-scrollbar-thumb:active,
-  .chakra-ui-light::-webkit-scrollbar-thumb:active,
-  .chakra-ui-dark::-webkit-scrollbar-thumb:active,
-  *:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:active {
-    background: rgba(255, 255, 255, 1) !important;
-  }
-  html, body, .chakra-ui-portal, .chakra-ui-light, .chakra-ui-dark, * {
-    scrollbar-color: rgba(200, 200, 200, 0.5) transparent !important;
-    scrollbar-base-color: #ccc !important;
-    scrollbar-face-color: #ccc !important;
-  }
+/* Dark mode (next-themes sets class="dark" on <html>) */
+.dark *::-webkit-scrollbar-thumb,
+[data-theme='dark'] *::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.35);
 }
 
-/*
-If you still do not see custom scrollbars in Electron, check your main.ts and ensure you are NOT using nativeWindowOpen: true or sandbox: true in webPreferences, and that contextIsolation is true. If you use a preload script, make sure it does not block CSS injection.
-*/
-
-/* Global Webkit Scrollbars (Chrome, Safari, Edge) */
-* {
-  scrollbar-width: thin;
+.dark *::-webkit-scrollbar-thumb:hover,
+[data-theme='dark'] *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.55);
 }
 
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar {
-  width: 10px !important;
-  height: 10px !important;
-}
-
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-track {
-  background: transparent !important;
-  border-radius: 5px !important;
-}
-
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.4) !important;
-  border-radius: 5px !important;
-  border: none !important;
-  transition: background-color 0.2s ease !important;
-  min-height: 20px !important;
-}
-
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.6) !important;
-}
-
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:active {
-  background-color: rgba(0, 0, 0, 0.8) !important;
-}
-
-/* Completely remove scrollbar arrows/buttons */
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-button {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-button:start:decrement,
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-button:end:increment {
-  display: none !important;
-}
-
-/* Corner where vertical and horizontal scrollbars meet */
-*:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-corner {
-  background: transparent !important;
-}
-
-/* Dark mode scrollbars - Much more visible */
-@media (prefers-color-scheme: dark) {
-  *:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.4) !important;
-  }
-
-  *:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.6) !important;
-  }
-
-  *:not(.enhanced-scrollbar):not(.thin-scrollbar)::-webkit-scrollbar-thumb:active {
-    background-color: rgba(255, 255, 255, 0.8) !important;
-  }
-}
-
-/* Firefox Scrollbars - More visible */
-* {
-  scrollbar-color: rgba(0, 0, 0, 0.4) transparent !important;
-}
-
-@media (prefers-color-scheme: dark) {
-  * {
-    scrollbar-color: rgba(255, 255, 255, 0.4) transparent !important;
-  }
+.dark *::-webkit-scrollbar-thumb:active,
+[data-theme='dark'] *::-webkit-scrollbar-thumb:active {
+  background-color: rgba(148, 163, 184, 0.75);
 }
 
 /* Smooth scrolling for better UX */
@@ -198,53 +82,7 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Enhanced scrollbar for specific containers - thin, no arrows, rounded thumb */
-.enhanced-scrollbar::-webkit-scrollbar {
-  width: 6px !important;
-  height: 6px !important;
-}
-
-.enhanced-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
-  border-radius: 6px !important;
-}
-
-.enhanced-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.5) !important;
-  border-radius: 8px !important;
-  border: none !important;
-  min-height: 20px !important;
-}
-
-.enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.7) !important;
-}
-
-/* Remove top/bottom arrow buttons */
-.enhanced-scrollbar::-webkit-scrollbar-button {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-
-.enhanced-scrollbar::-webkit-scrollbar-button:start:decrement,
-.enhanced-scrollbar::-webkit-scrollbar-button:end:increment {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-
-@media (prefers-color-scheme: dark) {
-  .enhanced-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.5) !important;
-  }
-
-  .enhanced-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.7) !important;
-  }
-}
-
-/* Radix ScrollArea - DOM-based scrollbar (works in Electron when native styling fails) */
+/* ── Radix ScrollArea (sidebar + file grid) — DOM-based scrollbar ────────── */
 /* Shared: padding from edges, subtle low-contrast thumb - !important overrides Radix inline styles */
 .sidebar-scroll-area [data-orientation='vertical'],
 .filegrid-scroll-area [data-orientation='vertical'] {
@@ -265,15 +103,15 @@ html {
   background: rgba(0, 0, 0, 0.38);
 }
 [data-theme='dark'] .sidebar-scroll-area [data-orientation='vertical'] > div,
-.chakra-ui-dark .sidebar-scroll-area [data-orientation='vertical'] > div,
+.dark .sidebar-scroll-area [data-orientation='vertical'] > div,
 [data-theme='dark'] .filegrid-scroll-area [data-orientation='vertical'] > div,
-.chakra-ui-dark .filegrid-scroll-area [data-orientation='vertical'] > div {
+.dark .filegrid-scroll-area [data-orientation='vertical'] > div {
   background: rgba(255, 255, 255, 0.25);
 }
 [data-theme='dark'] .sidebar-scroll-area [data-orientation='vertical'] > div:hover,
-.chakra-ui-dark .sidebar-scroll-area [data-orientation='vertical'] > div:hover,
+.dark .sidebar-scroll-area [data-orientation='vertical'] > div:hover,
 [data-theme='dark'] .filegrid-scroll-area [data-orientation='vertical'] > div:hover,
-.chakra-ui-dark .filegrid-scroll-area [data-orientation='vertical'] > div:hover {
+.dark .filegrid-scroll-area [data-orientation='vertical'] > div:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 /* Horizontal scrollbar for file grid */
@@ -293,46 +131,38 @@ html {
   background: rgba(0, 0, 0, 0.38);
 }
 [data-theme='dark'] .filegrid-scroll-area [data-orientation='horizontal'] > div,
-.chakra-ui-dark .filegrid-scroll-area [data-orientation='horizontal'] > div {
+.dark .filegrid-scroll-area [data-orientation='horizontal'] > div {
   background: rgba(255, 255, 255, 0.25);
 }
 [data-theme='dark'] .filegrid-scroll-area [data-orientation='horizontal'] > div:hover,
-.chakra-ui-dark .filegrid-scroll-area [data-orientation='horizontal'] > div:hover {
+.dark .filegrid-scroll-area [data-orientation='horizontal'] > div:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 
-/* Ultra-thin scrollbar for minimal interfaces */
+/* ── .thin-scrollbar: slimmer pill for compact containers ────────────────── */
 .thin-scrollbar::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-}
-
-.thin-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
-  border-radius: 4px !important;
+  width: 8px;
+  height: 8px;
 }
 
 .thin-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.4) !important;
-  border-radius: 4px !important;
-  border: none !important;
-  min-height: 20px !important;
+  background-color: rgba(100, 116, 139, 0.4);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 24px;
+  min-height: 24px;
 }
 
 .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.6) !important;
+  background-color: rgba(100, 116, 139, 0.6);
 }
 
-.thin-scrollbar::-webkit-scrollbar-button {
-  display: none !important;
+.dark .thin-scrollbar::-webkit-scrollbar-thumb,
+[data-theme='dark'] .thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.35);
 }
 
-@media (prefers-color-scheme: dark) {
-  .thin-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.4) !important;
-  }
-
-  .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.6) !important;
-  }
-} 
+.dark .thin-scrollbar::-webkit-scrollbar-thumb:hover,
+[data-theme='dark'] .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.55);
+}

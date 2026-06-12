@@ -346,19 +346,35 @@ const NewClientPanel = React.memo(function NewClientPanel({
             {options.map((option, i) => (
               <Flex
                 key={`${option.kind}:${option.name}`}
+                position="relative"
                 align="center"
                 gap={2.5}
                 mx={2}
-                px={2}
+                px="10px"
                 py="6px"
                 borderRadius="6px"
                 cursor="pointer"
                 bg={i === highlight ? cardHoverBg : 'transparent'}
-                boxShadow={i === highlight ? `inset 2px 0 0 0 ${ACCENT}` : undefined}
                 opacity={creating ? 0.6 : 1}
+                transition="background 0.12s ease"
                 onMouseEnter={() => setHighlight(i)}
                 onClick={() => onCreate(option.name)}
               >
+                {/* Active-item indicator: centered pill, springs in on highlight */}
+                <Box
+                  position="absolute"
+                  left="2px"
+                  top="50%"
+                  w="3px"
+                  h="16px"
+                  borderRadius="full"
+                  bg={ACCENT}
+                  boxShadow={`0 0 6px ${ACCENT}80`}
+                  opacity={i === highlight ? 1 : 0}
+                  transform={i === highlight ? 'translateY(-50%) scaleY(1)' : 'translateY(-50%) scaleY(0.25)'}
+                  transition="opacity 0.1s ease, transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)"
+                  pointerEvents="none"
+                />
                 {option.kind === 'db' ? (
                   <Flex
                     flexShrink={0}
@@ -445,11 +461,7 @@ export const ClientListView: React.FC = () => {
 
   // "New client" typeahead panel
   const [addOpen, setAddOpen] = useState(false);
-  const [addValue, setAddValue] = useState('');
-  const [addHighlight, setAddHighlight] = useState(0);
   const [creating, setCreating] = useState(false);
-  const addWrapRef = useRef<HTMLDivElement>(null);
-  const addInputRef = useRef<HTMLInputElement>(null);
 
   // Alphabet rail + flash-highlight of a freshly created client
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -566,55 +578,7 @@ export const ClientListView: React.FC = () => {
   // ── New client creation ─────────────────────────────────────────────────────
   const existingNameKeys = useMemo(() => new Set(clients.map(c => normalizeName(c.name))), [clients]);
 
-  const suggestions = useMemo(() => {
-    if (!addOpen || !csvRows) return [];
-    const q = addValue.trim().toLowerCase();
-    const seen = new Set<string>();
-    const out: { name: string; ird: string | null }[] = [];
-    for (const row of csvRows) {
-      const name = getClientName(row);
-      if (!name) continue;
-      const key = normalizeName(name);
-      if (seen.has(key) || existingNameKeys.has(key)) continue;
-      if (q && !name.toLowerCase().includes(q)) continue;
-      seen.add(key);
-      out.push({ name, ird: getIrdNumber(row) });
-      if (out.length >= 8) break;
-    }
-    return out;
-  }, [addOpen, csvRows, addValue, existingNameKeys]);
-
-  const customName = addValue.trim();
-  const showCustomOption =
-    customName.length > 0 &&
-    !existingNameKeys.has(normalizeName(customName)) &&
-    !suggestions.some(s => normalizeName(s.name) === normalizeName(customName));
-  const addOptions = useMemo(
-    () => [
-      ...suggestions.map(s => ({ kind: 'db' as const, name: s.name, ird: s.ird })),
-      ...(showCustomOption ? [{ kind: 'custom' as const, name: customName, ird: null }] : []),
-    ],
-    [suggestions, showCustomOption, customName]
-  );
-
-  useEffect(() => { setAddHighlight(0); }, [addValue, addOpen]);
-
-  // Close the panel on outside click
-  useEffect(() => {
-    if (!addOpen) return;
-    const onMouseDown = (e: MouseEvent) => {
-      if (addWrapRef.current && !addWrapRef.current.contains(e.target as Node)) setAddOpen(false);
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [addOpen]);
-
-  const openAddPanel = useCallback(() => {
-    setAddOpen(true);
-    setAddValue('');
-    setAddHighlight(0);
-    setTimeout(() => addInputRef.current?.focus(), 30);
-  }, []);
+  const openAddPanel = useCallback(() => setAddOpen(true), []);
 
   const createClient = useCallback(async (name: string) => {
     const trimmed = name.trim();
@@ -634,7 +598,6 @@ export const ClientListView: React.FC = () => {
       setStatus(`Created client "${trimmed}"`, 'success');
       pendingFlashName.current = trimmed;
       setAddOpen(false);
-      setAddValue('');
       setSearchFilter('');
       setReloadKey(k => k + 1);
     } catch (error) {
@@ -644,23 +607,6 @@ export const ClientListView: React.FC = () => {
       setCreating(false);
     }
   }, [creating, clients, currentDirectory, addLog, setStatus]);
-
-  const handleAddKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setAddHighlight(h => Math.min(h + 1, Math.max(0, addOptions.length - 1)));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setAddHighlight(h => Math.max(0, h - 1));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      const option = addOptions[addHighlight] ?? addOptions[0];
-      if (option) void createClient(option.name);
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setAddOpen(false);
-    }
-  }, [addOptions, addHighlight, createClient]);
 
   // ── Delete client folder ────────────────────────────────────────────────────
   const deleteClient = useCallback(async (client: ClientEntry) => {
@@ -716,9 +662,7 @@ export const ClientListView: React.FC = () => {
   }, [addLog, setStatus]);
 
   const bg = useColorModeValue('#f8fafc', '#171923');
-  const cardBg = useColorModeValue('#ffffff', '#1c2233');
   const cardHoverBg = useColorModeValue('#f1f5f9', '#242d42');
-  const cardBorder = useColorModeValue('#e2e8f0', '#2a3347');
   const textColor = useColorModeValue('#1a202c', '#e2e8f0');
   const subtextColor = useColorModeValue('#64748b', '#7a8699');
   const sectionColor = useColorModeValue('#94a3b8', '#566478');
@@ -727,8 +671,6 @@ export const ClientListView: React.FC = () => {
   const irdColor = useColorModeValue('#64748b', '#566478');
   const dropBg = useColorModeValue('rgba(59,130,246,0.08)', 'rgba(59,130,246,0.16)');
   const flashBg = useColorModeValue('rgba(59,130,246,0.12)', 'rgba(59,130,246,0.22)');
-  const panelShadow = useColorModeValue('0 14px 40px rgba(15, 23, 42, 0.16)', '0 14px 40px rgba(0, 0, 0, 0.5)');
-  const buttonHoverBg = '#2f6fd8';
 
   return (
     <Box h="100%" bg={bg} position="relative" overflow="hidden">
@@ -784,143 +726,14 @@ export const ClientListView: React.FC = () => {
         </Text>
 
         {/* New client button + typeahead panel */}
-        <Box position="relative" ml="auto" ref={addWrapRef}>
-          <Flex
-            as="button"
-            align="center"
-            gap={2}
-            h="34px"
-            px="14px"
-            borderRadius="6px"
-            bg={ACCENT}
-            color="white"
-            fontSize="13px"
-            fontWeight="600"
-            cursor="pointer"
-            userSelect="none"
-            transition="background 0.15s ease, transform 0.15s ease"
-            _hover={{ bg: buttonHoverBg }}
-            _active={{ transform: 'scale(0.97)' }}
-            onClick={() => (addOpen ? setAddOpen(false) : openAddPanel())}
-          >
-            <UserPlus size={15} />
-            New client
-          </Flex>
-
-          {addOpen && (
-            <Box
-              position="absolute"
-              top="40px"
-              right={0}
-              w="340px"
-              bg={cardBg}
-              border="1px solid"
-              borderColor={cardBorder}
-              borderRadius="10px"
-              boxShadow={panelShadow}
-              zIndex={20}
-              overflow="hidden"
-            >
-              <Box px={3} pt={3} pb={2}>
-                <Text
-                  fontSize="10px"
-                  fontWeight="700"
-                  letterSpacing="0.08em"
-                  textTransform="uppercase"
-                  color={sectionColor}
-                  mb={2}
-                  userSelect="none"
-                >
-                  Add new client
-                </Text>
-                <Input
-                  ref={addInputRef}
-                  value={addValue}
-                  onChange={(e) => setAddValue(e.target.value)}
-                  onKeyDown={handleAddKeyDown}
-                  placeholder="Client name…"
-                  h="32px"
-                  fontSize="13px"
-                  color={textColor}
-                  bg={searchBg}
-                  borderColor={searchBorder}
-                  _placeholder={{ color: subtextColor }}
-                  _focus={{ outline: 'none', boxShadow: `0 0 0 1px ${ACCENT}`, borderColor: ACCENT }}
-                  _focusVisible={{ outline: 'none', boxShadow: `0 0 0 1px ${ACCENT}`, borderColor: ACCENT }}
-                />
-              </Box>
-              <Box maxH="264px" overflowY="auto" pb={2} className="enhanced-scrollbar">
-                {addOptions.length === 0 && (
-                  <Text px={3} py={2} fontSize="12px" color={subtextColor}>
-                    {csvRows ? 'Type a client name…' : 'Type a name to create a client folder'}
-                  </Text>
-                )}
-                {addOptions.map((option, i) => (
-                  <Flex
-                    key={`${option.kind}:${option.name}`}
-                    align="center"
-                    gap={2.5}
-                    mx={2}
-                    px={2}
-                    py="6px"
-                    borderRadius="6px"
-                    cursor="pointer"
-                    bg={i === addHighlight ? cardHoverBg : 'transparent'}
-                    boxShadow={i === addHighlight ? `inset 2px 0 0 0 ${ACCENT}` : undefined}
-                    opacity={creating ? 0.6 : 1}
-                    onMouseEnter={() => setAddHighlight(i)}
-                    onClick={() => void createClient(option.name)}
-                  >
-                    {option.kind === 'db' ? (
-                      <Flex
-                        flexShrink={0}
-                        w="22px"
-                        h="22px"
-                        borderRadius="4px"
-                        bg={getAvatarColor(option.name)}
-                        color="white"
-                        fontSize="9px"
-                        fontWeight="700"
-                        align="center"
-                        justify="center"
-                        style={{ fontFamily: "'Rajdhani', sans-serif" }}
-                      >
-                        {getInitials(option.name)}
-                      </Flex>
-                    ) : (
-                      <Flex
-                        flexShrink={0}
-                        w="22px"
-                        h="22px"
-                        borderRadius="4px"
-                        border="1.5px dashed"
-                        borderColor={ACCENT}
-                        color={ACCENT}
-                        align="center"
-                        justify="center"
-                      >
-                        <Plus size={12} strokeWidth={2.5} />
-                      </Flex>
-                    )}
-                    <Flex direction="column" flex={1} minW={0}>
-                      <Text fontSize="12.5px" fontWeight="500" color={option.kind === 'custom' ? ACCENT : textColor} lineClamp={1}>
-                        {option.kind === 'custom' ? `Create "${option.name}"` : option.name}
-                      </Text>
-                      {option.kind === 'custom' && (
-                        <Text fontSize="10.5px" color={subtextColor}>Not in client database</Text>
-                      )}
-                    </Flex>
-                    {option.ird && (
-                      <Text fontSize="10.5px" color={irdColor} flexShrink={0} style={{ fontFamily: "'Rajdhani', sans-serif" }}>
-                        {option.ird}
-                      </Text>
-                    )}
-                  </Flex>
-                ))}
-              </Box>
-            </Box>
-          )}
-        </Box>
+        <NewClientPanel
+          isOpen={addOpen}
+          setOpen={setAddOpen}
+          csvRows={csvRows}
+          existingNameKeys={existingNameKeys}
+          creating={creating}
+          onCreate={createClient}
+        />
       </Flex>
 
       {/* Client list */}

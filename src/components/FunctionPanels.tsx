@@ -1070,7 +1070,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             icon={FileCheck2}
             action="finals"
             description="Rename finals files to standard format"
-            color="green.400"
+            color="blue.400"
           />
           <FunctionButton
             icon={FilePlus2}
