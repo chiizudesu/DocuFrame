@@ -24,6 +24,7 @@ import { findClientRow, getIrdNumber } from '../src/services/clientDatabaseCsv';
 import type { Config } from '../src/services/config';
 import { handleCommand } from '../src/main/commandHandler';
 import { transferFiles } from '../src/main/commands/transfer';
+import { extractEmlSources, type EmlSource } from '../src/main/commands/extractEml';
 import { invalidateConfigCache } from '../src/main/config';
 import { getRootGitStatus, rootGitPush, rootGitPull, rootGitDiscard } from '../src/main/rootGit';
 import { uploadClientPdfsToVaults } from '../src/main/vaultsClientPdfUpload';
@@ -2888,6 +2889,55 @@ ipcMain.handle('save-image-from-clipboard', async (_, currentDirectory: string, 
       error: error instanceof Error ? error.message : 'Unknown error occurred while saving image' 
     };
   }
+});
+
+// Write files that were dropped without a filesystem path (e.g. emails/attachments
+// dragged from "new" Outlook arrive as in-memory virtual files). Bytes come over as base64.
+ipcMain.handle(
+  'write-dropped-files',
+  async (_, targetDirectory: string, files: Array<{ name: string; dataBase64: string }>) => {
+    const results: Array<{ name: string; status: 'success' | 'error'; path?: string; error?: string }> = [];
+    for (const file of files || []) {
+      try {
+        const rawName = file.name || 'dropped-file';
+        const safeName = rawName.replace(/[<>:"/\\|?*]/g, '_');
+        // Resolve a non-colliding path (append _1, _2, …) — mirrors extractEml's naming.
+        let targetPath = path.join(targetDirectory, safeName);
+        let counter = 1;
+        while (fs.existsSync(targetPath)) {
+          const ext = path.extname(safeName);
+          const base = path.basename(safeName, ext);
+          targetPath = path.join(targetDirectory, `${base}_${counter}${ext}`);
+          counter++;
+        }
+        fs.writeFileSync(targetPath, Buffer.from(file.dataBase64, 'base64'));
+        results.push({ name: path.basename(targetPath), status: 'success', path: targetPath });
+      } catch (error) {
+        results.push({
+          name: file?.name || 'dropped-file',
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+    const successfulPaths = results.filter(r => r.status === 'success').map(r => r.path!).filter(Boolean);
+    if (successfulPaths.length > 0) {
+      const win = BrowserWindow.getAllWindows()[0];
+      win?.webContents.send('folderContentsChanged', { directory: targetDirectory, newFiles: successfulPaths });
+    }
+    return results;
+  }
+);
+
+// Extract attachments from a mix of email sources (on-disk .eml paths and/or base64-encoded
+// virtual emails dragged from Outlook). The emails themselves are not saved.
+ipcMain.handle('extract-eml-sources', async (_, targetDirectory: string, sources: EmlSource[]) => {
+  const result = await extractEmlSources(targetDirectory, sources || []);
+  if (result.extractedFiles.length > 0) {
+    const win = BrowserWindow.getAllWindows()[0];
+    win?.webContents.send('folderContentsChanged', { directory: targetDirectory, newFiles: result.extractedFiles });
+  }
+  return result;
 });
 
 // Update-related IPC handlers

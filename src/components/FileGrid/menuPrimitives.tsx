@@ -87,7 +87,7 @@ export const SubmenuGroup: React.FC<{ children: React.ReactNode }> = ({ children
 
 export interface MenuRowProps {
   icon?: React.ReactNode
-  label: string
+  label: React.ReactNode
   /** Right-aligned keyboard hint, e.g. "F2" or "Ctrl+C" */
   hint?: string
   danger?: boolean

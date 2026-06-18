@@ -106,8 +106,6 @@ interface AppContextType {
   // Additional shortcuts for SettingsWindow
   activationShortcut: string;
   setActivationShortcut: (shortcut: string) => void;
-  calculatorShortcut: string;
-  setCalculatorShortcut: (shortcut: string) => void;
   clientSearchShortcut: string;
   setClientSearchShortcut: (shortcut: string) => void;
   jumpModeOnParentShortcut: string;
@@ -139,6 +137,8 @@ interface AppContextType {
   reorderQuickAccessPaths: (paths: string[]) => Promise<void>;
   // Recent client folders (latest 5 visited)
   recentClientPaths: string[];
+  // Recent client SUB-folders (full paths, latest visited) — powers the Move to ▸ suggestions
+  recentFolderPaths: string[];
   // File grouping by index prefix (computed from settings: always on except blacklist)
   isGroupedByIndex: boolean;
   /** Session-only: when false, flat list regardless of group-view settings (not persisted). */
@@ -205,7 +205,6 @@ export const AppProvider: React.FC<{
   const [closeTabShortcut, setCloseTabShortcut] = useState<string>('Ctrl+W');
   // Additional shortcuts for SettingsWindow
   const [activationShortcut, setActivationShortcut] = useState<string>('`');
-  const [calculatorShortcut, setCalculatorShortcut] = useState<string>('Alt+Q');
   const [clientSearchShortcut, setClientSearchShortcut] = useState<string>('Alt+F');
   const [jumpModeOnParentShortcut, setJumpModeOnParentShortcut] = useState<string>(
     DEFAULT_JUMP_MODE_ON_PARENT_SHORTCUT,
@@ -226,6 +225,9 @@ export const AppProvider: React.FC<{
   const [recentClientPaths, setRecentClientPaths] = useState<string[]>([]);
   /** After first settings load: allows persisting [] without clobbering disk before hydrate */
   const recentClientPathsPersistReadyRef = useRef(false);
+  // Recent client sub-folders (full paths) used as Move to ▸ targets
+  const [recentFolderPaths, setRecentFolderPaths] = useState<string[]>([]);
+  const recentFolderPathsPersistReadyRef = useRef(false);
   // File grouping by index prefix - always on except blacklisted directories (from settings)
   const [groupViewAlwaysEnabled, setGroupViewAlwaysEnabled] = useState<boolean>(true);
   const [groupViewBlacklist, setGroupViewBlacklist] = useState<string[]>([]);
@@ -271,9 +273,6 @@ export const AppProvider: React.FC<{
       }
       if (settings.activationShortcut) {
         setActivationShortcut(settings.activationShortcut);
-      }
-      if (settings.calculatorShortcut) {
-        setCalculatorShortcut(settings.calculatorShortcut);
       }
       if (settings.clientSearchShortcut) {
         setClientSearchShortcut(settings.clientSearchShortcut);
@@ -352,11 +351,18 @@ export const AppProvider: React.FC<{
       } else {
         setRecentClientPaths([]);
       }
+      // Load recent client sub-folders (Move to ▸ targets)
+      if (Array.isArray((settings as any).recentFolderPaths)) {
+        setRecentFolderPaths((settings as any).recentFolderPaths.slice(0, 8));
+      } else {
+        setRecentFolderPaths([]);
+      }
 
     } catch (error) {
       console.error('Error loading settings:', error);
     } finally {
       recentClientPathsPersistReadyRef.current = true;
+      recentFolderPathsPersistReadyRef.current = true;
       manualActiveSectionsPersistReadyRef.current = true;
     }
   }, []);
@@ -413,6 +419,31 @@ export const AppProvider: React.FC<{
       settingsService.setSettings({ ...current, recentClientPaths }).catch(() => {});
     });
   }, [recentClientPaths]);
+
+  // Track recently-visited client SUB-folders (deeper than the client root) for Move to ▸ targets.
+  useEffect(() => {
+    if (!currentDirectory || !rootDirectory) return;
+    const clientPath = getClientFolderPath(currentDirectory, rootDirectory);
+    if (!clientPath) return;
+    // Only remember sub-folders, not the client root itself (that's the card view).
+    if (normalizePath(currentDirectory) === normalizePath(clientPath)) return;
+    setRecentFolderPaths(prev => {
+      const normalized = normalizePath(currentDirectory);
+      const filtered = prev.filter(p => normalizePath(p) !== normalized);
+      return [currentDirectory, ...filtered].slice(0, 8);
+    });
+  }, [currentDirectory, rootDirectory]);
+
+  // Persist recent sub-folders when they change
+  const prevRecentFolderRef = useRef<string>('');
+  useEffect(() => {
+    if (!recentFolderPathsPersistReadyRef.current && recentFolderPaths.length === 0) return;
+    if (prevRecentFolderRef.current === JSON.stringify(recentFolderPaths)) return;
+    prevRecentFolderRef.current = JSON.stringify(recentFolderPaths);
+    settingsService.getSettings().then(current => {
+      settingsService.setSettings({ ...current, recentFolderPaths } as any).catch(() => {});
+    });
+  }, [recentFolderPaths]);
 
   // Blacklist = disable group view only when the current folder path exactly matches an entry
   // (not for subfolders — e.g. Annual Accounts listed, but A & E Glass inside it still groups).
@@ -727,8 +758,6 @@ export const AppProvider: React.FC<{
       setCloseTabShortcut,
       activationShortcut,
       setActivationShortcut,
-      calculatorShortcut,
-      setCalculatorShortcut,
       clientSearchShortcut,
       setClientSearchShortcut,
       jumpModeOnParentShortcut,
@@ -754,6 +783,7 @@ export const AppProvider: React.FC<{
       moveQuickAccessPath,
       reorderQuickAccessPaths,
       recentClientPaths,
+      recentFolderPaths,
       logFileOperation,
       setLogFileOperation,
       isGroupedByIndex,
@@ -893,7 +923,8 @@ export function useFileGridFiltersAndVisibility() {
 export function useFileGridQuickAccessPaths() {
   const quickAccessPaths = useContextSelector(AppContext, (v) => v?.quickAccessPaths ?? []);
   const recentClientPaths = useContextSelector(AppContext, (v) => v?.recentClientPaths ?? EMPTY_STRING_ARRAY);
-  return { quickAccessPaths, recentClientPaths };
+  const recentFolderPaths = useContextSelector(AppContext, (v) => v?.recentFolderPaths ?? EMPTY_STRING_ARRAY);
+  return { quickAccessPaths, recentClientPaths, recentFolderPaths };
 }
 
 export function useFileGridActions() {

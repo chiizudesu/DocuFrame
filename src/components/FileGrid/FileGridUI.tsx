@@ -51,7 +51,7 @@ import {
 } from 'lucide-react'
 import type { FileItem } from '../../types'
 import { useFileGridNavigationRefs } from '../../context/AppContext'
-import { joinPath, normalizePath } from '../../utils/path'
+import { joinPath, normalizePath, getClientFolderPath } from '../../utils/path'
 import { getIndexInfo } from '../../utils/indexPrefix'
 import { SubmenuGroup, ContextSubmenu, MenuRow, MenuSeparator, MenuSectionLabel, useMenuColors, placeMenuElement } from './menuPrimitives'
 import { docuFramePalette } from '../../docuFrameColors'
@@ -75,9 +75,13 @@ export interface FileContextMenuProps {
   quickAccessPaths: string[];
   /** Last-visited client folders for the Move to ▸ submenu */
   recentClientPaths: string[];
+  /** Last-visited client sub-folders (full paths) offered as Move to ▸ targets */
+  recentFolderPaths: string[];
   /** Workpaper index keys offered in the Apply prefix ▸ submenu */
   activeSectionKeys: string[];
   currentDirectory: string;
+  /** Vault root — used to split a recent path into client name + sub-folder for display */
+  rootDirectory: string;
   onCreateFromTemplate: (templatePath: string, templateName: string) => void;
   setMoveToFiles: (files: FileItem[]) => void;
   setIsMoveToDialogOpen: (open: boolean) => void;
@@ -95,8 +99,10 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   handleCloseContextMenu,
   quickAccessPaths,
   recentClientPaths,
+  recentFolderPaths,
   activeSectionKeys,
   currentDirectory,
+  rootDirectory,
   onCreateFromTemplate,
   setMoveToFiles,
   setIsMoveToDialogOpen,
@@ -105,6 +111,7 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const boxBg = useColorModeValue(docuFramePalette.light.listRow, docuFramePalette.dark.tabStrip);
   const borderCol = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
+  const subfolderTextCol = useColorModeValue('#94a3b8', '#64748b');
   const { shadow: menuShadow } = useMenuColors();
   const [latestFileName, setLatestFileName] = useState<string | null>(null);
   const [templates, setTemplates] = useState<Array<{ name: string; path: string }>>([]);
@@ -172,9 +179,26 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
   // Roll forward: only offered when the filename contains a 4-digit year
   const yearMatch = isFile && isSingleFile ? contextMenu.fileItem.name.match(/20\d{2}/) : null;
   const nextYear = yearMatch ? String(Number(yearMatch[0]) + 1) : null;
-  const moveToRecents = recentClientPaths.filter(
+  // Suggest the specific recent sub-folders (not just the client root), excluding where we already are.
+  const moveToRecents = recentFolderPaths.filter(
     (p) => normalizePath(p) !== normalizePath(currentDirectory)
   ).slice(0, 5);
+
+  /** Split a recent folder path into the client name (shown normally) and the sub-folder
+   *  segments beneath it (shown grayed). Falls back to the leaf name when no client root. */
+  const describeRecentTarget = (p: string): { clientName: string; subSegments: string[] } => {
+    const norm = p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const allSegs = norm.split('/').filter(Boolean);
+    const clientPath = rootDirectory ? getClientFolderPath(p, rootDirectory) : null;
+    if (clientPath) {
+      const cSegs = clientPath.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);
+      return {
+        clientName: cSegs[cSegs.length - 1] || (allSegs[allSegs.length - 1] ?? p),
+        subSegments: allSegs.slice(cSegs.length),
+      };
+    }
+    return { clientName: allSegs[allSegs.length - 1] || p, subSegments: [] };
+  };
 
   const getClipboardFiles = () => {
     if (
@@ -410,14 +434,29 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
               <MenuSectionLabel label="Send" />
               <ContextSubmenu id="move-to" icon={<ArrowRightLeft size={iconSz} />} label="Move to" flyoutMinW="200px">
                 {moveToRecents.map((path) => {
-                  const segments = path.split(/[\\/]/).filter(Boolean);
-                  const name = segments[segments.length - 1] || path;
+                  const { clientName, subSegments } = describeRecentTarget(path);
                   return (
                     <MenuRow
                       key={path}
                       icon={<Folder size={iconSz} />}
-                      label={name}
                       title={path}
+                      label={
+                        <Box as="span" display="inline-flex" alignItems="baseline" minW={0} overflow="hidden">
+                          <Text as="span" flexShrink={0}>{clientName}</Text>
+                          {subSegments.length > 0 && (
+                            <Text
+                              as="span"
+                              ml="5px"
+                              color={subfolderTextCol}
+                              whiteSpace="nowrap"
+                              overflow="hidden"
+                              textOverflow="ellipsis"
+                            >
+                              {subSegments.join(' › ')}
+                            </Text>
+                          )}
+                        </Box>
+                      }
                       onClick={() => handleMenuAction('move_to_recent', path)}
                     />
                   );

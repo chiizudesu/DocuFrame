@@ -28,6 +28,55 @@ import { SplitPdfDialog } from './FileGrid/SplitPdfDialog';
 import { EditPdfDialog } from './FileGrid/EditPdfDialog';
 import { FileListView } from './FileGrid/FileListView';
 import { docuFramePalette as P } from '../docuFrameColors';
+import { Mail, Paperclip, FilePlus2 } from 'lucide-react';
+
+/**
+ * True when the drag looks like an email message — gates the save/extract split so it shows
+ * ONLY for emails, not ordinary files. The signal is the MIME type: Chromium reports a `.eml`
+ * dragged from Explorer as `message/rfc822` (derived from the extension), and `.msg` as the
+ * Outlook type. We can't read the filename mid-drag, so MIME is the only thing to go on.
+ * (Dragging a message *directly* from new Outlook can't be detected or handled — it exposes no
+ * file at all — so the supported path is Outlook → Explorer → drag the .eml in.)
+ */
+function dragLooksLikeEmail(dt: DataTransfer): boolean {
+  const items = dt.items ? Array.from(dt.items) : [];
+  if (items.some((it) => it.kind === 'file' && (it.type === 'message/rfc822' || it.type === 'application/vnd.ms-outlook'))) {
+    return true;
+  }
+  return dt.types.some((t) => /rfc822|ms-outlook/i.test(t));
+}
+
+/** True when the drag carries real files (Explorer etc.) — gates the single "add files" drop zone. */
+function isExternalFileDrag(dt: DataTransfer): boolean {
+  if (dt.types.includes('Files')) return true;
+  return dt.items ? Array.from(dt.items).some((it) => it.kind === 'file') : false;
+}
+
+/** Encode raw bytes (from a dropped virtual file) as base64 for transport over IPC. */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)));
+  }
+  return btoa(binary);
+}
+
+/**
+ * Resolve the File objects from a drop. Prefers dataTransfer.files, but falls back to
+ * pulling them out of dataTransfer.items via getAsFile() (must run synchronously inside
+ * the drop handler) — some sources only expose files through the items list.
+ */
+function collectDroppedFiles(dt: DataTransfer): File[] {
+  const direct = dt.files ? Array.from(dt.files) : [];
+  if (direct.length > 0) return direct;
+  if (!dt.items) return [];
+  return Array.from(dt.items)
+    .filter((it) => it.kind === 'file')
+    .map((it) => it.getAsFile())
+    .filter((f): f is File => !!f);
+}
 
 /** True when rename failed because the path is open, locked, or busy (EBUSY / EPERM / main-process message). */
 function isRenameResourceBusyError(error: unknown): boolean {
@@ -100,7 +149,7 @@ export const FileGrid: React.FC = () => {
     currentManualActiveSections,
     currentDeactivatedSections,
   } = useFileGridFiltersAndVisibility()
-  const { quickAccessPaths, recentClientPaths } = useFileGridQuickAccessPaths()
+  const { quickAccessPaths, recentClientPaths, recentFolderPaths } = useFileGridQuickAccessPaths()
   const {
     addLog,
     setStatus,
@@ -325,17 +374,28 @@ export const FileGrid: React.FC = () => {
   // Drag and drop state
   const [isDragOver, setIsDragOver] = useState(false)
   const [dragCounter, setDragCounter] = useState(0)
+  /** True while an email is dragged over the grid — reveals the save/extract split. */
+  const [emlDragActive, setEmlDragActive] = useState(false)
+  /** Which half of the email split the pointer is over ('save' = keep .eml, 'extract' = attachments only). */
+  const [emlDropZone, setEmlDropZone] = useState<'save' | 'extract' | null>(null)
+  /** True while a non-email file is dragged over the grid — shows a single "add files" drop zone. */
+  const [fileDragActive, setFileDragActive] = useState(false)
+  /** Px from the top of the list area to the bottom of the column-header row, so the split sits below it. */
+  const [emlHeaderOffset, setEmlHeaderOffset] = useState(0)
   const dragLeaveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  /** Diagnostics: ensures the noisy dragover "hover" log only fires once per drag. */
+  const dragDiagLoggedRef = useRef(false)
+  /** Self-healing backstop: if drag events stop arriving (Esc-cancel, drop outside), clear the overlay. */
+  const dragWatchdogRef = useRef<NodeJS.Timeout | null>(null)
   const dropAreaRef = useRef<HTMLDivElement>(null)
   /** Rubber-band rectangle inside FileListView; geometry set imperatively (see syncMarqueeSelectionBox). */
   const marqueeOverlayRef = useRef<HTMLDivElement | null>(null)
 
-  // Cleanup drag leave timeout on unmount
+  // Cleanup drag timers on unmount
   useEffect(() => {
     return () => {
-      if (dragLeaveTimeoutRef.current) {
-        clearTimeout(dragLeaveTimeoutRef.current);
-      }
+      if (dragLeaveTimeoutRef.current) clearTimeout(dragLeaveTimeoutRef.current);
+      if (dragWatchdogRef.current) clearTimeout(dragWatchdogRef.current);
     };
   }, []);
 
@@ -408,11 +468,66 @@ export const FileGrid: React.FC = () => {
       clearTimeout(dragLeaveTimeoutRef.current);
       dragLeaveTimeoutRef.current = null;
     }
+    if (dragWatchdogRef.current) {
+      clearTimeout(dragWatchdogRef.current);
+      dragWatchdogRef.current = null;
+    }
     setIsDragOver(false);
     setDragCounter(0);
+    setEmlDragActive(false);
+    setEmlDropZone(null);
+    setFileDragActive(false);
     setDraggedFiles(new Set());
     setIsDragStarted(false);
   }, []);
+
+  /** Restart the drag watchdog — while drag events keep arriving the overlay stays; once they
+   *  stop (Esc, cancel, drop outside the window) it auto-clears so the next drag starts clean. */
+  const pokeDragWatchdog = useCallback(() => {
+    if (dragWatchdogRef.current) clearTimeout(dragWatchdogRef.current);
+    dragWatchdogRef.current = setTimeout(() => resetDragState(), 1200);
+  }, [resetDragState]);
+
+  /** Measure the column-header height so the drop overlay starts just below it. */
+  const measureHeaderOffset = useCallback(() => {
+    const area = dropAreaRef.current;
+    const thead = area?.querySelector('thead') as HTMLElement | null;
+    if (area && thead) {
+      setEmlHeaderOffset(Math.max(0, thead.getBoundingClientRect().bottom - area.getBoundingClientRect().top));
+    } else {
+      setEmlHeaderOffset(0);
+    }
+  }, []);
+
+  /** Left half of the grid = 'save' the file(s) as-is; right half = 'extract' attachments only. */
+  const computeEmlZone = useCallback((clientX: number): 'save' | 'extract' => {
+    const rect = dropAreaRef.current?.getBoundingClientRect();
+    if (!rect) return 'save';
+    return clientX < rect.left + rect.width / 2 ? 'save' : 'extract';
+  }, []);
+
+  // Failsafe cleanup for the drag overlay. NOTE: an Escape-cancel of an *external* drag fires no
+  // drag event in our window (no dragend — drag didn't start here; no drop; pointer never left the
+  // window so no dragleave), so the keydown + watchdog backstop are what actually clear it. We do
+  // NOT listen for 'blur': external drags keep the source app focused, so blur misfires mid-drag.
+  useEffect(() => {
+    const reset = () => resetDragState();
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === 'Escape') reset(); };
+    const onWindowDragLeave = (e: DragEvent) => {
+      // Only when the cursor actually leaves the window, not when moving between child elements.
+      if (e.relatedTarget === null) reset();
+    };
+    window.addEventListener('drop', reset);
+    window.addEventListener('dragend', reset);
+    window.addEventListener('dragleave', onWindowDragLeave);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('drop', reset);
+      window.removeEventListener('dragend', reset);
+      window.removeEventListener('dragleave', onWindowDragLeave);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [resetDragState]);
 
   // Callback to handle when native icons are loaded
   const handleNativeIconLoaded = useCallback((filePath: string, iconData: string) => {
@@ -3200,17 +3315,37 @@ export const FileGrid: React.FC = () => {
     }
     
     setDragCounter(prev => prev + 1);
-    
-    const hasFilesType = e.dataTransfer.types.includes('Files');
+
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-    
+
     const isInternalDrag = hasCustomType || internalDragFlag;
-    
-    if (hasFilesType && !isInternalDrag) {
+
+    // Diagnostic: surfaces exactly what a given source (e.g. "new" Outlook) advertises,
+    // which is how we tune email detection. console.log so it shows at the default level.
+    dragDiagLoggedRef.current = false;
+    const isEmail = dragLooksLikeEmail(e.dataTransfer);
+    const isFile = !isEmail && isExternalFileDrag(e.dataTransfer);
+    console.log('[DnD] dragenter', {
+      internal: isInternalDrag,
+      types: Array.from(e.dataTransfer.types || []),
+      items: Array.from(e.dataTransfer.items || []).map((it) => `${it.kind}:${it.type}`),
+      isEmail,
+      isFile,
+    });
+
+    // Accept any external drag (not just ones advertising 'Files') — Outlook drags often omit it.
+    if (!isInternalDrag && e.dataTransfer.types.length > 0) {
       setIsDragOver(true);
+      pokeDragWatchdog();
+      // Email → save/extract split; any other file → single "add files" drop zone. Both sit
+      // below the sticky column-header row.
+      if (isEmail || isFile) measureHeaderOffset();
+      setEmlDragActive(isEmail);
+      setFileDragActive(isFile);
+      if (isEmail) setEmlDropZone(computeEmlZone(e.clientX));
     }
-  }, []);
+  }, [computeEmlZone, measureHeaderOffset, pokeDragWatchdog]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -3230,6 +3365,9 @@ export const FileGrid: React.FC = () => {
       setDragCounter(current => {
         if (current <= 0) {
           setIsDragOver(false);
+          setEmlDragActive(false);
+          setEmlDropZone(null);
+          setFileDragActive(false);
           // Clear all folder hover states when leaving the entire file grid area
           clearFolderHoverStates();
           return 0;
@@ -3274,24 +3412,51 @@ export const FileGrid: React.FC = () => {
       dragLeaveTimeoutRef.current = null;
     }
     
-    const hasFilesType = e.dataTransfer.types.includes('Files');
     const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
     const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-    
+
     const isInternalDrag = hasCustomType || internalDragFlag;
-    
-    if (hasFilesType && !isInternalDrag && !isDragOver) {
-      setIsDragOver(true);
-    }
-    
+
     if (isInternalDrag) {
       e.dataTransfer.dropEffect = 'none';
-    } else if (hasFilesType) {
-      setDropEffectCompatibleWithEffectAllowed(e, 'copy');
-    } else {
-      e.dataTransfer.dropEffect = 'none';
+      return;
     }
-  }, [isDragOver]);
+
+    if (!isDragOver) setIsDragOver(true);
+
+    const isEmail = dragLooksLikeEmail(e.dataTransfer);
+    const isFile = !isEmail && isExternalFileDrag(e.dataTransfer);
+
+    if (!dragDiagLoggedRef.current) {
+      dragDiagLoggedRef.current = true;
+      console.log('[DnD] dragover (hover)', {
+        types: Array.from(e.dataTransfer.types || []),
+        items: Array.from(e.dataTransfer.items || []).map((it) => `${it.kind}:${it.type}`),
+        effectAllowed: e.dataTransfer.effectAllowed,
+        isEmail,
+        isFile,
+      });
+    }
+
+    // Any external drag is accepted as a copy. Forcing 'copy' (rather than negotiating with
+    // effectAllowed) fixes the "not allowed" cursor for Outlook drags, whose effectAllowed
+    // can arrive as 'none'/web values.
+    e.dataTransfer.dropEffect = 'copy';
+    pokeDragWatchdog();
+
+    if (isEmail) {
+      if (!emlDragActive) { setEmlDragActive(true); measureHeaderOffset(); }
+      if (fileDragActive) setFileDragActive(false);
+      const zone = computeEmlZone(e.clientX);
+      setEmlDropZone(prev => (prev === zone ? prev : zone));
+    } else if (isFile) {
+      if (!fileDragActive) { setFileDragActive(true); measureHeaderOffset(); }
+      if (emlDragActive) { setEmlDragActive(false); setEmlDropZone(null); }
+    } else {
+      if (emlDragActive) { setEmlDragActive(false); setEmlDropZone(null); }
+      if (fileDragActive) setFileDragActive(false);
+    }
+  }, [isDragOver, emlDragActive, fileDragActive, computeEmlZone, measureHeaderOffset, pokeDragWatchdog]);
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
@@ -3309,6 +3474,22 @@ export const FileGrid: React.FC = () => {
     const targetElement = e.target as HTMLElement;
     if (targetElement && targetElement.closest('[data-group-drop-zone="true"]')) {
       return;
+    }
+
+    // Diagnostic: dump exactly what landed so we can see what "new" Outlook delivers.
+    dragDiagLoggedRef.current = false;
+    try {
+      const dt = e.dataTransfer;
+      console.log('[DnD] DROP', {
+        types: Array.from(dt.types || []),
+        items: Array.from(dt.items || []).map((it) => `${it.kind}:${it.type}`),
+        files: Array.from(dt.files || []).map((f: any) => ({ name: f.name, path: f.path, size: f.size, type: f.type })),
+        // Dump the raw payload of every advertised format (truncated) — reveals what custom
+        // formats like 'multimaillistmessagerows' actually carry.
+        dataByType: Array.from(dt.types || []).map((t) => `${t} => ${String(dt.getData(t)).slice(0, 300)}`),
+      });
+    } catch (diagErr) {
+      console.log('[DnD] DROP diag failed', diagErr);
     }
 
     // Check what type of drag this is
@@ -3334,48 +3515,72 @@ export const FileGrid: React.FC = () => {
       return;
     }
     
-    // Handle external files (from OS file explorer)
-    if (hasFilesType && e.dataTransfer.files.length > 0) {
-      try {
-        const files = Array.from(e.dataTransfer.files).map((f) => {
-          const filePath = (f as any).path || f.name;
-          return { path: filePath, name: f.name };
-        });
-        
-        const validFiles = files.filter(f => f.path && f.path !== f.name);
-        if (validFiles.length === 0) {
-          addLog('Failed to upload: No valid file paths found. Please drag files from your file explorer, not from a web browser.', 'error');
-          setStatus('Upload failed: Invalid file source', 'error');
-          return;
-        }
-        
-        addLog(`Uploading ${validFiles.length} file(s) to current directory`);
-        setStatus('Uploading files...', 'info');
-        
-        const results = await window.electronAPI.copyFiles(validFiles.map(f => f.path), currentDirectory);
-        
-        const successful = results.filter((r: any) => r.status === 'success').length;
-        const failed = results.filter((r: any) => r.status === 'error').length;
-        const skipped = results.filter((r: any) => r.status === 'skipped').length;
-        
-        let message = `Upload complete: ${successful} successful`;
-        if (failed > 0) message += `, ${failed} failed`;
-        if (skipped > 0) message += `, ${skipped} skipped`;
-        
-        addLog(message);
-        setStatus(message, failed > 0 ? 'error' : 'success');
-        
-        if (successful > 0 || skipped > 0) {
-          await refreshDirectory(currentDirectory);
-        }
-        
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        addLog(`Upload failed: ${errorMessage}`, 'error');
-        setStatus('Upload failed', 'error');
-      }
+    // External drop. Capture everything synchronously before any await — dataTransfer
+    // (and items.getAsFile()) are only valid for the duration of the event.
+    const dropZone: 'save' | 'extract' = emlDragActive ? computeEmlZone(e.clientX) : 'save';
+    const droppedFiles = collectDroppedFiles(e.dataTransfer);
+    if (dragWatchdogRef.current) { clearTimeout(dragWatchdogRef.current); dragWatchdogRef.current = null; }
+    setEmlDragActive(false);
+    setEmlDropZone(null);
+    setFileDragActive(false);
+
+    if (droppedFiles.length === 0) {
+      addLog('Nothing droppable was found in that drag. Try dragging from Explorer or Outlook.', 'error');
+      setStatus('Drop failed: no files found', 'error');
+      return;
     }
-  }, [currentDirectory, addLog, setStatus, refreshDirectory]);
+
+    // Explorer files carry a real filesystem path; Outlook emails/attachments arrive as
+    // in-memory "virtual" files (no path) whose bytes we read here and send to the main process.
+    const pathFiles = droppedFiles.filter((f) => (f as any).path);
+    const virtualFiles = droppedFiles.filter((f) => !(f as any).path);
+
+    try {
+      const virtualPayloads = await Promise.all(
+        virtualFiles.map(async (f) => ({
+          name: f.name || 'attachment',
+          dataBase64: arrayBufferToBase64(await f.arrayBuffer()),
+        }))
+      );
+
+      if (dropZone === 'extract') {
+        // Extract attachments only — the email itself is never saved.
+        const sources = [
+          ...pathFiles.map((f) => ({ name: f.name, path: (f as any).path as string })),
+          ...virtualPayloads.map((p) => ({ name: p.name, dataBase64: p.dataBase64 })),
+        ];
+        setStatus('Extracting attachments…', 'info');
+        const res = await (window.electronAPI as any).extractEmlSources(currentDirectory, sources);
+        addLog(res?.message || 'Extracted attachments', res?.errors?.length ? 'error' : 'response');
+        setStatus(res?.message || 'Attachments extracted', res?.success ? 'success' : 'error');
+        await refreshDirectory(currentDirectory);
+        return;
+      }
+
+      // Save mode (and every ordinary file drop): land the files as-is.
+      let successful = 0;
+      let failed = 0;
+      if (pathFiles.length > 0) {
+        const results = await window.electronAPI.copyFiles(pathFiles.map((f) => (f as any).path), currentDirectory);
+        successful += results.filter((r: any) => r.status === 'success').length;
+        failed += results.filter((r: any) => r.status === 'error').length;
+      }
+      if (virtualPayloads.length > 0) {
+        const results = await (window.electronAPI as any).writeDroppedFiles(currentDirectory, virtualPayloads);
+        successful += results.filter((r: any) => r.status === 'success').length;
+        failed += results.filter((r: any) => r.status === 'error').length;
+      }
+
+      const message = `Added ${successful} file(s)${failed > 0 ? `, ${failed} failed` : ''}`;
+      addLog(message, failed > 0 ? 'error' : undefined);
+      setStatus(message, failed > 0 ? 'error' : 'success');
+      await refreshDirectory(currentDirectory);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addLog(`Drop failed: ${errorMessage}`, 'error');
+      setStatus('Drop failed', 'error');
+    }
+  }, [currentDirectory, addLog, setStatus, refreshDirectory, emlDragActive, computeEmlZone]);
 
   // Keyboard shortcuts for cut/copy/paste - OPTIMIZED with useCallback
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -5297,6 +5502,7 @@ export const FileGrid: React.FC = () => {
         suppressHeaderPointerEventsForFileDrag={
           !draggingColumn && (isDragOver || dragCounter > 0)
         }
+        suppressGroupDrop={emlDragActive || fileDragActive}
         groupedTransferTemplates={groupedTransferTemplates}
         onTransferFromGroupHeader={handleTransferFromGroupHeader}
         rowHandlers={rowHandlers}
@@ -5328,6 +5534,86 @@ export const FileGrid: React.FC = () => {
         onClearFilters={handleClearAllFilters}
         onCreateFolderRequest={() => setIsCreateFolderOpen(true)}
       />
+      {(emlDragActive || fileDragActive) && (
+        <Box
+          position="absolute"
+          top={`${emlHeaderOffset}px`}
+          left={0}
+          right={0}
+          bottom={0}
+          zIndex={30}
+          display="flex"
+          gap="8px"
+          p="8px"
+          pointerEvents="none"
+          bg="rgba(8,10,16,0.92)"
+        >
+          {emlDragActive
+            ? (['save', 'extract'] as const).map((zone) => {
+                const active = emlDropZone === zone;
+                const isSave = zone === 'save';
+                return (
+                  <Box
+                    key={zone}
+                    flex={1}
+                    display="flex"
+                    flexDirection="column"
+                    alignItems="center"
+                    justifyContent="center"
+                    gap={3}
+                    px={4}
+                    textAlign="center"
+                    borderRadius="6px"
+                    borderWidth="2px"
+                    borderStyle="dashed"
+                    borderColor={active ? '#3b82f6' : 'rgba(148,163,184,0.4)'}
+                    bg={active ? 'rgba(71,85,105,0.45)' : 'rgba(24,28,38,0.85)'}
+                  >
+                    {isSave ? (
+                      <Mail size={46} color={active ? '#60a5fa' : '#94a3b8'} strokeWidth={1.5} />
+                    ) : (
+                      <Paperclip size={46} color={active ? '#60a5fa' : '#94a3b8'} strokeWidth={1.5} />
+                    )}
+                    <Box>
+                      <Box fontSize="15px" fontWeight="600" color={active ? '#e2e8f0' : '#cbd5e1'}>
+                        {isSave ? 'Save email file' : 'Extract attachments'}
+                      </Box>
+                      <Box fontSize="12px" fontWeight="500" color={active ? '#60a5fa' : '#7c8aa0'} mt={1}>
+                        {isSave ? 'Keep the .eml in this folder' : 'Save just the attachments'}
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })
+            : (
+              <Box
+                flex={1}
+                display="flex"
+                flexDirection="column"
+                alignItems="center"
+                justifyContent="center"
+                gap={3}
+                px={4}
+                textAlign="center"
+                borderRadius="6px"
+                borderWidth="2px"
+                borderStyle="dashed"
+                borderColor="#3b82f6"
+                bg="rgba(71,85,105,0.45)"
+              >
+                <FilePlus2 size={46} color="#60a5fa" strokeWidth={1.5} />
+                <Box>
+                  <Box fontSize="15px" fontWeight="600" color="#e2e8f0">
+                    Add file(s) to this folder
+                  </Box>
+                  <Box fontSize="12px" fontWeight="500" color="#60a5fa" mt={1}>
+                    Drop to copy here
+                  </Box>
+                </Box>
+              </Box>
+            )}
+        </Box>
+      )}
       </Box>
       <FileContextMenu
         contextMenu={contextMenu}
@@ -5341,8 +5627,10 @@ export const FileGrid: React.FC = () => {
         handleCloseContextMenu={handleCloseContextMenu}
         quickAccessPaths={quickAccessPaths}
         recentClientPaths={recentClientPaths}
+        recentFolderPaths={recentFolderPaths}
         activeSectionKeys={activeSectionKeys}
         currentDirectory={currentDirectory}
+        rootDirectory={rootDirectory}
         onCreateFromTemplate={async (templatePath: string, templateName: string) => {
           const targetFolder = contextMenu.fileItem?.type === 'folder' ? contextMenu.fileItem.path : currentDirectory;
           try {

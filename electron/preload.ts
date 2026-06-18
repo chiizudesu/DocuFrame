@@ -275,6 +275,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   copyFilesWithConflictResolution: async (files: string[], targetDirectory: string) => {
     return await ipcRenderer.invoke('copy-files-with-conflict-resolution', files, targetDirectory);
   },
+  writeDroppedFiles: async (targetDirectory: string, files: Array<{ name: string; dataBase64: string }>) => {
+    return await ipcRenderer.invoke('write-dropped-files', targetDirectory, files);
+  },
+  extractEmlSources: async (
+    targetDirectory: string,
+    sources: Array<{ name?: string; path?: string; dataBase64?: string }>,
+  ) => {
+    return await ipcRenderer.invoke('extract-eml-sources', targetDirectory, sources);
+  },
   copyFileSilent: async (sourcePath: string, targetPath: string) => {
     return await ipcRenderer.invoke('copy-file-silent', sourcePath, targetPath);
   },

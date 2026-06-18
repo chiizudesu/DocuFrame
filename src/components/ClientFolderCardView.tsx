@@ -133,6 +133,22 @@ export const ClientFolderCardView: React.FC = () => {
     };
   }, [loadContents, currentDirectory]);
 
+  // The internal-drag marker is cleared by the folder drop handler once it has read it.
+  // For drags that end elsewhere (cancelled, dropped outside, or onto a non-folder), clear it
+  // on a short delay so it can't go stale — mirrors the FileGrid cleanup. We deliberately do
+  // NOT clear on the card's own onDragEnd: with Electron's native startDrag the drop fires
+  // during the OS drag loop, and an eager onDragEnd could wipe the marker before the drop reads
+  // it, demoting an intended move to a copy.
+  useEffect(() => {
+    const cleanup = () => { window.setTimeout(() => clearInternalDrag(), 80); };
+    window.addEventListener('dragend', cleanup);
+    window.addEventListener('drop', cleanup);
+    return () => {
+      window.removeEventListener('dragend', cleanup);
+      window.removeEventListener('drop', cleanup);
+    };
+  }, []);
+
   // Sort: folders first (years descending, then alphabetical), files last
   const sortedItems = useMemo(() => {
     const folders = items.filter((i) => i.type === 'folder');
@@ -213,6 +229,7 @@ export const ClientFolderCardView: React.FC = () => {
     setDropTarget(null);
     const { paths, isInternal } = readDragPayload(e);
     clearInternalDrag();
+    console.log('[CardView] drop on folder', { folder: folder.path, paths, isInternal });
     if (paths.length === 0) return;
 
     const { movable, droppedSelf, allAlreadyInTarget } = partitionDropPaths(paths, folder.path);
@@ -300,8 +317,10 @@ export const ClientFolderCardView: React.FC = () => {
                   }}
                   title={isFolder ? undefined : 'Files don\'t usually live at this level — drag onto a folder to move it, or right-click for options'}
                   draggable
-                  onDragStart={(e) => beginInternalDrag(e, [item.path])}
-                  onDragEnd={() => clearInternalDrag()}
+                  onDragStart={(e) => {
+                    console.log('[CardView] dragstart', item.path, 'nativeDrag?', typeof (window as any).electron?.startDrag === 'function');
+                    beginInternalDrag(e, [item.path]);
+                  }}
                   onClick={() => {
                     if (isFolder) setCurrentDirectory(item.path);
                     else window.electronAPI.openFile?.(item.path);

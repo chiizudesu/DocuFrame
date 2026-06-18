@@ -12,30 +12,23 @@ import {
   VStack,
   HStack,
   Icon,
-  Alert,
   NativeSelect,
   Kbd,
   Flex,
   Spacer,
   IconButton,
-  Textarea,
   SimpleGrid,
   Image,
-  Field,
 } from '@chakra-ui/react';
-import { 
-  Folder, 
-  FolderOpen, 
-  FileText, 
-  Database, 
-  Key, 
+import {
+  Folder,
   Settings as SettingsIcon,
   Keyboard,
   Eye,
   EyeOff,
   Save,
   X,
-  Edit,
+  Edit3,
   Sun,
   Moon,
   Image as ImageIcon,
@@ -43,6 +36,10 @@ import {
   Trash2,
   Download,
   Plug,
+  Palette,
+  LayoutGrid,
+  Copy,
+  RefreshCw,
 } from 'lucide-react';
 import { settingsService } from '../services/settings';
 import {
@@ -55,17 +52,27 @@ import { isPlainBackspaceOnlyShortcut } from '../utils/shortcuts';
 import {
   AffixedInputRow,
   PathInputRow,
-  SettingsGroup,
-  SettingsScrollPanel,
-  SettingsSection,
-  SettingsToggleRow,
+  SettingsBlock,
+  SettingsList,
+  SettingsPage,
+  SettingsRow,
   SETTINGS_CONTROL_H,
+  SETTINGS_FS,
 } from './settings-window/SettingsWindowPrimitives';
 
 interface SettingsWindowProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+/** Vertical tab rail definition — icon + label. */
+const SETTINGS_TABS = [
+  { value: 'workspace', label: 'Workspace', icon: Folder },
+  { value: 'appearance', label: 'Appearance', icon: Palette },
+  { value: 'files', label: 'File grid', icon: LayoutGrid },
+  { value: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+  { value: 'integrations', label: 'Integrations', icon: Plug },
+] as const;
 
 interface BackgroundThumbnailProps {
   img: { filename: string; path: string; relativePath: string };
@@ -105,7 +112,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
       position="relative"
       border="2px solid"
       borderColor={isSelected ? 'blue.500' : borderColor}
-      borderRadius={0}
+      borderRadius="md"
       overflow="hidden"
       cursor="pointer"
       bg={thumbSurface}
@@ -116,7 +123,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
         },
       }}
       onClick={onSelect}
-      width="150px"
+      width="138px"
       css={{
         aspectRatio: '16 / 9'
       }}
@@ -141,14 +148,14 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
           right={1}
           bg="blue.500"
           color="white"
-          borderRadius={0}
-          w={5}
-          h={5}
+          borderRadius="sm"
+          w={4.5}
+          h={4.5}
           display="flex"
           alignItems="center"
           justifyContent="center"
         >
-          <Icon boxSize={3} asChild><Save /></Icon>
+          <Icon boxSize={2.5} asChild><Save /></Icon>
         </Box>
       )}
       <IconButton
@@ -164,7 +171,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
         onClick={(e) => {
           e.stopPropagation();
           onDelete();
-        }}><Icon boxSize={3.5} asChild><Trash2 /></Icon></IconButton>
+        }}><Icon boxSize={3} asChild><Trash2 /></Icon></IconButton>
       <Box
         p={1}
         bg={overlayBg}
@@ -174,7 +181,7 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
         right={0}
       >
         <Text
-          fontSize="xs"
+          fontSize="10px"
           color="white"
           truncate
           title={img.filename}
@@ -194,8 +201,6 @@ interface Settings {
   showClientInfoBar?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
-  calculatorShortcut?: string;
-  enableCalculatorShortcut?: boolean;
   newTabShortcut?: string;
   enableNewTabShortcut?: boolean;
   closeTabShortcut?: string;
@@ -212,11 +217,7 @@ interface Settings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   hideClaudeMd?: boolean;
-  aiEditorInstructions?: string; // NEW
-  workShiftStart?: string;
-  workShiftEnd?: string;
-  productivityTargetHours?: number;
-  enableActivityTracking?: boolean;
+  aiEditorInstructions?: string;
   fileGridBackgroundPath?: string;
   backgroundType?: 'watermark' | 'backgroundFill';
   backgroundFillPath?: string;
@@ -236,8 +237,25 @@ function generateChromeBridgeSecret(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** A small Chakra Switch wired to a boolean setter. */
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Switch.Root
+      checked={checked}
+      onCheckedChange={(d) => onChange(d.checked === true)}
+      colorPalette="blue"
+      size="sm"
+    >
+      <Switch.HiddenInput />
+      <Switch.Control>
+        <Switch.Thumb />
+      </Switch.Control>
+    </Switch.Root>
+  );
+}
+
 export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose }) => {
-  const { colorMode, toggleColorMode, setColorMode } = useColorMode();
+  const { colorMode, setColorMode } = useColorMode();
   const [rootPath, setRootPath] = useState('');
   const [originalRootPath, setOriginalRootPath] = useState('');
   const [claudeApiKey, setClaudeApiKey] = useState('');
@@ -248,12 +266,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [vaultsClientPdfsDirectory, setVaultsClientPdfsDirectory] = useState('');
   const [activationShortcut, setActivationShortcut] = useState('`');
   const [enableActivationShortcut, setEnableActivationShortcut] = useState(true);
-  const [calculatorShortcut, setCalculatorShortcut] = useState('Alt+Q');
-  const [enableCalculatorShortcut, setEnableCalculatorShortcut] = useState(true);
   const [newTabShortcut, setNewTabShortcut] = useState('Ctrl+T');
   const [enableNewTabShortcut, setEnableNewTabShortcut] = useState(true);
   const [closeTabShortcut, setCloseTabShortcut] = useState('Ctrl+W');
-  const [enableFileWatching, setEnableFileWatching] = useState(true);
   const [enableCloseTabShortcut, setEnableCloseTabShortcut] = useState(true);
   const [clientSearchShortcut, setClientSearchShortcut] = useState('Alt+F');
   const [enableClientSearchShortcut, setEnableClientSearchShortcut] = useState(true);
@@ -271,10 +286,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
   const [hideDotFiles, setHideDotFiles] = useState(true);
   const [hideClaudeMd, setHideClaudeMd] = useState(true);
-  const [workShiftStart, setWorkShiftStart] = useState('06:00');
-  const [workShiftEnd, setWorkShiftEnd] = useState('15:00');
-  const [productivityTargetHours, setProductivityTargetHours] = useState(7.5);
-  const [enableActivityTracking, setEnableActivityTracking] = useState(true);
   const [fileGridBackgroundPath, setFileGridBackgroundPath] = useState('');
   const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>('watermark');
   const [backgroundFillPath, setBackgroundFillPath] = useState('');
@@ -302,12 +313,44 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     borderColor,
     textColor,
     secondaryTextColor,
+    selectedBg,
+    accentText,
   } = useDialogChrome();
   const tabBarBg = cardBg;
   const tabInactiveColor = useColorModeValue('gray.600', 'gray.400');
-  const tabHoverBg = useColorModeValue('gray.300', 'df.chromeHover');
-  const tabSelectedBg = bgColor;
-  const tabSelectedColor = useColorModeValue('gray.800', 'white');
+  const tabHoverBg = useColorModeValue('blackAlpha.50', 'whiteAlpha.100');
+  const mutedIcon = useColorModeValue('gray.400', 'gray.500');
+  const kbdBg = useColorModeValue('gray.100', '#2a3142');
+
+  // Shared button presets — one vocabulary across every pane.
+  const tertiaryBtn = {
+    size: 'xs' as const,
+    variant: 'outline' as const,
+    h: '26px',
+    px: 2.5,
+    fontSize: SETTINGS_FS.button,
+    fontWeight: '500' as const,
+    borderRadius: 'md' as const,
+    borderColor,
+  };
+  const ghostBtn = {
+    size: 'xs' as const,
+    variant: 'ghost' as const,
+    h: '26px',
+    px: 2.5,
+    fontSize: SETTINGS_FS.button,
+    fontWeight: '500' as const,
+    borderRadius: 'md' as const,
+  };
+  const primaryBtn = {
+    size: 'xs' as const,
+    colorPalette: 'blue' as const,
+    h: '26px',
+    px: 3,
+    fontSize: SETTINGS_FS.button,
+    fontWeight: '500' as const,
+    borderRadius: 'md' as const,
+  };
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -321,13 +364,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setVaultsClientPdfsDirectory(loadedSettings.vaultsClientPdfsDirectory || '');
         setActivationShortcut(loadedSettings.activationShortcut || '`');
         setEnableActivationShortcut(loadedSettings.enableActivationShortcut !== false);
-        setCalculatorShortcut(loadedSettings.calculatorShortcut || 'Alt+Q');
-        setEnableCalculatorShortcut(loadedSettings.enableCalculatorShortcut !== false);
         setNewTabShortcut(loadedSettings.newTabShortcut || 'Ctrl+T');
         setEnableNewTabShortcut(loadedSettings.enableNewTabShortcut !== false);
         setCloseTabShortcut(loadedSettings.closeTabShortcut || 'Ctrl+W');
         setEnableCloseTabShortcut(loadedSettings.enableCloseTabShortcut !== false);
-        setEnableFileWatching(loadedSettings.enableFileWatching !== false);
         setClientSearchShortcut(loadedSettings.clientSearchShortcut || 'Alt+F');
         setEnableClientSearchShortcut(loadedSettings.enableClientSearchShortcut !== false);
         {
@@ -368,15 +408,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         setSidebarCollapsedByDefault(loadedSettings.sidebarCollapsedByDefault || false);
         settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
-        // NEW: file grid setting (default true when unset)
+        // File grid visibility (default true when unset)
         setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
         setHideDotFiles(loadedSettings.hideDotFiles !== false);
         setHideClaudeMd(loadedSettings.hideClaudeMd !== false);
-        // Work shift settings
-        setWorkShiftStart(loadedSettings.workShiftStart || '06:00');
-        setWorkShiftEnd(loadedSettings.workShiftEnd || '15:00');
-        setProductivityTargetHours(loadedSettings.productivityTargetHours || 7.5);
-        setEnableActivityTracking(loadedSettings.enableActivityTracking !== false);
         setFileGridBackgroundPath(loadedSettings.fileGridBackgroundPath || '');
         // Migration: if fileGridBackgroundPath exists but backgroundType is not set, default to corner mascot (watermark)
         if (loadedSettings.fileGridBackgroundPath && !loadedSettings.backgroundType) {
@@ -437,7 +472,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         console.error('Error loading background images:', error);
       }
     };
-    
+
     if (isOpen) {
       loadBackgroundImages();
     }
@@ -472,13 +507,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         showClientInfoBar,
         activationShortcut,
         enableActivationShortcut,
-        calculatorShortcut,
-        enableCalculatorShortcut,
         newTabShortcut,
         enableNewTabShortcut,
         closeTabShortcut,
         enableCloseTabShortcut,
-        enableFileWatching,
+        // File system watching is always on.
+        enableFileWatching: true,
         clientSearchShortcut,
         enableClientSearchShortcut,
         jumpModeOnParentShortcut,
@@ -490,10 +524,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         hideTemporaryFiles,
         hideDotFiles,
         hideClaudeMd,
-        workShiftStart,
-        workShiftEnd,
-        productivityTargetHours,
-        enableActivityTracking,
         fileGridBackgroundPath,
         backgroundType,
         backgroundFillPath,
@@ -506,46 +536,44 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         vaultsClientPdfsDirectory: vaultsClientPdfsDirectory.trim() || undefined,
 
       };
-      
+
       await settingsService.setSettings(newSettings as any);
-      
+
       // Clear the settings cache to force fresh reload
       (settingsService as any).clearCache();
-      
+
       // Update global shortcut in main process
       try {
         await (window.electronAPI as any).updateGlobalShortcut(newSettings);
       } catch (error) {
         console.error('Error updating global shortcut:', error);
       }
-      
+
       // Only change directories if root path has actually changed
       if (rootPath !== originalRootPath) {
         setRootDirectory(rootPath);
       }
-      
+
       // Show what shortcuts were saved
       console.log('Saved shortcuts:', {
         activationShortcut,
-        calculatorShortcut,
         newTabShortcut,
         closeTabShortcut,
         clientSearchShortcut
       });
-      
+
       // Immediately reload settings to update the UI
       await reloadSettings();
-      
+
       // Force a re-render to show updated shortcuts immediately
       setActivationShortcut(activationShortcut);
-      setCalculatorShortcut(calculatorShortcut);
       setNewTabShortcut(newTabShortcut);
       setCloseTabShortcut(closeTabShortcut);
       setClientSearchShortcut(clientSearchShortcut);
-      
+
       // Dispatch event to notify other components of settings change
       window.dispatchEvent(new CustomEvent('settings-updated', { detail: newSettings }));
-      
+
       showToast({
         title: 'Settings saved',
         description: 'All settings have been updated and applied immediately.',
@@ -741,30 +769,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleBrowseFileGridBackground = async () => {
-    try {
-      const result = await (window.electronAPI as any).selectFile({
-        title: 'Select File Grid Background Image',
-        filters: [
-          { name: 'Image Files', extensions: ['jpg', 'jpeg', 'png'] },
-          { name: 'All Files', extensions: ['*'] }
-        ]
-      });
-      if (result) {
-        setFileGridBackgroundPath(result);
-      }
-    } catch (error) {
-      console.error('Error selecting background image:', error);
-      showToast({
-        title: 'Error',
-        description: 'Failed to select background image',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-    }
-  };
-
   const handleAddBackground = async () => {
     try {
       const result = await (window.electronAPI as any).selectFile({
@@ -788,18 +792,18 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             } else {
               setBackgroundFillPath(copyResult.path);
             }
-            
+
             // Auto-save the newly added background
             const currentSettings = await settingsService.getSettings();
             const updatedSettings = {
               ...currentSettings,
               backgroundType,
-              ...(backgroundType === 'watermark' 
-                ? { fileGridBackgroundPath: copyResult.path } 
+              ...(backgroundType === 'watermark'
+                ? { fileGridBackgroundPath: copyResult.path }
                 : { backgroundFillPath: copyResult.path }
               ),
             };
-            
+
             await settingsService.setSettings(updatedSettings as any);
             (settingsService as any).clearCache();
             window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
@@ -829,43 +833,43 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
   const handleSelectBackground = async (relativePath: string, fullPath: string) => {
     setSelectedBackground(relativePath);
-    
+
     // Update the appropriate state based on background type
     if (backgroundType === 'watermark') {
       setFileGridBackgroundPath(fullPath);
     } else {
       setBackgroundFillPath(fullPath);
     }
-    
+
     // Auto-save the selection immediately
     try {
       const currentSettings = await settingsService.getSettings();
       const updatedSettings = {
         ...currentSettings,
         backgroundType,
-        ...(backgroundType === 'watermark' 
-          ? { fileGridBackgroundPath: fullPath } 
+        ...(backgroundType === 'watermark'
+          ? { fileGridBackgroundPath: fullPath }
           : { backgroundFillPath: fullPath }
         ),
       };
-      
+
       console.log('Saving background selection:', {
         backgroundType,
         fullPath,
         updatedSettings
       });
-      
+
       await settingsService.setSettings(updatedSettings as any);
-      
+
       // Clear cache and dispatch event to notify other components
       (settingsService as any).clearCache();
-      
+
       // Wait a bit for cache to clear
       await new Promise(resolve => setTimeout(resolve, 100));
-      
+
       console.log('Dispatching settings-updated event');
       window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
-      
+
       showToast({
         title: 'Background applied',
         description: `${backgroundType === 'watermark' ? 'Corner mascot' : 'Background fill'} has been set successfully.`,
@@ -901,17 +905,17 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             } else {
               setBackgroundFillPath('');
             }
-            
+
             // Auto-save to clear the background from settings
             const currentSettings = await settingsService.getSettings();
             const updatedSettings = {
               ...currentSettings,
-              ...(backgroundType === 'watermark' 
-                ? { fileGridBackgroundPath: '' } 
+              ...(backgroundType === 'watermark'
+                ? { fileGridBackgroundPath: '' }
                 : { backgroundFillPath: '' }
               ),
             };
-            
+
             await settingsService.setSettings(updatedSettings as any);
             (settingsService as any).clearCache();
             window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
@@ -939,16 +943,12 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleShortcutChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setActivationShortcut(event.target.value);
-  };
-
   // Keyboard recorder functions
   const openKeyRecorder = (shortcutType: string) => {
     setCurrentEditingShortcut(shortcutType);
     setRecordingKeys([]);
     setIsKeyRecorderOpen(true);
-    
+
     // Add global keyboard listener
     document.addEventListener('keydown', handleKeyDown);
     document.addEventListener('keyup', handleKeyUp);
@@ -958,7 +958,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
     setIsKeyRecorderOpen(false);
     setRecordingKeys([]);
     setCurrentEditingShortcut('');
-    
+
     // Remove global keyboard listeners
     document.removeEventListener('keydown', handleKeyDown);
     document.removeEventListener('keyup', handleKeyUp);
@@ -970,16 +970,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
   const saveRecording = () => {
     if (recordingKeys.length === 0) return;
-    
+
     const newShortcut = recordingKeys.join(' + ');
-    
+
     // Update the appropriate shortcut based on currentEditingShortcut
     switch (currentEditingShortcut) {
       case 'activationShortcut':
         setActivationShortcut(newShortcut);
-        break;
-      case 'calculatorShortcut':
-        setCalculatorShortcut(newShortcut);
         break;
       case 'newTabShortcut':
         setNewTabShortcut(newShortcut);
@@ -998,7 +995,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         break;
 
     }
-    
+
     closeKeyRecorder();
     showToast({
       title: 'Shortcut updated',
@@ -1012,20 +1009,20 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const key = e.key;
     const modifiers: string[] = [];
-    
+
     if (e.ctrlKey) modifiers.push('Ctrl');
     if (e.shiftKey) modifiers.push('Shift');
     if (e.altKey) modifiers.push('Alt');
     if (e.metaKey) modifiers.push('Meta');
-    
+
     // Add the main key if it's not a modifier
     if (!['Control', 'Shift', 'Alt', 'Meta'].includes(key)) {
       modifiers.push(key);
     }
-    
+
     // Update recording keys
     setRecordingKeys(modifiers);
   };
@@ -1037,7 +1034,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       e.stopPropagation();
       saveRecording();
     }
-    
+
     // Handle Escape key to cancel
     if (e.key === 'Escape' && isKeyRecorderOpen) {
       e.preventDefault();
@@ -1047,6 +1044,55 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   };
 
   if (!isOpen) return null;
+
+  /** One keybinding row: command + description on the left, Kbd chips + edit on the right. */
+  const ShortcutRow = ({
+    shortcutType,
+    command,
+    keybinding,
+    description,
+  }: {
+    shortcutType: string;
+    command: string;
+    keybinding: string;
+    description: string;
+  }) => {
+    const keys = keybinding.split(/\s*\+\s*/).filter(Boolean);
+    return (
+      <Flex align="center" justify="space-between" gap={4} py={2.5} minH="40px">
+        <Box flex="1" minW={0}>
+          <Text fontSize={SETTINGS_FS.rowTitle} fontWeight="500" color={textColor} lineHeight="short">
+            {command}
+          </Text>
+          <Text fontSize={SETTINGS_FS.hint} color={secondaryTextColor} lineHeight="short" mt={0.5}>
+            {description}
+          </Text>
+        </Box>
+        <HStack gap={1.5} flexShrink={0} align="center">
+          <HStack gap={1}>
+            {keys.map((k, i) => (
+              <Kbd key={i} bg={kbdBg} borderColor={borderColor} color={textColor} fontSize="10px" px={1.5} py={0.5} borderRadius="sm">
+                {k}
+              </Kbd>
+            ))}
+          </HStack>
+          <IconButton
+            size="xs"
+            variant="ghost"
+            h="24px"
+            minW="24px"
+            borderRadius="md"
+            onClick={() => openKeyRecorder(shortcutType)}
+            aria-label={`Change ${command} shortcut`}
+            color={mutedIcon}
+            _hover={{ color: 'blue.500', bg: tabHoverBg }}
+          >
+            <Icon boxSize={3.5} asChild><Edit3 /></Icon>
+          </IconButton>
+        </HStack>
+      </Flex>
+    );
+  };
 
   return (
     <Box
@@ -1098,977 +1144,162 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
           </Button>
         </Flex>
       </Flex>
+
       {/* Main Content */}
       <Box flex="1" display="flex" overflow="hidden">
-        <Tabs.Root defaultValue="paths" variant='line' colorPalette="blue" orientation="vertical" h="full" display="flex" w="full">
-          <Box w="160px" minH="100%" bg={tabBarBg} borderRight="1px solid" borderColor={borderColor} flexShrink={0}>
-          <Tabs.List 
-            w="full"
-            p={3}
-            gap={0.5}
-            bg="transparent"
-            flexDirection="column"
-            alignItems="stretch"
-          >
-            <Tabs.Trigger value="paths"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
+        <Tabs.Root defaultValue="workspace" variant="line" colorPalette="blue" orientation="vertical" h="full" display="flex" w="full">
+          {/* Vertical rail */}
+          <Box w="200px" minH="100%" bg={tabBarBg} borderRight="1px solid" borderColor={borderColor} flexShrink={0}>
+            <Tabs.List
+              w="full"
+              px={2.5}
+              py={3}
+              gap={0.5}
+              bg="transparent"
+              flexDirection="column"
+              alignItems="stretch"
             >
-              <Text>Paths</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="api"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>API & Data</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="shortcuts"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>Shortcuts</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="interface"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>Interface</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="display"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>Display</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="filegrid"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>File Grid</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="groupview"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>Group View</Text>
-            </Tabs.Trigger>
-            <Tabs.Trigger value="bridge"
-              justifyContent="flex-start" 
-              px={2} 
-              py={1.5}
-              borderRadius={0}
-              fontSize="sm"
-              fontWeight="500"
-              color={tabInactiveColor}
-              _selected={{ 
-                bg: tabSelectedBg, 
-                color: tabSelectedColor, 
-                borderLeft: '3px solid',
-                borderLeftColor: 'blue.500',
-              }}
-              _hover={{ bg: tabHoverBg }}
-              transition="all 0.2s"
-            >
-              <Text>Chrome bridge</Text>
-            </Tabs.Trigger>
-          </Tabs.List>
+              {SETTINGS_TABS.map((t) => (
+                <Tabs.Trigger
+                  key={t.value}
+                  value={t.value}
+                  justifyContent="flex-start"
+                  gap={2.5}
+                  px={2.5}
+                  h="32px"
+                  borderRadius={0}
+                  borderLeftWidth="2px"
+                  borderLeftStyle="solid"
+                  borderLeftColor="transparent"
+                  fontSize="12.5px"
+                  fontWeight="500"
+                  color={tabInactiveColor}
+                  _selected={{
+                    bg: selectedBg,
+                    color: accentText,
+                    borderLeftColor: accentText,
+                    fontWeight: '600',
+                  }}
+                  _hover={{ bg: tabHoverBg }}
+                  transition="background-color 0.12s, color 0.12s"
+                >
+                  <Icon boxSize={3.5} asChild><t.icon /></Icon>
+                  <Text>{t.label}</Text>
+                </Tabs.Trigger>
+              ))}
+            </Tabs.List>
           </Box>
 
-          <Box flex="1" p={0} overflow="hidden">
-            {/* Paths Tab */}
-            <Tabs.Content value="paths" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack align="stretch" gap={8}>
-                  <SettingsSection
-                    title="Root directory"
-                    description="Default directory for file operations"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  >
-                    <PathInputRow
-                      value={rootPath}
-                      onChange={(e) => setRootPath(e.target.value)}
-                      placeholder="Enter root path"
-                      onBrowse={handleBrowseFolder}
-                      inputBg={inputBg}
-                      borderColor={borderColor}
-                      browseAriaLabel="Browse root folder"
-                    />
-                  </SettingsSection>
+          <Box flex="1" minW={0} overflow="hidden">
+            {/* ---------------------------------------------------------- */}
+            {/* Workspace                                                  */}
+            {/* ---------------------------------------------------------- */}
+            <Tabs.Content value="workspace" h="full" overflow="hidden" p={0}>
+              <SettingsPage
+                title="Workspace"
+                subtitle="Where DocuFrame reads your files, templates, and client data."
+              >
+                <SettingsBlock label="Root">
+                  <SettingsList>
+                    <SettingsRow stacked title="Root directory" hint="The default folder for all file operations.">
+                      <PathInputRow
+                        value={rootPath}
+                        onChange={(e) => setRootPath(e.target.value)}
+                        placeholder="Enter root path"
+                        onBrowse={handleBrowseFolder}
+                        browseAriaLabel="Browse root folder"
+                      />
+                    </SettingsRow>
+                  </SettingsList>
+                </SettingsBlock>
 
-                  <SettingsSection
-                    title="Template files"
-                    description="GST template and AI / workpaper template folders"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  >
-                    <VStack gap={2.5} align="stretch">
-                      <Field.Root>
-                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                          GST template path
-                        </Field.Label>
-                        <PathInputRow
-                          value={gstTemplatePath}
-                          onChange={(e) => setGstTemplatePath(e.target.value)}
-                          placeholder="Enter GST template file path"
-                          onBrowse={handleBrowseGstTemplate}
-                          inputBg={inputBg}
-                          borderColor={borderColor}
-                          browseAriaLabel="Browse GST template file"
-                        />
-                      </Field.Root>
-                      <Field.Root>
-                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                          AI email template folder
-                        </Field.Label>
-                        <Text fontSize="xs" color={secondaryTextColor} mb={1} lineHeight="short">
-                          YAML templates for AI Templater
-                        </Text>
-                        <PathInputRow
-                          value={templateFolderPath}
-                          readOnly
-                          placeholder="Select AI email template folder…"
-                          onBrowse={handleTemplateFolderChange}
-                          inputBg={inputBg}
-                          borderColor={borderColor}
-                        />
-                      </Field.Root>
-                      <Field.Root>
-                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                          Workpaper template folder
-                        </Field.Label>
-                        <Text fontSize="xs" color={secondaryTextColor} mb={1} lineHeight="short">
-                          Excel templates for workpaper creation
-                        </Text>
-                        <PathInputRow
-                          value={workpaperTemplateFolderPath}
-                          readOnly
-                          placeholder="Select workpaper template folder…"
-                          onBrowse={handleWorkpaperTemplateFolderChange}
-                          inputBg={inputBg}
-                          borderColor={borderColor}
-                        />
-                      </Field.Root>
-                    </VStack>
-                  </SettingsSection>
+                <SettingsBlock label="Templates">
+                  <SettingsList>
+                    <SettingsRow stacked title="GST template" hint="Spreadsheet used by the GST workflow.">
+                      <PathInputRow
+                        value={gstTemplatePath}
+                        onChange={(e) => setGstTemplatePath(e.target.value)}
+                        placeholder="Enter GST template file path"
+                        onBrowse={handleBrowseGstTemplate}
+                        browseAriaLabel="Browse GST template file"
+                      />
+                    </SettingsRow>
+                    <SettingsRow stacked title="AI email template folder" hint="YAML templates for the AI Templater.">
+                      <PathInputRow
+                        value={templateFolderPath}
+                        readOnly
+                        placeholder="Select AI email template folder…"
+                        onBrowse={handleTemplateFolderChange}
+                      />
+                    </SettingsRow>
+                    <SettingsRow stacked title="Workpaper template folder" hint="Excel templates for workpaper creation.">
+                      <PathInputRow
+                        value={workpaperTemplateFolderPath}
+                        readOnly
+                        placeholder="Select workpaper template folder…"
+                        onBrowse={handleWorkpaperTemplateFolderChange}
+                      />
+                    </SettingsRow>
+                  </SettingsList>
+                </SettingsBlock>
 
-                  <SettingsSection
-                    title="Vaults Client PDFs folder"
-                    description="Absolute path to the Client PDFs intake folder in your Vaults repo (e.g. Client Emails/Client PDFs). Used by Upload to Vaults Repo in the file grid."
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  >
-                    <PathInputRow
-                      value={vaultsClientPdfsDirectory}
-                      onChange={(e) => setVaultsClientPdfsDirectory(e.target.value)}
-                      placeholder="Select or paste path to Client PDFs folder…"
-                      onBrowse={handleBrowseVaultsClientPdfs}
-                      inputBg={inputBg}
-                      borderColor={borderColor}
-                      browseAriaLabel="Browse Client PDFs folder"
-                    />
-                  </SettingsSection>
-
-                  <Flex align="center" justify="space-between" gap={3} wrap="wrap" pt={1}>
-                    <Text fontSize="xs" fontWeight="semibold" color={textColor}>
-                      Export settings
-                    </Text>
-                    <Button size="xs" h={SETTINGS_CONTROL_H} px={2} fontSize="xs" onClick={handleExportSettings} borderRadius="md" flexShrink={0}>
-                      <Icon boxSize={3.5} asChild>
-                        <Download />
-                      </Icon>
-                      Export…
-                    </Button>
-                  </Flex>
-                </VStack>
-              </SettingsScrollPanel>
-            </Tabs.Content>
-
-            {/* API & Data Tab */}
-            <Tabs.Content value="api" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack align="stretch" gap={8}>
-                  <SettingsSection
-                    title="API keys"
-                    description="Anthropic API key for AI features in DocuFrame"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  >
-                    <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                      <Box px={2.5} py={1.5}>
-                        <Field.Root>
-                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                            Claude (Anthropic)
-                          </Field.Label>
-                          <AffixedInputRow
-                            borderColor={borderColor}
-                            inputProps={{
-                              value: claudeApiKey,
-                              onChange: (e) => setClaudeApiKey(e.target.value),
-                              type: showClaudeKey ? 'text' : 'password',
-                              placeholder: 'Anthropic API key',
-                              bg: 'white',
-                              _dark: { bg: inputBg },
-                            }}
-                            suffix={
-                              <IconButton
-                                variant="ghost"
-                                borderRadius={0}
-                                h="full"
-                                minW="28px"
-                                w="28px"
-                                size="xs"
-                                onClick={() => setShowClaudeKey(!showClaudeKey)}
-                                aria-label={showClaudeKey ? 'Hide API key' : 'Show API key'}
-                              >
-                                {showClaudeKey ? (
-                                  <Icon boxSize={3.5} asChild>
-                                    <EyeOff />
-                                  </Icon>
-                                ) : (
-                                  <Icon boxSize={3.5} asChild>
-                                    <Eye />
-                                  </Icon>
-                                )}
-                              </IconButton>
-                            }
-                          />
-                        </Field.Root>
-                      </Box>
-                    </SettingsGroup>
-                  </SettingsSection>
-
-                  <SettingsSection
-                    title="Data sources"
-                    description="Client database CSV"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  >
-                    <Field.Root>
-                      <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                        Clientbase CSV path
-                      </Field.Label>
+                <SettingsBlock label="Data sources">
+                  <SettingsList>
+                    <SettingsRow stacked title="Clientbase CSV" hint="Client database used for search and the info bar.">
                       <PathInputRow
                         value={clientbasePath}
                         onChange={(e) => setClientbasePath(e.target.value)}
                         placeholder="Enter clientbase CSV file path"
                         onBrowse={handleBrowseClientbase}
-                        inputBg={inputBg}
-                        borderColor={borderColor}
                         browseAriaLabel="Browse clientbase CSV"
                       />
-                    </Field.Root>
-                  </SettingsSection>
-                </VStack>
-              </SettingsScrollPanel>
-            </Tabs.Content>
-
-            {/* Shortcuts Tab */}
-            <Tabs.Content value="shortcuts" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack gap={8} align="stretch">
-                  <SettingsSection
-                    title="Keyboard shortcuts"
-                    description="Click edit to record a new binding"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-
-                {/* Shortcuts table — full gridlines */}
-                <Box
-                  border={`1px solid ${borderColor}`}
-                  borderRadius="md"
-                  overflow="hidden"
-                  bg={bgColor}
-                  css={{
-                    '& table': {
-                      width: '100%',
-                      borderCollapse: 'collapse',
-                      borderSpacing: 0,
-                      tableLayout: 'fixed',
-                    },
-
-                    '& table th, & table td': {
-                      border: `1px solid ${borderColor}`,
-                      padding: '2px 6px',
-                      fontSize: '11px',
-                      textAlign: 'left',
-                      verticalAlign: 'middle',
-                    },
-
-                    '& table thead th': {
-                      backgroundColor: useColorModeValue('gray.100', '#2d3748'),
-                      fontWeight: '600',
-                      color: textColor,
-                    },
-
-                    '& table tbody tr:hover td': {
-                      backgroundColor: useColorModeValue('gray.50', '#2a3142'),
-                    },
-                  }}
-                >
-                  <table>
-                    {/* Table Header */}
-                    <thead>
-                      <tr>
-                        <th style={{ width: '40px', textAlign: 'center' }}>
-                          <Icon boxSize={3} color={useColorModeValue('gray.400', 'gray.500')} asChild><Edit /></Icon>
-                        </th>
-                        <th>Command</th>
-                        <th>Keybinding</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Global Activation */}
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('activationShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          Global Activation
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {activationShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Bring app to front from anywhere
-                        </td>
-                      </tr>
-
-                      {/* Calculator Shortcut */}
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('calculatorShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          Open Calculator
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {calculatorShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Quick calculator access
-                        </td>
-                      </tr>
-
-                      {/* New Tab Shortcut */}
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('newTabShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          New Tab
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {newTabShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Create new folder tab
-                        </td>
-                      </tr>
-
-                      {/* Close Tab Shortcut */}
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('closeTabShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          Close Tab
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {closeTabShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Close current tab
-                        </td>
-                      </tr>
-
-                      {/* Client Search Shortcut */}
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('clientSearchShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          Search Clients
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {clientSearchShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Open client search overlay
-                        </td>
-                      </tr>
-
-                      {/* Address bar filter at parent (same behavior as in-bar backspace when filter is open) */}
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('jumpModeOnParentShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          Jump mode at parent
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {jumpModeOnParentShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Opens the address-bar jump filter anchored on the parent folder; with the filter open, the same shortcut moves up one level at a time (see address bar preview)
-                        </td>
-                      </tr>
-
-                      <tr>
-                        <td style={{ textAlign: 'center' }}>
-                          <IconButton
-                            size="xs"
-                            variant="ghost"
-                            onClick={() => openKeyRecorder('backspaceNavigationShortcut')}
-                            aria-label="Change shortcut"
-                            color={useColorModeValue('gray.500', 'gray.400')}
-                            _hover={{ color: 'blue.500', bg: useColorModeValue('blue.50', 'blue.900') }}><Icon boxSize={2.5} asChild><Edit /></Icon></IconButton>
-                        </td>
-                        <td style={{ fontWeight: '500', color: textColor }}>
-                          Go to parent folder
-                        </td>
-                        <td>
-                          <Text fontSize="10px" color={textColor}>
-                            {backspaceNavigationShortcut}
-                          </Text>
-                        </td>
-                        <td style={{ color: secondaryTextColor }}>
-                          Moves the file grid to the parent directory without opening jump mode (also closes jump mode if it was open)
-                        </td>
-                      </tr>
-
-                    </tbody>
-                  </table>
-                </Box>
-
-                <SettingsSection
-                  title="Jump mode quick folders"
-                  description="F1 uses workspace root. F2–F4 use paths below when under your breadcrumb trail. F5 stays free for refresh. Save to apply."
-                  textColor={textColor}
-                  secondaryTextColor={secondaryTextColor}
-                  mb={0}
-                >
-                  <VStack align="stretch" gap={1.5}>
-                    <HStack align="center" gap={2}>
-                      <Text fontSize="xs" fontWeight="semibold" w="32px" flexShrink={0} color={textColor}>
-                        F1
-                      </Text>
-                      <Input
-                        h={SETTINGS_CONTROL_H}
-                        fontSize="xs"
-                        readOnly
-                        value={rootPath ? normalizePath(rootPath) : ''}
-                        placeholder="Set workspace root in Paths"
-                        flex={1}
-                        bg="white"
-                        _dark={{ bg: inputBg }}
-                        borderRadius="md"
-                      />
-                    </HStack>
-                    {([0, 1, 2] as const).map((slot) => (
-                      <HStack key={slot} align="center" gap={2}>
-                        <Text fontSize="xs" fontWeight="semibold" w="32px" flexShrink={0} color={textColor}>
-                          F{slot + 2}
-                        </Text>
-                        <Input
-                          h={SETTINGS_CONTROL_H}
-                          fontSize="xs"
-                          value={jumpModeQuickFolderPaths[slot] ?? ''}
-                          onChange={(e) => {
-                            setJumpModeQuickFolderPaths((prev) => {
-                              const n = [...prev];
-                              while (n.length < 3) n.push('');
-                              n[slot] = e.target.value;
-                              return n;
-                            });
-                          }}
-                          placeholder="Browse or paste folder path…"
-                          flex={1}
-                          bg="white"
-                          _dark={{ bg: inputBg }}
-                          borderRadius="md"
-                        />
-                        <Button h={SETTINGS_CONTROL_H} size="xs" px={2} fontSize="xs" borderRadius="md" onClick={() => pickJumpQuickFolder(slot)}>
-                          Browse
-                        </Button>
-                        <Button
-                          h={SETTINGS_CONTROL_H}
-                          size="xs"
-                          px={2}
-                          fontSize="xs"
-                          variant="ghost"
-                          borderRadius="md"
-                          onClick={() => {
-                            setJumpModeQuickFolderPaths((prev) => {
-                              const n = [...prev];
-                              while (n.length < 3) n.push('');
-                              n[slot] = '';
-                              return n;
-                            });
-                          }}
-                        >
-                          Clear
-                        </Button>
-                      </HStack>
-                    ))}
-                  </VStack>
-                </SettingsSection>
-
-                <Alert.Root status="info" size="sm" mt={0} borderRadius="md">
-                  <Alert.Indicator />
-                  <Box>
-                    <Alert.Title fontSize="xs">Shortcut information</Alert.Title>
-                    <Alert.Description fontSize="xs">
-                      Global shortcuts work anywhere. Tab shortcuts apply when the app is focused.
-                    </Alert.Description>
-                  </Box>
-                </Alert.Root>
-              </VStack>
-              </SettingsScrollPanel>
-
-              {/* Keyboard Shortcut Recorder Modal */}
-              {isKeyRecorderOpen && (
-                <Box
-                  position="fixed"
-                  top="50%"
-                  left="50%"
-                  transform="translate(-50%, -50%)"
-                  bg={bgColor}
-                  border="1px solid"
-                  borderColor={borderColor}
-                  borderRadius={0}
-                  p={6}
-                  boxShadow="xl"
-                  zIndex={9999}
-                  minW="400px"
-                  maxW="500px"
-                >
-                  <VStack gap={4} align="stretch">
-                    <Text fontSize="lg" fontWeight="600" color={textColor} textAlign="center">
-                      Press desired key combination and then press ENTER
-                    </Text>
-                    
-                    <Box
-                      border="1px solid"
-                      borderColor={borderColor}
-                      borderRadius={0}
-                      p={4}
-                      bg={cardBg}
-                      minH="60px"
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="center"
+                    </SettingsRow>
+                    <SettingsRow
+                      stacked
+                      title="Vaults Client PDFs folder"
+                      hint="Intake folder in your Vaults repo (e.g. Client Emails/Client PDFs). Used by Upload to Vaults Repo."
                     >
-                      <Text fontSize="lg" fontWeight="500" color={textColor}>
-                        {recordingKeys.length > 0 ? recordingKeys.join(' + ') : 'Press keys...'}
-                      </Text>
-                    </Box>
+                      <PathInputRow
+                        value={vaultsClientPdfsDirectory}
+                        onChange={(e) => setVaultsClientPdfsDirectory(e.target.value)}
+                        placeholder="Select or paste path to Client PDFs folder…"
+                        onBrowse={handleBrowseVaultsClientPdfs}
+                        browseAriaLabel="Browse Client PDFs folder"
+                      />
+                    </SettingsRow>
+                  </SettingsList>
+                </SettingsBlock>
 
-                    {/* Visual Key Representation */}
-                    {recordingKeys.length > 0 && (
-                      <HStack gap={2} justify="center">
-                        {recordingKeys.map((key, index) => (
-                          <React.Fragment key={index}>
-                            <Box
-                              px={3}
-                              py={1.5}
-                              bg={useColorModeValue('gray.200', inputBg)}
-                              borderRadius={0}
-                              border="1px solid"
-                              borderColor={borderColor}
-                            >
-                              <Text fontSize="sm" fontWeight="500" color={textColor}>
-                                {key}
-                              </Text>
-                            </Box>
-                            {index < recordingKeys.length - 1 && (
-                              <Text fontSize="lg" color={secondaryTextColor}>+</Text>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </HStack>
-                    )}
-
-                    <HStack gap={2} justify="center">
-                      <Button
-                        size="xs"
-                        h={SETTINGS_CONTROL_H}
-                        px={2}
-                        fontSize="xs"
-                        variant="outline"
-                        onClick={clearRecording}
-                        colorPalette="gray"
-                      >
-                        Clear
-                      </Button>
-                      <Button
-                        size="xs"
-                        h={SETTINGS_CONTROL_H}
-                        px={2}
-                        fontSize="xs"
-                        variant="outline"
-                        onClick={closeKeyRecorder}
-                        colorPalette="gray"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        size="xs"
-                        h={SETTINGS_CONTROL_H}
-                        px={2}
-                        fontSize="xs"
-                        colorPalette="blue"
-                        onClick={saveRecording}
-                        disabled={recordingKeys.length === 0}
-                      >
-                        Save
-                      </Button>
-                    </HStack>
-                  </VStack>
-                </Box>
-              )}
+                <SettingsBlock label="Backup">
+                  <SettingsList>
+                    <SettingsRow
+                      title="Export settings"
+                      hint="Save a timestamped JSON snapshot of your full configuration."
+                      control={
+                        <Button {...tertiaryBtn} onClick={handleExportSettings}>
+                          <Icon boxSize={3.5} asChild><Download /></Icon>
+                          Export…
+                        </Button>
+                      }
+                    />
+                  </SettingsList>
+                </SettingsBlock>
+              </SettingsPage>
             </Tabs.Content>
 
-            {/* Interface Tab */}
-            <Tabs.Content value="interface" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack gap={8} align="stretch">
-                  <SettingsSection
-                    title="Behavior"
-                    description="Filesystem and productivity timer"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                    <SettingsToggleRow
-                      title="File system watching"
-                      description="Auto-refresh when files change outside the app"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
+            {/* ---------------------------------------------------------- */}
+            {/* Appearance                                                 */}
+            {/* ---------------------------------------------------------- */}
+            <Tabs.Content value="appearance" h="full" overflow="hidden" p={0}>
+              <SettingsPage title="Appearance" subtitle="Theme, layout, and file-grid backgrounds.">
+                <SettingsBlock label="Theme">
+                  <SettingsList>
+                    <SettingsRow
+                      title="Color mode"
+                      hint="Light or dark interface."
                       control={
-                        <Switch.Root
-                          checked={enableFileWatching}
-                          onCheckedChange={(d) => setEnableFileWatching(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
-                    />
-                    <SettingsToggleRow
-                      title="Activity tracking"
-                      description="Record active window titles while the timer runs"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      control={
-                        <Switch.Root
-                          checked={enableActivityTracking}
-                          onCheckedChange={(d) => setEnableActivityTracking(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
-                    />
-                  </SettingsGroup>
-
-                  <SettingsSection
-                    title="Work shift"
-                    description="Hours used for the timer infographic (e.g. 7.5 = 7h 30m target)"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  >
-                    <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                      <Box px={2.5} py={1.5} borderBottomWidth="1px" borderColor={borderColor}>
-                        <Field.Root>
-                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                            Shift start
-                          </Field.Label>
-                          <Input
-                            type="time"
-                            value={workShiftStart}
-                            onChange={(e) => setWorkShiftStart(e.target.value)}
-                            bg="white"
-                            _dark={{ bg: inputBg }}
-                            borderRadius="md"
-                            fontSize="xs"
-                            h={SETTINGS_CONTROL_H}
-                          />
-                        </Field.Root>
-                      </Box>
-                      <Box px={2.5} py={1.5} borderBottomWidth="1px" borderColor={borderColor}>
-                        <Field.Root>
-                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                            Shift end
-                          </Field.Label>
-                          <Input
-                            type="time"
-                            value={workShiftEnd}
-                            onChange={(e) => setWorkShiftEnd(e.target.value)}
-                            bg="white"
-                            _dark={{ bg: inputBg }}
-                            borderRadius="md"
-                            fontSize="xs"
-                            h={SETTINGS_CONTROL_H}
-                          />
-                        </Field.Root>
-                      </Box>
-                      <Box px={2.5} py={1.5}>
-                        <Field.Root>
-                          <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                            Productivity target (hours)
-                          </Field.Label>
-                          <Input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            max="24"
-                            value={productivityTargetHours}
-                            onChange={(e) => setProductivityTargetHours(parseFloat(e.target.value) || 0)}
-                            bg="white"
-                            _dark={{ bg: inputBg }}
-                            borderRadius="md"
-                            fontSize="xs"
-                            h={SETTINGS_CONTROL_H}
-                          />
-                        </Field.Root>
-                      </Box>
-                    </SettingsGroup>
-                  </SettingsSection>
-                </VStack>
-              </SettingsScrollPanel>
-            </Tabs.Content>
-
-            {/* Display Tab */}
-            <Tabs.Content value="display" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack gap={8} align="stretch">
-                  <SettingsSection
-                    title="Layout & theme"
-                    description="Client bar, sidebar, and color mode"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                    <SettingsToggleRow
-                      title="Client info bar"
-                      description="Name, IRD, and job links below the file grid"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
-                      control={
-                        <Switch.Root
-                          checked={showClientInfoBar}
-                          onCheckedChange={(d) => setShowClientInfoBar(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
-                    />
-                    <SettingsToggleRow
-                      title="Sidebar collapsed by default"
-                      description="Start with the sidebar collapsed"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
-                      control={
-                        <Switch.Root
-                          checked={sidebarCollapsedByDefault}
-                          onCheckedChange={(d) => setSidebarCollapsedByDefault(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
-                    />
-                    <SettingsToggleRow
-                      title="Theme"
-                      description="Light or dark UI"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      control={
-                        <HStack gap={1} flexShrink={0}>
-                          <IconButton
-                            aria-label="Light mode"
-                            size="xs"
-                            h={SETTINGS_CONTROL_H}
-                            minW={SETTINGS_CONTROL_H}
-                            variant={colorMode === 'light' ? 'solid' : 'ghost'}
-                            colorPalette={colorMode === 'light' ? 'blue' : 'gray'}
-                            borderRadius="md"
+                        <Flex borderWidth="1px" borderColor={borderColor} borderRadius="md" overflow="hidden" h="26px">
+                          <Button
                             onClick={() => {
                               setColorMode('light');
                               localStorage.setItem('chakra-ui-color-mode', 'light');
@@ -2083,17 +1314,23 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                                 }),
                               );
                             }}
-                          >
-                            <Sun size={14} />
-                          </IconButton>
-                          <IconButton
-                            aria-label="Dark mode"
                             size="xs"
-                            h={SETTINGS_CONTROL_H}
-                            minW={SETTINGS_CONTROL_H}
-                            variant={colorMode === 'dark' ? 'solid' : 'ghost'}
-                            colorPalette={colorMode === 'dark' ? 'blue' : 'gray'}
-                            borderRadius="md"
+                            h="full"
+                            borderRadius={0}
+                            px={2.5}
+                            gap={1.5}
+                            fontSize={SETTINGS_FS.button}
+                            fontWeight="500"
+                            variant="ghost"
+                            bg={colorMode === 'light' ? selectedBg : 'transparent'}
+                            color={colorMode === 'light' ? accentText : secondaryTextColor}
+                            _hover={{ bg: colorMode === 'light' ? selectedBg : tabHoverBg }}
+                          >
+                            <Icon boxSize={3.5} asChild><Sun /></Icon>
+                            Light
+                          </Button>
+                          <Box w="1px" bg={borderColor} />
+                          <Button
                             onClick={() => {
                               setColorMode('dark');
                               localStorage.setItem('chakra-ui-color-mode', 'dark');
@@ -2108,41 +1345,55 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                                 }),
                               );
                             }}
+                            size="xs"
+                            h="full"
+                            borderRadius={0}
+                            px={2.5}
+                            gap={1.5}
+                            fontSize={SETTINGS_FS.button}
+                            fontWeight="500"
+                            variant="ghost"
+                            bg={colorMode === 'dark' ? selectedBg : 'transparent'}
+                            color={colorMode === 'dark' ? accentText : secondaryTextColor}
+                            _hover={{ bg: colorMode === 'dark' ? selectedBg : tabHoverBg }}
                           >
-                            <Moon size={14} />
-                          </IconButton>
-                        </HStack>
+                            <Icon boxSize={3.5} asChild><Moon /></Icon>
+                            Dark
+                          </Button>
+                        </Flex>
                       }
                     />
-                  </SettingsGroup>
+                  </SettingsList>
+                </SettingsBlock>
 
-                  <SettingsSection
-                    title="File grid backgrounds"
-                    description="Corner mascot or full-grid fill (10% opacity)"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                    <SettingsToggleRow
+                <SettingsBlock label="Layout">
+                  <SettingsList>
+                    <SettingsRow
+                      title="Client info bar"
+                      hint="Name, IRD, and job links below the file grid."
+                      control={<ToggleSwitch checked={showClientInfoBar} onChange={setShowClientInfoBar} />}
+                    />
+                    <SettingsRow
+                      title="Collapse sidebar on launch"
+                      hint="Start each session with the sidebar collapsed."
+                      control={<ToggleSwitch checked={sidebarCollapsedByDefault} onChange={setSidebarCollapsedByDefault} />}
+                    />
+                  </SettingsList>
+                </SettingsBlock>
+
+                <SettingsBlock label="Backgrounds">
+                  <SettingsList>
+                    <SettingsRow
                       title="Enable backgrounds"
-                      description="Show images behind the file grid"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
+                      hint="Show an image behind the file grid."
                       control={
-                        <Switch.Root
+                        <ToggleSwitch
                           checked={enableBackgrounds}
-                          onCheckedChange={async (d) => {
-                            const newValue = d.checked === true;
+                          onChange={async (newValue) => {
                             setEnableBackgrounds(newValue);
                             try {
                               const currentSettings = await settingsService.getSettings();
-                              const updatedSettings = {
-                                ...currentSettings,
-                                enableBackgrounds: newValue,
-                              };
+                              const updatedSettings = { ...currentSettings, enableBackgrounds: newValue };
                               await settingsService.setSettings(updatedSettings as any);
                               (settingsService as any).clearCache();
                               window.dispatchEvent(new CustomEvent('settings-updated', { detail: updatedSettings }));
@@ -2150,21 +1401,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                               console.error('Failed to save enableBackgrounds:', error);
                             }
                           }}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
+                        />
                       }
                     />
-                    <Box px={2.5} py={1.5} borderBottomWidth="1px" borderColor={borderColor} opacity={enableBackgrounds ? 1 : 0.5}>
-                      <Field.Root disabled={!enableBackgrounds}>
-                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                          Background type
-                        </Field.Label>
+                    <Box opacity={enableBackgrounds ? 1 : 0.5} pointerEvents={enableBackgrounds ? 'auto' : 'none'}>
+                      <SettingsRow stacked title="Style" hint="How the image is placed in the grid.">
                         <NativeSelect.Root size="sm">
                           <NativeSelect.Field
                             value={backgroundType}
@@ -2172,487 +1413,487 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                             bg="white"
                             color="black"
                             _dark={{ bg: inputBg, color: 'white' }}
+                            borderColor={borderColor}
                             borderRadius="md"
-                            fontSize="xs"
+                            fontSize={SETTINGS_FS.body}
                             h={SETTINGS_CONTROL_H}
                           >
-                            <option value="watermark" style={{ background: 'inherit', color: 'inherit' }}>
-                              Corner mascot (bottom-right, 100%)
-                            </option>
-                            <option value="backgroundFill" style={{ background: 'inherit', color: 'inherit' }}>
-                              Background fill (grid, 10% opacity)
-                            </option>
+                            <option value="watermark">Corner mascot — bottom-right, full opacity</option>
+                            <option value="backgroundFill">Background fill — whole grid, 10% opacity</option>
                           </NativeSelect.Field>
                           <NativeSelect.Indicator />
                         </NativeSelect.Root>
-                      </Field.Root>
+                      </SettingsRow>
                     </Box>
-                    <Box px={2.5} py={1.5} opacity={enableBackgrounds ? 1 : 0.5} pointerEvents={enableBackgrounds ? 'auto' : 'none'}>
-                      <Flex w="100%" minW={0} justify="space-between" align="center" gap={3} mb={2}>
-                        <Text fontSize="xs" fontWeight="500" color={textColor} flex="1" minW={0}>
+                    <Box py={3} opacity={enableBackgrounds ? 1 : 0.5} pointerEvents={enableBackgrounds ? 'auto' : 'none'}>
+                      <Flex w="100%" minW={0} justify="space-between" align="center" gap={3} mb={2.5}>
+                        <Text fontSize={SETTINGS_FS.rowTitle} fontWeight="500" color={textColor}>
                           {backgroundType === 'watermark' ? 'Corner mascots' : 'Background fills'}
                         </Text>
-                        <Button
-                          h={SETTINGS_CONTROL_H}
-                          size="xs"
-                          px={2}
-                          fontSize="xs"
-                          borderRadius="md"
-                          onClick={handleAddBackground}
-                          colorPalette="blue"
-                          disabled={!enableBackgrounds}
-                        >
-                          <Icon boxSize={3} asChild>
-                            <Plus />
-                          </Icon>
-                          Add
+                        <Button {...primaryBtn} onClick={handleAddBackground} disabled={!enableBackgrounds}>
+                          <Icon boxSize={3} asChild><Plus /></Icon>
+                          Add image
                         </Button>
                       </Flex>
 
                       {backgroundImages.length === 0 ? (
-                        <Box
-                          p={5}
+                        <Flex
+                          direction="column"
+                          align="center"
+                          gap={1.5}
+                          py={6}
                           border="1px dashed"
                           borderColor={borderColor}
                           borderRadius="md"
-                          textAlign="center"
-                          bg={cardBg}
                         >
-                          <Icon boxSize={6} color={secondaryTextColor} mb={2} asChild>
-                            <ImageIcon />
-                          </Icon>
-                          <Text fontSize="xs" color={secondaryTextColor}>
+                          <Icon boxSize={5} color={secondaryTextColor} asChild><ImageIcon /></Icon>
+                          <Text fontSize={SETTINGS_FS.hint} color={secondaryTextColor}>
                             No images yet — add one to get started
                           </Text>
-                        </Box>
+                        </Flex>
                       ) : (
                         <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} gap={2} justifyItems="start">
-                          {backgroundImages.map((img) => {
-                            const isSelected = selectedBackground === img.relativePath;
-                            return (
-                              <BackgroundThumbnail
-                                key={img.relativePath}
-                                img={img}
-                                isSelected={isSelected}
-                                borderColor={borderColor}
-                                onSelect={() => handleSelectBackground(img.relativePath, img.path)}
-                                onDelete={() => handleDeleteBackground(img.filename, img.relativePath)}
-                              />
-                            );
-                          })}
+                          {backgroundImages.map((img) => (
+                            <BackgroundThumbnail
+                              key={img.relativePath}
+                              img={img}
+                              isSelected={selectedBackground === img.relativePath}
+                              borderColor={borderColor}
+                              onSelect={() => handleSelectBackground(img.relativePath, img.path)}
+                              onDelete={() => handleDeleteBackground(img.filename, img.relativePath)}
+                            />
+                          ))}
                         </SimpleGrid>
                       )}
                     </Box>
-                  </SettingsGroup>
-                </VStack>
-              </SettingsScrollPanel>
+                  </SettingsList>
+                </SettingsBlock>
+              </SettingsPage>
             </Tabs.Content>
 
-            {/* File Grid Tab */}
-            <Tabs.Content value="filegrid" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack gap={8} align="stretch">
-                  <SettingsSection
-                    title="File grid"
-                    description="Visibility of temp and hidden files"
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                    <SettingsToggleRow
+            {/* ---------------------------------------------------------- */}
+            {/* File grid                                                  */}
+            {/* ---------------------------------------------------------- */}
+            <Tabs.Content value="files" h="full" overflow="hidden" p={0}>
+              <SettingsPage title="File grid" subtitle="What appears in the grid and how folders are grouped.">
+                <SettingsBlock label="Hidden files">
+                  <SettingsList>
+                    <SettingsRow
                       title="Hide temporary files"
-                      description="Office lock files (~$*) and Word ~*.tmp while documents are open"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
-                      control={
-                        <Switch.Root
-                          checked={hideTemporaryFiles}
-                          onCheckedChange={(d) => setHideTemporaryFiles(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
+                      hint="Office lock files (~$*) and Word ~*.tmp while documents are open."
+                      control={<ToggleSwitch checked={hideTemporaryFiles} onChange={setHideTemporaryFiles} />}
                     />
-                    <SettingsToggleRow
+                    <SettingsRow
                       title="Hide dot files"
-                      description=".git, .vscode, and other names starting with “.”"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
-                      control={
-                        <Switch.Root
-                          checked={hideDotFiles}
-                          onCheckedChange={(d) => setHideDotFiles(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
+                      hint=".git, .vscode, and other names starting with a dot."
+                      control={<ToggleSwitch checked={hideDotFiles} onChange={setHideDotFiles} />}
                     />
-                    <SettingsToggleRow
+                    <SettingsRow
                       title="Hide CLAUDE.md"
-                      description="Hide CLAUDE.md files used by Claude Code for AI instructions"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      control={
-                        <Switch.Root
-                          checked={hideClaudeMd}
-                          onCheckedChange={(d) => setHideClaudeMd(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
+                      hint="Instruction files used by Claude Code."
+                      control={<ToggleSwitch checked={hideClaudeMd} onChange={setHideClaudeMd} />}
                     />
-                  </SettingsGroup>
-                </VStack>
-              </SettingsScrollPanel>
-            </Tabs.Content>
+                  </SettingsList>
+                </SettingsBlock>
 
-            {/* Group View Tab */}
-            <Tabs.Content value="groupview" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack gap={8} align="stretch">
-                  <SettingsSection
-                    title="Group view"
-                    description='Index-prefix grouping in the file grid. Blacklist matches only that folder; subfolders still group.'
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-
-                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                    <SettingsToggleRow
-                      title="Always enable group view"
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
-                      control={
-                        <Switch.Root
-                          checked={groupViewAlwaysEnabled}
-                          onCheckedChange={(d) => setGroupViewAlwaysEnabled(d.checked === true)}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
-                      }
+                <SettingsBlock label="Group view">
+                  <SettingsList>
+                    <SettingsRow
+                      title="Always group by index prefix"
+                      hint="Group folders by their NN- prefix everywhere except the folders below."
+                      control={<ToggleSwitch checked={groupViewAlwaysEnabled} onChange={setGroupViewAlwaysEnabled} />}
                     />
-                    <Box px={2.5} py={1.5}>
-                      <Field.Root>
-                        <Field.Label fontSize="xs" fontWeight="600" color={textColor} mb={1.5}>
-                          Blacklisted directories
-                        </Field.Label>
-                        <HStack gap={2} align="stretch" mb={2}>
-                          <Box flex={1} minW={0}>
-                            <PathInputRow
-                              value={groupViewBlacklistInput}
-                              onChange={(e) => setGroupViewBlacklistInput(e.target.value)}
-                              placeholder="Path or browse…"
-                              inputBg={inputBg}
-                              borderColor={borderColor}
-                              browseAriaLabel="Browse folder to blacklist"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  const path = normalizePath(groupViewBlacklistInput.trim());
-                                  if (path && !groupViewBlacklist.includes(path)) {
-                                    setGroupViewBlacklist([...groupViewBlacklist, path]);
-                                    setGroupViewBlacklistInput('');
-                                  }
+                    <SettingsRow
+                      stacked
+                      title="Excluded folders"
+                      hint="Group view stays off in these folders. Subfolders still group."
+                    >
+                      <HStack gap={2} align="stretch" mb={groupViewBlacklist.length > 0 ? 2 : 0}>
+                        <Box flex={1} minW={0}>
+                          <PathInputRow
+                            value={groupViewBlacklistInput}
+                            onChange={(e) => setGroupViewBlacklistInput(e.target.value)}
+                            placeholder="Path or browse…"
+                            browseAriaLabel="Browse folder to exclude"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const path = normalizePath(groupViewBlacklistInput.trim());
+                                if (path && !groupViewBlacklist.includes(path)) {
+                                  setGroupViewBlacklist([...groupViewBlacklist, path]);
+                                  setGroupViewBlacklistInput('');
                                 }
-                              }}
-                              onBrowse={async () => {
-                                try {
-                                  const result = await (window.electronAPI as any).selectDirectory();
-                                  if (result) {
-                                    const path = normalizePath(result);
-                                    if (path && !groupViewBlacklist.includes(path)) {
-                                      setGroupViewBlacklist([...groupViewBlacklist, path]);
-                                    }
-                                  }
-                                } catch (error) {
-                                  console.error('Error selecting directory:', error);
-                                }
-                              }}
-                            />
-                          </Box>
-                          <IconButton
-                            aria-label="Add to blacklist"
-                            colorPalette="blue"
-                            size="xs"
-                            h={SETTINGS_CONTROL_H}
-                            minW={SETTINGS_CONTROL_H}
-                            w={SETTINGS_CONTROL_H}
-                            borderRadius="md"
-                            onClick={() => {
-                              const path = normalizePath(groupViewBlacklistInput.trim());
-                              if (path && !groupViewBlacklist.includes(path)) {
-                                setGroupViewBlacklist([...groupViewBlacklist, path]);
-                                setGroupViewBlacklistInput('');
                               }
                             }}
-                            disabled={!groupViewBlacklistInput.trim()}
-                          >
-                            <Icon boxSize={3.5} asChild>
-                              <Plus />
-                            </Icon>
-                          </IconButton>
-                        </HStack>
-                        {groupViewBlacklist.length > 0 && (
-                          <VStack align="stretch" gap={1}>
-                            {groupViewBlacklist.map((path) => (
-                              <Flex
-                                key={path}
-                                w="100%"
-                                minW={0}
-                                align="center"
-                                justify="space-between"
-                                gap={3}
-                                px={2}
-                                py={1.5}
-                                bg={cardBg}
-                                borderRadius="md"
-                                borderWidth="1px"
-                                borderColor={borderColor}
-                              >
-                                <Text fontSize="xs" color={textColor} truncate flex={1} title={path}>
-                                  {path}
-                                </Text>
-                                <IconButton
-                                  aria-label="Remove from blacklist"
-                                  size="xs"
-                                  variant="ghost"
-                                  colorPalette="red"
-                                  onClick={() =>
-                                    setGroupViewBlacklist(groupViewBlacklist.filter((p) => p !== path))
+                            onBrowse={async () => {
+                              try {
+                                const result = await (window.electronAPI as any).selectDirectory();
+                                if (result) {
+                                  const path = normalizePath(result);
+                                  if (path && !groupViewBlacklist.includes(path)) {
+                                    setGroupViewBlacklist([...groupViewBlacklist, path]);
                                   }
-                                >
-                                  <Icon boxSize={3} asChild>
-                                    <Trash2 />
-                                  </Icon>
-                                </IconButton>
-                              </Flex>
-                            ))}
-                          </VStack>
-                        )}
-                      </Field.Root>
-                    </Box>
-                  </SettingsGroup>
-                </VStack>
-              </SettingsScrollPanel>
+                                }
+                              } catch (error) {
+                                console.error('Error selecting directory:', error);
+                              }
+                            }}
+                          />
+                        </Box>
+                        <Button
+                          {...primaryBtn}
+                          h={SETTINGS_CONTROL_H}
+                          onClick={() => {
+                            const path = normalizePath(groupViewBlacklistInput.trim());
+                            if (path && !groupViewBlacklist.includes(path)) {
+                              setGroupViewBlacklist([...groupViewBlacklist, path]);
+                              setGroupViewBlacklistInput('');
+                            }
+                          }}
+                          disabled={!groupViewBlacklistInput.trim()}
+                        >
+                          <Icon boxSize={3} asChild><Plus /></Icon>
+                          Add
+                        </Button>
+                      </HStack>
+                      {groupViewBlacklist.length > 0 && (
+                        <VStack align="stretch" gap={1}>
+                          {groupViewBlacklist.map((path) => (
+                            <Flex
+                              key={path}
+                              w="100%"
+                              minW={0}
+                              align="center"
+                              justify="space-between"
+                              gap={3}
+                              px={2.5}
+                              py={1.5}
+                              bg={cardBg}
+                              borderRadius="md"
+                              borderWidth="1px"
+                              borderColor={borderColor}
+                            >
+                              <Text fontSize={SETTINGS_FS.body} color={textColor} truncate flex={1} title={path}>
+                                {path}
+                              </Text>
+                              <IconButton
+                                aria-label="Remove folder"
+                                size="xs"
+                                variant="ghost"
+                                colorPalette="red"
+                                h="22px"
+                                minW="22px"
+                                onClick={() => setGroupViewBlacklist(groupViewBlacklist.filter((p) => p !== path))}
+                              >
+                                <Icon boxSize={3} asChild><Trash2 /></Icon>
+                              </IconButton>
+                            </Flex>
+                          ))}
+                        </VStack>
+                      )}
+                    </SettingsRow>
+                  </SettingsList>
+                </SettingsBlock>
+              </SettingsPage>
             </Tabs.Content>
 
-            {/* Chrome extension bridge */}
-            <Tabs.Content value="bridge" h="full" overflow="hidden" display="flex" flexDirection="column" p={0}>
-              <SettingsScrollPanel>
-                <VStack align="stretch" gap={8}>
-                  <SettingsSection
-                    title="Chrome extension bridge"
-                    description="Lets the Chrome Functions extension save page PDFs into the folder you have open in DocuFrame. Listens only on 127.0.0.1 while enabled."
-                    textColor={textColor}
-                    secondaryTextColor={secondaryTextColor}
-                    mb={0}
-                  />
-                  <SettingsGroup borderColor={borderColor} cardBg={cardBg}>
-                    <SettingsToggleRow
+            {/* ---------------------------------------------------------- */}
+            {/* Shortcuts                                                  */}
+            {/* ---------------------------------------------------------- */}
+            <Tabs.Content value="shortcuts" h="full" overflow="hidden" p={0}>
+              <SettingsPage
+                title="Shortcuts"
+                subtitle="Global and in-app keybindings. Click the pencil on a row to record a new one."
+              >
+                <SettingsBlock label="Keyboard">
+                  <SettingsList>
+                    <ShortcutRow shortcutType="activationShortcut" command="Global activation" keybinding={activationShortcut} description="Bring the app to front from anywhere." />
+                    <ShortcutRow shortcutType="newTabShortcut" command="New tab" keybinding={newTabShortcut} description="Create a new folder tab." />
+                    <ShortcutRow shortcutType="closeTabShortcut" command="Close tab" keybinding={closeTabShortcut} description="Close the current tab." />
+                    <ShortcutRow shortcutType="clientSearchShortcut" command="Search clients" keybinding={clientSearchShortcut} description="Open the client search overlay." />
+                    <ShortcutRow shortcutType="jumpModeOnParentShortcut" command="Jump mode at parent" keybinding={jumpModeOnParentShortcut} description="Open the address-bar jump filter on the parent folder; repeat to climb one level at a time." />
+                    <ShortcutRow shortcutType="backspaceNavigationShortcut" command="Go to parent folder" keybinding={backspaceNavigationShortcut} description="Move the grid up one level without opening jump mode." />
+                  </SettingsList>
+                </SettingsBlock>
+
+                <SettingsBlock label="Jump-mode quick folders">
+                  <SettingsList>
+                    <Flex align="center" gap={3} py={2.5} minH="40px">
+                      <Kbd bg={kbdBg} borderColor={borderColor} color={textColor} fontSize="10px" px={1.5} py={0.5} borderRadius="sm" flexShrink={0}>F1</Kbd>
+                      <Input
+                        h={SETTINGS_CONTROL_H}
+                        fontSize={SETTINGS_FS.body}
+                        readOnly
+                        value={rootPath ? normalizePath(rootPath) : ''}
+                        placeholder="Set the workspace root under Workspace"
+                        flex={1}
+                        bg="white"
+                        _dark={{ bg: inputBg }}
+                        borderColor={borderColor}
+                        borderRadius="md"
+                      />
+                    </Flex>
+                    {([0, 1, 2] as const).map((slot) => (
+                      <Flex key={slot} align="center" gap={3} py={2.5} minH="40px">
+                        <Kbd bg={kbdBg} borderColor={borderColor} color={textColor} fontSize="10px" px={1.5} py={0.5} borderRadius="sm" flexShrink={0}>
+                          F{slot + 2}
+                        </Kbd>
+                        <Input
+                          h={SETTINGS_CONTROL_H}
+                          fontSize={SETTINGS_FS.body}
+                          value={jumpModeQuickFolderPaths[slot] ?? ''}
+                          onChange={(e) => {
+                            setJumpModeQuickFolderPaths((prev) => {
+                              const n = [...prev];
+                              while (n.length < 3) n.push('');
+                              n[slot] = e.target.value;
+                              return n;
+                            });
+                          }}
+                          placeholder="Browse or paste folder path…"
+                          flex={1}
+                          bg="white"
+                          _dark={{ bg: inputBg }}
+                          borderColor={borderColor}
+                          borderRadius="md"
+                        />
+                        <Button {...tertiaryBtn} onClick={() => pickJumpQuickFolder(slot)}>
+                          Browse
+                        </Button>
+                        <Button
+                          {...ghostBtn}
+                          onClick={() => {
+                            setJumpModeQuickFolderPaths((prev) => {
+                              const n = [...prev];
+                              while (n.length < 3) n.push('');
+                              n[slot] = '';
+                              return n;
+                            });
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      </Flex>
+                    ))}
+                  </SettingsList>
+                  <Text fontSize={SETTINGS_FS.hint} color={secondaryTextColor} mt={2.5} lineHeight="short">
+                    F1 is always your workspace root. F2–F4 apply when you're under your breadcrumb trail. F5 stays free for refresh. Save to apply.
+                  </Text>
+                </SettingsBlock>
+              </SettingsPage>
+
+              {/* Keyboard Shortcut Recorder Modal */}
+              {isKeyRecorderOpen && (
+                <>
+                  <Box position="fixed" inset={0} bg="blackAlpha.500" zIndex={9998} onClick={closeKeyRecorder} />
+                  <Box
+                    position="fixed"
+                    top="50%"
+                    left="50%"
+                    transform="translate(-50%, -50%)"
+                    bg={bgColor}
+                    border="1px solid"
+                    borderColor={borderColor}
+                    borderRadius="lg"
+                    p={6}
+                    boxShadow="xl"
+                    zIndex={9999}
+                    minW="380px"
+                    maxW="460px"
+                  >
+                    <VStack gap={4} align="stretch">
+                      <Box>
+                        <Text fontSize="13px" fontWeight="600" color={textColor} textAlign="center">
+                          Record a shortcut
+                        </Text>
+                        <Text fontSize={SETTINGS_FS.hint} color={secondaryTextColor} textAlign="center" mt={1}>
+                          Press your key combination, then Enter to save · Esc to cancel
+                        </Text>
+                      </Box>
+
+                      <Flex
+                        border="1px solid"
+                        borderColor={borderColor}
+                        borderRadius="md"
+                        py={5}
+                        bg={cardBg}
+                        minH="64px"
+                        align="center"
+                        justify="center"
+                        gap={2}
+                      >
+                        {recordingKeys.length > 0 ? (
+                          recordingKeys.map((key, index) => (
+                            <React.Fragment key={index}>
+                              <Kbd bg={kbdBg} borderColor={borderColor} color={textColor} fontSize="13px" px={2.5} py={1} borderRadius="sm">
+                                {key}
+                              </Kbd>
+                              {index < recordingKeys.length - 1 && (
+                                <Text fontSize="md" color={secondaryTextColor}>+</Text>
+                              )}
+                            </React.Fragment>
+                          ))
+                        ) : (
+                          <Text fontSize="13px" color={secondaryTextColor}>Waiting for keys…</Text>
+                        )}
+                      </Flex>
+
+                      <HStack gap={2} justify="flex-end">
+                        <Button {...ghostBtn} onClick={clearRecording}>Clear</Button>
+                        <Button {...tertiaryBtn} onClick={closeKeyRecorder}>Cancel</Button>
+                        <Button {...primaryBtn} onClick={saveRecording} disabled={recordingKeys.length === 0}>Save</Button>
+                      </HStack>
+                    </VStack>
+                  </Box>
+                </>
+              )}
+            </Tabs.Content>
+
+            {/* ---------------------------------------------------------- */}
+            {/* Integrations                                               */}
+            {/* ---------------------------------------------------------- */}
+            <Tabs.Content value="integrations" h="full" overflow="hidden" p={0}>
+              <SettingsPage title="Integrations" subtitle="API keys and the Chrome capture bridge.">
+                <SettingsBlock label="Anthropic">
+                  <SettingsList>
+                    <SettingsRow stacked title="Claude API key" hint="Used for AI features throughout DocuFrame.">
+                      <AffixedInputRow
+                        inputProps={{
+                          value: claudeApiKey,
+                          onChange: (e) => setClaudeApiKey(e.target.value),
+                          type: showClaudeKey ? 'text' : 'password',
+                          placeholder: 'sk-ant-…',
+                        }}
+                        suffix={
+                          <IconButton
+                            variant="ghost"
+                            borderRadius={0}
+                            h="full"
+                            minW="30px"
+                            w="30px"
+                            size="xs"
+                            color={mutedIcon}
+                            _hover={{ color: 'blue.500' }}
+                            onClick={() => setShowClaudeKey(!showClaudeKey)}
+                            aria-label={showClaudeKey ? 'Hide API key' : 'Show API key'}
+                          >
+                            <Icon boxSize={3.5} asChild>{showClaudeKey ? <EyeOff /> : <Eye />}</Icon>
+                          </IconButton>
+                        }
+                      />
+                    </SettingsRow>
+                  </SettingsList>
+                </SettingsBlock>
+
+                <SettingsBlock label="Chrome extension bridge">
+                  <SettingsList>
+                    <SettingsRow
                       title="Enable bridge"
-                      description="Opens a local HTTP port for the extension. Turn off when not in use."
-                      borderColor={borderColor}
-                      textColor={textColor}
-                      secondaryTextColor={secondaryTextColor}
-                      showDivider
+                      hint="Opens a local 127.0.0.1 port so the Chrome Functions extension can save page PDFs into your open folder."
                       control={
-                        <Switch.Root
+                        <ToggleSwitch
                           checked={chromeExtensionBridgeEnabled}
-                          onCheckedChange={(d) => {
-                            const on = d.checked === true;
+                          onChange={(on) => {
                             setChromeExtensionBridgeEnabled(on);
                             if (on && !chromeExtensionBridgeSecret.trim()) {
                               setChromeExtensionBridgeSecret(generateChromeBridgeSecret());
                             }
                           }}
-                          colorPalette="blue"
-                          size="sm"
-                        >
-                          <Switch.HiddenInput />
-                          <Switch.Control>
-                            <Switch.Thumb />
-                          </Switch.Control>
-                        </Switch.Root>
+                        />
                       }
                     />
-                    <Box px={2.5} py={2} borderTopWidth="1px" borderColor={borderColor}>
-                      <Field.Root>
-                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                          Port
-                        </Field.Label>
+                    <Box opacity={chromeExtensionBridgeEnabled ? 1 : 0.5} pointerEvents={chromeExtensionBridgeEnabled ? 'auto' : 'none'}>
+                      <SettingsRow stacked title="Port">
                         <Input
                           type="number"
                           min={1}
                           max={65535}
                           value={chromeExtensionBridgePort}
                           onChange={(e) => setChromeExtensionBridgePort(e.target.value)}
-                          bg={inputBg}
+                          bg="white"
+                          _dark={{ bg: inputBg }}
                           borderColor={borderColor}
                           borderRadius="md"
-                          size="sm"
-                          fontSize="sm"
+                          h={SETTINGS_CONTROL_H}
+                          maxW="120px"
+                          fontSize={SETTINGS_FS.body}
                           disabled={!chromeExtensionBridgeEnabled}
                         />
-                      </Field.Root>
-                    </Box>
-                    <Box px={2.5} py={2} borderTopWidth="1px" borderColor={borderColor}>
-                      <Field.Root>
-                        <Field.Label fontSize="xs" fontWeight="500" color={textColor} mb={1}>
-                          Shared secret
-                        </Field.Label>
-                        <Text fontSize="xs" color={secondaryTextColor} mb={2} lineHeight="short">
-                          Paste this port and secret into the Chrome Functions sidebar. Regenerating invalidates the old secret.
-                        </Text>
-                        <HStack gap={2} align="stretch" flexWrap="wrap">
+                      </SettingsRow>
+                      <SettingsRow
+                        stacked
+                        title="Shared secret"
+                        hint="Paste this port and secret into the Chrome Functions sidebar. Regenerating invalidates the old secret."
+                      >
+                        <HStack gap={2} align="center" flexWrap="wrap">
                           <Input
                             readOnly
                             value={chromeExtensionBridgeSecret}
-                            placeholder={chromeExtensionBridgeEnabled ? 'Save to generate' : 'Enable bridge first'}
-                            bg={inputBg}
+                            placeholder={chromeExtensionBridgeEnabled ? 'Generated on enable' : 'Enable the bridge first'}
+                            bg="white"
+                            _dark={{ bg: inputBg }}
                             borderColor={borderColor}
                             borderRadius="md"
-                            size="sm"
-                            fontSize="xs"
+                            h={SETTINGS_CONTROL_H}
+                            fontSize={SETTINGS_FS.hint}
                             fontFamily="mono"
                             flex={1}
-                            minW={0}
+                            minW="180px"
                           />
                           <Button
-                            size="sm"
-                            variant="outline"
-                            borderRadius="md"
+                            {...tertiaryBtn}
                             onClick={async () => {
                               try {
                                 await navigator.clipboard.writeText(chromeExtensionBridgeSecret);
-                                showToast({
-                                  title: 'Copied',
-                                  description: 'Secret copied to clipboard',
-                                  status: 'success',
-                                  duration: 2000,
-                                  isClosable: true,
-                                });
+                                showToast({ title: 'Copied', description: 'Secret copied to clipboard', status: 'success', duration: 2000, isClosable: true });
                               } catch {
-                                showToast({
-                                  title: 'Copy failed',
-                                  status: 'error',
-                                  duration: 2000,
-                                  isClosable: true,
-                                });
+                                showToast({ title: 'Copy failed', status: 'error', duration: 2000, isClosable: true });
                               }
                             }}
                             disabled={!chromeExtensionBridgeSecret.trim()}
                           >
+                            <Icon boxSize={3} asChild><Copy /></Icon>
                             Copy
                           </Button>
                           <Button
-                            size="sm"
-                            variant="outline"
-                            borderRadius="md"
+                            {...tertiaryBtn}
                             onClick={() => {
                               setChromeExtensionBridgeSecret(generateChromeBridgeSecret());
-                              showToast({
-                                title: 'Secret regenerated',
-                                description: 'Update the Chrome extension with the new secret.',
-                                status: 'info',
-                                duration: 4000,
-                                isClosable: true,
-                              });
+                              showToast({ title: 'Secret regenerated', description: 'Update the Chrome extension with the new secret.', status: 'info', duration: 4000, isClosable: true });
                             }}
                             disabled={!chromeExtensionBridgeEnabled}
                           >
+                            <Icon boxSize={3} asChild><RefreshCw /></Icon>
                             Regenerate
                           </Button>
                         </HStack>
-                      </Field.Root>
+                      </SettingsRow>
                     </Box>
-                    <Box px={2.5} py={2} borderTopWidth="1px" borderColor={borderColor}>
-                      <HStack gap={2} align="center" color={secondaryTextColor}>
-                        <Icon boxSize={4} asChild>
-                          <Plug />
-                        </Icon>
-                        <Text fontSize="xs" lineHeight="short">
-                          DocuFrame must be running with a folder open. PDFs save to that folder.
-                        </Text>
-                      </HStack>
-                    </Box>
-                  </SettingsGroup>
-                </VStack>
-              </SettingsScrollPanel>
+                  </SettingsList>
+                  <HStack gap={2} align="center" color={secondaryTextColor} mt={2.5}>
+                    <Icon boxSize={3.5} asChild><Plug /></Icon>
+                    <Text fontSize={SETTINGS_FS.hint} lineHeight="short">
+                      DocuFrame must be running with a folder open. PDFs save to that folder.
+                    </Text>
+                  </HStack>
+                </SettingsBlock>
+              </SettingsPage>
             </Tabs.Content>
           </Box>
         </Tabs.Root>
       </Box>
+
       {/* Footer */}
-      <Box
-        borderTop="1px solid"
-        borderColor={borderColor}
-        px={6}
-        py={3}
-        bg={bgColor}
-        flexShrink={0}
-      >
-        <Flex gap={2.5} justify="flex-end">
-          <Button
-            variant="ghost"
-            onClick={onClose}
-            color={secondaryTextColor}
-            _hover={{ bg: useColorModeValue('gray.200', 'df.rowHover') }}
-            borderRadius="md"
-            size="xs"
-            h={SETTINGS_CONTROL_H}
-            px={3}
-            fontSize="xs"
-          >
-            <Icon boxSize={3} asChild>
-              <X />
-            </Icon>
+      <Box borderTop="1px solid" borderColor={borderColor} px={6} py={3} bg={bgColor} flexShrink={0}>
+        <Flex gap={2.5} justify="flex-end" align="center">
+          <Button {...ghostBtn} h="30px" px={3.5} onClick={onClose} color={secondaryTextColor} _hover={{ bg: tabHoverBg }}>
             Cancel
           </Button>
-          <Button
-            colorPalette="blue"
-            onClick={handleSave}
-            borderRadius="md"
-            fontWeight="500"
-            size="xs"
-            h={SETTINGS_CONTROL_H}
-            px={3}
-            fontSize="xs"
-          >
-            <Icon boxSize={3} asChild>
-              <Save />
-            </Icon>
-            Save
+          <Button colorPalette="blue" onClick={handleSave} h="30px" px={4} fontSize={SETTINGS_FS.button} fontWeight="600" borderRadius="md" size="xs">
+            <Icon boxSize={3} asChild><Save /></Icon>
+            Save changes
           </Button>
         </Flex>
       </Box>
     </Box>
   );
-}; 
+};

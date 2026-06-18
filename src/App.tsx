@@ -5,7 +5,6 @@ import { Layout } from './components/Layout';
 import { QuickNavigateOverlay } from './components/QuickNavigateOverlay';
 import { useAppContext } from './context/AppContext';
 import { SettingsWindow } from './components/SettingsWindow';
-import { Calculator } from './components/Calculator';
 import { eventMatchesShortcut } from './utils/shortcuts';
 import { showToast } from './components/ui/toaster';
 import { getParentPath, normalizePath } from './utils/path';
@@ -22,7 +21,6 @@ const AppContent: React.FC = () => {
     setCurrentDirectory,
     setStatus,
     addLog,
-    calculatorShortcut,
     jumpModeOnParentShortcut,
     enableJumpModeOnParentShortcut,
     backspaceNavigationShortcut,
@@ -31,8 +29,6 @@ const AppContent: React.FC = () => {
     rootDirectory,
     jumpModeQuickFolderPaths,
   } = useAppContext();
-  
-  const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
 
   const isSettingsWindow = window.location.hash === '#settings';
 
@@ -263,12 +259,19 @@ const AppContent: React.FC = () => {
       
       // Ctrl+Space is handled by TransferPanel
 
-      if (!isInputFocused && eventMatchesShortcut(e, calculatorShortcut)) {
-        setIsCalculatorOpen(true);
+      // Ctrl/Cmd+N — open another window instance of the app at the current folder
+      if (
+        !isInputFocused &&
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'n'
+      ) {
         e.preventDefault();
+        void window.electronAPI?.openNewWindow?.(currentDirectory || '');
         return;
       }
-      
+
       if (
         !isInputFocused &&
         !isQuickNavigating &&
@@ -301,7 +304,6 @@ const AppContent: React.FC = () => {
     isQuickNavigating,
     setIsQuickNavigating,
     setInitialCommandMode,
-    calculatorShortcut,
     jumpModeOnParentShortcut,
     enableJumpModeOnParentShortcut,
     backspaceNavigationShortcut,
@@ -340,7 +342,6 @@ const AppContent: React.FC = () => {
       <Layout />
       <QuickNavigateOverlay />
       {isSettingsOpen && <SettingsWindow isOpen onClose={() => setIsSettingsOpen(false)} />}
-      {isCalculatorOpen && <Calculator isOpen onClose={() => setIsCalculatorOpen(false)} />}
     </Box>
   );
 };

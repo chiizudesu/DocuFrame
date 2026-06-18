@@ -890,6 +890,8 @@ interface GroupHeaderDropZoneProps {
   headerSubTextColor: string;
   mt: number;
   clearFolderHoverStates: () => void;
+  /** When true (email drag in progress), the header ignores drags so the grid's save/extract split handles them. */
+  suppressDrop?: boolean;
 }
 
 const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
@@ -903,6 +905,7 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
   headerSubTextColor,
   mt,
   clearFolderHoverStates,
+  suppressDrop = false,
 }) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isCopyMode, setIsCopyMode] = useState(false);
@@ -993,6 +996,9 @@ const GroupHeaderDropZoneInner: React.FC<GroupHeaderDropZoneProps> = ({
       pb={0.5}
       position="relative"
       data-group-drop-zone="true"
+      // During an email drag, become transparent to the drag so the grid's save/extract
+      // split owns the whole area (the header's own drop hint would otherwise interfere).
+      pointerEvents={suppressDrop ? 'none' : undefined}
       onDragEnter={e => {
         e.preventDefault();
         e.stopPropagation();
@@ -1472,6 +1478,8 @@ export interface FileListViewProps {
   dragTargetColumn: string | null;
   /** Sticky list header sits above group rows; disable its hit-testing during file drag so layer drop zones receive the drop. */
   suppressHeaderPointerEventsForFileDrag?: boolean;
+  /** When true (email drag in progress), group-header drop zones ignore the drag. */
+  suppressGroupDrop?: boolean;
   dragMousePos: { x: number; y: number } | null;
   dragOffset: { x: number; y: number };
   isDragThresholdMet: boolean;
@@ -1595,6 +1603,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.columnWidths !== next.columnWidths) return false;
   if (prev.draggingColumn !== next.draggingColumn || prev.dragTargetColumn !== next.dragTargetColumn) return false;
   if (prev.suppressHeaderPointerEventsForFileDrag !== next.suppressHeaderPointerEventsForFileDrag) return false;
+  if (prev.suppressGroupDrop !== next.suppressGroupDrop) return false;
   if (prev.dragMousePos !== next.dragMousePos || prev.dragOffset !== next.dragOffset) return false;
   if (prev.rowHandlers !== next.rowHandlers) return false;
   if (prev.getFileStateForIndex !== next.getFileStateForIndex) return false;
@@ -1634,6 +1643,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   draggingColumn,
   dragTargetColumn,
   suppressHeaderPointerEventsForFileDrag = false,
+  suppressGroupDrop = false,
   dragMousePos,
   dragOffset,
   isDragThresholdMet,
@@ -2275,6 +2285,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
                               headerSubTextColor={fileSubTextColor}
                               mt={mtValue}
                               clearFolderHoverStates={clearFolderHoverStates}
+                              suppressDrop={suppressGroupDrop}
                             />
                           </td>
                         </tr>

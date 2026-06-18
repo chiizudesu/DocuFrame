@@ -32,6 +32,7 @@ export interface AppSettings {
   aiEditorInstructions?: string;
   quickAccessPaths?: string[];
   recentClientPaths?: string[]; // Latest 5 client folders visited (paths)
+  recentFolderPaths?: string[]; // Latest client sub-folders visited (full paths), for Move to ▸
   workShiftStart?: string; // Format: "HH:MM" (24-hour)
   workShiftEnd?: string; // Format: "HH:MM" (24-hour)
   productivityTargetHours?: number; // Target hours per day (e.g., 7.5 for 7:30)
