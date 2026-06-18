@@ -3932,6 +3932,21 @@ ipcMain.handle('convert-file-to-pdf', async (_, filePath: string) => {
         `$excel.DisplayAlerts = $false`,
         `try {`,
         `  $wb = $excel.Workbooks.Open(${src}, 0, $true)`,
+        `  foreach ($ws in $wb.Worksheets) {`,
+        `    $ws.Columns.AutoFit()`,
+        `    $used = $ws.UsedRange`,
+        `    $colCount = 0`,
+        `    if ($used -ne $null) { $colCount = $used.Columns.Count }`,
+        `    if ($colCount -le 5) { $ws.PageSetup.Orientation = 1 }`,
+        `    else { $ws.PageSetup.Orientation = 2 }`,
+        `    $ws.PageSetup.Zoom = $false`,
+        `    $ws.PageSetup.FitToPagesWide = 1`,
+        `    $ws.PageSetup.FitToPagesTall = 999`,
+        `    $ws.PageSetup.LeftMargin = $excel.InchesToPoints(0.5)`,
+        `    $ws.PageSetup.RightMargin = $excel.InchesToPoints(0.5)`,
+        `    $ws.PageSetup.TopMargin = $excel.InchesToPoints(0.5)`,
+        `    $ws.PageSetup.BottomMargin = $excel.InchesToPoints(0.5)`,
+        `  }`,
         `  $wb.ExportAsFixedFormat(0, ${out})`,
         `  $wb.Close($false)`,
         `} finally {`,
@@ -4290,6 +4305,111 @@ ipcMain.handle('convert-file-path-to-http-url', async (_, filePath: string) => {
 });
 
 // Read image file and convert to data URL (works for files outside Clients directory)
+// ---------------------------------------------------------------------------
+// Spreadsheet preview (ExcelJS + csv-parse) — returns lightweight JSON for
+// the hover-popup table renderer.  Capped at 100 rows × 20 cols.
+// ---------------------------------------------------------------------------
+ipcMain.handle('read-spreadsheet-preview', async (_, filePath: string) => {
+  try {
+    if (!fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+
+    const stat = fs.statSync(filePath);
+    if (stat.size > 20 * 1024 * 1024) return { success: false, error: 'File too large to preview (>20 MB)' };
+
+    const MAX_ROWS = 100;
+    const MAX_COLS = 20;
+    const ext = path.extname(filePath).toLowerCase();
+
+    /** Safely convert an ExcelJS CellValue to a display string. */
+    const cellToString = (v: any): string => {
+      if (v == null) return '';
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+      if (v instanceof Date) return v.toLocaleDateString();
+      if (typeof v === 'object') {
+        if ('result' in v && 'formula' in v) return cellToString(v.result);           // formula
+        if ('richText' in v && Array.isArray(v.richText)) return v.richText.map((r: any) => r.text ?? '').join('');
+        if ('text' in v) return String(v.text);                                        // hyperlink / error
+        if ('error' in v) return String(v.error);
+      }
+      return String(v);
+    };
+
+    if (ext === '.csv') {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const records: string[][] = parse(raw, { relax_column_count: true, skip_empty_lines: true });
+      const headerRow = records[0] ?? [];
+      const cols = headerRow.slice(0, MAX_COLS).map((h) => ({ header: String(h), width: Math.min(Math.max(String(h).length * 8, 50), 200) }));
+      const rows = records.slice(1, MAX_ROWS + 1).map((r) => r.slice(0, MAX_COLS).map(String));
+      const truncated = records.length - 1 > MAX_ROWS || headerRow.length > MAX_COLS;
+      return { success: true, sheets: [{ name: 'CSV', columns: cols, rows }], truncated };
+    }
+
+    // xlsx / xls / xlsm
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(filePath);
+
+    const sheets: any[] = [];
+    let truncated = false;
+
+    workbook.eachSheet((ws: any) => {
+      const columns: { header: string; width: number }[] = [];
+      const rows: string[][] = [];
+
+      // Build column metadata from first row
+      const firstRow = ws.getRow(1);
+      const colCount = Math.min(ws.columnCount || 0, MAX_COLS);
+      for (let c = 1; c <= colCount; c++) {
+        const cell = firstRow.getCell(c);
+        const header = cellToString(cell.value);
+        const colWidth = ws.getColumn(c).width;
+        columns.push({ header, width: Math.min(Math.max((colWidth ?? header.length) * 8, 50), 200) });
+      }
+
+      // Build row data (skip row 1 = header)
+      const rowCount = Math.min(ws.rowCount || 0, MAX_ROWS + 1);
+      for (let r = 2; r <= rowCount; r++) {
+        const row = ws.getRow(r);
+        const cells: string[] = [];
+        for (let c = 1; c <= colCount; c++) {
+          cells.push(cellToString(row.getCell(c).value));
+        }
+        rows.push(cells);
+      }
+
+      if ((ws.rowCount || 0) > MAX_ROWS + 1) truncated = true;
+      if ((ws.columnCount || 0) > MAX_COLS) truncated = true;
+
+      sheets.push({ name: ws.name, columns, rows });
+    });
+
+    if (sheets.length === 0) return { success: false, error: 'Workbook has no sheets' };
+    return { success: true, sheets, truncated };
+  } catch (error: any) {
+    console.error('[read-spreadsheet-preview]', error);
+    return { success: false, error: error?.message ?? String(error) };
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DOCX preview — converts .docx to clean HTML via mammoth
+// ---------------------------------------------------------------------------
+ipcMain.handle('read-docx-as-html', async (_, filePath: string) => {
+  try {
+    if (!fs.existsSync(filePath)) return { success: false, error: 'File not found' };
+    const stat = fs.statSync(filePath);
+    if (stat.size > 20 * 1024 * 1024) return { success: false, error: 'File too large to preview (>20 MB)' };
+
+    const mammoth = require('mammoth');
+    const buffer = fs.readFileSync(filePath);
+    const result = await mammoth.convertToHtml({ buffer });
+    return { success: true, html: result.value as string };
+  } catch (error: any) {
+    console.error('[read-docx-as-html]', error);
+    return { success: false, error: error?.message ?? String(error) };
+  }
+});
+
 ipcMain.handle('read-image-as-data-url', async (_, filePath: string) => {
   try {
     if (!fs.existsSync(filePath)) {

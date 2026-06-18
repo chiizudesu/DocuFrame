@@ -448,6 +448,7 @@ export const FileGrid: React.FC = () => {
   const [pendingSelectionChange, setPendingSelectionChange] = useState<{ fileName: string; index: number } | null>(null);
   const [isDragStarted, setIsDragStarted] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
+  const [busyFiles, setBusyFiles] = useState<Set<string>>(new Set());
 
   // Refs for stable row handlers - handlers read from these to avoid closure churn
   const selectedFilesRef = useRef<string[]>([]);
@@ -1921,8 +1922,9 @@ export const FileGrid: React.FC = () => {
           handleCloseContextMenu();
           if (docFile.type !== 'file') break;
           const convertDir = currentDirectory;
+          setBusyFiles((prev) => new Set(prev).add(docFile.path));
           try {
-            setStatus(`Converting ${docFile.name} to PDF... (this can take a few seconds)`, 'info');
+            setStatus(`Converting ${docFile.name} to PDF...`, 'info');
             const result = await (window.electronAPI as any).convertFileToPdf(docFile.path);
             if (!result?.success) {
               throw new Error(result?.error || 'Conversion failed');
@@ -1951,6 +1953,8 @@ export const FileGrid: React.FC = () => {
               isClosable: true,
               position: 'top',
             });
+          } finally {
+            setBusyFiles((prev) => { const next = new Set(prev); next.delete(docFile.path); return next; });
           }
           break;
         }
@@ -4930,8 +4934,9 @@ export const FileGrid: React.FC = () => {
     isFileSelected: selectedFilesSet.has(file.name),
     isFileCut: clipboardFilePathsSet.has(file.path),
     isFileNew: recentlyTransferredFilesSet.set.has(file.path) || recentlyTransferredFilesSet.normalizedSet.has(file.path.replace(/\\/g, '/')),
-    isFileDragged: draggedFiles.has(file.name)
-  }), [selectedFilesSet, clipboardFilePathsSet, recentlyTransferredFilesSet, draggedFiles]);
+    isFileDragged: draggedFiles.has(file.name),
+    isFileBusy: busyFiles.has(file.path),
+  }), [selectedFilesSet, clipboardFilePathsSet, recentlyTransferredFilesSet, draggedFiles, busyFiles]);
 
   // Stable row handlers object - same reference for all rows, handlers take (file, index, e) as args
   const rowHandlers = useMemo(() => ({

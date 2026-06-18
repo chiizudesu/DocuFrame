@@ -136,12 +136,17 @@ const FileTableRow = React.memo<FileTableRowProps>(({
         const cellKey = `${file.path}-${column}-${colIndex}`;
 
         if (isName) {
-          const nameShadow = [selectionShadow, fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null].filter(Boolean).join(', ') || undefined;
+          const nameShadow = [
+            selectionShadow,
+            fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null,
+            fileState.isFileBusy ? 'inset 3px 0 0 0 #3b82f6' : null,
+          ].filter(Boolean).join(', ') || undefined;
           return (
             <chakra.td
               key={cellKey}
               {...cellStylesDisplay}
               boxShadow={nameShadow}
+              animation={fileState.isFileBusy ? 'busyPulse 1.5s ease-in-out infinite' : undefined}
               ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -411,6 +416,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
     prevProps.fileState.isFileCut === nextProps.fileState.isFileCut &&
     prevProps.fileState.isFileNew === nextProps.fileState.isFileNew &&
     prevProps.fileState.isFileDragged === nextProps.fileState.isFileDragged &&
+    prevProps.fileState.isFileBusy === nextProps.fileState.isFileBusy &&
     prevProps.finalBg === nextProps.finalBg &&
     prevProps.rowHoverBg === nextProps.rowHoverBg &&
     prevProps.isFolderDropHovered === nextProps.isFolderDropHovered &&
@@ -523,12 +529,17 @@ function FileRenameTableRow({
         const cellKey = `${file.path}-rename-${column}-${colIndex}`;
 
         if (isName) {
-          const nameShadow = [selectionShadow, fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null].filter(Boolean).join(', ') || undefined;
+          const nameShadow = [
+            selectionShadow,
+            fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null,
+            fileState.isFileBusy ? 'inset 3px 0 0 0 #3b82f6' : null,
+          ].filter(Boolean).join(', ') || undefined;
           return (
             <chakra.td
               key={cellKey}
               {...cellStylesDisplay}
               boxShadow={nameShadow}
+              animation={fileState.isFileBusy ? 'busyPulse 1.5s ease-in-out infinite' : undefined}
               ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -1498,6 +1509,7 @@ export interface FileListViewProps {
     isFileCut: boolean;
     isFileNew: boolean;
     isFileDragged: boolean;
+    isFileBusy: boolean;
   };
   memoizedArraySignature: string;
   rowSelectedBg: string;
@@ -1858,7 +1870,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   }, [isGroupedByIndex, groupedFiles]);
 
   // Per-row caches for referential stability - only ~visible rows touched, so selection change re-renders only 2 rows
-  const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean }>>(new Map());
+  const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean; isFileBusy: boolean }>>(new Map());
   const cellStylesCacheRef = useRef<Map<string, typeof cellStyles & { bg: string }>>(new Map());
   const hasActiveSearch = Boolean(fileSearchFilter && fileSearchFilter.trim());
 
@@ -1897,7 +1909,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
       cachedState.isFileSelected === baseState.isFileSelected &&
       cachedState.isFileCut === baseState.isFileCut &&
       cachedState.isFileNew === baseState.isFileNew &&
-      cachedState.isFileDragged === baseState.isFileDragged
+      cachedState.isFileDragged === baseState.isFileDragged &&
+      cachedState.isFileBusy === baseState.isFileBusy
         ? cachedState
         : (fileStateCacheRef.current.set(file.path, baseState), baseState);
 

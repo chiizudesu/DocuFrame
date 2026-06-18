@@ -79,6 +79,7 @@ export interface FileTableRowProps {
     isFileCut: boolean;
     isFileNew: boolean;
     isFileDragged: boolean;
+    isFileBusy: boolean;
   };
   finalBg: string;
   rowHoverBg: string;

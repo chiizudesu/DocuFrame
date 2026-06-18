@@ -106,3 +106,13 @@
     opacity: 0.5;
   }
 }
+
+/* Busy file row pulse (convert-to-PDF, etc.) */
+@keyframes busyPulse {
+  0%, 100% {
+    background-color: inherit;
+  }
+  50% {
+    background-color: rgba(59, 130, 246, 0.1);
+  }
+}

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Flex, IconButton, Portal, Spinner, Text } from '@chakra-ui/react';
-import { ChevronLeft, ChevronRight, ExternalLink, Minus, Plus, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, Minus, Moon, Plus, Sun, X } from 'lucide-react';
 import { usePdfDocument } from '../../pdf/pdfDocument';
 import { PdfPageCanvas } from '../../pdf/PdfPageCanvas';
 import { useDialogChrome } from '../ui/dialog-chrome';
@@ -19,7 +19,7 @@ const MAX_ZOOM = 4;
 const ZOOM_RERENDER_DEBOUNCE_MS = 160;
 
 /** Files the popup can preview (image list mirrors the read-image-as-data-url mime map) */
-export const POPUP_PREVIEWABLE_RE = /\.(pdf|png|jpe?g|gif|webp|bmp|svg|ico)$/i;
+export const POPUP_PREVIEWABLE_RE = /\.(pdf|png|jpe?g|gif|webp|bmp|svg|ico|xlsx?|xlsm|csv|docx?)$/i;
 
 interface PopupTarget {
   file: FileItem;
@@ -82,10 +82,14 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
   /** PDF content wrapper — its transform is also set imperatively on canvas swap (see onRenderSize) */
   const pdfWrapRef = useRef<HTMLDivElement>(null);
 
-  const kind: 'pdf' | 'image' | null = target
-    ? target.file.name.toLowerCase().endsWith('.pdf')
-      ? 'pdf'
-      : 'image'
+  const kind: 'pdf' | 'image' | 'spreadsheet' | 'docx' | null = target
+    ? (() => {
+        const n = target.file.name.toLowerCase();
+        if (n.endsWith('.pdf')) return 'pdf' as const;
+        if (/\.(xlsx?|xlsm|csv)$/.test(n)) return 'spreadsheet' as const;
+        if (/\.docx?$/.test(n)) return 'docx' as const;
+        return 'image' as const;
+      })()
     : null;
 
   const { doc, error: pdfError, isLoading: pdfLoading } = usePdfDocument(
@@ -123,8 +127,77 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.file.path, kind]);
 
-  const error = kind === 'image' ? img.error : pdfError;
-  const isLoading = kind === 'image' ? img.loading : pdfLoading;
+  // Spreadsheet loading
+  interface SheetPreview { name: string; columns: { header: string; width: number }[]; rows: string[][] }
+  const [spreadsheet, setSpreadsheet] = useState<{
+    data: { sheets: SheetPreview[]; truncated: boolean } | null;
+    activeSheet: number;
+    loading: boolean;
+    error: string | null;
+  }>({ data: null, activeSheet: 0, loading: false, error: null });
+
+  useEffect(() => {
+    if (!target || kind !== 'spreadsheet') {
+      setSpreadsheet({ data: null, activeSheet: 0, loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    setSpreadsheet({ data: null, activeSheet: 0, loading: true, error: null });
+    (window.electronAPI as any)
+      .readSpreadsheetPreview(target.file.path)
+      .then((res: any) => {
+        if (cancelled) return;
+        if (res?.success) setSpreadsheet({ data: { sheets: res.sheets, truncated: !!res.truncated }, activeSheet: 0, loading: false, error: null });
+        else setSpreadsheet({ data: null, activeSheet: 0, loading: false, error: res?.error || 'Could not load spreadsheet' });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setSpreadsheet({ data: null, activeSheet: 0, loading: false, error: err instanceof Error ? err.message : String(err) });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.file.path, kind]);
+
+  // DOCX loading
+  const [docxHtml, setDocxHtml] = useState<{ html: string | null; loading: boolean; error: string | null }>({
+    html: null, loading: false, error: null,
+  });
+
+  useEffect(() => {
+    if (!target || kind !== 'docx') {
+      setDocxHtml({ html: null, loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    setDocxHtml({ html: null, loading: true, error: null });
+    (window.electronAPI as any)
+      .readDocxAsHtml(target.file.path)
+      .then((res: any) => {
+        if (cancelled) return;
+        if (res?.success && res.html) setDocxHtml({ html: res.html, loading: false, error: null });
+        else setDocxHtml({ html: null, loading: false, error: res?.error || 'Could not load document' });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setDocxHtml({ html: null, loading: false, error: err instanceof Error ? err.message : String(err) });
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.file.path, kind]);
+
+  const error = kind === 'image' ? img.error
+    : kind === 'spreadsheet' ? spreadsheet.error
+    : kind === 'docx' ? docxHtml.error
+    : pdfError;
+  const isLoading = kind === 'image' ? img.loading
+    : kind === 'spreadsheet' ? spreadsheet.loading
+    : kind === 'docx' ? docxHtml.loading
+    : pdfLoading;
+
+  /** Light/dark content background toggle for spreadsheet & docx previews */
+  const [contentLightBg, setContentLightBg] = useState(true);
+  const contentBg = contentLightBg ? '#ffffff' : canvasBg;
+  const contentTextColor = contentLightBg ? '#1a202c' : textColor;
+  const contentBorderColor = contentLightBg ? '#e2e8f0' : borderColor;
+  const isDocKind = kind === 'spreadsheet' || kind === 'docx';
 
   /** Re-render the canvas crisp shortly after zooming settles */
   const scheduleCrispRender = useCallback(() => {
@@ -205,7 +278,11 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
       if (popupRef.current && e.target instanceof Node && popupRef.current.contains(e.target)) return;
       close();
     };
-    const onDragStart = () => close();
+    const onDragStart = (e: DragEvent) => {
+      // Don't close if the drag originated inside the popup (e.g. panning doc content)
+      if (popupRef.current && e.target instanceof Node && popupRef.current.contains(e.target)) return;
+      close();
+    };
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('mousedown', onMouseDown, true);
     window.addEventListener('scroll', onScroll, true);
@@ -223,6 +300,16 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
 
   const clampPan = useCallback(
     (p: { x: number; y: number }, z: number) => {
+      if (kind === 'spreadsheet' || kind === 'docx') {
+        // Top-left origin: pan range is [-(scaledSize - viewport), margin] with some slack
+        const slack = 40;
+        const minX = Math.min(0, -(pageSize.w * z - viewportW)) - slack;
+        const minY = Math.min(0, -(pageSize.h * z - viewportH)) - slack;
+        return {
+          x: Math.min(slack, Math.max(minX, p.x)),
+          y: Math.min(slack, Math.max(minY, p.y)),
+        };
+      }
       const maxX = Math.max(0, (pageSize.w * z - viewportW) / 2) + 40;
       const maxY = Math.max(0, (pageSize.h * z - viewportH) / 2) + 40;
       return {
@@ -230,7 +317,7 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
         y: Math.min(maxY, Math.max(-maxY, p.y)),
       };
     },
-    [pageSize.w, pageSize.h, viewportW, viewportH],
+    [pageSize.w, pageSize.h, viewportW, viewportH, kind],
   );
 
   // Wheel zoom around the cursor (native listener — React onWheel is passive)
@@ -398,6 +485,122 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
               />
             </Flex>
           )}
+          {kind === 'spreadsheet' && spreadsheet.data && (
+            <Flex
+              position="absolute"
+              inset={0}
+              align="flex-start"
+              justify="flex-start"
+              userSelect="none"
+              draggable={false}
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
+            >
+              <Box
+                ref={(el: HTMLDivElement | null) => {
+                  if (el) {
+                    const r = el.getBoundingClientRect();
+                    const w = r.width / zoom;
+                    const h = r.height / zoom;
+                    if (Math.abs(w - pageSize.w) > 2 || Math.abs(h - pageSize.h) > 2) setPageSize({ w, h });
+                  }
+                }}
+                p={2}
+                bg={contentBg}
+                borderRadius="md"
+                boxShadow="0 2px 12px rgba(0,0,0,0.35)"
+              >
+                <table style={{ borderCollapse: 'collapse', fontSize: '11px' }}>
+                  <thead>
+                    <tr>
+                      {spreadsheet.data.sheets[spreadsheet.activeSheet]?.columns.map((col, i) => (
+                        <th key={i} style={{
+                          padding: '3px 6px',
+                          borderBottom: `2px solid ${contentBorderColor}`,
+                          textAlign: 'left',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                          maxWidth: `${col.width}px`,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          color: contentTextColor,
+                        }}>
+                          {col.header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {spreadsheet.data.sheets[spreadsheet.activeSheet]?.rows.map((row, ri) => (
+                      <tr key={ri}>
+                        {row.map((cell, ci) => (
+                          <td key={ci} style={{
+                            padding: '2px 6px',
+                            borderBottom: `1px solid ${contentBorderColor}`,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '180px',
+                            color: contentTextColor,
+                          }}>
+                            {cell}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {spreadsheet.data.truncated && (
+                  <Text fontSize="10px" color={contentLightBg ? '#718096' : secondaryTextColor} mt={1} textAlign="center">
+                    Preview truncated (100 rows × 20 cols)
+                  </Text>
+                )}
+              </Box>
+            </Flex>
+          )}
+          {kind === 'docx' && docxHtml.html && (
+            <Flex
+              position="absolute"
+              inset={0}
+              align="flex-start"
+              justify="flex-start"
+              userSelect="none"
+              draggable={false}
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
+            >
+              <Box
+                ref={(el: HTMLDivElement | null) => {
+                  if (el) {
+                    const r = el.getBoundingClientRect();
+                    const w = r.width / zoom;
+                    const h = r.height / zoom;
+                    if (Math.abs(w - pageSize.w) > 2 || Math.abs(h - pageSize.h) > 2) setPageSize({ w, h });
+                  }
+                }}
+                p={3}
+                bg={contentBg}
+                borderRadius="md"
+                boxShadow="0 2px 12px rgba(0,0,0,0.35)"
+                w={`${viewportW}px`}
+              >
+                <Box
+                  fontSize="12px"
+                  lineHeight="1.5"
+                  color={contentTextColor}
+                  dangerouslySetInnerHTML={{ __html: docxHtml.html }}
+                  css={{
+                    '& p': { margin: '0.4em 0' },
+                    '& table': { borderCollapse: 'collapse', width: '100%' },
+                    '& td, & th': { border: `1px solid ${contentBorderColor}`, padding: '2px 4px' },
+                    '& img': { maxWidth: '100%' },
+                    '& h1': { fontSize: '1.4em', fontWeight: 700, margin: '0.5em 0' },
+                    '& h2': { fontSize: '1.2em', fontWeight: 600, margin: '0.4em 0' },
+                    '& h3': { fontSize: '1.1em', fontWeight: 600, margin: '0.3em 0' },
+                    '& ul, & ol': { paddingLeft: '1.5em', margin: '0.3em 0' },
+                  }}
+                />
+              </Box>
+            </Flex>
+          )}
           {isLoading && (
             <Flex position="absolute" inset={0} align="center" justify="center">
               <Spinner size="sm" color="blue.400" />
@@ -406,7 +609,7 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
           {error && (
             <Flex position="absolute" inset={0} align="center" justify="center" px={4}>
               <Text fontSize="xs" color={secondaryTextColor} textAlign="center" whiteSpace="pre-wrap">
-                {`Can't preview this ${kind === 'image' ? 'image' : 'PDF'}\n${error}`}
+                {`Can't preview this ${kind === 'image' ? 'image' : kind === 'spreadsheet' ? 'spreadsheet' : kind === 'docx' ? 'document' : 'PDF'}\n${error}`}
               </Text>
             </Flex>
           )}
@@ -449,7 +652,58 @@ export const HoverPdfPreview: React.FC<{ files: FileItem[] }> = ({ files }) => {
               Image
             </Text>
           )}
+          {kind === 'spreadsheet' && spreadsheet.data && spreadsheet.data.sheets.length > 1 && (
+            <Flex gap={0} overflow="hidden">
+              {spreadsheet.data.sheets.map((sheet, i) => (
+                <Box
+                  key={i}
+                  as="button"
+                  fontSize="10px"
+                  px={2}
+                  py={1}
+                  color={i === spreadsheet.activeSheet ? textColor : secondaryTextColor}
+                  fontWeight={i === spreadsheet.activeSheet ? 600 : 400}
+                  borderBottom={i === spreadsheet.activeSheet ? '2px solid' : 'none'}
+                  borderColor="blue.400"
+                  onClick={() => setSpreadsheet((prev) => ({ ...prev, activeSheet: i }))}
+                  whiteSpace="nowrap"
+                  overflow="hidden"
+                  textOverflow="ellipsis"
+                  maxW="80px"
+                  title={sheet.name}
+                  cursor="pointer"
+                  _hover={{ color: textColor }}
+                >
+                  {sheet.name}
+                </Box>
+              ))}
+            </Flex>
+          )}
+          {kind === 'spreadsheet' && (!spreadsheet.data || spreadsheet.data.sheets.length <= 1) && (
+            <Text fontSize="11px" color={secondaryTextColor} userSelect="none">
+              Spreadsheet
+            </Text>
+          )}
+          {kind === 'docx' && (
+            <Text fontSize="11px" color={secondaryTextColor} userSelect="none">
+              Document
+            </Text>
+          )}
           <Box flex={1} />
+          {isDocKind && (
+            <IconButton
+              aria-label="Toggle background"
+              title={contentLightBg ? 'Dark background' : 'Light background'}
+              size="2xs"
+              variant="ghost"
+              minW="22px"
+              h="22px"
+              color={secondaryTextColor}
+              onClick={() => setContentLightBg((v) => !v)}
+            >
+              {contentLightBg ? <Moon size={12} /> : <Sun size={12} />}
+            </IconButton>
+          )}
           <IconButton
             aria-label="Zoom out"
             size="2xs"

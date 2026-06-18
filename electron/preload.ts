@@ -80,6 +80,8 @@ interface ElectronAPI {
   openFileWith: (filePath: string, app: string) => Promise<{ success: boolean; error?: string }>;
   readPdfText: (filePath: string) => Promise<string>;
   readPdfPagesText: (filePath: string) => Promise<string[]>;
+  readSpreadsheetPreview: (filePath: string) => Promise<{ success: boolean; sheets?: Array<{ name: string; columns: Array<{ header: string; width: number }>; rows: string[][] }>; truncated?: boolean; error?: string }>;
+  readDocxAsHtml: (filePath: string) => Promise<{ success: boolean; html?: string; error?: string }>;
   readFileAsBuffer: (filePath: string) => Promise<ArrayBuffer>;
   getPdfPageCount: (filePath: string) => Promise<{ success: boolean; pageCount: number; error?: string }>;
   loadYamlTemplate: (filePath: string) => Promise<any>;
@@ -452,6 +454,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     readImageAsDataUrl: async (filePath: string) => {
       return await ipcRenderer.invoke('read-image-as-data-url', filePath);
+    },
+    readSpreadsheetPreview: async (filePath: string) => {
+      return await ipcRenderer.invoke('read-spreadsheet-preview', filePath);
+    },
+    readDocxAsHtml: async (filePath: string) => {
+      return await ipcRenderer.invoke('read-docx-as-html', filePath);
     },
   // Image clipboard methods
   saveImageFromClipboard: async (currentDirectory: string, filename: string, base64Data: string) => {
