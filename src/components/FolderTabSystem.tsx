@@ -3,6 +3,7 @@ import { useColorModeValue } from "./ui/color-mode";
 import { Box, Flex, Text, IconButton, Button } from '@chakra-ui/react';
 import { X, Plus } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { eventMatchesShortcut } from '../utils/shortcuts';
 import type { MinimizedDialog, DialogType } from './MinimizedDialogsBar';
 import { showToast } from "@/components/ui/toaster"
 import { docuFramePalette as P } from '../docuFrameColors'
@@ -142,19 +143,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
    // Keyboard shortcut for new tab (configurable)
    useEffect(() => {
      const handleKeyDown = (e: KeyboardEvent) => {
-       // Parse the configured shortcut
-       const shortcut = newTabShortcut || 'Ctrl+T';
-       const parts = shortcut.split('+');
-       const key = parts[parts.length - 1].toLowerCase();
-       const needsCtrl = parts.includes('Ctrl');
-       const needsAlt = parts.includes('Alt');
-       const needsShift = parts.includes('Shift');
-       
-       // Check if the pressed keys match the configured shortcut
-       if (e.key.toLowerCase() === key &&
-           e.ctrlKey === needsCtrl &&
-           e.altKey === needsAlt &&
-           e.shiftKey === needsShift) {
+       if (eventMatchesShortcut(e, newTabShortcut || 'Ctrl+T')) {
          e.preventDefault();
          addNewTab();
        }
@@ -191,19 +180,7 @@ export const FolderTabSystem: React.FC<FolderTabSystemProps> = ({
   // Keyboard shortcut for close tab (configurable)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Parse the configured shortcut
-      const shortcut = closeTabShortcut || 'Ctrl+W';
-      const parts = shortcut.split('+');
-      const key = parts[parts.length - 1].toLowerCase();
-      const needsCtrl = parts.includes('Ctrl');
-      const needsAlt = parts.includes('Alt');
-      const needsShift = parts.includes('Shift');
-      
-      // Check if the pressed keys match the configured shortcut
-      if (e.key.toLowerCase() === key &&
-          e.ctrlKey === needsCtrl &&
-          e.altKey === needsAlt &&
-          e.shiftKey === needsShift) {
+      if (eventMatchesShortcut(e, closeTabShortcut || 'Ctrl+W')) {
         e.preventDefault();
         // Close the current active tab if there are more than one tabs
         if (tabs.length > 1) {

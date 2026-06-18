@@ -971,7 +971,13 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const saveRecording = () => {
     if (recordingKeys.length === 0) return;
 
-    const newShortcut = recordingKeys.join(' + ');
+    // Store in canonical form: no spaces, single letters upper-cased. Both the
+    // shared matcher (eventMatchesShortcut) and the Electron accelerator converter
+    // split on a bare "+" and match "Ctrl"/"Alt" exactly, so a spaced string like
+    // "Ctrl + Y" would silently never fire.
+    const newShortcut = recordingKeys
+      .map((k, i) => (i === recordingKeys.length - 1 && /^[a-z]$/.test(k) ? k.toUpperCase() : k))
+      .join('+');
 
     // Update the appropriate shortcut based on currentEditingShortcut
     switch (currentEditingShortcut) {

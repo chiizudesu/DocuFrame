@@ -1237,7 +1237,10 @@ function performPasteAction() {
   }
 }
 
-function convertToElectronShortcut(shortcut: string): string {
+function convertToElectronShortcut(shortcutRaw: string): string {
+  // Normalize away any spaces (the recorder historically saved "Ctrl + Y"); the
+  // exact-match cases and the "Ctrl+"/"Alt+" replacements below assume no spaces.
+  const shortcut = (shortcutRaw || '').replace(/\s+/g, '');
   // Convert common shortcuts to Electron format
   switch (shortcut) {
     case '`':
