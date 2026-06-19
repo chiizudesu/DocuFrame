@@ -27,6 +27,8 @@ import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog'
 import { SplitPdfDialog } from './FileGrid/SplitPdfDialog';
 import { EditPdfDialog } from './FileGrid/EditPdfDialog';
 import { FileListView } from './FileGrid/FileListView';
+import { WorkpaperPillStrip } from './FileGrid/WorkpaperPillStrip';
+import { ConvertToPdfDialog } from './FileGrid/ConvertToPdfDialog';
 import { docuFramePalette as P } from '../docuFrameColors';
 import { Mail, Paperclip, FilePlus2 } from 'lucide-react';
 
@@ -449,6 +451,7 @@ export const FileGrid: React.FC = () => {
   const [isDragStarted, setIsDragStarted] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
   const [busyFiles, setBusyFiles] = useState<Set<string>>(new Set());
+  const [convertingFileName, setConvertingFileName] = useState<string | null>(null);
 
   // Refs for stable row handlers - handlers read from these to avoid closure churn
   const selectedFilesRef = useRef<string[]>([]);
@@ -461,6 +464,8 @@ export const FileGrid: React.FC = () => {
   const groupedFilesRef = useRef<GroupedFilesShape | null>(null);
   const isGroupedByIndexRef = useRef(false);
   const pendingSelectionChangeRef = useRef<{ fileName: string; index: number } | null>(null);
+  const [visibleGroupKeys, setVisibleGroupKeys] = useState<Set<string> | null>(null);
+  const scrollToGroupRef = useRef<((groupKey: string) => void) | null>(null);
   const isDragStartedRef = useRef(false);
 
   // Function to reset drag state - can be called by child components
@@ -823,6 +828,25 @@ export const FileGrid: React.FC = () => {
 
   const listIsGrouped = groupByMode === 'auto' ? isGroupedByIndex : true;
   const groupHeaderVariant: 'index' | 'plain' = groupByMode === 'auto' ? 'index' : 'plain';
+
+  // ── Pill strip data: ordered keys for the workpaper pill strip ──
+  const pillStripKeys = useMemo(() => {
+    if (!groupedFiles || !listIsGrouped || groupHeaderVariant !== 'index') return null;
+    const keys = Object.keys(groupedFiles)
+      .filter((k) => k !== 'folders')
+      .sort((a, b) => {
+        if (a === 'AA') return -1;
+        if (b === 'AA') return 1;
+        if (a === 'Other') return 1;
+        if (b === 'Other') return -1;
+        return a.localeCompare(b);
+      });
+    return keys.length > 0 ? keys : null;
+  }, [groupedFiles, listIsGrouped, groupHeaderVariant]);
+
+  const handlePillClick = useCallback((groupKey: string) => {
+    scrollToGroupRef.current?.(groupKey);
+  }, []);
 
   // Index keys offered by the context menu's Apply prefix ▸ submenu: sections present
   // in this folder plus manually activated ones; all known keys when the folder has none.
@@ -1923,6 +1947,7 @@ export const FileGrid: React.FC = () => {
           if (docFile.type !== 'file') break;
           const convertDir = currentDirectory;
           setBusyFiles((prev) => new Set(prev).add(docFile.path));
+          setConvertingFileName(docFile.name);
           try {
             setStatus(`Converting ${docFile.name} to PDF...`, 'info');
             const result = await (window.electronAPI as any).convertFileToPdf(docFile.path);
@@ -1955,6 +1980,7 @@ export const FileGrid: React.FC = () => {
             });
           } finally {
             setBusyFiles((prev) => { const next = new Set(prev); next.delete(docFile.path); return next; });
+            setConvertingFileName(null);
           }
           break;
         }
@@ -5437,6 +5463,15 @@ export const FileGrid: React.FC = () => {
         dateFilter={dateFilter}
         setDateFilter={setDateFilter}
       />
+      {pillStripKeys && (
+        <WorkpaperPillStrip
+          groupKeys={pillStripKeys}
+          visibleGroupKeys={visibleGroupKeys}
+          onPillClick={handlePillClick}
+          onPillDrop={handleGroupHeaderDrop}
+          clearFolderHoverStates={clearFolderHoverStates}
+        />
+      )}
       <Box flex="1" minH={0} position="relative">
       <FileListView
         dropAreaRef={dropAreaRef}
@@ -5538,6 +5573,8 @@ export const FileGrid: React.FC = () => {
         hasActiveFilters={hasActiveFilters}
         onClearFilters={handleClearAllFilters}
         onCreateFolderRequest={() => setIsCreateFolderOpen(true)}
+        onVisibleGroupsChange={setVisibleGroupKeys}
+        scrollToGroupRef={scrollToGroupRef}
       />
       {(emlDragActive || fileDragActive) && (
         <Box
@@ -5851,6 +5888,10 @@ export const FileGrid: React.FC = () => {
         isRetrying={fileOpRetrying}
         onRetry={handleFileOpFailureRetry}
         onCancel={handleFileOpFailureCancel}
+      />
+      <ConvertToPdfDialog
+        open={convertingFileName !== null}
+        fileName={convertingFileName ?? ''}
       />
     </Box>
   );

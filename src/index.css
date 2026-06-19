@@ -107,12 +107,8 @@
   }
 }
 
-/* Busy file row pulse (convert-to-PDF, etc.) */
-@keyframes busyPulse {
-  0%, 100% {
-    background-color: inherit;
-  }
-  50% {
-    background-color: rgba(59, 130, 246, 0.1);
-  }
+/* Convert-to-PDF dialog — indeterminate loading bar */
+@keyframes convertBarSweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
 }

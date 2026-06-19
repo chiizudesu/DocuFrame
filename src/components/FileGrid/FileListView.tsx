@@ -139,14 +139,12 @@ const FileTableRow = React.memo<FileTableRowProps>(({
           const nameShadow = [
             selectionShadow,
             fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null,
-            fileState.isFileBusy ? 'inset 3px 0 0 0 #3b82f6' : null,
           ].filter(Boolean).join(', ') || undefined;
           return (
             <chakra.td
               key={cellKey}
               {...cellStylesDisplay}
               boxShadow={nameShadow}
-              animation={fileState.isFileBusy ? 'busyPulse 1.5s ease-in-out infinite' : undefined}
               ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -532,14 +530,12 @@ function FileRenameTableRow({
           const nameShadow = [
             selectionShadow,
             fileState.isFileNew ? 'inset 3px 0 0 0 #22c55e' : null,
-            fileState.isFileBusy ? 'inset 3px 0 0 0 #3b82f6' : null,
           ].filter(Boolean).join(', ') || undefined;
           return (
             <chakra.td
               key={cellKey}
               {...cellStylesDisplay}
               boxShadow={nameShadow}
-              animation={fileState.isFileBusy ? 'busyPulse 1.5s ease-in-out infinite' : undefined}
               ref={(el: HTMLTableCellElement | null) => {
                 if (file.type === 'file') {
                   if (el) {
@@ -1598,6 +1594,11 @@ export interface FileListViewProps {
     pointerEvents: 'auto';
     boxSizing: 'border-box';
   };
+
+  /** Callback fired when the set of visible group headers changes during scroll */
+  onVisibleGroupsChange?: (groupKeys: Set<string>) => void;
+  /** Ref populated with a function to scroll the virtualizer to a given group key */
+  scrollToGroupRef?: React.MutableRefObject<((groupKey: string) => void) | null>;
 }
 
 function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps): boolean {
@@ -1634,6 +1635,7 @@ function fileListViewPropsEqual(prev: FileListViewProps, next: FileListViewProps
   if (prev.hasActiveFilters !== next.hasActiveFilters) return false;
   if (prev.getFileVersion !== next.getFileVersion) return false;
   if (prev.fileVersionsEpoch !== next.fileVersionsEpoch) return false;
+  // onVisibleGroupChange and scrollToGroupRef are stable refs — always equal
   return true;
 }
 
@@ -1735,6 +1737,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
   onCreateFolderRequest,
   getFileVersion,
   fileVersionsEpoch: _fileVersionsEpoch,
+  onVisibleGroupsChange,
+  scrollToGroupRef,
 }: FileListViewProps) {
   const onRenameCancel = typeof handleRenameCancel === 'function' ? handleRenameCancel : () => { setIsRenaming(null); setRenameValue(''); };
   const bgFillOpacity = useColorModeValue(0.05, 0.10); // Light: subtler; dark: unchanged
@@ -1855,6 +1859,93 @@ const FileListViewBody = React.memo(function FileListViewBody({
   rowVirtualizerRef.current = rowVirtualizer;
   const groupedVirtualizerRef = useRef(groupedRowVirtualizer);
   groupedVirtualizerRef.current = groupedRowVirtualizer;
+
+  // ── Scroll-tracking: report ALL visible group headers to the parent ──
+  // Account for the sticky thead height and overscan — only items whose pixels
+  // actually fall inside the visible window count.
+  const prevVisibleGroupsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isGroupedByIndex || !onVisibleGroupsChange || groupedVirtualItems.length === 0) {
+      if (prevVisibleGroupsRef.current.size > 0) {
+        prevVisibleGroupsRef.current = new Set();
+        onVisibleGroupsChange?.(prevVisibleGroupsRef.current);
+      }
+      return;
+    }
+    const container = dropAreaRef.current;
+    if (!container) return;
+
+    // Visible range in scroll-content coordinates (vi.start lives in this space)
+    const thead = container.querySelector('thead');
+    const theadHeight = thead ? thead.getBoundingClientRect().height : 0;
+    const scrollTop = container.scrollTop;
+    const visibleTop = scrollTop + theadHeight; // below sticky header
+    const visibleBottom = scrollTop + container.clientHeight;
+
+    const visibleKeys = new Set<string>();
+
+    // Track which group each item belongs to as we iterate
+    let currentGroupKey: string | null = null;
+    for (const vi of groupedVirtualItems) {
+      const item = flatGroupedItems[vi.index];
+      if (!item) continue;
+
+      if (item.type === 'groupHeader') {
+        currentGroupKey = item.groupKey;
+      }
+
+      // Check if this item's pixels are inside the visible window
+      const itemTop = vi.start;
+      const itemBottom = itemTop + vi.size;
+      const isPixelVisible = itemBottom > visibleTop && itemTop < visibleBottom;
+
+      if (isPixelVisible && currentGroupKey) {
+        visibleKeys.add(currentGroupKey);
+      }
+    }
+
+    // Edge case: first visible item is a file row whose group header is above
+    // the overscan window — walk backwards through flatGroupedItems to find it.
+    if (groupedVirtualItems.length > 0) {
+      const firstViIdx = groupedVirtualItems[0].index;
+      const firstItem = flatGroupedItems[firstViIdx];
+      if (firstItem && firstItem.type !== 'groupHeader') {
+        // Check if any pixel of this first item is actually visible
+        const firstVi = groupedVirtualItems[0];
+        const isFirstVisible = (firstVi.start + firstVi.size) > visibleTop && firstVi.start < visibleBottom;
+        if (isFirstVisible) {
+          for (let i = firstViIdx - 1; i >= 0; i--) {
+            const item = flatGroupedItems[i];
+            if (item?.type === 'groupHeader') {
+              visibleKeys.add(item.groupKey);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Only update if the set changed
+    const prev = prevVisibleGroupsRef.current;
+    if (visibleKeys.size !== prev.size || ![...visibleKeys].every(k => prev.has(k))) {
+      prevVisibleGroupsRef.current = visibleKeys;
+      onVisibleGroupsChange(visibleKeys);
+    }
+  }, [isGroupedByIndex, groupedVirtualItems, flatGroupedItems, onVisibleGroupsChange, dropAreaRef]);
+
+  // ── Scroll-to-group: expose via ref for parent to call ──
+  useEffect(() => {
+    if (!scrollToGroupRef) return;
+    scrollToGroupRef.current = (groupKey: string) => {
+      const idx = flatGroupedItems.findIndex(
+        (item) => item.type === 'groupHeader' && item.groupKey === groupKey,
+      );
+      if (idx >= 0) {
+        groupedVirtualizerRef.current.scrollToIndex(idx, { align: 'start' });
+      }
+    };
+    return () => { if (scrollToGroupRef) scrollToGroupRef.current = null; };
+  }, [flatGroupedItems, scrollToGroupRef]);
 
   // Latest-file label per group, computed once per data change — NOT per scroll
   // frame (date-parsing every file in every visible group each frame is what
