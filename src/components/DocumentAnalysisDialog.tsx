@@ -27,7 +27,7 @@ import {
 import { Copy, Sparkles, Brain, Send, RefreshCw, FileText, Upload, Table as TableIcon, Calendar, DollarSign, Users, FileX, ArrowLeft, CheckCircle, Minus, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { analyzePdfDocument, analyzePdfDocumentStream, analyzeMultiplePdfDocumentsStream } from '../services/aiService';
+import { analyzePdfDocument, analyzePdfDocumentStream, analyzeMultiplePdfDocumentsStream } from '../services/claude';
 
 interface FileItem { 
   name: string; 
@@ -423,9 +423,10 @@ Please be conversational and insightful - imagine you're briefing a colleague wh
       if (filesToAnalyze.length === 1) {
         // Single file analysis
         await analyzePdfDocumentStream(
-          primaryFile.path, 
-          primaryFile.name, 
-          analysisPrompt, 
+          primaryFile.path,
+          primaryFile.name,
+          analysisPrompt,
+          'sonnet',
           (chunk: string) => {
             // Accumulate text as it streams in
             setAnalysis(prev => {
@@ -493,6 +494,7 @@ Structure your response to be useful for someone who needs to understand all the
         await analyzeMultiplePdfDocumentsStream(
           readFiles, // Pass all files with their base64 data
           combinedPrompt,
+          'sonnet',
           (chunk: string) => {
             // Accumulate text as it streams in
             setAnalysis(prev => {

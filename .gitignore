@@ -56,5 +56,11 @@ DocuFrame.bat
 # Cursor IDE
 .cursor/
 
+# Crash dumps
+*.stackdump
+
+# Screenshots (not tracked)
+results*.png
+
 # Claude Code
 .claude/

@@ -22,7 +22,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { Copy, Sparkles, Edit3, ChevronDown, ChevronUp, Send, Minus, X, Clipboard, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { rewriteEmailBlurbStream } from '../services/aiService';
+import { rewriteEmailBlurbStream } from '../services/claude';
 import { useAppContext } from '../context/AppContext';
 import { settingsService } from '../services/settings';
 
@@ -96,7 +96,8 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
     try {
       let accumulatedText = '';
       await rewriteEmailBlurbStream(
-        input, 
+        input,
+        'sonnet',
         aiEditorInstructions,
         (chunk) => {
           accumulatedText += chunk;
@@ -172,7 +173,8 @@ export const AIEditorDialog: React.FC<AIEditorDialogProps> = ({ isOpen, onClose,
       
       let accumulatedText = '';
       await rewriteEmailBlurbStream(
-        contextPrompt, 
+        contextPrompt,
+        'sonnet',
         aiEditorInstructions,
         (chunk) => {
           accumulatedText += chunk;

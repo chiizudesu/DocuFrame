@@ -250,7 +250,7 @@ export const ManageTemplatesDialog: React.FC<ManageTemplatesDialogProps> = ({ is
       let detections: {type?: 'placeholder' | 'condition'; original: string; suggested: string; accepted: boolean}[] = [];
       
       try {
-        const { analyzeTemplateForPlaceholders } = await import('../services/aiService');
+        const { analyzeTemplateForPlaceholders } = await import('../services/claude');
         const aiDetections = await analyzeTemplateForPlaceholders(rawText, newTemplateName);
         detections = aiDetections;
         console.log('[Template Analysis] AI detected placeholders:', aiDetections);

@@ -16,7 +16,7 @@ import {
   Dialog,
   Portal,
 } from '@chakra-ui/react';
-import { LuCheck, LuChevronDown, LuChevronRight, LuPencil, LuPlus, LuSearch, LuTrash2, LuTriangleAlert, LuX } from 'react-icons/lu';
+import { Check as LuCheck, ChevronDown as LuChevronDown, ChevronRight as LuChevronRight, Pencil as LuPencil, Plus as LuPlus, Search as LuSearch, Trash2 as LuTrash2, TriangleAlert as LuTriangleAlert, X as LuX } from 'lucide-react';
 
 interface TransferMapping {
   command: string;

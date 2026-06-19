@@ -586,26 +586,12 @@ export const QuickNavigateOverlay: React.FC = () => {
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (isSearchMode) {
-        // Navigate search results
-        // TODO: Implement search result navigation
-      } else {
-        navigateHistory(-1);
-      }
+      if (!isSearchMode) navigateHistory(-1);
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (isSearchMode) {
-        // Navigate search results
-        // TODO: Implement search result navigation
-      } else {
-        navigateHistory(1);
-      }
+      if (!isSearchMode) navigateHistory(1);
     } else if (e.key === 'Tab') {
       e.preventDefault();
-      if (isSearchMode) {
-        // TODO: Implement search result selection
-      }
-      // No results to navigate in command mode
     }
   };
   const executeCommand = async () => {

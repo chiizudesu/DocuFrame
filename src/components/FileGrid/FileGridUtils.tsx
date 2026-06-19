@@ -70,36 +70,6 @@ export function setDropEffectCompatibleWithEffectAllowed(e: DragEvent, prefer: '
   }
 }
 
-/** Classify a drag event as internal (within DocuFrame), external (OS files), or none. Also sets dropEffect. */
-export function classifyDragSource(e: DragEvent): { type: 'internal' | 'external' | 'none'; prefer: 'copy' | 'move' } {
-  const internalDragFlag = !!(window as any).__docuframeInternalDrag;
-  const hasCustomType = e.dataTransfer.types.includes('application/x-docuframe-files');
-  const hasFilesType = e.dataTransfer.types.includes('Files');
-  const hasExternalFiles = hasFilesType || (e.dataTransfer.files && e.dataTransfer.files.length > 0);
-  const effectAllowed = e.dataTransfer.effectAllowed as string;
-
-  const isInternal = hasCustomType || internalDragFlag;
-
-  if (isInternal) {
-    let prefer: 'copy' | 'move' = 'move';
-    if (effectAllowed === 'copy' || effectAllowed === 'copyMove' || effectAllowed === 'all' || (e.ctrlKey && effectAllowed !== 'move' && effectAllowed !== 'linkMove')) {
-      prefer = 'copy';
-    } else if (effectAllowed === 'move' || effectAllowed === 'linkMove' || (!e.ctrlKey && effectAllowed !== 'copy' && effectAllowed !== 'copyMove' && effectAllowed !== 'all')) {
-      prefer = 'move';
-    } else {
-      prefer = e.ctrlKey ? 'copy' : 'move';
-    }
-    setDropEffectCompatibleWithEffectAllowed(e, prefer);
-    return { type: 'internal', prefer };
-  } else if (hasFilesType || hasExternalFiles) {
-    setDropEffectCompatibleWithEffectAllowed(e, 'copy');
-    return { type: 'external', prefer: 'copy' };
-  } else {
-    e.dataTransfer.dropEffect = 'none';
-    return { type: 'none', prefer: 'move' };
-  }
-}
-
 // FileTableRow props interface
 export interface FileTableRowProps {
   file: FileItem;

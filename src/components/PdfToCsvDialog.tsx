@@ -24,7 +24,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { FileText, Upload, FileSpreadsheet, Minus, X, CheckCircle, ArrowRight, RotateCcw } from 'lucide-react';
-import { detectPdfHeaders, extractPdfTableDataStream } from '../services/aiService';
+import { detectPdfHeaders, extractPdfTableDataStream } from '../services/claude';
 import type { FileItem } from '../types';
 
 interface PdfToCsvDialogProps {
@@ -236,20 +236,22 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
     try {
       // First try scanning first page only
       const headers = await detectPdfHeaders(
-        file.path, 
-        file.name, 
+        file.path,
+        file.name,
+        'sonnet',
         true,
         (status: string) => {
           setHeaderDetectionStatus(status);
         }
       );
-      
+
       // Only scan all pages if no headers found on first page
       if (headers.length === 0) {
         setHeaderDetectionStatus('No headers on first page, scanning all pages...');
         const allPageHeaders = await detectPdfHeaders(
-          file.path, 
-          file.name, 
+          file.path,
+          file.name,
+          'sonnet',
           false,
           (status: string) => {
             setHeaderDetectionStatus(status);
@@ -394,6 +396,7 @@ export const PdfToCsvDialog: React.FC<PdfToCsvDialogProps> = ({
         selectedFile.path,
         selectedFile.name,
         columnMappings,
+        'sonnet',
         (newRows) => {
           // Accumulate rows as pages complete
           console.log('[PDF to CSV] Page complete, rows:', newRows.length);

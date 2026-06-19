@@ -19,8 +19,8 @@ import {
 } from '@chakra-ui/react';
 import { Copy, Sparkles, Send, Minus, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { loadEmailTemplates, generateEmailFromTemplateStream, extractTemplateData } from '../services/aiService';
-import { renderTemplate, parseTemplate } from '../services/templateService';
+import { generateEmailFromTemplateStream, extractTemplateData as claudeExtractTemplateData } from '../services/claude';
+import { renderTemplate, parseTemplate, loadEmailTemplates, extractPlaceholderNames, deriveMovementValues, formatAmountPlaceholders, type ExpenseItem } from '../services/templateService';
 
 interface FileItem { name: string; path: string; type: string; }
 
@@ -105,7 +105,16 @@ export const AITemplaterDialog: React.FC<AITemplaterDialogProps> = ({ isOpen, on
         if (!filePath) throw new Error(`No file selected for ${cat}`);
         extracted[cat] = await (window.electronAPI as any).readPdfText(filePath);
       }
-      const data = await extractTemplateData(selectedTemplate, extracted);
+      const data = await (async () => {
+        const result = await claudeExtractTemplateData(selectedTemplate, extracted, 'sonnet');
+        const requiredPlaceholders = selectedTemplate.placeholders?.map((p: { name: string }) => p.name) ?? extractPlaceholderNames(selectedTemplate.template || '');
+        const expenseItems = (result as { expense_items?: ExpenseItem[] }).expense_items;
+        const derived = deriveMovementValues(result.placeholders, requiredPlaceholders, result.conditions, expenseItems);
+        result.placeholders = derived.placeholders;
+        result.conditions = { ...result.conditions, ...derived.conditions };
+        formatAmountPlaceholders(result.placeholders);
+        return result;
+      })();
       setExtractedData(data);
       const parsed = parseTemplate(selectedTemplate.template);
       const placeholders: Record<string, string> = { ...data.placeholders };
@@ -164,8 +173,9 @@ Please modify or enhance the email according to the user's request. Only provide
       
       // Stream the new response with empty extracted data
       await generateEmailFromTemplateStream(
-        modifiedTemplate, 
+        modifiedTemplate,
         {},
+        'sonnet',
         (chunk: string) => {
           // Accumulate text as it streams in
           setResult(prev => prev + chunk);

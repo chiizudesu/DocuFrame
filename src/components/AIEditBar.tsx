@@ -3,7 +3,7 @@ import { useColorModeValue } from "./ui/color-mode";
 import { useDialogChrome } from './ui/dialog-chrome';
 import { Box, HStack, Input, IconButton, Spinner } from '@chakra-ui/react';
 import { Send } from 'lucide-react';
-import { editTemplateStream } from '../services/aiService';
+import { editTemplateStream } from '../services/claude';
 
 interface AIEditBarProps {
   currentTemplate: string;
@@ -30,7 +30,7 @@ export const AIEditBar: React.FC<AIEditBarProps> = ({ currentTemplate, onTemplat
     setLoading(true);
     let buffer = '';
     try {
-      await editTemplateStream(currentTemplate, trimmed, (chunk: string) => {
+      await editTemplateStream(currentTemplate, trimmed, 'sonnet', (chunk: string) => {
         buffer += chunk;
       });
       if (buffer.trim()) {
