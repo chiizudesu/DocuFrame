@@ -12,9 +12,10 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
-import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route, ListChecks, Search, X } from 'lucide-react';
+import { FilePlus2, FileEdit, FileCheck2, Archive, Settings, Mail, Download, Columns2, ChevronDown, Layers, Route, ListChecks, Search, X, StickyNote } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { TransferMappingDialog } from './TransferMappingDialog';
+import { NotesDialog } from './NotesDialog';
 import { MergePDFDialog } from './MergePDFDialog';
 import { ClientSearchOverlay } from './ClientSearchOverlay';
 import { type DialogType, type MinimizedDialog } from './MinimizedDialogsBar';
@@ -701,6 +702,7 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     addRecentlyTransferredFiles,
   } = useAppContext();
   const [isTransferMappingOpen, setTransferMappingOpen] = useState(false);
+  const [isNotesOpen, setNotesOpen] = useState(false);
   const [isMergePDFOpen, setMergePDFOpen] = useState(false);
   const [isClientSearchOpen, setClientSearchOpen] = useState(false);
 
@@ -717,6 +719,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
     if (action === 'transfer_mapping') {
       setTransferMappingOpen(true);
       setStatus('Opened transfer mapping', 'info');
+      return;
+    }
+
+    if (action === 'notes') {
+      setNotesOpen(true);
+      setStatus('Opened notes', 'info');
       return;
     }
 
@@ -1102,6 +1110,12 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
             description="Edit transfer command mappings"
             color="gray.600"
           />
+          <FunctionButton
+            icon={StickyNote}
+            action="notes"
+            description="Copiable notes"
+            color="purple.400"
+          />
         </Flex>
         
         {/* Spacer */}
@@ -1212,6 +1226,9 @@ export const FunctionPanels: React.FC<FunctionPanelsProps> = ({
       {/* Dialogs: mount only when open (or minimized for stateful AI dialogs) so navigation does not reconcile closed modal trees */}
       {isTransferMappingOpen && (
         <TransferMappingDialog isOpen onClose={() => setTransferMappingOpen(false)} />
+      )}
+      {isNotesOpen && (
+        <NotesDialog isOpen onClose={() => setNotesOpen(false)} />
       )}
       {isMergePDFOpen && (
         <MergePDFDialog

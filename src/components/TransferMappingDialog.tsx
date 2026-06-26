@@ -17,6 +17,7 @@ import {
   Portal,
 } from '@chakra-ui/react';
 import { Check as LuCheck, ChevronDown as LuChevronDown, ChevronRight as LuChevronRight, Pencil as LuPencil, Plus as LuPlus, Search as LuSearch, Trash2 as LuTrash2, TriangleAlert as LuTriangleAlert, X as LuX } from 'lucide-react';
+import { docuFramePalette as P } from '../docuFrameColors';
 
 interface TransferMapping {
   command: string;
@@ -29,11 +30,6 @@ interface TransferMappingDialogProps {
 }
 
 const MONO_FONT = "'Cascadia Code', Consolas, ui-monospace, monospace";
-
-/** Deterministic accent per workpaper section so the index rail reads like ledger tabs */
-const GROUP_PALETTES = ['blue', 'teal', 'purple', 'orange', 'cyan', 'green', 'pink', 'yellow', 'red'] as const;
-const groupPalette = (groupKey: string): string =>
-  groupKey === 'Other' ? 'gray' : GROUP_PALETTES[groupKey.charCodeAt(0) % GROUP_PALETTES.length];
 
 const WORKPAPER_DESCRIPTIONS: { [key: string]: string } = {
   'A1': 'Permanent', 'A2': 'Job Notes', 'A3': 'Other Checks',
@@ -50,21 +46,20 @@ const WORKPAPER_DESCRIPTIONS: { [key: string]: string } = {
   'Q': 'Profit & Loss', 'R': 'Entertainment', 'S': 'Home Office', 'W': 'Wages',
 };
 
-/** Command token styled as a typed keycap — these are literally what the user types */
-const CommandKeycap: React.FC<{ command: string; bg: string; borderColor: string; color: string }> = ({ command, bg, borderColor, color }) => (
+/** The command the user types, shown as a quiet monospace chip. */
+const CommandChip: React.FC<{ command: string; bg: string; borderColor: string; color: string }> = ({ command, bg, borderColor, color }) => (
   <Box
     as="span"
     display="inline-block"
     fontFamily={MONO_FONT}
     fontSize="11px"
     fontWeight="600"
-    lineHeight="1.4"
+    lineHeight="1.5"
     px={1.5}
     py="1px"
     bg={bg}
     border="1px solid"
     borderColor={borderColor}
-    borderBottomWidth="2px"
     borderRadius="4px"
     color={color}
     maxW="100%"
@@ -94,14 +89,14 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
     cardBg,
     textColor,
     secondaryTextColor,
-    inputBg,
     accentText,
   } = useDialogChrome();
-  const rowHoverBg = useColorModeValue('gray.100', 'gray.600');
-  const groupHeaderHoverBg = useColorModeValue('gray.100', 'gray.700');
-  const keycapBg = useColorModeValue('gray.50', 'whiteAlpha.100');
-  const keycapBorder = useColorModeValue('gray.300', 'whiteAlpha.300');
-  const columnLabelColor = useColorModeValue('gray.500', 'gray.400');
+  const rowHoverBg = useColorModeValue(P.light.rowHover, P.dark.rowHover);
+  const groupHeaderHoverBg = useColorModeValue(P.light.rowHover, P.dark.rowHover);
+  // Input wells: darker than the chrome default so they don't wash out on the dark canvas.
+  const fieldBg = useColorModeValue('white', P.dark.toolbar);
+  const chipBg = useColorModeValue('gray.50', 'whiteAlpha.100');
+  const chipBorder = useColorModeValue('gray.300', 'whiteAlpha.300');
   const dirtyDotColor = useColorModeValue('orange.500', 'orange.300');
 
   const isSearching = searchQuery.trim().length > 0;
@@ -273,6 +268,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
         <Dialog.Positioner>
           <Dialog.Content
             bg={bgColor}
+            h="440px"
             maxH="85vh"
             maxW="660px"
             borderRadius={0}
@@ -290,8 +286,8 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
               minH="31px"
             >
               <Flex align="center" gap={2} pr={10}>
-                <Text fontSize="sm" fontWeight="600" color={textColor}>Transfer Command Mappings</Text>
-                <Badge colorPalette="blue" variant="subtle" size="sm">{mappings.length} total</Badge>
+                <Text fontSize="13px" fontWeight="600" letterSpacing="0.01em" color={textColor}>Transfer Mappings</Text>
+                {mappings.length > 0 && <Badge colorPalette="blue" variant="subtle" size="sm">{mappings.length}</Badge>}
               </Flex>
             </Dialog.Header>
             <Dialog.CloseTrigger />
@@ -300,9 +296,8 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
               <Flex
                 align="center"
                 gap={2}
-                px={3}
+                px={2.5}
                 py={1.5}
-                bg={cardBg}
                 borderBottom="1px solid"
                 borderColor={borderColor}
                 flexShrink={0}
@@ -317,7 +312,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                     placeholder="Filter by command or filename…"
                     size="xs"
                     pl="24px"
-                    bg={inputBg}
+                    bg={fieldBg}
                     borderColor={borderColor}
                     onKeyDown={(e) => { if (e.key === 'Escape') setSearchQuery(''); }}
                   />
@@ -341,152 +336,122 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                 )}
                 {!isSearching && Object.keys(groupedMappings).length > 1 && (
                   <HStack gap={0} flexShrink={0}>
-                    <Button size="xs" variant="ghost" onClick={expandAll} fontSize="xs" color={secondaryTextColor}>Expand All</Button>
-                    <Button size="xs" variant="ghost" onClick={collapseAll} fontSize="xs" color={secondaryTextColor}>Collapse All</Button>
+                    <Button size="xs" variant="ghost" onClick={expandAll} fontSize="xs" color={secondaryTextColor}>Expand</Button>
+                    <Button size="xs" variant="ghost" onClick={collapseAll} fontSize="xs" color={secondaryTextColor}>Collapse</Button>
                   </HStack>
                 )}
               </Flex>
 
-              {/* Column headers */}
-              <Flex
-                align="center"
-                gap={2}
-                px={3}
-                pt={1.5}
-                pb={0.5}
-                flexShrink={0}
-              >
-                <Text w="26%" pl="26px" fontSize="10px" fontWeight="700" letterSpacing="0.08em" textTransform="uppercase" color={columnLabelColor}>
-                  Command
-                </Text>
-                <Text flex={1} fontSize="10px" fontWeight="700" letterSpacing="0.08em" textTransform="uppercase" color={columnLabelColor}>
-                  Filename Template
-                </Text>
-              </Flex>
-
-              <Box flex="1" minH={0} overflowY="auto" px={3} pt={0.5} pb={2}>
-                <VStack gap={1} align="stretch">
+              <Box flex="1" minH={0} overflowY="auto" px={2.5} py={1.5}>
+                <VStack gap={1.5} align="stretch">
                   {Object.entries(groupedMappings).map(([groupKey, groupMappings]) => {
                     const description = WORKPAPER_DESCRIPTIONS[groupKey] || (groupKey === 'Other' ? 'Non-standard mappings' : '');
                     // Search results always show expanded so matches are never hidden
                     const isCollapsed = !isSearching && collapsedGroups.has(groupKey);
-                    const palette = groupPalette(groupKey);
 
                     return (
-                      <Box key={groupKey}>
-                        <Box
+                      <Box key={groupKey} border="1px solid" borderColor={borderColor} borderRadius="md" overflow="hidden">
+                        {/* Group header — quiet, monochrome titled panel */}
+                        <Flex
+                          align="center"
+                          gap={2}
                           bg={cardBg}
-                          borderWidth={1}
-                          borderColor={borderColor}
-                          borderRadius="sm"
-                          px={2}
+                          px={2.5}
                           py={1}
                           cursor="pointer"
                           onClick={() => toggleGroup(groupKey)}
                           _hover={{ bg: groupHeaderHoverBg }}
                           transition="background 0.15s"
                         >
-                          <Flex align="center" gap={2}>
-                            <Box color={secondaryTextColor} display="flex" alignItems="center">
-                              {isCollapsed ? <LuChevronRight size={13} /> : <LuChevronDown size={13} />}
-                            </Box>
-                            <Badge
-                              colorPalette={palette}
-                              variant="subtle"
-                              size="sm"
-                              fontFamily={MONO_FONT}
-                              fontWeight="700"
-                              minW="26px"
-                              justifyContent="center"
-                            >
-                              {groupKey === 'Other' ? '·' : groupKey}
-                            </Badge>
-                            <Flex align="center" justify="space-between" flex={1} minW={0}>
-                              <Text fontSize="xs" color={textColor} fontWeight="500" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
-                                {description || (groupKey === 'Other' ? 'Other' : '')}
-                              </Text>
-                              <Text fontSize="xs" color={secondaryTextColor} flexShrink={0} ml={2}>
-                                {groupMappings.length}
-                              </Text>
-                            </Flex>
-                          </Flex>
-                        </Box>
+                          <Box color={secondaryTextColor} display="flex" alignItems="center" opacity={isSearching ? 0.3 : 1}>
+                            {isCollapsed ? <LuChevronRight size={13} /> : <LuChevronDown size={13} />}
+                          </Box>
+                          <Text
+                            fontFamily={MONO_FONT}
+                            fontSize="11px"
+                            fontWeight="700"
+                            color={textColor}
+                            minW="28px"
+                          >
+                            {groupKey === 'Other' ? '—' : groupKey}
+                          </Text>
+                          <Text fontSize="xs" color={textColor} fontWeight="500" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" flex={1}>
+                            {description}
+                          </Text>
+                          <Text fontSize="11px" fontWeight="600" color={secondaryTextColor} flexShrink={0}>
+                            {groupMappings.length}
+                          </Text>
+                        </Flex>
                         <Collapsible.Root open={!isCollapsed}>
                           <Collapsible.Content>
-                            <VStack gap={0} align="stretch" mt={0.5} ml={2}>
-                              {groupMappings.map((mapping, relativeIndex) => {
-                                const absoluteIndex = getOriginalIndex(groupKey, relativeIndex);
-                                const isDuplicate = duplicateCommands.has(mapping.command.trim().toLowerCase());
-                                return (
-                                  <Box
-                                    key={`${groupKey}-${relativeIndex}`}
-                                    bg={bgColor}
-                                    borderWidth={1}
-                                    borderColor={borderColor}
-                                    borderRadius="sm"
-                                    px={2}
-                                    py={1}
-                                    className="group"
-                                    _hover={{ bg: rowHoverBg }}
-                                    transition="background 0.15s"
-                                    borderLeftWidth={2}
-                                    borderLeftColor={`${palette}.400`}
-                                    mt="1px"
-                                  >
-                                    {editingIndex === absoluteIndex ? (
-                                      <Flex align="center" gap={2}>
-                                        <Input
-                                          value={editCommand}
-                                          onChange={(e) => setEditCommand(e.target.value)}
-                                          placeholder="Command"
-                                          size="xs"
-                                          w="26%"
-                                          fontFamily={MONO_FONT}
-                                          bg={inputBg}
-                                          borderColor={borderColor}
-                                          onKeyDown={(e) => handleKeyPress(e, 'edit')}
-                                          autoFocus
-                                        />
-                                        <Input
-                                          value={editFilename}
-                                          onChange={(e) => setEditFilename(e.target.value)}
-                                          placeholder="Filename Template"
-                                          size="xs"
-                                          flex={1}
-                                          bg={inputBg}
-                                          borderColor={borderColor}
-                                          onKeyDown={(e) => handleKeyPress(e, 'edit')}
-                                        />
-                                        <HStack gap={0.5}>
-                                          <IconButton aria-label="Save edit" onClick={saveEdit} colorPalette="green" size="xs" variant="ghost" disabled={!editCommand.trim() || !editFilename.trim()}><LuCheck /></IconButton>
-                                          <IconButton aria-label="Cancel edit" onClick={cancelEdit} size="xs" variant="ghost"><LuX /></IconButton>
-                                        </HStack>
+                            {groupMappings.map((mapping, relativeIndex) => {
+                              const absoluteIndex = getOriginalIndex(groupKey, relativeIndex);
+                              const isDuplicate = duplicateCommands.has(mapping.command.trim().toLowerCase());
+                              const isEditing = editingIndex === absoluteIndex;
+                              return (
+                                <Box
+                                  key={`${groupKey}-${relativeIndex}`}
+                                  className="group"
+                                  borderTop="1px solid"
+                                  borderColor={borderColor}
+                                  px={2.5}
+                                  py={1.25}
+                                  _hover={{ bg: isEditing ? undefined : rowHoverBg }}
+                                  transition="background 0.15s"
+                                >
+                                  {isEditing ? (
+                                    <Flex align="center" gap={2}>
+                                      <Input
+                                        value={editCommand}
+                                        onChange={(e) => setEditCommand(e.target.value)}
+                                        placeholder="Command"
+                                        size="xs"
+                                        w="28%"
+                                        fontFamily={MONO_FONT}
+                                        bg={fieldBg}
+                                        borderColor={borderColor}
+                                        onKeyDown={(e) => handleKeyPress(e, 'edit')}
+                                        autoFocus
+                                      />
+                                      <Input
+                                        value={editFilename}
+                                        onChange={(e) => setEditFilename(e.target.value)}
+                                        placeholder="Filename template"
+                                        size="xs"
+                                        flex={1}
+                                        bg={fieldBg}
+                                        borderColor={borderColor}
+                                        onKeyDown={(e) => handleKeyPress(e, 'edit')}
+                                      />
+                                      <HStack gap={0.5}>
+                                        <IconButton aria-label="Save edit" onClick={saveEdit} colorPalette="green" size="xs" variant="ghost" disabled={!editCommand.trim() || !editFilename.trim()}><LuCheck /></IconButton>
+                                        <IconButton aria-label="Cancel edit" onClick={cancelEdit} size="xs" variant="ghost"><LuX /></IconButton>
+                                      </HStack>
+                                    </Flex>
+                                  ) : (
+                                    <Flex align="center" gap={2} onClick={() => startEdit(absoluteIndex)} cursor="pointer">
+                                      <Box w="28%" flexShrink={0}>
+                                        <CommandChip command={mapping.command} bg={chipBg} borderColor={chipBorder} color={accentText} />
+                                      </Box>
+                                      <Flex flex={1} minW={0} align="center" gap={1.5}>
+                                        <Text fontSize="xs" color={textColor} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                                          {mapping.filename}
+                                        </Text>
+                                        {isDuplicate && (
+                                          <Badge colorPalette="orange" variant="subtle" size="sm" flexShrink={0} title="This command is defined more than once — only one mapping will be kept on save">
+                                            <LuTriangleAlert size={10} /> duplicate
+                                          </Badge>
+                                        )}
                                       </Flex>
-                                    ) : (
-                                      <Flex align="center" gap={2} onClick={() => startEdit(absoluteIndex)} cursor="pointer">
-                                        <Box w="26%" flexShrink={0}>
-                                          <CommandKeycap command={mapping.command} bg={keycapBg} borderColor={keycapBorder} color={accentText} />
-                                        </Box>
-                                        <Flex flex={1} minW={0} align="center" gap={1.5}>
-                                          <Text fontSize="xs" color={textColor} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
-                                            {mapping.filename}
-                                          </Text>
-                                          {isDuplicate && (
-                                            <Badge colorPalette="orange" variant="subtle" size="sm" flexShrink={0} title="This command is defined more than once — only one mapping will be kept on save">
-                                              <LuTriangleAlert size={10} /> duplicate
-                                            </Badge>
-                                          )}
-                                        </Flex>
-                                        <HStack gap={0.5} onClick={(e) => e.stopPropagation()} flexShrink={0} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.15s">
-                                          <IconButton aria-label="Edit mapping" onClick={(e) => { e.stopPropagation(); startEdit(absoluteIndex); }} colorPalette="blue" size="xs" variant="ghost"><LuPencil /></IconButton>
-                                          <IconButton aria-label="Delete mapping" onClick={(e) => { e.stopPropagation(); handleDelete(absoluteIndex); }} colorPalette="red" size="xs" variant="ghost"><LuTrash2 /></IconButton>
-                                        </HStack>
-                                      </Flex>
-                                    )}
-                                  </Box>
-                                );
-                              })}
-                            </VStack>
+                                      <HStack gap={0.5} onClick={(e) => e.stopPropagation()} flexShrink={0} opacity={0} _groupHover={{ opacity: 1 }} transition="opacity 0.15s">
+                                        <IconButton aria-label="Edit mapping" onClick={(e) => { e.stopPropagation(); startEdit(absoluteIndex); }} colorPalette="blue" size="2xs" variant="ghost"><LuPencil /></IconButton>
+                                        <IconButton aria-label="Delete mapping" onClick={(e) => { e.stopPropagation(); handleDelete(absoluteIndex); }} colorPalette="red" size="2xs" variant="ghost"><LuTrash2 /></IconButton>
+                                      </HStack>
+                                    </Flex>
+                                  )}
+                                </Box>
+                              );
+                            })}
                           </Collapsible.Content>
                         </Collapsible.Root>
                       </Box>
@@ -494,16 +459,16 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                   })}
 
                   {mappings.length === 0 && (
-                    <Box textAlign="center" py={6} color={secondaryTextColor} borderWidth={1} borderColor={borderColor} borderRadius="sm" borderStyle="dashed">
+                    <Box textAlign="center" py={6} color={secondaryTextColor} borderWidth={1} borderColor={borderColor} borderRadius="md" borderStyle="dashed">
                       <Text fontSize="xs" mb={1}>No mappings defined yet.</Text>
                       <Text fontSize="xs">
-                        Type a command like <CommandKeycap command="far" bg={keycapBg} borderColor={keycapBorder} color={accentText} /> below and map it to a filename template.
+                        Type a command like <CommandChip command="far" bg={chipBg} borderColor={chipBorder} color={accentText} /> below and map it to a filename template.
                       </Text>
                     </Box>
                   )}
 
                   {mappings.length > 0 && visibleCount === 0 && (
-                    <Box textAlign="center" py={6} color={secondaryTextColor} borderWidth={1} borderColor={borderColor} borderRadius="sm" borderStyle="dashed">
+                    <Box textAlign="center" py={6} color={secondaryTextColor} borderWidth={1} borderColor={borderColor} borderRadius="md" borderStyle="dashed">
                       <Text fontSize="xs">No mappings match “{searchQuery.trim()}”.</Text>
                     </Box>
                   )}
@@ -511,7 +476,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
               </Box>
 
               {/* Add new mapping */}
-              <Box px={3} py={2} borderTop="1px solid" borderColor={borderColor} bg={cardBg} flexShrink={0}>
+              <Box px={2.5} py={1.5} borderTop="1px solid" borderColor={borderColor} bg={cardBg} flexShrink={0}>
                 <Flex align="center" gap={2}>
                   <Input
                     ref={newCommandRef}
@@ -519,9 +484,9 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                     onChange={(e) => setNewCommand(e.target.value)}
                     placeholder="Command (e.g. far)"
                     size="xs"
-                    w="26%"
+                    w="28%"
                     fontFamily={MONO_FONT}
-                    bg={inputBg}
+                    bg={fieldBg}
                     borderColor={borderColor}
                     onKeyDown={(e) => handleKeyPress(e, 'add')}
                   />
@@ -531,7 +496,7 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                     placeholder="Filename template (e.g. F - Fixed Assets Reconciliation)"
                     size="xs"
                     flex={1}
-                    bg={inputBg}
+                    bg={fieldBg}
                     borderColor={borderColor}
                     onKeyDown={(e) => handleKeyPress(e, 'add')}
                   />
@@ -558,8 +523,8 @@ export const TransferMappingDialog: React.FC<TransferMappingDialogProps> = ({ is
                   )}
                 </Flex>
                 <HStack gap={2}>
-                  <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>
-                  <Button size="sm" colorPalette="blue" onClick={handleSave} disabled={changeCount === 0}>Save Changes</Button>
+                  <Button size="xs" variant="outline" onClick={onClose}>Cancel</Button>
+                  <Button size="xs" colorPalette="blue" onClick={handleSave} disabled={changeCount === 0}>Save Changes</Button>
                 </HStack>
               </Flex>
             </Dialog.Footer>

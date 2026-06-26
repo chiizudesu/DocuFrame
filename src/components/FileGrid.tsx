@@ -452,6 +452,9 @@ export const FileGrid: React.FC = () => {
   const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
   const [busyFiles, setBusyFiles] = useState<Set<string>>(new Set());
   const [convertingFileName, setConvertingFileName] = useState<string | null>(null);
+  // Esc-cancel: the native convert IPC has no abort, so we just drop the result's
+  // side-effects when the user dismisses the loading dialog.
+  const convertCancelledRef = useRef(false);
 
   // Refs for stable row handlers - handlers read from these to avoid closure churn
   const selectedFilesRef = useRef<string[]>([]);
@@ -1947,10 +1950,16 @@ export const FileGrid: React.FC = () => {
           if (docFile.type !== 'file') break;
           const convertDir = currentDirectory;
           setBusyFiles((prev) => new Set(prev).add(docFile.path));
+          convertCancelledRef.current = false;
           setConvertingFileName(docFile.name);
           try {
             setStatus(`Converting ${docFile.name} to PDF...`, 'info');
             const result = await (window.electronAPI as any).convertFileToPdf(docFile.path);
+            if (convertCancelledRef.current) {
+              addLog(`Convert to PDF cancelled: ${docFile.name}`);
+              setStatus('Conversion cancelled', 'info');
+              break;
+            }
             if (!result?.success) {
               throw new Error(result?.error || 'Conversion failed');
             }
@@ -1967,17 +1976,21 @@ export const FileGrid: React.FC = () => {
               },
             });
           } catch (error) {
-            const message = getErrorMessageFromUnknown(error);
-            addLog(`Convert to PDF failed: ${message}`, 'error');
-            setStatus('Convert to PDF failed', 'error');
-            showToast({
-              title: 'Convert to PDF Failed',
-              description: message,
-              status: 'error',
-              duration: 6000,
-              isClosable: true,
-              position: 'top',
-            });
+            if (convertCancelledRef.current) {
+              addLog(`Convert to PDF cancelled: ${docFile.name}`);
+            } else {
+              const message = getErrorMessageFromUnknown(error);
+              addLog(`Convert to PDF failed: ${message}`, 'error');
+              setStatus('Convert to PDF failed', 'error');
+              showToast({
+                title: 'Convert to PDF Failed',
+                description: message,
+                status: 'error',
+                duration: 6000,
+                isClosable: true,
+                position: 'top',
+              });
+            }
           } finally {
             setBusyFiles((prev) => { const next = new Set(prev); next.delete(docFile.path); return next; });
             setConvertingFileName(null);
@@ -5892,6 +5905,7 @@ export const FileGrid: React.FC = () => {
       <ConvertToPdfDialog
         open={convertingFileName !== null}
         fileName={convertingFileName ?? ''}
+        onCancel={() => { convertCancelledRef.current = true; setConvertingFileName(null); }}
       />
     </Box>
   );

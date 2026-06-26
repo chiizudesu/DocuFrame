@@ -14,11 +14,18 @@ export interface LogEntry {
   type: 'error' | 'response' | 'command' | 'info';
 }
 
+export interface Note {
+  id: string;
+  title: string;
+  html: string;
+}
+
 export interface AppSettings {
   rootPath?: string;
   transferCommandMappings?: Record<string, string>;
   clientbasePath?: string;
   quickAccessPaths?: string[];
+  notes?: Note[];
 }
 
 export interface TransferOptions {

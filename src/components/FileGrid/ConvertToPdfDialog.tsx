@@ -7,9 +7,10 @@ import { FileText } from 'lucide-react'
 export interface ConvertToPdfDialogProps {
   open: boolean
   fileName: string
+  onCancel?: () => void
 }
 
-export const ConvertToPdfDialog: React.FC<ConvertToPdfDialogProps> = ({ open, fileName }) => {
+export const ConvertToPdfDialog: React.FC<ConvertToPdfDialogProps> = ({ open, fileName, onCancel }) => {
   const { surfaceBg, borderColor } = useDialogChrome()
   const subtitleColor = useColorModeValue('gray.500', 'gray.400')
   const barTrackBg = useColorModeValue('gray.100', 'rgba(255,255,255,0.06)')
@@ -21,7 +22,13 @@ export const ConvertToPdfDialog: React.FC<ConvertToPdfDialogProps> = ({ open, fi
   const iconColor = useColorModeValue('#3b82f6', '#93c5fd')
 
   return (
-    <Dialog.Root open={open} size="sm" placement="center" closeOnInteractOutside={false} closeOnEscape={false}>
+    <Dialog.Root
+      open={open}
+      size="sm"
+      placement="center"
+      closeOnInteractOutside={false}
+      onOpenChange={(e) => { if (!e.open) onCancel?.() }}
+    >
       <Portal>
         <Dialog.Backdrop bg="blackAlpha.500" backdropFilter="blur(3px)" />
         <Dialog.Positioner>
@@ -88,6 +95,10 @@ export const ConvertToPdfDialog: React.FC<ConvertToPdfDialogProps> = ({ open, fi
                     }}
                   />
                 </Box>
+
+                <Text fontSize="11px" color={subtitleColor}>
+                  Press <Text as="span" fontWeight={600}>Esc</Text> to cancel
+                </Text>
               </Flex>
             </Dialog.Body>
 

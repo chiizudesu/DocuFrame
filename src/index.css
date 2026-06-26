@@ -112,3 +112,14 @@
   0% { transform: translateX(-100%); }
   100% { transform: translateX(250%); }
 }
+
+/* Modal dialogs must block the main app. Zag already sets body{pointer-events:none}
+   when a modal opens, but app-shell elements that set pointer-events:auto inline
+   (e.g. the no-drag header/address-bar controls) override the inherited none and stay
+   clickable behind the backdrop. Force the whole #root subtree inert while any dialog
+   is open. Dialogs and toasts portal to <body> (outside #root) so they stay interactive.
+   Minimized dialogs set open=false (data-state="closed"), so they don't trigger this. */
+body:has([data-scope='dialog'][data-part='content'][data-state='open']) #root,
+body:has([data-scope='dialog'][data-part='content'][data-state='open']) #root * {
+  pointer-events: none !important;
+}
