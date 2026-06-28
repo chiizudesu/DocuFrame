@@ -1174,7 +1174,9 @@ app.whenReady().then(async () => {
   await syncChromeExtensionBridgeWithConfig();
   
   createWindow();
-  
+
+  void purgeOldTrash();
+
   // Register global shortcut for app activation
   await registerGlobalShortcut(config);
   
@@ -2004,6 +2006,71 @@ ipcMain.handle('open-cmd-at-directory', async (_, dirPath: string) => {
     console.error('Error opening CMD at directory:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
+});
+
+// ── Soft delete + undo ────────────────────────────────────────────────
+// Deletes move into an app-managed trash so Ctrl+Z can restore them — a plain
+// unlink (the old delete-item path) can't be undone. Buckets are timestamp-named;
+// purgeOldTrash() drops anything older than 7 days on startup.
+// ponytail: app trash, not the Windows Recycle Bin — keeps undo a simple move-back.
+const TRASH_ROOT = path.join(app.getPath('userData'), '.trash');
+const TRASH_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function moveAcrossVolumes(src: string, dest: string) {
+  try {
+    await fsPromises.rename(src, dest);
+  } catch (err: any) {
+    if (err?.code === 'EXDEV') {
+      await fsPromises.cp(src, dest, { recursive: true });
+      await fsPromises.rm(src, { recursive: true, force: true });
+    } else {
+      throw err;
+    }
+  }
+}
+
+async function purgeOldTrash() {
+  try {
+    const entries = await fsPromises.readdir(TRASH_ROOT, { withFileTypes: true });
+    const cutoff = Date.now() - TRASH_TTL_MS;
+    for (const e of entries) {
+      const ts = parseInt(e.name.split('-')[0], 10);
+      if (!Number.isNaN(ts) && ts < cutoff) {
+        await fsPromises.rm(path.join(TRASH_ROOT, e.name), { recursive: true, force: true });
+      }
+    }
+  } catch {}
+}
+
+ipcMain.handle('soft-delete-item', async (_, itemPath: string) => {
+  await fsPromises.mkdir(TRASH_ROOT, { recursive: true });
+  const bucket = path.join(TRASH_ROOT, `${Date.now()}-${randomBytes(4).toString('hex')}`);
+  await fsPromises.mkdir(bucket, { recursive: true });
+  const trashed = path.join(bucket, path.basename(itemPath));
+  await moveAcrossVolumes(itemPath, trashed);
+  const parentDirectory = path.dirname(itemPath);
+  BrowserWindow.getAllWindows().forEach(win => {
+    win.webContents.send('folderContentsChanged', { directory: parentDirectory });
+  });
+  return { original: itemPath, trashed };
+});
+
+ipcMain.handle('restore-trashed', async (_, entries: { original: string; trashed: string }[]) => {
+  const results: { original: string; status: 'success' | 'error'; error?: string }[] = [];
+  for (const entry of entries) {
+    try {
+      await fsPromises.mkdir(path.dirname(entry.original), { recursive: true });
+      await moveAcrossVolumes(entry.trashed, entry.original);
+      results.push({ original: entry.original, status: 'success' });
+    } catch (error: any) {
+      results.push({ original: entry.original, status: 'error', error: getFileOperationErrorMessage(error) });
+    }
+  }
+  const dirs = new Set(entries.map(e => path.dirname(e.original)));
+  BrowserWindow.getAllWindows().forEach(win => {
+    dirs.forEach(d => win.webContents.send('folderContentsChanged', { directory: d }));
+  });
+  return results;
 });
 
 ipcMain.handle('confirm-delete', async (_, fileNames: string[]) => {

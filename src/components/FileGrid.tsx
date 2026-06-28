@@ -23,6 +23,7 @@ import { isGstDirectory, parsePeriodFromName } from '../utils/period';
 import { versionStore } from '../services/versionStore';
 import { FileContextMenu, BlankContextMenu, MoveToDialogWrapper, HeaderContextMenu } from './FileGrid/FileGridUI';
 import { FileGridDialogs } from './FileGrid/FileGridDialogs';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog';
 import { SplitPdfDialog } from './FileGrid/SplitPdfDialog';
 import { EditPdfDialog } from './FileGrid/EditPdfDialog';
@@ -451,6 +452,15 @@ export const FileGrid: React.FC = () => {
   const [isDragStarted, setIsDragStarted] = useState(false);
   const [draggedFiles, setDraggedFiles] = useState<Set<string>>(new Set());
   const [busyFiles, setBusyFiles] = useState<Set<string>>(new Set());
+  // Names (basename) of files that just failed to move — drives a brief red row pulse so the user sees *which* file stayed put.
+  const [failedMoveFiles, setFailedMoveFiles] = useState<Set<string>>(new Set());
+  const failedMoveClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashFailedMoves = useCallback((names: string[]) => {
+    if (names.length === 0) return;
+    setFailedMoveFiles(new Set(names));
+    if (failedMoveClearTimerRef.current) clearTimeout(failedMoveClearTimerRef.current);
+    failedMoveClearTimerRef.current = setTimeout(() => setFailedMoveFiles(new Set()), 2500);
+  }, []);
   const [convertingFileName, setConvertingFileName] = useState<string | null>(null);
   // Esc-cancel: the native convert IPC has no abort, so we just drop the result's
   // side-effects when the user dismisses the loading dialog.
@@ -1219,33 +1229,39 @@ export const FileGrid: React.FC = () => {
   );
 
   // Delete file(s) with confirmation - OPTIMIZED with useCallback
+  // In-app delete confirmation (replaces the off-theme native OS dialog). The promise
+  // resolves when the user confirms/cancels the rendered <DeleteConfirmDialog>.
+  const [deleteRequest, setDeleteRequest] = useState<{ items: FileItem[]; resolve: (ok: boolean) => void } | null>(null);
+  const requestDeleteConfirm = useCallback(
+    (items: FileItem[]) => new Promise<boolean>((resolve) => setDeleteRequest({ items, resolve })),
+    [],
+  );
+
   const handleDeleteFile = useCallback(async (fileOrFiles: FileItem | FileItem[]) => {
-    const filesToDelete = Array.isArray(fileOrFiles)
-      ? fileOrFiles.map(f => f.name)
-      : (selectedFiles.length > 1 ? selectedFiles : [fileOrFiles.name])
-    
+    const files = Array.isArray(fileOrFiles)
+      ? fileOrFiles
+      : (selectedFiles.length > 1
+          ? selectedFiles
+              .map((name) => sortedFiles.find((f) => f.name === name))
+              .filter((f): f is FileItem => !!f)
+          : [fileOrFiles]);
+
+    if (files.length === 0) return;
+
     try {
-      if (!window.electronAPI || typeof (window.electronAPI as any).confirmDelete !== 'function') {
-        const msg = 'Electron API not available: confirmDelete';
-        addLog(msg, 'error');
-        return;
-      }
-      
-      const confirmed = await (window.electronAPI as any).confirmDelete(filesToDelete)
+      const confirmed = await requestDeleteConfirm(files)
       if (!confirmed) return
-      
-      const files = Array.isArray(fileOrFiles) ? fileOrFiles : filesToDelete.map(name => {
-        const file = sortedFiles.find(f => f.name === name);
-        return file || null;
-      }).filter((f): f is FileItem => f !== null)
+
       const deletedFiles: string[] = [];
+      const trashedEntries: { original: string; trashed: string }[] = [];
       const failedFiles: { name: string; error: string }[] = [];
-      
+
       // Delete files one by one to handle individual errors
       for (const f of files) {
         try {
           setStatus(`Deleting: ${f.name}...`, 'info');
-          await (window.electronAPI as any).deleteItem(f.path);
+          const entry = await window.electronAPI.softDeleteItem(f.path);
+          trashedEntries.push(entry);
           deletedFiles.push(f.name);
           addLog(`Deleted: ${f.name}`, 'response');
         } catch (error: any) {
@@ -1254,12 +1270,24 @@ export const FileGrid: React.FC = () => {
           addLog(`Failed to delete: ${f.name} - ${errorMessage}`, 'error');
         }
       }
-      
+
       if (deletedFiles.length > 0) {
         setStatus(`Successfully deleted ${deletedFiles.length} file(s)`, 'success');
         setSelectedFiles((prev) => prev.filter((n) => !deletedFiles.includes(n)));
       }
-      
+
+      // Ctrl+Z restores the trashed items to where they came from.
+      if (trashedEntries.length > 0) {
+        const restoreDir = currentDirectory;
+        pushUndoableOperation({
+          description: `Deleted ${trashedEntries.length} item${trashedEntries.length === 1 ? '' : 's'}`,
+          undo: async () => {
+            await window.electronAPI.restoreTrashed(trashedEntries);
+            await refreshDirectory(restoreDir);
+          },
+        });
+      }
+
       if (failedFiles.length > 0) {
         const failedFileNames = failedFiles.map((f) => f.name).join(', ');
         setStatus(`Failed to delete: ${failedFileNames}`, 'error');
@@ -1272,10 +1300,11 @@ export const FileGrid: React.FC = () => {
           operationLabel: 'Delete',
           retry: async () => {
             let anyFailed = false;
+            const retryTrashed: { original: string; trashed: string }[] = [];
             for (const f of failedItems) {
               try {
                 setStatus(`Deleting: ${f.name}...`, 'info');
-                await (window.electronAPI as any).deleteItem(f.path);
+                retryTrashed.push(await window.electronAPI.softDeleteItem(f.path));
                 addLog(`Deleted: ${f.name}`, 'response');
                 setSelectedFiles((prev) => prev.filter((n) => n !== f.name));
               } catch (err: any) {
@@ -1283,6 +1312,16 @@ export const FileGrid: React.FC = () => {
                 const em = err?.message || err;
                 addLog(`Failed to delete: ${f.name} - ${em}`, 'error');
               }
+            }
+            if (retryTrashed.length > 0) {
+              const restoreDir = currentDirectory;
+              pushUndoableOperation({
+                description: `Deleted ${retryTrashed.length} item${retryTrashed.length === 1 ? '' : 's'}`,
+                undo: async () => {
+                  await window.electronAPI.restoreTrashed(retryTrashed);
+                  await refreshDirectory(restoreDir);
+                },
+              });
             }
             await refreshDirectory(currentDirectory);
             return !anyFailed;
@@ -1300,7 +1339,7 @@ export const FileGrid: React.FC = () => {
       addLog(`Delete operation failed: ${errorMessage}`, 'error');
       setStatus('Delete operation failed', 'error');
     }
-  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, refreshDirectory])
+  }, [selectedFiles, sortedFiles, currentDirectory, addLog, setStatus, refreshDirectory, requestDeleteConfirm])
 
   // In context menu, pass array for multi-select delete - OPTIMIZED with useCallback
   const handleMenuAction = useCallback(async (action: string, payload?: string) => {
@@ -1861,6 +1900,13 @@ export const FileGrid: React.FC = () => {
             if (failed.length > 0) {
               setStatus(`Failed to move ${failed.length} file(s)`, 'error');
               addLog(`Failed to move ${failed.length} file(s): ${failed.map(f => f.error).join('; ')}`, 'error');
+              showToast({
+                title: `Couldn't move ${failed.length} file${failed.length === 1 ? '' : 's'}`,
+                description: failed.map(f => `${f.file}: ${f.error ?? 'Unknown error'}`).join('\n'),
+                status: 'error',
+                duration: 8000,
+              });
+              flashFailedMoves(failed.map(f => f.file));
             }
           } catch (error) {
             addLog(`Move failed: ${getErrorMessageFromUnknown(error)}`, 'error');
@@ -3231,8 +3277,11 @@ export const FileGrid: React.FC = () => {
       // Check if any input field is focused
       const target = e.target as HTMLElement;
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      // Don't let grid shortcuts fire while a modal is open — e.g. Enter to confirm a
+      // delete would otherwise also "open" the file being deleted (Windows: file not found).
+      const inDialog = !!target.closest?.('[role="dialog"], [role="alertdialog"]');
 
-      if (isRenaming || isInlineCreatingFolderRef.current || isInputFocused) return;
+      if (isRenaming || isInlineCreatingFolderRef.current || isInputFocused || inDialog) return;
 
       if (e.key === 'Enter' && selectedFiles.length > 0) {
         const selectedFileObjs = sortedFiles.filter(f => selectedFilesSet.has(f.name))
@@ -4975,7 +5024,8 @@ export const FileGrid: React.FC = () => {
     isFileNew: recentlyTransferredFilesSet.set.has(file.path) || recentlyTransferredFilesSet.normalizedSet.has(file.path.replace(/\\/g, '/')),
     isFileDragged: draggedFiles.has(file.name),
     isFileBusy: busyFiles.has(file.path),
-  }), [selectedFilesSet, clipboardFilePathsSet, recentlyTransferredFilesSet, draggedFiles, busyFiles]);
+    isFileMoveFailed: failedMoveFiles.has(file.name),
+  }), [selectedFilesSet, clipboardFilePathsSet, recentlyTransferredFilesSet, draggedFiles, busyFiles, failedMoveFiles]);
 
   // Stable row handlers object - same reference for all rows, handlers take (file, index, e) as args
   const rowHandlers = useMemo(() => ({
@@ -5112,6 +5162,7 @@ export const FileGrid: React.FC = () => {
             
             const operation = e.ctrlKey ? 'copy' : 'move';
             
+            let failedMoveNames: string[] = [];
             if (window.electronAPI) {
               if (operation === 'copy') {
                 const results = await window.electronAPI.copyFilesWithConflictResolution(filesToTransfer, file.path);
@@ -5121,22 +5172,51 @@ export const FileGrid: React.FC = () => {
               } else {
                 const results = await window.electronAPI.moveFilesWithConflictResolution(filesToTransfer, file.path);
                 const successful = results.filter((r: any) => r.status === 'success').length;
-                const failed = results.filter((r: any) => r.status === 'error').length;
-                
+                const failures = results.filter((r: any) => r.status === 'error');
+                const failed = failures.length;
+                failedMoveNames = failures.map((r: any) => r.file);
+
                 let message = `Moved ${successful} file(s) to ${file.name}`;
                 if (failed > 0) message += `, ${failed} failed`;
-                
+
                 addLog(message);
                 setStatus(message, failed > 0 ? 'error' : 'success');
+
+                if (failed > 0) {
+                  // Surface *why* each file failed (e.g. open in another app → EBUSY/EPERM); the status bar only shows a count.
+                  const reasons = failures.map((r: any) => `${r.file}: ${r.error ?? 'Unknown error'}`);
+                  showToast({
+                    title: `Couldn't move ${failed} file${failed === 1 ? '' : 's'}`,
+                    description: reasons.join('\n'),
+                    status: 'error',
+                    duration: 8000,
+                  });
+                }
+
+                // Register undo (Ctrl+Z) — move the successfully-moved files back to where they came from.
+                const movedPaths = results
+                  .filter((r: any) => r.status === 'success' && r.path)
+                  .map((r: any) => r.path as string);
+                if (movedPaths.length > 0) {
+                  const sourceDir = currentDirectory;
+                  pushUndoableOperation({
+                    description: `Moved ${movedPaths.length} file(s) to ${file.name}`,
+                    undo: async () => {
+                      await (window.electronAPI as any).moveFilesSilent(movedPaths, sourceDir);
+                      await refreshDirectory(sourceDir);
+                    },
+                  });
+                }
               }
               
               setDraggedFiles(new Set());
               clearFolderHoverStates();
               try { delete (window as any).__docuframeInternalDrag; } catch {}
               await refreshDirectory(currentDirectory);
-              
+
               if (operation === 'move') {
                 setSelectedFiles([]);
+                flashFailedMoves(failedMoveNames);
               }
             }
           } catch (error) {
@@ -5874,6 +5954,12 @@ export const FileGrid: React.FC = () => {
         handleUnblockFile={handleUnblockFile}
         handleImageSaved={handleImageSaved}
         showFileOperationFailure={showFileOperationFailure}
+      />
+      <DeleteConfirmDialog
+        open={!!deleteRequest}
+        items={deleteRequest?.items ?? []}
+        onConfirm={() => { deleteRequest?.resolve(true); setDeleteRequest(null); }}
+        onCancel={() => { deleteRequest?.resolve(false); setDeleteRequest(null); }}
       />
       <SplitPdfDialog
         open={isSplitPdfOpen}

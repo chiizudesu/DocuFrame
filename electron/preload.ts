@@ -24,6 +24,8 @@ interface ElectronAPI {
   getDownloadsPath: () => Promise<string>;
   createDirectory: (path: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
+  softDeleteItem: (path: string) => Promise<{ original: string; trashed: string }>;
+  restoreTrashed: (entries: { original: string; trashed: string }[]) => Promise<{ original: string; status: 'success' | 'error'; error?: string }[]>;
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
   selectDirectory: () => Promise<string>;
   selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
@@ -242,6 +244,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteItem: async (path: string) => {
     return await ipcRenderer.invoke('delete-item', path);
   },
+  softDeleteItem: (path: string) => ipcRenderer.invoke('soft-delete-item', path),
+  restoreTrashed: (entries: { original: string; trashed: string }[]) => ipcRenderer.invoke('restore-trashed', entries),
   createDirectory: async (path: string) => {
     return await ipcRenderer.invoke('create-directory', path);
   },

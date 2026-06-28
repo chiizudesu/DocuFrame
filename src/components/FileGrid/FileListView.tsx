@@ -113,6 +113,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
       data-row-index={index}
       data-file-index={index}
       data-new-file-row={fileState.isFileNew ? 'true' : undefined}
+      data-move-failed={fileState.isFileMoveFailed ? 'true' : undefined}
       onMouseEnter={() => rowHandlers.onMouseEnter(index)}
       onMouseLeave={(e: React.MouseEvent) => rowHandlers.onMouseLeave(index, e)}
       onContextMenu={(e: React.MouseEvent) => rowHandlers.onContextMenu(file, e)}
@@ -415,6 +416,7 @@ const FileTableRow = React.memo<FileTableRowProps>(({
     prevProps.fileState.isFileNew === nextProps.fileState.isFileNew &&
     prevProps.fileState.isFileDragged === nextProps.fileState.isFileDragged &&
     prevProps.fileState.isFileBusy === nextProps.fileState.isFileBusy &&
+    prevProps.fileState.isFileMoveFailed === nextProps.fileState.isFileMoveFailed &&
     prevProps.finalBg === nextProps.finalBg &&
     prevProps.rowHoverBg === nextProps.rowHoverBg &&
     prevProps.isFolderDropHovered === nextProps.isFolderDropHovered &&
@@ -1506,6 +1508,7 @@ export interface FileListViewProps {
     isFileNew: boolean;
     isFileDragged: boolean;
     isFileBusy: boolean;
+    isFileMoveFailed: boolean;
   };
   memoizedArraySignature: string;
   rowSelectedBg: string;
@@ -1961,7 +1964,7 @@ const FileListViewBody = React.memo(function FileListViewBody({
   }, [isGroupedByIndex, groupedFiles]);
 
   // Per-row caches for referential stability - only ~visible rows touched, so selection change re-renders only 2 rows
-  const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean; isFileBusy: boolean }>>(new Map());
+  const fileStateCacheRef = useRef<Map<string, { isFileSelected: boolean; isFileCut: boolean; isFileNew: boolean; isFileDragged: boolean; isFileBusy: boolean; isFileMoveFailed: boolean }>>(new Map());
   const cellStylesCacheRef = useRef<Map<string, typeof cellStyles & { bg: string }>>(new Map());
   const hasActiveSearch = Boolean(fileSearchFilter && fileSearchFilter.trim());
 
@@ -2001,7 +2004,8 @@ const FileListViewBody = React.memo(function FileListViewBody({
       cachedState.isFileCut === baseState.isFileCut &&
       cachedState.isFileNew === baseState.isFileNew &&
       cachedState.isFileDragged === baseState.isFileDragged &&
-      cachedState.isFileBusy === baseState.isFileBusy
+      cachedState.isFileBusy === baseState.isFileBusy &&
+      cachedState.isFileMoveFailed === baseState.isFileMoveFailed
         ? cachedState
         : (fileStateCacheRef.current.set(file.path, baseState), baseState);
 

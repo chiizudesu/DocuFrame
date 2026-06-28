@@ -48,6 +48,8 @@ declare global {
       getDownloadsPath: () => Promise<string>;
       createDirectory: (path: string) => Promise<void>;
       deleteItem: (path: string) => Promise<void>;
+      softDeleteItem: (path: string) => Promise<{ original: string; trashed: string }>;
+      restoreTrashed: (entries: { original: string; trashed: string }[]) => Promise<{ original: string; status: 'success' | 'error'; error?: string }[]>;
       renameItem: (oldPath: string, newPath: string) => Promise<void>;
       selectDirectory: () => Promise<string>;
       selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;
@@ -65,6 +67,8 @@ declare global {
       getDownloadsPath: () => Promise<string>;
       createDirectory: (path: string) => Promise<void>;
       deleteItem: (path: string) => Promise<void>;
+      softDeleteItem: (path: string) => Promise<{ original: string; trashed: string }>;
+      restoreTrashed: (entries: { original: string; trashed: string }[]) => Promise<{ original: string; status: 'success' | 'error'; error?: string }[]>;
       renameItem: (oldPath: string, newPath: string) => Promise<void>;
       selectDirectory: () => Promise<string>;
       selectFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string>;

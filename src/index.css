@@ -107,6 +107,15 @@
   }
 }
 
+/* Move failed — pulse the whole row red so the user sees which file stayed put.
+   Only 50% is set, so it pulses from the row's own background to red and back. */
+@keyframes docuframe-move-failed-pulse {
+  50% { background-color: rgba(239, 68, 68, 0.5); }
+}
+tr[data-move-failed] > td {
+  animation: docuframe-move-failed-pulse 0.6s ease-in-out 3;
+}
+
 /* Convert-to-PDF dialog — indeterminate loading bar */
 @keyframes convertBarSweep {
   0% { transform: translateX(-100%); }

@@ -1,5 +1,5 @@
 import { createSystem, defaultConfig, defineConfig } from '@chakra-ui/react';
-import { docuFramePalette as P } from './docuFrameColors';
+import { docuFramePalette as P, DF_SESSION_RAIL_BG } from './docuFrameColors';
 
 /**
  * DocuFrame theme: extends Chakra v3 defaults with pre-v3 parity where we had `extendTheme`:
@@ -118,6 +118,14 @@ const docuFrameConfig = defineConfig({
       toast: {
         base: {
           root: {
+            /* Lift every toast off the near-canvas chrome: real border + drop shadow */
+            borderWidth: '1px',
+            borderStyle: 'solid',
+            borderColor: { _light: 'rgba(15,23,42,0.10)', _dark: 'rgba(255,255,255,0.14)' },
+            boxShadow: {
+              _light: '0 10px 30px -8px rgba(15,23,42,0.30), 0 2px 8px -2px rgba(15,23,42,0.18)',
+              _dark: '0 14px 40px -10px rgba(0,0,0,0.70), 0 2px 10px -2px rgba(0,0,0,0.55)',
+            },
             '&[data-type=error]': {
               bg: {
                 /* Chakra red.500 / gray.500·600 — ~7–9% neutral pull ≈ slightly less saturated red */
@@ -125,6 +133,15 @@ const docuFrameConfig = defineConfig({
                 _dark: 'color-mix(in srgb, #ef4444 91%, #52525b 9%)',
               },
               color: '{colors.red.contrast}',
+              '--toast-trigger-bg': '{white/10}',
+              '--toast-border-color': '{white/40}',
+            },
+            /* Info ("Undone: …") had no custom fill, so dark mode rendered it ~canvas and it vanished.
+               Give it the brand blue so it reads as a distinct, actionable surface. */
+            '&[data-type=info]': {
+              bg: { _light: '#2563eb', _dark: DF_SESSION_RAIL_BG },
+              color: 'white',
+              borderColor: { _light: 'rgba(255,255,255,0.30)', _dark: 'rgba(114,205,244,0.40)' },
               '--toast-trigger-bg': '{white/10}',
               '--toast-border-color': '{white/40}',
             },

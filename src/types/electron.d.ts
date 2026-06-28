@@ -26,6 +26,8 @@ interface ElectronAPI {
   getDirectoryContents: (path: string) => Promise<FileItem[]>;
   createDirectory: (path: string) => Promise<void>;
   deleteItem: (path: string) => Promise<void>;
+  softDeleteItem: (path: string) => Promise<{ original: string; trashed: string }>;
+  restoreTrashed: (entries: { original: string; trashed: string }[]) => Promise<{ original: string; status: 'success' | 'error'; error?: string }[]>;
   renameItem: (oldPath: string, newPath: string) => Promise<void>;
   readTextFile: (filePath: string) => Promise<string>;
   writeTextFile: (filePath: string, content: string) => Promise<{ success: boolean }>;

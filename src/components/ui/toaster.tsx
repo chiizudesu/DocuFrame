@@ -15,6 +15,9 @@ const TOASTER_PLACEMENT = "top" as const
 export const toaster = createToaster({
   placement: TOASTER_PLACEMENT,
   pauseOnPageIdle: true,
+  // zag injects offsets.top as the group's inline `top`, so a CSS var works here.
+  // Layout publishes --df-toast-top (toolbar bottom edge); falls back to 1rem.
+  offsets: { top: "var(--df-toast-top, 1rem)", right: "1rem", bottom: "1rem", left: "1rem" },
 })
 
 /** IPC / async boundaries may yield plain objects instead of `Error` — use for user-visible messages. */
@@ -68,7 +71,6 @@ export const Toaster = () => {
       */}
       <ChakraToaster
         toaster={toaster}
-        insetBlock="4"
         insetInline="4"
         zIndex={2147483647}
         pointerEvents="none"

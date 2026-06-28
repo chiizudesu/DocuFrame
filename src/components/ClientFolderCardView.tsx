@@ -3,6 +3,8 @@ import { useColorModeValue } from './ui/color-mode';
 import { Box, Flex, Text, Input } from '@chakra-ui/react';
 import { Folder, FolderPlus, FolderInput, File as FileIcon, Check, X, ExternalLink, Star, Link2, Trash2, Info, Terminal, RefreshCw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
+import { pushUndoableOperation } from '../services/undoStack';
 import { GridBackdrop } from './GridBackdrop';
 import { FloatingMenu, MenuRow, MenuSeparator, ContextSubmenu } from './FileGrid/menuPrimitives';
 import { joinPath } from '../utils/path';
@@ -53,6 +55,11 @@ export const ClientFolderCardView: React.FC = () => {
     position: { x: 0, y: 0 },
   });
   const closeCardMenu = useCallback(() => setCardMenu((m) => ({ ...m, isOpen: false })), []);
+  const [deleteRequest, setDeleteRequest] = useState<{ items: FileItem[]; resolve: (ok: boolean) => void } | null>(null);
+  const requestDeleteConfirm = useCallback(
+    (items: FileItem[]) => new Promise<boolean>((resolve) => setDeleteRequest({ items, resolve })),
+    [],
+  );
   const closeBlankMenu = useCallback(() => setBlankMenu((m) => ({ ...m, isOpen: false })), []);
 
   // Path of the folder card currently hovered by a drag, if any
@@ -573,12 +580,19 @@ export const ClientFolderCardView: React.FC = () => {
                 const item = cardMenu.item!;
                 closeCardMenu();
                 try {
-                  const confirmed = await (window.electronAPI as any).confirmDelete([item.name]);
+                  const confirmed = await requestDeleteConfirm([item]);
                   if (!confirmed) return;
-                  await window.electronAPI.deleteItem(item.path);
+                  const entry = await window.electronAPI.softDeleteItem(item.path);
                   addLog(`Deleted ${item.name}`);
                   setStatus(`Deleted ${item.name}`, 'success');
                   await loadContents();
+                  pushUndoableOperation({
+                    description: `Deleted "${item.name}"`,
+                    undo: async () => {
+                      await window.electronAPI.restoreTrashed([entry]);
+                      await loadContents();
+                    },
+                  });
                 } catch (error) {
                   addLog(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
                   setStatus(`Failed to delete ${item.name}`, 'error');
@@ -643,6 +657,13 @@ export const ClientFolderCardView: React.FC = () => {
           }}
         />
       </FloatingMenu>
+
+      <DeleteConfirmDialog
+        open={!!deleteRequest}
+        items={deleteRequest?.items ?? []}
+        onConfirm={() => { deleteRequest?.resolve(true); setDeleteRequest(null); }}
+        onCancel={() => { deleteRequest?.resolve(false); setDeleteRequest(null); }}
+      />
     </Box>
   );
 };

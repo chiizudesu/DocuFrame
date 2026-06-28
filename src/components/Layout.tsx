@@ -102,6 +102,22 @@ export const Layout: React.FC = () => {
     };
   }, [sidebarWidth, sidebarCollapsed]);
 
+  // Toasts should drop in below the toolbar, not from the title bar. Publish the
+  // header's bottom edge as a CSS var the global toaster reads (see toaster.tsx).
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => {
+      document.documentElement.style.setProperty('--df-toast-top', `${el.getBoundingClientRect().bottom + 8}px`);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener('resize', update);
+    return () => { ro.disconnect(); window.removeEventListener('resize', update); };
+  }, []);
+
   const handleActiveTabChange = useCallback((path: string) => {
     // This ensures all path-related functions work with the active tab
     // The currentDirectory is already updated by the tab system
@@ -131,6 +147,7 @@ export const Layout: React.FC = () => {
       `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isSectionPaneOpen ? '420px' : '0px'} ${isPreviewPaneOpen ? '700px' : '0px'} ${isJobContextOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
     <GridItem
+      ref={headerRef}
       area="header"
       bg="df.toolbar"
       p={0}

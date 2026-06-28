@@ -3,6 +3,9 @@ import { useColorModeValue } from "./ui/color-mode";
 import { Box, Flex, Text, Icon, Input } from '@chakra-ui/react';
 import { Search, Folder, Users, ExternalLink, Star, Link2, Terminal, RefreshCw, Info, UserPlus, Trash2, Plus } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { DeleteConfirmDialog } from './DeleteConfirmDialog';
+import { pushUndoableOperation } from '../services/undoStack';
+import type { FileItem } from '../types';
 import { GridBackdrop } from './GridBackdrop';
 import { FloatingMenu, MenuRow, MenuSeparator } from './FileGrid/menuPrimitives';
 import { joinPath } from '../utils/path';
@@ -25,6 +28,11 @@ interface ClientEntry {
 
 const ACCENT = '#3b82f6';
 const AZ = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+// Last-loaded client list per directory, kept for the session so navigating back
+// to the Clients root renders instantly instead of flashing a loading state while
+// it re-fetches every client folder. Refreshed in the background on each visit.
+const clientListCache = new Map<string, ClientEntry[]>();
 
 // Deterministic avatar color from name
 const AVATAR_COLORS = [
@@ -439,10 +447,15 @@ export const ClientListView: React.FC = () => {
     addQuickAccessPath,
     removeQuickAccessPath,
   } = useAppContext();
-  const [clients, setClients] = useState<ClientEntry[]>([]);
+  const [clients, setClients] = useState<ClientEntry[]>(() => clientListCache.get(currentDirectory) ?? []);
+  const [deleteRequest, setDeleteRequest] = useState<{ items: FileItem[]; resolve: (ok: boolean) => void } | null>(null);
+  const requestDeleteConfirm = useCallback(
+    (items: FileItem[]) => new Promise<boolean>((resolve) => setDeleteRequest({ items, resolve })),
+    [],
+  );
   const [searchFilter, setSearchFilter] = useState('');
   const [csvRows, setCsvRows] = useState<ClientDbRow[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !clientListCache.has(currentDirectory));
   const [reloadKey, setReloadKey] = useState(0);
   const [rowMenu, setRowMenu] = useState<{ isOpen: boolean; position: { x: number; y: number }; client: ClientEntry | null }>({
     isOpen: false,
@@ -490,7 +503,9 @@ export const ClientListView: React.FC = () => {
   useEffect(() => {
     if (!currentDirectory) return;
     let mounted = true;
-    setLoading(true);
+    // Render cached entries immediately and refresh silently; only block on first visit.
+    const cached = clientListCache.get(currentDirectory);
+    if (cached) { setClients(cached); setLoading(false); } else { setLoading(true); }
     const load = async () => {
       try {
         const entries = await window.electronAPI.getDirectoryContents(currentDirectory);
@@ -523,6 +538,7 @@ export const ClientListView: React.FC = () => {
           })
         );
 
+        clientListCache.set(currentDirectory, clientEntries);
         if (mounted) {
           setClients(clientEntries);
           setLoading(false);
@@ -611,17 +627,28 @@ export const ClientListView: React.FC = () => {
   // ── Delete client folder ────────────────────────────────────────────────────
   const deleteClient = useCallback(async (client: ClientEntry) => {
     try {
-      const confirmed = await (window.electronAPI as any).confirmDelete([client.name]);
+      const confirmed = await requestDeleteConfirm([
+        { name: client.name, path: client.path, type: 'folder' } as FileItem,
+      ]);
       if (!confirmed) return;
-      await window.electronAPI.deleteItem(client.path);
+      const entry = await window.electronAPI.softDeleteItem(client.path);
       addLog(`Deleted client folder: ${client.name}`);
       setStatus(`Deleted "${client.name}"`, 'success');
+      clientListCache.delete(currentDirectory); // drop stale cache so it doesn't flash back
       setReloadKey(k => k + 1);
+      pushUndoableOperation({
+        description: `Deleted "${client.name}"`,
+        undo: async () => {
+          await window.electronAPI.restoreTrashed([entry]);
+          clientListCache.delete(currentDirectory);
+          setReloadKey(k => k + 1);
+        },
+      });
     } catch (error) {
       addLog(`Failed to delete: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
       setStatus(`Failed to delete ${client.name}`, 'error');
     }
-  }, [addLog, setStatus]);
+  }, [addLog, setStatus, requestDeleteConfirm, currentDirectory]);
 
   // ── Drop onto a client row ──────────────────────────────────────────────────
   const handleDropOnClient = useCallback(async (e: React.DragEvent, client: ClientEntry) => {
@@ -1008,6 +1035,13 @@ export const ClientListView: React.FC = () => {
           }}
         />
       </FloatingMenu>
+
+      <DeleteConfirmDialog
+        open={!!deleteRequest}
+        items={deleteRequest?.items ?? []}
+        onConfirm={() => { deleteRequest?.resolve(true); setDeleteRequest(null); }}
+        onCancel={() => { deleteRequest?.resolve(false); setDeleteRequest(null); }}
+      />
     </Box>
   );
 };
