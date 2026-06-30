@@ -28,7 +28,6 @@ import {
   Info,
   Image as ImageIcon,
   Star,
-  Sparkles,
   Layers,
   ArrowRightLeft,
   Type,
@@ -38,7 +37,6 @@ import {
   FolderPlus,
   FileEdit,
   Link2,
-  CloudUpload,
   Terminal,
   Eye,
   Files,
@@ -80,7 +78,7 @@ export interface FileContextMenuProps {
   /** Workpaper index keys offered in the Apply prefix ▸ submenu */
   activeSectionKeys: string[];
   currentDirectory: string;
-  /** Vault root — used to split a recent path into client name + sub-folder for display */
+  /** Root folder — used to split a recent path into client name + sub-folder for display */
   rootDirectory: string;
   onCreateFromTemplate: (templatePath: string, templateName: string) => void;
   setMoveToFiles: (files: FileItem[]) => void;
@@ -300,11 +298,6 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
               {isFile && (
                 <>
                   <MenuRow
-                    icon={<Sparkles size={iconSz} />}
-                    label="Smart Rename"
-                    onClick={() => handleMenuAction('smart_rename')}
-                  />
-                  <MenuRow
                     icon={<Type size={iconSz} />}
                     label="Proper Case"
                     onClick={() => handleMenuAction('proper_case_rename')}
@@ -399,11 +392,6 @@ export const FileContextMenu: React.FC<FileContextMenuProps> = ({
                     icon={<Scissors size={iconSz} />}
                     label="Split PDF..."
                     onClick={() => handleMenuAction('split_pdf')}
-                  />
-                  <MenuRow
-                    icon={<CloudUpload size={iconSz} />}
-                    label="Upload to Vaults Repo"
-                    onClick={() => handleMenuAction('upload_to_vaults')}
                   />
                   {showMergePDFs && (
                     <MenuRow

@@ -61,6 +61,12 @@ DocuFrame.bat
 
 # Screenshots (not tracked)
 results*.png
+state*.png
+flamegraph.png
+*upon deletion*.png
+
+# Profiling artifacts (not tracked)
+profiling-data.*.json
 
 # Claude Code
 .claude/

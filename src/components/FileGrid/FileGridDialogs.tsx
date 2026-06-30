@@ -4,13 +4,11 @@
  */
 import React from 'react';
 import { MergePDFDialog } from '../MergePDFDialog';
-import { UploadToVaultsDialog } from '../UploadToVaultsDialog';
 import { ExtractedTextDialog } from '../ExtractedTextDialog';
 import { CustomPropertiesDialog } from '../CustomPropertiesDialog';
 import { ImagePasteDialog } from '../ImagePasteDialog';
 import { IndexPrefixDialog } from '../IndexPrefixDialog';
 import { RenameIndexDialog } from '../RenameIndexDialog';
-import { SmartRenameDialog } from '../SmartRenameDialog';
 import { MoveToDialogWrapper } from './FileGridUI';
 import { extractIndexPrefix } from '../../utils/indexPrefix';
 import type { FileItem } from '../../types';
@@ -26,9 +24,6 @@ export interface FileGridDialogsProps {
   setStatus: (msg: string, type?: 'default' | 'error' | 'info' | 'success') => void;
   refreshDirectory: (path: string) => Promise<void>;
   setMergePDFOpen: (open: boolean) => void;
-  setUploadToVaultsOpen: (open: boolean) => void;
-  setVaultUploadSourcePaths: (paths: string[]) => void;
-  setVaultUploadTargetDir: (dir: string) => void;
   setExtractedTextOpen: (open: boolean) => void;
   setPropertiesOpen: (open: boolean) => void;
   setImagePasteOpen: (open: boolean) => void;
@@ -36,12 +31,7 @@ export interface FileGridDialogsProps {
   setMoveToFiles: (files: FileItem[]) => void;
   setIsIndexPrefixDialogOpen: (open: boolean) => void;
   setIsRenameIndexDialogOpen: (open: boolean) => void;
-  setIsSmartRenameDialogOpen: (open: boolean) => void;
-  setSmartRenameFile: (f: FileItem | null) => void;
   isMergePDFOpen: boolean;
-  isUploadToVaultsOpen: boolean;
-  vaultUploadSourcePaths: string[];
-  vaultUploadTargetDir: string;
   isExtractedTextOpen: boolean;
   extractedTextData: { fileName: string; text: string };
   isPropertiesOpen: boolean;
@@ -52,13 +42,10 @@ export interface FileGridDialogsProps {
   isMoveToDialogOpen: boolean;
   moveToFiles: FileItem[];
   isRenameIndexDialogOpen: boolean;
-  smartRenameFile: FileItem | null;
-  isSmartRenameDialogOpen: boolean;
   closeIndexPrefixDialog: () => void;
   closeRenameIndexDialog: () => void;
   handleAssignPrefix: (indexKey: string | null, isCopy?: boolean) => Promise<void>;
   handleRenameIndex: (sourceIndex: string, targetIndex: string) => Promise<void>;
-  handleSmartRenameConfirm: (newName: string) => Promise<void>;
   handleUnblockFile: () => Promise<void>;
   handleImageSaved: (filename: string) => Promise<void>;
   showFileOperationFailure: (opts: {
@@ -81,18 +68,12 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
     setStatus,
     refreshDirectory,
     setMergePDFOpen,
-    setUploadToVaultsOpen,
-    setVaultUploadSourcePaths,
-    setVaultUploadTargetDir,
     setExtractedTextOpen,
     setPropertiesOpen,
     setImagePasteOpen,
     setIsMoveToDialogOpen,
     setMoveToFiles,
     isMergePDFOpen,
-    isUploadToVaultsOpen,
-    vaultUploadSourcePaths,
-    vaultUploadTargetDir,
     isExtractedTextOpen,
     extractedTextData,
     isPropertiesOpen,
@@ -103,15 +84,10 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
     isMoveToDialogOpen,
     moveToFiles,
     isRenameIndexDialogOpen,
-    smartRenameFile,
-    isSmartRenameDialogOpen,
-    setIsSmartRenameDialogOpen,
-    setSmartRenameFile,
     closeIndexPrefixDialog,
     closeRenameIndexDialog,
     handleAssignPrefix,
     handleRenameIndex,
-    handleSmartRenameConfirm,
     handleUnblockFile,
     handleImageSaved,
     showFileOperationFailure,
@@ -125,18 +101,6 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
           onClose={() => setMergePDFOpen(false)}
           currentDirectory={currentDirectory}
           preselectedFiles={selectedFiles.filter((filename) => filename.toLowerCase().endsWith('.pdf'))}
-        />
-      )}
-      {isUploadToVaultsOpen && vaultUploadSourcePaths.length > 0 && (
-        <UploadToVaultsDialog
-          isOpen
-          onClose={() => {
-            setUploadToVaultsOpen(false);
-            setVaultUploadSourcePaths([]);
-            setVaultUploadTargetDir('');
-          }}
-          sourcePaths={vaultUploadSourcePaths}
-          targetDir={vaultUploadTargetDir}
         />
       )}
       {isExtractedTextOpen && (
@@ -281,18 +245,6 @@ export const FileGridDialogs: React.FC<FileGridDialogsProps> = (props) => {
                 ? [contextMenu.fileItem]
                 : []
           }
-        />
-      )}
-      {smartRenameFile && (
-        <SmartRenameDialog
-          isOpen={isSmartRenameDialogOpen}
-          onClose={() => {
-            setIsSmartRenameDialogOpen(false);
-            setSmartRenameFile(null);
-          }}
-          onConfirm={handleSmartRenameConfirm}
-          file={smartRenameFile}
-          existingFiles={sortedFiles}
         />
       )}
     </>

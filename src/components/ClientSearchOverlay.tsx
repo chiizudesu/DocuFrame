@@ -22,6 +22,7 @@ import {
   getJobLink,
   type ClientDbRow,
 } from '../services/clientDatabaseCsv';
+import { getClientRows } from '../services/clientDb';
 import { docuFramePalette } from '../docuFrameColors';
 
 interface ClientSearchOverlayProps {
@@ -82,21 +83,13 @@ export const ClientSearchOverlay: React.FC<ClientSearchOverlayProps> = ({ isOpen
     }
     setIsLoading(true);
     try {
-      const config = await window.electronAPI.getConfig();
-      const csvPath = config.clientbasePath;
-      if (!csvPath) {
-        setStatus('Clientbase CSV path not configured', 'error');
-        setResults([]);
-        setIsLoading(false);
-        return;
-      }
-      const rows = await window.electronAPI.readCsv(csvPath);
+      const rows = await getClientRows();
       if (!rows || rows.length === 0) {
         setResults([]);
         setIsLoading(false);
         return;
       }
-      const filtered = (rows as ClientDbRow[])
+      const filtered = rows
         .filter((row) => {
           const name = getClientName(row);
           if (!name) return false;

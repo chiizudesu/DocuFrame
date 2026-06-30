@@ -4,6 +4,7 @@ import { Box, Flex, Text } from '@chakra-ui/react';
 import { Tooltip } from '@/components/ui/tooltip';
 import { useAppContext } from '../context/AppContext';
 import { useClientInfo } from '../hooks/useClientInfo';
+import { dirCacheGet, dirCacheSet } from '../services/dirCache';
 import { showToast } from "@/components/ui/toaster";
 import { normalizePath, getParentPath, joinPath } from '../utils/path';
 
@@ -46,20 +47,28 @@ export const ClientHeaderStrip: React.FC = () => {
   const relativeFromClient = clientFolder && normalizedCurrent ? normalizedCurrent.slice(clientFolder.length).split(sep).filter(Boolean) : [];
   const currentSubfolder = relativeFromClient[0] || '';
 
-  // Load subfolders of the client folder
+  // Load subfolders of the client folder. Paint instantly from the shared dir cache when the
+  // client folder was recently shown (e.g. you just came from its card view / file grid), then
+  // revalidate — so the navigation pills don't visibly pop in after the grid.
   useEffect(() => {
     if (!clientFolder) { setSubfolders([]); return; }
     let mounted = true;
+    const toPills = (entries: any[]) =>
+      (Array.isArray(entries) ? entries : [])
+        .filter((item: any) => item?.type === 'folder' && typeof item?.name === 'string' && !item.name.startsWith('.'))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        .map((f: any) => ({ name: f.name, path: f.path }));
+
+    const cached = dirCacheGet(clientFolder);
+    if (cached) setSubfolders(toPills(cached));
+
     const load = async () => {
       try {
         const entries = await window.electronAPI.getDirectoryContents(clientFolder);
-        const folders = Array.isArray(entries)
-          ? entries.filter((item: any) => item?.type === 'folder' && typeof item?.name === 'string' && !item.name.startsWith('.'))
-          : [];
-        folders.sort((a: any, b: any) => a.name.localeCompare(b.name));
-        if (mounted) setSubfolders(folders.map((f: any) => ({ name: f.name, path: f.path })));
+        if (Array.isArray(entries)) dirCacheSet(clientFolder, entries);
+        if (mounted) setSubfolders(toPills(entries));
       } catch {
-        if (mounted) setSubfolders([]);
+        if (mounted && !cached) setSubfolders([]);
       }
     };
     load();

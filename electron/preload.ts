@@ -56,21 +56,6 @@ interface ElectronAPI {
   moveFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFilesWithConflictResolution: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   copyFileSilent: (sourcePath: string, targetPath: string) => Promise<{ success: boolean; path?: string; error?: string }>;
-  uploadClientPdfsToVaults: (payload: {
-    sourcePaths: string[];
-    clientName: string;
-    year: string;
-    targetDir: string;
-  }) => Promise<{
-    success: boolean;
-    message: string;
-    copiedPaths?: string[];
-    gitRoot?: string;
-    stderr?: string;
-  }>;
-  onVaultUploadProgress: (
-    cb: (event: Electron.IpcRendererEvent, data: { step: string; message: string }) => void,
-  ) => void;
   moveFilesSilent: (files: string[], targetDirectory: string) => Promise<Array<{ file: string; status: string; path?: string; error?: string; reason?: string }>>;
   /** Puts real files on the Windows clipboard (CF_HDROP) for pasting into Outlook/Explorer */
   copyFilesToClipboard: (filePaths: string[]) => Promise<{ success: boolean; error?: string }>;
@@ -264,7 +249,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onFolderContentsChanged: (cb) => ipcRenderer.on('folderContentsChanged', cb),
   onChromeBridgePdfResult: (cb) => ipcRenderer.on('chromeBridgePdfResult', cb),
   onChromeBridgeActivateSections: (cb) => ipcRenderer.on('chromeBridgeActivateSections', cb),
-  onVaultUploadProgress: (cb) => ipcRenderer.on('vault-upload-progress', cb),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
   readCsv: async (filePath: string) => {
     return await ipcRenderer.invoke('read-csv', filePath);
@@ -292,9 +276,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   copyFileSilent: async (sourcePath: string, targetPath: string) => {
     return await ipcRenderer.invoke('copy-file-silent', sourcePath, targetPath);
-  },
-  uploadClientPdfsToVaults: async (payload) => {
-    return await ipcRenderer.invoke('upload-client-pdfs-to-vaults', payload);
   },
   moveFilesSilent: async (files: string[], targetDirectory: string) => {
     return await ipcRenderer.invoke('move-files-silent', files, targetDirectory);

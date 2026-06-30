@@ -12,13 +12,13 @@ const container = document.getElementById('root');
 if (!container) throw new Error('Failed to find the root element');
 const root = createRoot(container);
 
+// ponytail: StrictMode temporarily disabled for profiling — it double-invokes renders in
+// dev, inflating perceived lag and doubling React Profiler render counts. Re-enable when done.
 root.render(
-  <React.StrictMode>
-    <Provider defaultTheme="dark">
-      <Toaster />
-      <AppProvider>
-        <App />
-      </AppProvider>
-    </Provider>
-  </React.StrictMode>
+  <Provider defaultTheme="dark">
+    <Toaster />
+    <AppProvider>
+      <App />
+    </AppProvider>
+  </Provider>
 );

@@ -7,8 +7,10 @@ import * as React from "react"
 export interface ColorModeProviderProps extends ThemeProviderProps {}
 
 export function ColorModeProvider(props: ColorModeProviderProps) {
+  // ponytail: temporarily locked to dark only. `forcedTheme` after {...props} overrides any
+  // stored/entry-point preference. Remove forcedTheme to re-enable light/dark selection.
   return (
-    <ThemeProvider attribute="class" disableTransitionOnChange {...props} />
+    <ThemeProvider attribute="class" disableTransitionOnChange {...props} forcedTheme="dark" />
   )
 }
 

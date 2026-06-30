@@ -10,6 +10,7 @@ import {
   yearsWithJobLinks,
   type ClientDbRow,
 } from '../services/clientDatabaseCsv';
+import { getClientRows } from '../services/clientDb';
 
 export type ClientInfo = ClientDbRow;
 
@@ -34,18 +35,12 @@ export function useClientInfo(currentDirectory: string, rootDirectory: string) {
     }
     setLoading(true);
     try {
-      const config = await window.electronAPI.getConfig();
-      const csvPath = (config as any).clientbasePath;
-      if (!csvPath) {
-        setLoading(false);
-        return;
-      }
-      const rows = await window.electronAPI.readCsv(csvPath);
+      const rows = await getClientRows();
       if (!rows || rows.length === 0) {
         setLoading(false);
         return;
       }
-      const match = findClientRow(rows as ClientDbRow[], clientName);
+      const match = findClientRow(rows, clientName);
       setClientInfo(match || null);
     } catch {
       setClientInfo(null);

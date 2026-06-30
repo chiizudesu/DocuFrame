@@ -5,6 +5,7 @@ import { Folder, FolderPlus, FolderInput, File as FileIcon, Check, X, ExternalLi
 import { useAppContext } from '../context/AppContext';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { pushUndoableOperation } from '../services/undoStack';
+import { dirCacheSet } from '../services/dirCache';
 import { GridBackdrop } from './GridBackdrop';
 import { FloatingMenu, MenuRow, MenuSeparator, ContextSubmenu } from './FileGrid/menuPrimitives';
 import { joinPath } from '../utils/path';
@@ -108,6 +109,9 @@ export const ClientFolderCardView: React.FC = () => {
       const raw: FileItem[] = Array.isArray(contents)
         ? contents
         : ((contents as any)?.files ?? []);
+      // Warm the shared dir cache so the ClientHeaderStrip's subfolder pills paint instantly
+      // when you step from this client folder into one of its subfolders.
+      dirCacheSet(currentDirectory, raw);
       const filtered = raw.filter((it) => {
         const n = it.name;
         if (!n) return false;

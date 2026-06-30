@@ -26,7 +26,10 @@ export const Tooltip = React.forwardRef<HTMLDivElement, TooltipProps>(
     if (disabled) return <>{children}</>
 
     return (
-      <ChakraTooltip.Root {...rest}>
+      // lazyMount + unmountOnExit: only build the Positioner/Content/Arrow when the tooltip is
+      // actually open. Previously ~40 tooltips mounted their full content eagerly and re-rendered
+      // on every commit (see profiler: TooltipContent/Positioner/Arrow ≈ 130ms of self-time).
+      <ChakraTooltip.Root lazyMount unmountOnExit {...rest}>
         <ChakraTooltip.Trigger asChild>{children}</ChakraTooltip.Trigger>
         <Portal disabled={!portalled} container={portalRef as React.RefObject<HTMLElement> | undefined}>
           <ChakraTooltip.Positioner>

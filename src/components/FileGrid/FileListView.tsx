@@ -7,6 +7,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { Box, Text, Icon, Flex, Input, Image, Popover, IconButton, Portal, chakra } from '@chakra-ui/react';
 import {
   Folder,
+  File,
   Upload,
   Plus,
   Eye,
@@ -170,9 +171,14 @@ const FileTableRow = React.memo<FileTableRowProps>(({
                     alt={`${file.name} icon`}
                     flexShrink={0}
                   />
-                ) : (
+                ) : file.type === 'folder' ? (
                   <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
-                    <Folder size={16} strokeWidth={2} />
+                    <Folder size={16} strokeWidth={1.5} fill="currentColor" />
+                  </Box>
+                ) : (
+                  // Neutral file placeholder until the native icon loads — never a folder icon.
+                  <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="gray.400" flexShrink={0}>
+                    <File size={16} strokeWidth={1.5} />
                   </Box>
                 )}
 
@@ -570,9 +576,14 @@ function FileRenameTableRow({
                     alt={`${file.name} icon`}
                     flexShrink={0}
                   />
-                ) : (
+                ) : file.type === 'folder' ? (
                   <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
-                    <Folder size={16} strokeWidth={2} />
+                    <Folder size={16} strokeWidth={1.5} fill="currentColor" />
+                  </Box>
+                ) : (
+                  // Neutral file placeholder until the native icon loads — never a folder icon.
+                  <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="gray.400" flexShrink={0}>
+                    <File size={16} strokeWidth={1.5} />
                   </Box>
                 )}
                 <Box
@@ -773,7 +784,7 @@ function NewFolderGhostTableRow({
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <Box as="span" display="inline-flex" mr={1.5} lineHeight={0} color="blue.400" flexShrink={0}>
-                  <Folder size={16} strokeWidth={2} />
+                  <Folder size={16} strokeWidth={1.5} fill="currentColor" />
                 </Box>
                 <Box
                   flex={1}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useColorModeValue } from "./ui/color-mode";
-import { Box } from '@chakra-ui/react';
+import { Box, Flex, Text, Spinner } from '@chakra-ui/react';
 import { showToast, getErrorMessageFromUnknown } from "@/components/ui/toaster"
 import {
   useFileGridDirectoryState,
@@ -28,6 +28,11 @@ import { FileOperationFailedDialog } from './FileGrid/FileOperationFailedDialog'
 import { SplitPdfDialog } from './FileGrid/SplitPdfDialog';
 import { EditPdfDialog } from './FileGrid/EditPdfDialog';
 import { FileListView } from './FileGrid/FileListView';
+import { dirCacheGet, dirCacheSet, dirCacheInvalidate } from '../services/dirCache';
+
+/** Module-level cache of the (global, unchanging) grid background so FileGrid remounts paint it
+ *  instantly instead of re-reading the image file each time it mounts. */
+let bgCache: { url: string; fillUrl: string; type: 'watermark' | 'backgroundFill'; enabled: boolean } | null = null;
 import { WorkpaperPillStrip } from './FileGrid/WorkpaperPillStrip';
 import { ConvertToPdfDialog } from './FileGrid/ConvertToPdfDialog';
 import { docuFramePalette as P } from '../docuFrameColors';
@@ -234,8 +239,25 @@ export const FileGrid: React.FC = () => {
 
   // Per-directory sort preferences (remembered when navigating, persisted across restarts)
   const sortPrefsRef = useRef<Map<string, { sortColumn: SortColumn; sortDirection: SortDirection }>>(new Map())
-  const [sortColumn, setSortColumn] = useState<SortColumn>('name')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+  // Seed sort prefs synchronously from a localStorage mirror so the FIRST paint sorts correctly.
+  // Otherwise the list rendered name/asc then re-sorted when the async config load landed (visible
+  // reorder, replayed on every deep-folder entry since FileGrid remounts). config stays source of truth.
+  const sortSeededRef = useRef(false)
+  if (!sortSeededRef.current) {
+    sortSeededRef.current = true
+    try {
+      const raw = localStorage.getItem('fileGrid_sortPreferences')
+      if (raw) {
+        for (const [path, val] of Object.entries(JSON.parse(raw) as Record<string, any>)) {
+          if (val?.sortColumn && val?.sortDirection) {
+            sortPrefsRef.current.set(path, { sortColumn: val.sortColumn, sortDirection: val.sortDirection })
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  const [sortColumn, setSortColumn] = useState<SortColumn>(() => sortPrefsRef.current.get(normalizePath(currentDirectory || ''))?.sortColumn ?? 'name')
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => sortPrefsRef.current.get(normalizePath(currentDirectory || ''))?.sortDirection ?? 'asc')
   
   // Load persisted sort prefs on mount
   useEffect(() => {
@@ -322,15 +344,10 @@ export const FileGrid: React.FC = () => {
   const [lastClickTime, setLastClickTime] = useState<number>(0)
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null)
   const [isMergePDFOpen, setMergePDFOpen] = useState(false)
-  const [isUploadToVaultsOpen, setUploadToVaultsOpen] = useState(false)
-  const [vaultUploadSourcePaths, setVaultUploadSourcePaths] = useState<string[]>([])
-  const [vaultUploadTargetDir, setVaultUploadTargetDir] = useState('')
   const [isExtractedTextOpen, setExtractedTextOpen] = useState(false)
   const [extractedTextData, setExtractedTextData] = useState({ fileName: '', text: '' })
   const [isIndexPrefixDialogOpen, setIsIndexPrefixDialogOpen] = useState(false)
   const [isRenameIndexDialogOpen, setIsRenameIndexDialogOpen] = useState(false)
-  const [isSmartRenameDialogOpen, setIsSmartRenameDialogOpen] = useState(false)
-  const [smartRenameFile, setSmartRenameFile] = useState<FileItem | null>(null)
   const [prefixDialogFiles, setPrefixDialogFiles] = useState<FileItem[]>([])
   const closeIndexPrefixDialog = useCallback(() => {
     setIsIndexPrefixDialogOpen(false)
@@ -356,11 +373,12 @@ export const FileGrid: React.FC = () => {
   const [fileOpRetrying, setFileOpRetrying] = useState(false)
   const [isImagePasteOpen, setImagePasteOpen] = useState(false)
   const [fileGridBackgroundPath, setFileGridBackgroundPath] = useState<string>('')
-  const [fileGridBackgroundUrl, setFileGridBackgroundUrl] = useState<string>('')
+  // Seed background from the module cache so it's present on first paint after a remount (no fade-in).
+  const [fileGridBackgroundUrl, setFileGridBackgroundUrl] = useState<string>(bgCache?.url ?? '')
   const [backgroundFillPath, setBackgroundFillPath] = useState<string>('')
-  const [backgroundFillUrl, setBackgroundFillUrl] = useState<string>('')
-  const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>('watermark')
-  const [enableBackgrounds, setEnableBackgrounds] = useState(true)
+  const [backgroundFillUrl, setBackgroundFillUrl] = useState<string>(bgCache?.fillUrl ?? '')
+  const [backgroundType, setBackgroundType] = useState<'watermark' | 'backgroundFill'>(bgCache?.type ?? 'watermark')
+  const [enableBackgrounds, setEnableBackgrounds] = useState(bgCache?.enabled ?? true)
   const [transferCommandMappings, setTransferCommandMappings] = useState<{ [key: string]: string }>({})
   
   // Drag selection state
@@ -911,51 +929,64 @@ export const FileGrid: React.FC = () => {
     isDragStarted,
   ]);
 
-  // Debounced directory loading to prevent rapid reloads
+  // Debounced directory loading to prevent rapid reloads.
+  // `background: true` = stale-while-revalidate refresh behind a cache hit — update the
+  // data + cache silently, without the loading spinner, status/log spam, or filter reset.
   const debouncedLoadDirectory = useCallback(
-    async (dirPath: string) => {
+    async (dirPath: string, opts?: { background?: boolean }) => {
       if (!dirPath || dirPath.trim() === '') return
-      
+      const background = !!opts?.background
+
       // Prevent concurrent loads
       if (isLoadingRef.current) return
       isLoadingRef.current = true
-      setIsLoading(true)
-      
+      if (!background) setIsLoading(true)
+
       const navStart = performance.now();
       try {
         // Normalize the path before validation
         const normalizedPath = normalizePath(dirPath);
         if (!normalizedPath) {
-          addLog(`Invalid path: ${dirPath}`, 'error')
-          setStatus('Invalid directory path', 'error')
+          if (!background) {
+            addLog(`Invalid path: ${dirPath}`, 'error')
+            setStatus('Invalid directory path', 'error')
+          }
           return
         }
-        
+
         // Validate path exists and is accessible
         const isValid = await (window.electronAPI as any).validatePath(normalizedPath)
         if (!isValid) {
-          addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error')
-          setStatus(`Cannot access: ${formatPathForLog(normalizedPath)}`, 'error')
+          dirCacheInvalidate(normalizedPath)
+          if (!background) {
+            addLog(`Invalid or inaccessible path: ${normalizedPath}`, 'error')
+            setStatus(`Cannot access: ${formatPathForLog(normalizedPath)}`, 'error')
+          }
           return
         }
-        
+
         const contents = await (window.electronAPI as any).getDirectoryContents(normalizedPath)
         // Normalize shape and apply filters
         const files = Array.isArray(contents) ? contents : (contents && Array.isArray(contents.files) ? contents.files : [])
+        dirCacheSet(normalizedPath, files) // keep the cache fresh on every load
         const filtered = filterFiles(files)
         setFolderItems(filtered)
-        setDisplayedDirectory(normalizedPath)
-        setFileSearchFilter('') // Clear filter when new directory loads - avoids momentary unfiltered flash
-        const navEnd = performance.now();
-        addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
-        addLog(`Loaded directory: ${formatPathForLog(normalizedPath)}`)
-        setStatus(`Loaded ${filtered.length} items`, 'info')
+        if (!background) {
+          setDisplayedDirectory(normalizedPath)
+          setFileSearchFilter('') // Clear filter when new directory loads - avoids momentary unfiltered flash
+          const navEnd = performance.now();
+          addLog(`⏱ Folder load time: ${((navEnd - navStart) / 1000).toFixed(3)}s`);
+          addLog(`Loaded directory: ${formatPathForLog(normalizedPath)}`)
+          setStatus(`Loaded ${filtered.length} items`, 'info')
+        }
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        addLog(`Failed to load directory: ${errorMessage}`, 'error')
-        setStatus(`Failed to load directory: ${errorMessage}`, 'error')
+        if (!background) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          addLog(`Failed to load directory: ${errorMessage}`, 'error')
+          setStatus(`Failed to load directory: ${errorMessage}`, 'error')
+        }
       } finally {
-        setIsLoading(false)
+        if (!background) setIsLoading(false)
         setContentReady(true)
         isLoadingRef.current = false
       }
@@ -963,11 +994,23 @@ export const FileGrid: React.FC = () => {
     [addLog, setFolderItems, setDisplayedDirectory, setFileSearchFilter, filterFiles, setStatus]
   );
 
-  // Load directory contents when current directory changes with debouncing
+  // Load directory contents when current directory changes.
   useEffect(() => {
     if (!currentDirectory) return;
 
-    // Clear immediately to prevent showing OLD folder's items with NEW folder's sort/group
+    // Fast path: previously-loaded dir is cached → paint it instantly (no blank, no debounce),
+    // then revalidate behind the scenes (stale-while-revalidate). Makes tab switches / revisits smooth.
+    const cached = dirCacheGet(currentDirectory);
+    if (cached) {
+      setFolderItems(filterFiles(cached));
+      setDisplayedDirectory(normalizePath(currentDirectory));
+      setFileSearchFilter('');
+      setContentReady(true);
+      const id = setTimeout(() => debouncedLoadDirectory(currentDirectory, { background: true }), 0);
+      return () => clearTimeout(id);
+    }
+
+    // Cold path: clear to avoid showing OLD folder's items under the NEW folder's sort/group.
     setFolderItems([]);
     // Suppress manual empty-section headers until the new folder's files have arrived
     setContentReady(false);
@@ -977,7 +1020,7 @@ export const FileGrid: React.FC = () => {
     }, 50); // 50ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [currentDirectory, debouncedLoadDirectory, setFolderItems]);
+  }, [currentDirectory, debouncedLoadDirectory, setFolderItems, filterFiles, setDisplayedDirectory, setFileSearchFilter]);
 
   // Listen for manual refresh events from FolderInfoBar
   useEffect(() => {
@@ -1021,7 +1064,11 @@ export const FileGrid: React.FC = () => {
     
     const key = normalizePath(currentDirectory || '')
     sortPrefsRef.current.set(key, { sortColumn: newColumn, sortDirection: newDirection })
-    
+    // Sync localStorage mirror so the next mount seeds the correct sort synchronously (no re-sort flash).
+    try {
+      localStorage.setItem('fileGrid_sortPreferences', JSON.stringify(Object.fromEntries(sortPrefsRef.current)))
+    } catch { /* ignore */ }
+
     // Persist to config (survives app restart)
     ;(async () => {
       try {
@@ -1347,10 +1394,18 @@ export const FileGrid: React.FC = () => {
 
     try {
       switch (action) {
-        case 'copy_path':
-          await navigator.clipboard.writeText(contextMenu.fileItem.path)
-          setStatus(`Copied path: ${contextMenu.fileItem.path}`, 'info')
+        case 'copy_path': {
+          // If the right-clicked item is part of a multi-selection, copy all selected paths (one per line).
+          const pathItems = selectedFiles.length > 1 && selectedFilesSet.has(contextMenu.fileItem.name)
+            ? sortedFiles.filter(f => selectedFilesSet.has(f.name))
+            : [contextMenu.fileItem]
+          await navigator.clipboard.writeText(pathItems.map(f => f.path).join('\n'))
+          setStatus(
+            pathItems.length > 1 ? `Copied ${pathItems.length} paths` : `Copied path: ${pathItems[0].path}`,
+            'info'
+          )
           break
+        }
         case 'open':
           await handleOpenOrNavigate(contextMenu.fileItem)
           break
@@ -1416,31 +1471,6 @@ export const FileGrid: React.FC = () => {
           setMergePDFOpen(true)
           setStatus('Opening Merge PDF dialog', 'info')
           break
-        case 'upload_to_vaults': {
-          const appSettings = await settingsService.getSettings()
-          const vaultDir = appSettings.vaultsClientPdfsDirectory?.trim()
-          if (!vaultDir) {
-            addLog('Set Vaults Client PDFs folder in Settings → Paths before uploading.', 'error')
-            setStatus('Configure Client PDFs folder in Settings → Paths', 'error')
-            break
-          }
-          const pdfsForVault = sortedFiles.filter(
-            (f) =>
-              f.type === 'file' &&
-              selectedFilesSet.has(f.name) &&
-              f.name.toLowerCase().endsWith('.pdf')
-          )
-          if (pdfsForVault.length === 0) {
-            addLog('No PDF files in selection to upload.', 'error')
-            setStatus('No PDFs selected', 'error')
-            break
-          }
-          setVaultUploadSourcePaths(pdfsForVault.map((f) => f.path))
-          setVaultUploadTargetDir(vaultDir)
-          setUploadToVaultsOpen(true)
-          setStatus('Upload to Vaults', 'info')
-          break
-        }
         case 'extract_zip':
           const selectedZipFiles = selectedFiles.filter(filename => 
             filename.toLowerCase().endsWith('.zip')
@@ -1628,11 +1658,15 @@ export const FileGrid: React.FC = () => {
           const isBlocked = await (window.electronAPI as any).isFileBlocked(file.path);
           setPropertiesFile({
             name: file.name,
-            extension: file.name.split('.').pop() || '',
+            extension: file.type === 'folder' ? '' : (file.name.includes('.') ? file.name.split('.').pop()! : ''),
             size: stats.size,
-            modified: stats.mtime ? new Date(stats.mtime).toLocaleString() : '',
+            modified: stats.mtime || '',
+            created: stats.birthtime || stats.ctime || '',
+            accessed: stats.atime || '',
             path: file.path,
             isBlocked,
+            isDirectory: stats.isDirectory ?? file.type === 'folder',
+            readonly: !!stats.readonly,
           });
           setPropertiesOpen(true);
           break;
@@ -2055,10 +2089,6 @@ export const FileGrid: React.FC = () => {
             setIsEditPdfOpen(true);
           }
           break;
-        case 'smart_rename':
-          setSmartRenameFile(contextMenu.fileItem);
-          setIsSmartRenameDialogOpen(true);
-          break;
         case 'proper_case_rename':
           await handleProperCaseRename(contextMenu.fileItem);
           break;
@@ -2117,7 +2147,7 @@ export const FileGrid: React.FC = () => {
     }
 
   handleCloseContextMenu()
-  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, folderItems, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, setUploadToVaultsOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, refreshDirectory, setSelectedFiles, setIsPreviewPaneOpen, addRecentlyTransferredFiles])
+  }, [contextMenu.fileItem, selectedFiles, selectedFilesSet, sortedFiles, folderItems, currentDirectory, addLog, setStatus, addTabToCurrentWindow, setIsRenaming, setRenameValue, handleDeleteFile, setExtractedTextData, setExtractedTextOpen, setMergePDFOpen, hideTemporaryFiles, setFolderItems, handleOpenOrNavigate, handleCloseContextMenu, addQuickAccessPath, removeQuickAccessPath, refreshDirectory, setSelectedFiles, setIsPreviewPaneOpen, addRecentlyTransferredFiles])
 
   const closeFileOpFailure = useCallback(() => {
     setFileOpFailureDialog((d) => ({ ...d, open: false }))
@@ -2698,47 +2728,6 @@ export const FileGrid: React.FC = () => {
       });
     }
   }, [currentDirectory, addLog, setStatus, refreshDirectory]);
-
-  // Handler for smart rename confirmation
-  const handleSmartRenameConfirm = useCallback(async (newName: string) => {
-    if (!smartRenameFile) return;
-    
-    try {
-      const oldPath = smartRenameFile.path;
-      const newPath = joinPath(currentDirectory === '/' ? '' : currentDirectory, newName);
-      
-      await (window.electronAPI as any).renameItem(oldPath, newPath);
-      addLog(`Smart renamed: ${smartRenameFile.name} → ${newName}`);
-      setStatus('File renamed', 'success');
-      await refreshDirectory(currentDirectory);
-      {
-        const undoDir = currentDirectory;
-        const oldName = smartRenameFile.name;
-        pushUndoableOperation({
-          description: `Smart renamed "${oldName}" to "${newName}"`,
-          undo: async () => {
-            await (window.electronAPI as any).renameItem(newPath, oldPath);
-            await refreshDirectory(undoDir);
-          },
-        });
-      }
-      setSmartRenameFile(null);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addLog(`Failed to rename: ${errorMessage}`, 'error');
-      setStatus('Failed to rename file', 'error');
-      const { title, description } = renameFailedToastContent(error, smartRenameFile.name);
-      showToast({
-        title,
-        description,
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-        position: 'top',
-      });
-      throw error; // Re-throw so dialog can handle it
-    }
-  }, [smartRenameFile, currentDirectory, addLog, setStatus, refreshDirectory]);
 
   // Split PDF dialog confirm: write the new files, highlight them, allow undo
   const handleSplitPdfConfirm = useCallback(async (file: FileItem, options: { segments: Array<{ pages: number[]; name: string }> }) => {
@@ -4283,8 +4272,16 @@ export const FileGrid: React.FC = () => {
     });
   }, [refreshDirectory, currentDirectory, addLog, setStatus]);
 
-  // Column management state - load from config (persisted) or localStorage fallback
-  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({ ...DEFAULT_COLUMN_WIDTHS });
+  // Column management state. Seed synchronously from localStorage so the FIRST paint already has
+  // the saved widths — otherwise columns visibly jump from defaults when the async config load lands
+  // (FileGrid remounts each time you enter a deep folder, so this was visible on every navigation).
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    try {
+      const local = localStorage.getItem('fileGrid_columnWidths');
+      if (local) return { ...DEFAULT_COLUMN_WIDTHS, ...JSON.parse(local) };
+    } catch { /* fall through to defaults */ }
+    return { ...DEFAULT_COLUMN_WIDTHS };
+  });
   const columnWidthsLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -4952,21 +4949,17 @@ export const FileGrid: React.FC = () => {
           return `file://${imagePath.replace(/\\/g, '/')}`;
         };
         
-        // Load corner mascot (watermark) URL
-        if (watermarkPath) {
-          const watermarkUrl = await loadImageUrl(watermarkPath);
-          setFileGridBackgroundUrl(watermarkUrl);
-        } else {
-          setFileGridBackgroundUrl('');
-        }
-        
-        // Load background fill URL
-        if (fillPath) {
-          const fillUrl = await loadImageUrl(fillPath);
-          setBackgroundFillUrl(fillUrl);
-        } else {
-          setBackgroundFillUrl('');
-        }
+        // Resolve both URLs, then cache so subsequent FileGrid remounts paint instantly.
+        const resolvedWatermarkUrl = watermarkPath ? await loadImageUrl(watermarkPath) : '';
+        setFileGridBackgroundUrl(resolvedWatermarkUrl);
+        const resolvedFillUrl = fillPath ? await loadImageUrl(fillPath) : '';
+        setBackgroundFillUrl(resolvedFillUrl);
+        bgCache = {
+          url: resolvedWatermarkUrl,
+          fillUrl: resolvedFillUrl,
+          type: bgType,
+          enabled: settings.enableBackgrounds !== false,
+        };
       } catch (error) {
         console.error('Error loading file grid background setting:', error);
       }
@@ -5549,6 +5542,27 @@ export const FileGrid: React.FC = () => {
       onClick={handleGridClick}
       onPointerDownCapture={handleGridPointerDownCapture}
     >
+      {/* Navigation loader — covers the grid so the directory appears fully formed
+          instead of rows/icons/strips popping in one by one. Cache hits skip this (contentReady
+          is set synchronously), so it only shows on genuine cold loads. */}
+      {(isLoading || !contentReady) && (
+        <Flex
+          position="absolute"
+          inset={0}
+          zIndex={30}
+          bg="df.canvas"
+          align="center"
+          justify="center"
+          direction="column"
+          gap={3}
+          aria-busy="true"
+        >
+          <Spinner size="lg" color="blue.400" borderWidth="3px" />
+          <Text fontSize="xs" color="gray.500" letterSpacing="0.08em" textTransform="uppercase">
+            Loading
+          </Text>
+        </Flex>
+      )}
       <QuickFilterChips
         folderItems={folderItems}
         typeFilter={typeFilter}
@@ -5918,9 +5932,6 @@ export const FileGrid: React.FC = () => {
         setStatus={setStatus}
         refreshDirectory={refreshDirectory}
         setMergePDFOpen={setMergePDFOpen}
-        setUploadToVaultsOpen={setUploadToVaultsOpen}
-        setVaultUploadSourcePaths={setVaultUploadSourcePaths}
-        setVaultUploadTargetDir={setVaultUploadTargetDir}
         setExtractedTextOpen={setExtractedTextOpen}
         setPropertiesOpen={setPropertiesOpen}
         setImagePasteOpen={setImagePasteOpen}
@@ -5928,12 +5939,7 @@ export const FileGrid: React.FC = () => {
         setMoveToFiles={setMoveToFiles}
         setIsIndexPrefixDialogOpen={setIsIndexPrefixDialogOpen}
         setIsRenameIndexDialogOpen={setIsRenameIndexDialogOpen}
-        setIsSmartRenameDialogOpen={setIsSmartRenameDialogOpen}
-        setSmartRenameFile={setSmartRenameFile}
         isMergePDFOpen={isMergePDFOpen}
-        isUploadToVaultsOpen={isUploadToVaultsOpen}
-        vaultUploadSourcePaths={vaultUploadSourcePaths}
-        vaultUploadTargetDir={vaultUploadTargetDir}
         isExtractedTextOpen={isExtractedTextOpen}
         extractedTextData={extractedTextData}
         isPropertiesOpen={isPropertiesOpen}
@@ -5944,13 +5950,10 @@ export const FileGrid: React.FC = () => {
         isMoveToDialogOpen={isMoveToDialogOpen}
         moveToFiles={moveToFiles}
         isRenameIndexDialogOpen={isRenameIndexDialogOpen}
-        smartRenameFile={smartRenameFile}
-        isSmartRenameDialogOpen={isSmartRenameDialogOpen}
         closeIndexPrefixDialog={closeIndexPrefixDialog}
         closeRenameIndexDialog={closeRenameIndexDialog}
         handleAssignPrefix={handleAssignPrefix}
         handleRenameIndex={handleRenameIndex}
-        handleSmartRenameConfirm={handleSmartRenameConfirm}
         handleUnblockFile={handleUnblockFile}
         handleImageSaved={handleImageSaved}
         showFileOperationFailure={showFileOperationFailure}

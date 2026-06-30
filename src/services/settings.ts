@@ -1,10 +1,8 @@
 // Define the settings interface
 export interface AppSettings {
   rootPath: string;
-  claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
-  templateFolderPath?: string;
   workpaperTemplateFolderPath?: string;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
@@ -29,7 +27,8 @@ export interface AppSettings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   hideClaudeMd?: boolean;
-  aiEditorInstructions?: string;
+  /** Show the git status indicator in the footer. Default on for existing configs; off for fresh installs. */
+  showGitStatus?: boolean;
   quickAccessPaths?: string[];
   recentClientPaths?: string[]; // Latest 5 client folders visited (paths)
   recentFolderPaths?: string[]; // Latest client sub-folders visited (full paths), for Move to ▸
@@ -62,8 +61,6 @@ export interface AppSettings {
   chromeExtensionBridgeEnabled?: boolean;
   chromeExtensionBridgePort?: number;
   chromeExtensionBridgeSecret?: string;
-  /** Absolute path to Vaults Client PDFs folder (e.g. …/Vaults/Client Emails/Client PDFs). */
-  vaultsClientPdfsDirectory?: string;
 
 }
 
@@ -133,16 +130,6 @@ class SettingsService {
       console.error('Error setting root path:', error);
       throw error;
     }
-  }
-
-  async getTemplateFolderPath(): Promise<string | undefined> {
-    const settings = await this.getSettings();
-    return settings.templateFolderPath;
-  }
-
-  async setTemplateFolderPath(path: string): Promise<void> {
-    const settings = await this.getSettings();
-    await this.setSettings({ ...settings, templateFolderPath: path });
   }
 
   async getWorkpaperTemplateFolderPath(): Promise<string | undefined> {

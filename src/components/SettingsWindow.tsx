@@ -24,8 +24,6 @@ import {
   Folder,
   Settings as SettingsIcon,
   Keyboard,
-  Eye,
-  EyeOff,
   Save,
   X,
   Edit3,
@@ -50,7 +48,6 @@ import { useAppContext } from '../context/AppContext';
 import { normalizePath } from '../utils/path';
 import { isPlainBackspaceOnlyShortcut } from '../utils/shortcuts';
 import {
-  AffixedInputRow,
   PathInputRow,
   SettingsBlock,
   SettingsList,
@@ -195,10 +192,10 @@ const BackgroundThumbnail: React.FC<BackgroundThumbnailProps> = ({ img, isSelect
 
 interface Settings {
   rootPath: string;
-  claudeApiKey?: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
   showClientInfoBar?: boolean;
+  showGitStatus?: boolean;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
   newTabShortcut?: string;
@@ -217,7 +214,6 @@ interface Settings {
   hideTemporaryFiles?: boolean;
   hideDotFiles?: boolean;
   hideClaudeMd?: boolean;
-  aiEditorInstructions?: string;
   fileGridBackgroundPath?: string;
   backgroundType?: 'watermark' | 'backgroundFill';
   backgroundFillPath?: string;
@@ -227,7 +223,6 @@ interface Settings {
   chromeExtensionBridgeEnabled?: boolean;
   chromeExtensionBridgePort?: number;
   chromeExtensionBridgeSecret?: string;
-  vaultsClientPdfsDirectory?: string;
 
 }
 
@@ -258,12 +253,9 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const { colorMode, setColorMode } = useColorMode();
   const [rootPath, setRootPath] = useState('');
   const [originalRootPath, setOriginalRootPath] = useState('');
-  const [claudeApiKey, setClaudeApiKey] = useState('');
   const [gstTemplatePath, setGstTemplatePath] = useState('');
   const [clientbasePath, setClientbasePath] = useState('');
-  const [templateFolderPath, setTemplateFolderPath] = useState<string>('');
   const [workpaperTemplateFolderPath, setWorkpaperTemplateFolderPath] = useState<string>('');
-  const [vaultsClientPdfsDirectory, setVaultsClientPdfsDirectory] = useState('');
   const [activationShortcut, setActivationShortcut] = useState('`');
   const [enableActivationShortcut, setEnableActivationShortcut] = useState(true);
   const [newTabShortcut, setNewTabShortcut] = useState('Ctrl+T');
@@ -281,7 +273,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   );
   const [enableBackspaceNavigationShortcut, setEnableBackspaceNavigationShortcut] = useState(true);
   const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
-  const [showClaudeKey, setShowClaudeKey] = useState(false);
   const [sidebarCollapsedByDefault, setSidebarCollapsedByDefault] = useState(false);
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState(true);
   const [hideDotFiles, setHideDotFiles] = useState(true);
@@ -303,7 +294,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
   const [isKeyRecorderOpen, setIsKeyRecorderOpen] = useState(false);
   const [recordingKeys, setRecordingKeys] = useState<string[]>([]);
   const [currentEditingShortcut, setCurrentEditingShortcut] = useState<string>('');
-  const { setRootDirectory, showClientInfoBar, setShowClientInfoBar, reloadSettings } = useAppContext();
+  const { setRootDirectory, showClientInfoBar, setShowClientInfoBar, showGitStatus, setShowGitStatus, reloadSettings } = useAppContext();
 
   const {
     surfaceBg: bgColor,
@@ -358,10 +349,8 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         const loadedSettings = await settingsService.getSettings() as Settings;
         setRootPath(loadedSettings.rootPath);
         setOriginalRootPath(loadedSettings.rootPath);
-        setClaudeApiKey(loadedSettings.claudeApiKey || '');
         setGstTemplatePath(loadedSettings.gstTemplatePath || '');
         setClientbasePath(loadedSettings.clientbasePath || '');
-        setVaultsClientPdfsDirectory(loadedSettings.vaultsClientPdfsDirectory || '');
         setActivationShortcut(loadedSettings.activationShortcut || '`');
         setEnableActivationShortcut(loadedSettings.enableActivationShortcut !== false);
         setNewTabShortcut(loadedSettings.newTabShortcut || 'Ctrl+T');
@@ -406,7 +395,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
           setJumpModeQuickFolderPaths(next);
         }
         setSidebarCollapsedByDefault(loadedSettings.sidebarCollapsedByDefault || false);
-        settingsService.getTemplateFolderPath().then(path => setTemplateFolderPath(path || ''));
         settingsService.getWorkpaperTemplateFolderPath().then(path => setWorkpaperTemplateFolderPath(path || ''));
         // File grid visibility (default true when unset)
         setHideTemporaryFiles(loadedSettings.hideTemporaryFiles !== false);
@@ -501,10 +489,10 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
 
       const newSettings: Settings = {
         rootPath,
-        claudeApiKey: claudeApiKey || undefined,
         gstTemplatePath: gstTemplatePath || undefined,
         clientbasePath: clientbasePath || undefined,
         showClientInfoBar,
+        showGitStatus,
         activationShortcut,
         enableActivationShortcut,
         newTabShortcut,
@@ -533,7 +521,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
         chromeExtensionBridgeEnabled,
         chromeExtensionBridgePort: bridgePortNum,
         chromeExtensionBridgeSecret: bridgeSecret || undefined,
-        vaultsClientPdfsDirectory: vaultsClientPdfsDirectory.trim() || undefined,
 
       };
 
@@ -604,24 +591,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       showToast({
         title: 'Error',
         description: 'Failed to select directory',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-    }
-  };
-
-  const handleBrowseVaultsClientPdfs = async () => {
-    try {
-      const result = await window.electronAPI.selectDirectory();
-      if (result) {
-        setVaultsClientPdfsDirectory(result);
-      }
-    } catch (error) {
-      console.error('Error selecting Client PDFs folder:', error);
-      showToast({
-        title: 'Error',
-        description: 'Failed to select folder',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -724,25 +693,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
       showToast({
         title: 'Error',
         description: 'Failed to select clientbase CSV file',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-      });
-    }
-  };
-
-  const handleTemplateFolderChange = async () => {
-    try {
-      const result = await (window.electronAPI as any).selectDirectory();
-      if (result) {
-        setTemplateFolderPath(result);
-        await settingsService.setTemplateFolderPath(result);
-      }
-    } catch (error) {
-      console.error('Error selecting template folder:', error);
-      showToast({
-        title: 'Error',
-        description: 'Failed to select template folder',
         status: 'error',
         duration: 3000,
         isClosable: true,
@@ -1230,14 +1180,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         browseAriaLabel="Browse GST template file"
                       />
                     </SettingsRow>
-                    <SettingsRow stacked title="AI email template folder" hint="YAML templates for the AI Templater.">
-                      <PathInputRow
-                        value={templateFolderPath}
-                        readOnly
-                        placeholder="Select AI email template folder…"
-                        onBrowse={handleTemplateFolderChange}
-                      />
-                    </SettingsRow>
                     <SettingsRow stacked title="Workpaper template folder" hint="Excel templates for workpaper creation.">
                       <PathInputRow
                         value={workpaperTemplateFolderPath}
@@ -1258,19 +1200,6 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                         placeholder="Enter clientbase CSV file path"
                         onBrowse={handleBrowseClientbase}
                         browseAriaLabel="Browse clientbase CSV"
-                      />
-                    </SettingsRow>
-                    <SettingsRow
-                      stacked
-                      title="Vaults Client PDFs folder"
-                      hint="Intake folder in your Vaults repo (e.g. Client Emails/Client PDFs). Used by Upload to Vaults Repo."
-                    >
-                      <PathInputRow
-                        value={vaultsClientPdfsDirectory}
-                        onChange={(e) => setVaultsClientPdfsDirectory(e.target.value)}
-                        placeholder="Select or paste path to Client PDFs folder…"
-                        onBrowse={handleBrowseVaultsClientPdfs}
-                        browseAriaLabel="Browse Client PDFs folder"
                       />
                     </SettingsRow>
                   </SettingsList>
@@ -1302,70 +1231,25 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                   <SettingsList>
                     <SettingsRow
                       title="Color mode"
-                      hint="Light or dark interface."
+                      hint="Locked to dark for now."
                       control={
-                        <Flex borderWidth="1px" borderColor={borderColor} borderRadius="md" overflow="hidden" h="26px">
-                          <Button
-                            onClick={() => {
-                              setColorMode('light');
-                              localStorage.setItem('chakra-ui-color-mode', 'light');
-                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
-                                (window.electronAPI as any).broadcastThemeChange('light');
-                              }
-                              window.dispatchEvent(
-                                new StorageEvent('storage', {
-                                  key: 'chakra-ui-color-mode',
-                                  newValue: 'light',
-                                  storageArea: localStorage,
-                                }),
-                              );
-                            }}
-                            size="xs"
-                            h="full"
-                            borderRadius={0}
-                            px={2.5}
-                            gap={1.5}
-                            fontSize={SETTINGS_FS.button}
-                            fontWeight="500"
-                            variant="ghost"
-                            bg={colorMode === 'light' ? selectedBg : 'transparent'}
-                            color={colorMode === 'light' ? accentText : secondaryTextColor}
-                            _hover={{ bg: colorMode === 'light' ? selectedBg : tabHoverBg }}
-                          >
-                            <Icon boxSize={3.5} asChild><Sun /></Icon>
-                            Light
-                          </Button>
-                          <Box w="1px" bg={borderColor} />
-                          <Button
-                            onClick={() => {
-                              setColorMode('dark');
-                              localStorage.setItem('chakra-ui-color-mode', 'dark');
-                              if (window.electronAPI && (window.electronAPI as any).broadcastThemeChange) {
-                                (window.electronAPI as any).broadcastThemeChange('dark');
-                              }
-                              window.dispatchEvent(
-                                new StorageEvent('storage', {
-                                  key: 'chakra-ui-color-mode',
-                                  newValue: 'dark',
-                                  storageArea: localStorage,
-                                }),
-                              );
-                            }}
-                            size="xs"
-                            h="full"
-                            borderRadius={0}
-                            px={2.5}
-                            gap={1.5}
-                            fontSize={SETTINGS_FS.button}
-                            fontWeight="500"
-                            variant="ghost"
-                            bg={colorMode === 'dark' ? selectedBg : 'transparent'}
-                            color={colorMode === 'dark' ? accentText : secondaryTextColor}
-                            _hover={{ bg: colorMode === 'dark' ? selectedBg : tabHoverBg }}
-                          >
-                            <Icon boxSize={3.5} asChild><Moon /></Icon>
-                            Dark
-                          </Button>
+                        <Flex
+                          borderWidth="1px"
+                          borderColor={borderColor}
+                          borderRadius="md"
+                          h="26px"
+                          align="center"
+                          gap={1.5}
+                          px={2.5}
+                          bg={selectedBg}
+                          color={accentText}
+                          opacity={0.85}
+                          cursor="not-allowed"
+                          fontSize={SETTINGS_FS.button}
+                          fontWeight="500"
+                        >
+                          <Icon boxSize={3.5} asChild><Moon /></Icon>
+                          Dark
                         </Flex>
                       }
                     />
@@ -1378,6 +1262,11 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                       title="Client info bar"
                       hint="Name, IRD, and job links below the file grid."
                       control={<ToggleSwitch checked={showClientInfoBar} onChange={setShowClientInfoBar} />}
+                    />
+                    <SettingsRow
+                      title="Git status in footer"
+                      hint="Show the current repo's git branch/status indicator. Off by default for copies without a repo."
+                      control={<ToggleSwitch checked={showGitStatus} onChange={setShowGitStatus} />}
                     />
                     <SettingsRow
                       title="Collapse sidebar on launch"
@@ -1617,7 +1506,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
                     <ShortcutRow shortcutType="closeTabShortcut" command="Close tab" keybinding={closeTabShortcut} description="Close the current tab." />
                     <ShortcutRow shortcutType="clientSearchShortcut" command="Search clients" keybinding={clientSearchShortcut} description="Open the client search overlay." />
                     <ShortcutRow shortcutType="jumpModeOnParentShortcut" command="Jump mode at parent" keybinding={jumpModeOnParentShortcut} description="Open the address-bar jump filter on the parent folder; repeat to climb one level at a time." />
-                    <ShortcutRow shortcutType="backspaceNavigationShortcut" command="Go to parent folder" keybinding={backspaceNavigationShortcut} description="Move the grid up one level without opening jump mode." />
+                    <ShortcutRow shortcutType="backspaceNavigationShortcut" command="Back / parent folder" keybinding={backspaceNavigationShortcut} description="In jump mode, step back up the quick-nav trail one level; otherwise move the grid up to the parent folder." />
                   </SettingsList>
                 </SettingsBlock>
 
@@ -1758,38 +1647,7 @@ export const SettingsWindow: React.FC<SettingsWindowProps> = ({ isOpen, onClose 
             {/* Integrations                                               */}
             {/* ---------------------------------------------------------- */}
             <Tabs.Content value="integrations" h="full" overflow="hidden" p={0}>
-              <SettingsPage title="Integrations" subtitle="API keys and the Chrome capture bridge.">
-                <SettingsBlock label="Anthropic">
-                  <SettingsList>
-                    <SettingsRow stacked title="Claude API key" hint="Used for AI features throughout DocuFrame.">
-                      <AffixedInputRow
-                        inputProps={{
-                          value: claudeApiKey,
-                          onChange: (e) => setClaudeApiKey(e.target.value),
-                          type: showClaudeKey ? 'text' : 'password',
-                          placeholder: 'sk-ant-…',
-                        }}
-                        suffix={
-                          <IconButton
-                            variant="ghost"
-                            borderRadius={0}
-                            h="full"
-                            minW="30px"
-                            w="30px"
-                            size="xs"
-                            color={mutedIcon}
-                            _hover={{ color: 'blue.500' }}
-                            onClick={() => setShowClaudeKey(!showClaudeKey)}
-                            aria-label={showClaudeKey ? 'Hide API key' : 'Show API key'}
-                          >
-                            <Icon boxSize={3.5} asChild>{showClaudeKey ? <EyeOff /> : <Eye />}</Icon>
-                          </IconButton>
-                        }
-                      />
-                    </SettingsRow>
-                  </SettingsList>
-                </SettingsBlock>
-
+              <SettingsPage title="Integrations" subtitle="The Chrome capture bridge.">
                 <SettingsBlock label="Chrome extension bridge">
                   <SettingsList>
                     <SettingsRow

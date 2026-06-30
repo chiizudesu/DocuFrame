@@ -2,7 +2,6 @@ export interface Config {
   rootPath: string;
   gstTemplatePath?: string;
   clientbasePath?: string;
-  templateFolderPath?: string;
   workpaperTemplateFolderPath?: string;
   activationShortcut?: string;
   enableActivationShortcut?: boolean;
@@ -22,13 +21,13 @@ export interface Config {
   enableBackspaceNavigationShortcut?: boolean;
   sidebarCollapsedByDefault?: boolean;
   hideTemporaryFiles?: boolean;
-  aiEditorInstructions?: string;
+  /** Show the git status indicator in the footer. Default on for existing configs; off for fresh installs. */
+  showGitStatus?: boolean;
   quickAccessPaths?: string[];
   /** Localhost HTTP bridge for Chrome extension PDF capture (127.0.0.1 only). */
   chromeExtensionBridgeEnabled?: boolean;
   chromeExtensionBridgePort?: number;
   chromeExtensionBridgeSecret?: string;
-  vaultsClientPdfsDirectory?: string;
 
 }
 

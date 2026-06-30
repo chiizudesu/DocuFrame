@@ -30,7 +30,7 @@ export const SectionChecklistPane: React.FC = () => {
     sessionLayerViewEnabled,
   } = useAppContext();
 
-  // Colors — aligned to docuFramePalette (same pattern as JobContextPane)
+  // Colors — aligned to docuFramePalette
   const headerBg = useColorModeValue(docuFramePalette.light.footer, docuFramePalette.dark.tabStrip);
   const borderColor = useColorModeValue(docuFramePalette.light.border, docuFramePalette.dark.border);
   const bgColor = useColorModeValue(docuFramePalette.light.canvas, docuFramePalette.dark.canvas);

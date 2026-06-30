@@ -27,7 +27,6 @@ import { transferFiles } from '../src/main/commands/transfer';
 import { extractEmlSources, type EmlSource } from '../src/main/commands/extractEml';
 import { invalidateConfigCache } from '../src/main/config';
 import { getRootGitStatus, rootGitPush, rootGitPull, rootGitDiscard } from '../src/main/rootGit';
-import { uploadClientPdfsToVaults } from '../src/main/vaultsClientPdfUpload';
 const { parse } = require('csv-parse/sync');
 import yaml from 'js-yaml';
 import { autoUpdaterService } from '../src/main/autoUpdater';
@@ -847,7 +846,6 @@ function buildDefaultConfig(): Config {
     rootPath: app.getPath('documents'),
     gstTemplatePath: undefined,
     clientbasePath: undefined,
-    templateFolderPath: undefined,
     workpaperTemplateFolderPath: undefined,
     showOutputLog: true,
     activationShortcut: '`',
@@ -863,7 +861,7 @@ function buildDefaultConfig(): Config {
     sidebarCollapsedByDefault: false,
     hideTemporaryFiles: true,
     hideClaudeMd: true,
-    aiEditorInstructions: '',
+    showGitStatus: false, // off for fresh installs (e.g. distributed copies without a repo)
   };
 }
 
@@ -1572,30 +1570,30 @@ ipcMain.handle('set-config', async (_, config: Config) => {
 ipcMain.handle('get-directory-contents', async (_, dirPath: string) => {
   try {
     const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
-    const results: any[] = [];
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      try {
-        const stats = await fsPromises.stat(fullPath);
-        const fileItem: any = {
-          name: entry.name,
-          path: fullPath,
-          type: entry.isDirectory() ? 'folder' : 'file',
-          size: stats.size.toString(),
-          modified: stats.mtime.toISOString(),
-          extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined
-        };
-
-        // PDF page count calculation removed for performance
-
-        results.push(fileItem);
-      } catch (error) {
-        // Log and skip busy/locked/inaccessible files
-        console.error(`Skipping file (stat error): ${fullPath}`, error);
-        continue;
-      }
-    }
-    return results;
+    // Stat all entries concurrently — sequential awaits made a 200-folder dir on a
+    // network share pay one round-trip per entry. (libuv threadpool bounds real parallelism;
+    // raise UV_THREADPOOL_SIZE if the share is high-latency.)
+    const results = await Promise.all(
+      entries.map(async (entry) => {
+        const fullPath = path.join(dirPath, entry.name);
+        try {
+          const stats = await fsPromises.stat(fullPath);
+          return {
+            name: entry.name,
+            path: fullPath,
+            type: entry.isDirectory() ? 'folder' : 'file',
+            size: stats.size.toString(),
+            modified: stats.mtime.toISOString(),
+            extension: entry.isFile() ? path.extname(entry.name).toLowerCase().slice(1) : undefined,
+          };
+        } catch (error) {
+          // Skip busy/locked/inaccessible files
+          console.error(`Skipping file (stat error): ${fullPath}`, error);
+          return null;
+        }
+      })
+    );
+    return results.filter(Boolean);
   } catch (error) {
     console.error('Error getting directory contents:', error);
     throw error;
@@ -2577,26 +2575,6 @@ ipcMain.handle('copy-file-silent', async (_, sourcePath: string, targetPath: str
   }
 });
 
-ipcMain.handle(
-  'upload-client-pdfs-to-vaults',
-  async (
-    event,
-    payload: { sourcePaths: string[]; clientName: string; year: string; targetDir: string },
-  ) => {
-    try {
-      return await uploadClientPdfsToVaults(payload, (progress) => {
-        event.sender.send('vault-upload-progress', progress);
-      });
-    } catch (error) {
-      console.error('upload-client-pdfs-to-vaults:', error);
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-  },
-);
-
 // Silent move files (no conflict dialogs - auto-rename on conflict)
 ipcMain.handle('move-files-silent', async (_, files: string[], targetDirectory: string) => {
   try {
@@ -3082,11 +3060,13 @@ ipcMain.handle('get-file-stats', async (_, filePath: string) => {
       mtime: stats.mtime,
       ctime: stats.ctime,
       atime: stats.atime,
+      birthtime: stats.birthtime,
+      readonly: !(stats.mode & 0o200), // owner-write bit clear → read-only
       isFile: stats.isFile(),
       isDirectory: stats.isDirectory(),
     };
   } catch (err) {
-    return { size: 0, mtime: '', ctime: '', atime: '', isFile: false, isDirectory: false };
+    return { size: 0, mtime: '', ctime: '', atime: '', birthtime: '', readonly: false, isFile: false, isDirectory: false };
   }
 });
 
@@ -4191,23 +4171,25 @@ ipcMain.handle('restore-file-backup', async (_, backupPath: string, targetPath: 
 
 ipcMain.handle('open-file-with', async (_, filePath: string, appId: string) => {
   try {
+    // Windows shell APIs (esp. OpenAs_RunDLL) require native backslash paths; the app stores forward slashes.
+    const winPath = filePath.replace(/\//g, '\\');
     switch (appId) {
       case 'excel':
-        spawn('cmd.exe', ['/c', 'start', '', 'excel', filePath], { detached: true, stdio: 'ignore', windowsHide: true });
+        spawn('cmd.exe', ['/c', 'start', '', 'excel', winPath], { detached: true, stdio: 'ignore', windowsHide: true });
         break;
       case 'word':
-        spawn('cmd.exe', ['/c', 'start', '', 'winword', filePath], { detached: true, stdio: 'ignore', windowsHide: true });
+        spawn('cmd.exe', ['/c', 'start', '', 'winword', winPath], { detached: true, stdio: 'ignore', windowsHide: true });
         break;
       case 'notepad':
-        spawn('notepad.exe', [filePath], { detached: true, stdio: 'ignore' });
+        spawn('notepad.exe', [winPath], { detached: true, stdio: 'ignore' });
         break;
       case 'default': {
-        const result = await shell.openPath(filePath);
+        const result = await shell.openPath(winPath);
         if (result) return { success: false, error: result };
         break;
       }
       case 'openas':
-        spawn('rundll32.exe', [`shell32.dll,OpenAs_RunDLL`, filePath], { detached: true, stdio: 'ignore' });
+        spawn('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', winPath], { detached: true, stdio: 'ignore' });
         break;
       default:
         return { success: false, error: `Unknown app: ${appId}` };

@@ -46,14 +46,24 @@ import {
 const MINI_JUMP_UI_FONT =
   '500 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 
+// ponytail: one reused canvas context instead of allocating one per call — this runs
+// for every result on every keystroke, so a fresh canvas each time was needless churn.
+let _measureCtx: CanvasRenderingContext2D | null | undefined
 function measureJumpUiTextWidthPx(text: string): number {
   if (!text) return 0
   if (typeof document === 'undefined') return Math.ceil(text.length * 8)
-  const c = document.createElement('canvas')
-  const ctx = c.getContext('2d')
-  if (!ctx) return Math.ceil(text.length * 8)
-  ctx.font = MINI_JUMP_UI_FONT
-  return Math.ceil(ctx.measureText(text).width)
+  if (_measureCtx === undefined) {
+    _measureCtx = document.createElement('canvas').getContext('2d')
+    if (_measureCtx) _measureCtx.font = MINI_JUMP_UI_FONT
+  }
+  if (!_measureCtx) return Math.ceil(text.length * 8)
+  return Math.ceil(_measureCtx.measureText(text).width)
+}
+
+/** Constant min-bar width (MINI_JUMP_MIN_WIDTH_CHAR_COUNT '0's) — measured once, not per keystroke. */
+let _minChBarPx: number | null = null
+function miniJumpMinBarPx(): number {
+  return (_minChBarPx ??= measureJumpUiTextWidthPx('0'.repeat(MINI_JUMP_MIN_WIDTH_CHAR_COUNT)))
 }
 
 /** Dropdown row: Chakra `px={3}` + icon 14 + `gap={2}` */
@@ -82,8 +92,7 @@ function computeMiniJumpUiMinWidthPx(
   anchorPillLabel: string | null
 ): number {
   const longest = computeMiniJumpLongestLabel(filterText, results, anchorPillLabel)
-  const minChBarPx = measureJumpUiTextWidthPx('0'.repeat(MINI_JUMP_MIN_WIDTH_CHAR_COUNT))
-  const textW = Math.max(measureJumpUiTextWidthPx(longest), minChBarPx)
+  const textW = Math.max(measureJumpUiTextWidthPx(longest), miniJumpMinBarPx())
   const pillMin = MINI_PILL_BOX_HPAD_PX + textW
   const dropdownMin = results.length > 0 ? MINI_DROPDOWN_ROW_EXTRAS_PX + textW : pillMin
   return Math.max(pillMin, dropdownMin, 80)
@@ -902,14 +911,14 @@ export const FolderInfoBar: React.FC = () => {
    * the compact 3-row jump dropdown. */
   const isJumpAtRoot =
     activeChevronIndex !== null && !!miniSearchPath && !!rootDirectory && pathsEqualForJump(miniSearchPath, rootDirectory)
+  // Same jump dropdown at every level: show suggestions on empty query and the larger
+  // result list. recentPaths only ranks at root (those paths aren't children deeper down),
+  // so it's a no-op below root.
   const jumpRankOptions = useMemo<DirectorySearchRankOptions | undefined>(
-    () =>
-      isJumpAtRoot
-        ? { recentPaths: recentClientPaths, emptyQuerySuggestions: 5, maxResults: 20 }
-        : undefined,
-    [isJumpAtRoot, recentClientPaths]
+    () => ({ recentPaths: recentClientPaths, emptyQuerySuggestions: 5, maxResults: 20 }),
+    [recentClientPaths]
   )
-  const miniMaxResults = isJumpAtRoot ? 8 : 3
+  const miniMaxResults = 8
 
   const directorySearch = useDirectorySearch({
     directoryPath: miniSearchPath,
@@ -1201,28 +1210,10 @@ export const FolderInfoBar: React.FC = () => {
       eventMatchesShortcut(e.nativeEvent, backspaceNavigationShortcut) &&
       miniSearchText.length === 0
     ) {
+      // Jump mode is active: Backspace steps back up the quick-nav trail (formerly Ctrl+Backspace).
+      // "Go to parent directory" only applies when jump is inactive (handled in App.tsx).
       e.preventDefault()
-      const parent = getParentPath(currentDirectory)
-      if (!parent || normalizePath(parent) === normalizePath(currentDirectory)) {
-        setStatus('Already at root level', 'info')
-        return
-      }
-      const normalizedParent = normalizePath(parent)
-      closeMiniSearch()
-      void (async () => {
-        try {
-          const isValid = await (window.electronAPI as any).validatePath(normalizedParent)
-          if (isValid) {
-            setCurrentDirectory(normalizedParent)
-            addLog(`Navigated to parent: ${normalizedParent}`)
-            setStatus('Navigated to parent directory', 'info')
-          } else {
-            setStatus('Cannot access parent directory', 'error')
-          }
-        } catch {
-          setStatus('Navigation failed', 'error')
-        }
-      })()
+      handleMiniSearchBackspace()
     }
   }
 

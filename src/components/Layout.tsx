@@ -4,7 +4,6 @@ import { Grid, GridItem, Box } from '@chakra-ui/react';
 import { ClientInfoPane } from './ClientInfoPane';
 import { PreviewPane } from './PreviewPane';
 import { SectionChecklistPane } from './SectionChecklistPane';
-import { JobContextPane } from './JobContextPane';
 import { FolderInfoBar } from './FolderInfoBar';
 import { FunctionPanels } from './FunctionPanels';
 import { FileGrid } from './FileGrid';
@@ -20,8 +19,9 @@ import { ClientListView } from './ClientListView';
 import { normalizePath, getParentPath } from '../utils/path';
 
 export const Layout: React.FC = () => {
-  const { isPreviewPaneOpen, isJobContextOpen, isSectionPaneOpen, currentDirectory, rootDirectory } = useAppContext();
+  const { isPreviewPaneOpen, isSectionPaneOpen, currentDirectory, rootDirectory } = useAppContext();
   const [sidebarWidth, setSidebarWidth] = useState(200);
+  const [previewWidth, setPreviewWidth] = useState(700);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [minimizedDialogs, setMinimizedDialogs] = useState<MinimizedDialog[]>([]);
   const [onRestoreDialog, setOnRestoreDialog] = useState<((type: DialogType) => void) | undefined>();
@@ -38,6 +38,13 @@ export const Layout: React.FC = () => {
   const COLLAPSE_THRESHOLD = 180;
   const THROTTLE_MS = 16; // ~60fps
 
+  // Preview pane resize functionality (handle on its LEFT edge — pane grows leftward)
+  const isPreviewDragging = useRef(false);
+  const startPreviewX = useRef(0);
+  const startPreviewWidth = useRef(0);
+  const MIN_PREVIEW_WIDTH = 360;
+  const MAX_PREVIEW_WIDTH = 1100;
+
   // Sidebar resize handlers
   const handleSidebarMouseDown = useCallback((e: React.MouseEvent) => {
     if (sidebarCollapsed) return; // Don't resize if collapsed
@@ -47,6 +54,14 @@ export const Layout: React.FC = () => {
     document.body.style.cursor = 'col-resize';
     e.preventDefault();
   }, [sidebarWidth, sidebarCollapsed]);
+
+  const handlePreviewMouseDown = useCallback((e: React.MouseEvent) => {
+    isPreviewDragging.current = true;
+    startPreviewX.current = e.clientX;
+    startPreviewWidth.current = previewWidth;
+    document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  }, [previewWidth]);
 
   useEffect(() => {
     let animationFrame: number;
@@ -74,20 +89,29 @@ export const Layout: React.FC = () => {
           let newWidth = startWidth.current + delta;
           newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(newWidth, MAX_SIDEBAR_WIDTH));
           setSidebarWidth(newWidth);
-          
+
           // Auto-collapse if width gets too small
           if (newWidth < COLLAPSE_THRESHOLD && !sidebarCollapsed) {
             setSidebarCollapsed(true);
           }
         }
+
+        // Handle preview pane resize (left-edge handle → drag left grows the pane)
+        if (isPreviewDragging.current) {
+          const delta = e.clientX - startPreviewX.current;
+          let newWidth = startPreviewWidth.current - delta;
+          newWidth = Math.max(MIN_PREVIEW_WIDTH, Math.min(newWidth, MAX_PREVIEW_WIDTH));
+          setPreviewWidth(newWidth);
+        }
       });
     };
-    
+
     const handleMouseUp = () => {
       if (animationFrame) {
         cancelAnimationFrame(animationFrame);
       }
       isSidebarDragging.current = false;
+      isPreviewDragging.current = false;
       document.body.style.cursor = '';
     };
     
@@ -140,11 +164,11 @@ export const Layout: React.FC = () => {
   return (
     <>
     <Grid templateAreas={`
-        "tabs tabs tabs tabs tabs"
-        "header header header header header"
-        "sidebar main sections preview jobContext"
-        "status status status status status"
-      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isSectionPaneOpen ? '420px' : '0px'} ${isPreviewPaneOpen ? '700px' : '0px'} ${isJobContextOpen ? '420px' : '0px'}`} h="100%" gap="0" bg="df.canvas">
+        "tabs tabs tabs tabs"
+        "header header header header"
+        "sidebar main sections preview"
+        "status status status status"
+      `} gridTemplateRows="auto auto 1fr auto" gridTemplateColumns={`${sidebarCollapsed ? 64 : sidebarWidth}px 1fr ${isSectionPaneOpen ? '420px' : '0px'} ${isPreviewPaneOpen ? `${previewWidth}px` : '0px'}`} h="100%" gap="0" bg="df.canvas">
     {/* Folder Info Bar and Function Bar - z-index above tabs so address bar covers overlapping inactive tabs */}
     <GridItem
       ref={headerRef}
@@ -273,10 +297,11 @@ export const Layout: React.FC = () => {
     {/* Preview Pane */}
     <GridItem
       area="preview"
-      bg="df.toolbar" 
-      overflow="hidden" 
-      display="flex" 
-      flexDirection="column" 
+      bg="df.toolbar"
+      overflow="hidden"
+      display="flex"
+      flexDirection="column"
+      position="relative"
       boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
       borderLeftWidth="1px"
       borderLeftStyle="solid"
@@ -284,23 +309,23 @@ export const Layout: React.FC = () => {
       visibility={isPreviewPaneOpen ? 'visible' : 'hidden'}
       width={isPreviewPaneOpen ? 'auto' : '0px'}
     >
+      {/* Preview Resize Handle (left edge) */}
+      {isPreviewPaneOpen && (
+        <Box
+          position="absolute"
+          top="0"
+          left="-3px"
+          width="6px"
+          height="100%"
+          cursor="col-resize"
+          onMouseDown={handlePreviewMouseDown}
+          bg="transparent"
+          _hover={{ bg: resizeHandleHoverBg, opacity: 0.85 }}
+          transition="all 0.2s"
+          zIndex={10}
+        />
+      )}
       <PreviewPane />
-    </GridItem>
-    {/* Job Context Pane - always mounted to preserve state when toggled */}
-    <GridItem
-      area="jobContext"
-      bg="df.toolbar"
-      overflow="hidden"
-      display="flex"
-      flexDirection="column"
-      boxShadow="-1px 0px 3px rgba(0,0,0,0.05)"
-      borderLeftWidth="1px"
-      borderLeftStyle="solid"
-      borderLeftColor="df.border"
-      visibility={isJobContextOpen ? 'visible' : 'hidden'}
-      width={isJobContextOpen ? 'auto' : '0px'}
-    >
-      <JobContextPane />
     </GridItem>
     {/* Status Footer */}
     <GridItem

@@ -69,15 +69,11 @@ interface AppContextType {
   setHideDotFiles: (hide: boolean) => void;
   hideClaudeMd: boolean;
   setHideClaudeMd: (hide: boolean) => void;
-  aiEditorInstructions: string;             // NEW
-  setAiEditorInstructions: (instructions: string) => void; // NEW
   // Preview
   previewFiles: FileItem[];
   setPreviewFiles: (files: FileItem[]) => void;
   isPreviewPaneOpen: boolean;
   setIsPreviewPaneOpen: (isOpen: boolean) => void;
-  isJobContextOpen: boolean;
-  setIsJobContextOpen: (isOpen: boolean) => void;
   selectAllFiles: () => void;
   setSelectAllFiles: (callback: () => void) => void;
   folderItems: FileItem[];
@@ -119,6 +115,8 @@ interface AppContextType {
   addressBarJumpRef: React.MutableRefObject<AddressBarJumpApi | null>;
   showClientInfoBar: boolean;
   setShowClientInfoBar: (show: boolean) => void;
+  showGitStatus: boolean;
+  setShowGitStatus: (show: boolean) => void;
   // Create folder dialog (opened from context menu or shortcut)
   isCreateFolderOpen: boolean;
   setIsCreateFolderOpen: (open: boolean) => void;
@@ -186,11 +184,9 @@ export const AppProvider: React.FC<{
   const [hideTemporaryFiles, setHideTemporaryFiles] = useState<boolean>(true);
   const [hideDotFiles, setHideDotFiles] = useState<boolean>(true);
   const [hideClaudeMd, setHideClaudeMd] = useState<boolean>(true);
-  const [aiEditorInstructions, setAiEditorInstructions] = useState<string>('Paste your raw email blurb below. The AI will rewrite it to be clearer, more professional, and polished, while keeping your tone and intent.');
   // Preview state
   const [previewFiles, setPreviewFiles] = useState<FileItem[]>([]);
   const [isPreviewPaneOpen, setIsPreviewPaneOpen] = useState<boolean>(false);
-  const [isJobContextOpen, setIsJobContextOpen] = useState<boolean>(false);
   const [selectAllFilesCallback, setSelectAllFilesCallback] = useState<() => void>(() => () => {});
   const [folderItems, setFolderItems] = useState<FileItem[]>([]);
   // Selected files for function buttons
@@ -217,6 +213,7 @@ export const AppProvider: React.FC<{
   const [jumpModeQuickFolderPaths, setJumpModeQuickFolderPaths] = useState<string[]>(['', '', '']);
   const addressBarJumpRef = useRef<AddressBarJumpApi | null>(null);
   const [showClientInfoBar, setShowClientInfoBar] = useState<boolean>(true);
+  const [showGitStatus, setShowGitStatus] = useState<boolean>(true);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState<boolean>(false);
 
   // Quick Access (pinned folders)
@@ -260,10 +257,6 @@ export const AppProvider: React.FC<{
       // NEW: Load hideDotFiles (default true when unset)
       setHideDotFiles(settings.hideDotFiles !== false);
       setHideClaudeMd(settings.hideClaudeMd !== false);
-      // NEW: Load AI editor instructions (default to current instructions if unset)
-      if (settings.aiEditorInstructions !== undefined) {
-        setAiEditorInstructions(settings.aiEditorInstructions);
-      }
       // Load all shortcut settings
       if (settings.newTabShortcut) {
         setNewTabShortcut(settings.newTabShortcut);
@@ -328,6 +321,8 @@ export const AppProvider: React.FC<{
         setJumpModeQuickFolderPaths(next);
       }
       setShowClientInfoBar(settings.showClientInfoBar !== false);
+      // Default ON when the key is absent (keeps existing users on); fresh installs ship it false.
+      setShowGitStatus(settings.showGitStatus !== false);
       setGroupViewAlwaysEnabled(settings.groupViewAlwaysEnabled !== false);
       setGroupViewBlacklist(Array.isArray(settings.groupViewBlacklist) ? settings.groupViewBlacklist.map((p: string) => normalizePath(p)).filter(Boolean) : []);
       // Load per-folder manually activated workpaper sections (normalize keys)
@@ -731,14 +726,10 @@ export const AppProvider: React.FC<{
       setHideDotFiles,
       hideClaudeMd,
       setHideClaudeMd,
-      aiEditorInstructions,                 // NEW
-      setAiEditorInstructions,              // NEW
       previewFiles,
       setPreviewFiles,
       isPreviewPaneOpen,
       setIsPreviewPaneOpen,
-      isJobContextOpen,
-      setIsJobContextOpen,
       selectAllFiles,
       setSelectAllFiles,
       folderItems,
@@ -769,6 +760,8 @@ export const AppProvider: React.FC<{
       jumpModeQuickFolderPaths,
       addressBarJumpRef,
       showClientInfoBar,
+      showGitStatus,
+      setShowGitStatus,
       setShowClientInfoBar,
       isCreateFolderOpen,
       setIsCreateFolderOpen,
@@ -807,27 +800,6 @@ export const useAppContext = (): AppContextType => {
     throw new Error('useAppContext must be used within an AppProvider');
   }
   return context;
-};
-
-/** Selective context hook for JobContextPane - only re-renders when these values change. */
-export const useJobContextSelection = () => {
-  const currentDirectory = useContextSelector(AppContext, (v) => v?.currentDirectory ?? '');
-  const folderItems = useContextSelector(AppContext, (v) => v?.folderItems ?? []);
-  const isJobContextOpen = useContextSelector(AppContext, (v) => v?.isJobContextOpen ?? false);
-  const setIsJobContextOpen = useContextSelector(AppContext, (v) => v?.setIsJobContextOpen);
-  const addLog = useContextSelector(AppContext, (v) => v?.addLog);
-  const setStatus = useContextSelector(AppContext, (v) => v?.setStatus);
-  if (!setIsJobContextOpen || !addLog || !setStatus) {
-    throw new Error('useJobContextSelection must be used within an AppProvider');
-  }
-  return {
-    currentDirectory,
-    folderItems,
-    isJobContextOpen,
-    setIsJobContextOpen,
-    addLog,
-    setStatus,
-  };
 };
 
 // --- FileGrid: use useContextSelector so unrelated app state (status, settings flags, etc.)

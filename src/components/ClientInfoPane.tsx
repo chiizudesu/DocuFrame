@@ -164,7 +164,6 @@ const RecentClientRow: React.FC<RecentClientRowProps> = ({
   onNavigate,
 }) => {
   const [subfolders, setSubfolders] = useState<Array<{ name: string; path: string }>>([]);
-  const { currentDirectory } = useAppContext();
   const clientName = clientPath.split(/[/\\]/).filter(Boolean).pop() ?? clientPath;
   const avatarColor = getAvatarColor(clientName);
   const initials = getInitials(clientName);
@@ -193,7 +192,9 @@ const RecentClientRow: React.FC<RecentClientRowProps> = ({
     };
     load();
     return () => { mounted = false; };
-  }, [clientPath, currentDirectory]);
+    // Only re-load when the client itself changes — NOT on every navigation elsewhere.
+    // (Was [clientPath, currentDirectory], which refetched all recent-client rows on each nav.)
+  }, [clientPath]);
 
   const isYearPill = (name: string) => /^20\d{2}$/.test(name);
 
@@ -274,7 +275,8 @@ const RecentClientRow: React.FC<RecentClientRowProps> = ({
                 color={isYear ? yearPillColor : catPillColor}
                 fontSize={isYear ? '11.5px' : '10.5px'}
                 fontWeight={isYear ? '600' : '500'}
-                fontFamily={isYear ? "'Rajdhani', sans-serif" : 'inherit'}
+                fontFamily="inherit"
+                fontVariantNumeric={isYear ? 'tabular-nums' : undefined}
                 letterSpacing={isYear ? '0.02em' : '0.01em'}
                 cursor="pointer"
                 border="none"

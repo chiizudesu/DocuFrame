@@ -8,7 +8,8 @@ import { GitStatusIndicator } from './GitStatusIndicator';
 export const Footer: React.FC = () => {
   const {
     folderItems,
-    selectedFiles
+    selectedFiles,
+    showGitStatus
   } = useAppContext();
   
   // Match file grid row styling
@@ -73,7 +74,7 @@ export const Footer: React.FC = () => {
         {getFolderInfo()}
       </Text>
       <Flex align="center">
-        <GitStatusIndicator />
+        {showGitStatus && <GitStatusIndicator />}
       </Flex>
     </Flex>
   );
