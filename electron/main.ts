@@ -180,6 +180,23 @@ function sanitizeChromeBridgePdfFilename(raw: string): string {
   return `${base}.pdf`;
 }
 
+/** Non-PDF bridge saves (Auxor JSON exports etc.) — only harmless text formats. */
+const CHROME_BRIDGE_FILE_EXTENSIONS = new Set(['.json', '.csv', '.txt']);
+
+function sanitizeChromeBridgeFileFilename(raw: string): string {
+  let s = (raw || 'export')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!s) s = 'export';
+  const rawExt = path.extname(s).toLowerCase();
+  const ext = CHROME_BRIDGE_FILE_EXTENSIONS.has(rawExt) ? rawExt : '.json';
+  const withoutExt = rawExt ? s.slice(0, s.length - rawExt.length) : s;
+  let base = withoutExt.length > 100 ? withoutExt.slice(0, 100).trim() : withoutExt;
+  if (!base) base = 'export';
+  return `${base}${ext}`;
+}
+
 function isResolvedPathInsideDirectory(filePath: string, dir: string): boolean {
   const resolvedFile = path.resolve(filePath);
   const resolvedDir = path.resolve(dir);
@@ -435,6 +452,77 @@ async function startChromeExtensionBridgeServer(cfg: Config): Promise<void> {
         return res.json({ success: true, path: fullPath });
       } catch (error: any) {
         console.error('[ChromeBridge] save-pdf error:', error);
+        const err = error?.message ?? 'Write failed';
+        broadcastChromeBridgePdfResult({ ok: false, error: err });
+        return res.status(500).json({ error: err });
+      }
+    }
+  );
+
+  /** Same contract as /save-pdf (raw body + X-DocuFrame-Filename) for non-PDF
+   *  text files — Auxor's COA groupings JSON export lands here. */
+  appBridge.post(
+    '/save-file',
+    requireAuth,
+    express.raw({ type: () => true, limit: '50mb' }),
+    async (req, res) => {
+      try {
+        const dir = currentDirectoryPath;
+        if (!dir) {
+          const err = 'No current directory open in DocuFrame';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const rawHeader = req.header('x-docuframe-filename') || 'export.json';
+        let filename = sanitizeChromeBridgeFileFilename(rawHeader);
+        let fullPath = path.join(dir, filename);
+
+        try {
+          await fsPromises.access(fullPath);
+          const now = new Date();
+          const pad = (n: number) => String(n).padStart(2, '0');
+          const t = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+          const ext = path.extname(filename);
+          const baseNoExt = filename.slice(0, filename.length - ext.length);
+          filename = `${baseNoExt}_${t}${ext}`;
+          fullPath = path.join(dir, filename);
+        } catch {
+          // file does not exist — use chosen name
+        }
+
+        if (!isResolvedPathInsideDirectory(fullPath, dir)) {
+          const err = 'Invalid path';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        const body = req.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          const err = 'Empty or invalid file body';
+          broadcastChromeBridgePdfResult({ ok: false, error: err });
+          return res.status(400).json({ error: err });
+        }
+
+        await fsPromises.writeFile(fullPath, body);
+
+        const savedBasename = path.basename(fullPath);
+        broadcastChromeBridgePdfResult({ ok: true, filename: savedBasename });
+
+        BrowserWindow.getAllWindows().forEach((win) => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('folderContentsChanged', {
+              directory: dir,
+              event: 'add',
+              filePath: fullPath,
+              newFiles: [savedBasename],
+            });
+          }
+        });
+
+        return res.json({ success: true, path: fullPath });
+      } catch (error: any) {
+        console.error('[ChromeBridge] save-file error:', error);
         const err = error?.message ?? 'Write failed';
         broadcastChromeBridgePdfResult({ ok: false, error: err });
         return res.status(500).json({ error: err });
